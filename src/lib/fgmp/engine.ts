@@ -1,8 +1,11 @@
+import { Prisma, type FuelType } from "@prisma/client";
 import { db } from "@/lib/db";
+import { toJsonNumber } from "./decimal";
 import type {
   TankState, GenState, BattState, SiteState, IoTDeviceState,
   DispenserState, FuelTransactionState, GatewayState,
   EventItem, Kpis, Snapshot, GenCommand, GenStatus,
+  AlarmType, Severity,
 } from "./types";
 import { isAlarmSuppressed } from "./suppression-check";
 import { isBatteryLowVoltage, battLowVoltageTripVolts } from "./thresholds-battery";
@@ -42,14 +45,24 @@ const TRANSIENT_REARM_MS = 30 * 60 * 1000; // 30 minutes
  * and never contain `:`, so the first separator delimits the type and the
  * second the severity.
  */
-function splitAlarmKey(key: string): [string, string, string] {
+/**
+ * Split a `${type}:${severity}:${entityId}` alarm key back into its parts.
+ *
+ * Returns the type/severity as the narrowed unions rather than plain strings:
+ * the key is only ever built by `raiseAlarm` from validated enum members, so
+ * the values flowing back out here are always valid members too. Typing them
+ * keeps the `db.alarm.where` filters type-checked against the Prisma enum.
+ */
+function splitAlarmKey(key: string): [AlarmType, Severity | "", string] {
   const firstSep = key.indexOf(":");
   const secondSep = key.indexOf(":", firstSep + 1);
-  if (firstSep < 0) return [key, "", ""];
-  if (secondSep < 0) return [key.slice(0, firstSep), "", key.slice(firstSep + 1)];
+  if (firstSep < 0) return [key as AlarmType, "", ""];
+  if (secondSep < 0) {
+    return [key.slice(0, firstSep) as AlarmType, "", key.slice(firstSep + 1)];
+  }
   return [
-    key.slice(0, firstSep),
-    key.slice(firstSep + 1, secondSep),
+    key.slice(0, firstSep) as AlarmType,
+    key.slice(firstSep + 1, secondSep) as Severity,
     key.slice(secondSep + 1),
   ];
 }
@@ -771,7 +784,7 @@ class FgmpEngine {
    */
   private async reconcileAlarms(): Promise<void> {
     const stillTrue = new Set<string>();
-    const add = (type: string, severity: string, id: string) =>
+    const add = (type: AlarmType, severity: Severity, id: string) =>
       stillTrue.add(`${type}:${severity}:${id}`);
 
     for (const tk of this.tanks) {
@@ -893,15 +906,21 @@ class FgmpEngine {
       txRow = null;
     }
 
-    // In-memory transaction record (cap memory at MAX_RECENT_TXN_SNAPSHOT)
+    // In-memory transaction record (cap memory at MAX_RECENT_TXN_SNAPSHOT).
+    // Money columns are `numeric` since Phase 1 step 9, so the state carries
+    // Decimal. Prefer the values Prisma already parsed off the persisted row —
+    // they are the source of truth and avoid re-quantising the same money twice
+    // — and only construct them when the row write failed. Constructing via
+    // `new Prisma.Decimal(<number>)` would go through a float, so the computed
+    // fallback is routed through the tested toJsonNumber() first.
     const txn: FuelTransactionState = {
       id: txRow?.id ?? d.currentTransactionId ?? uid("tx"),
       dispenserId: d.id,
       siteId: d.siteId,
       nozzle: txRow?.nozzle ?? 1,
       volumeLitres: volume,
-      amountYer: amount,
-      unitPriceYer: unitPrice,
+      amountYer: txRow?.amountYer ?? new Prisma.Decimal(toJsonNumber(amount)),
+      unitPriceYer: txRow?.unitPriceYer ?? new Prisma.Decimal(toJsonNumber(unitPrice)),
       vehiclePlate: txRow?.vehiclePlate ?? undefined,
       status,
       startedAt,
@@ -1036,7 +1055,7 @@ class FgmpEngine {
     manufacturer: string;
     model: string;
     nozzleCount: number;
-    fuelType: string;
+    fuelType: FuelType;
     maxFlowLpm: number;
     espDeviceId: string;
     espFirmware: string;
@@ -1165,8 +1184,13 @@ class FgmpEngine {
   }
 
   // ── Alarm helpers ───────────────────────────────────────────────────────
+  // `type`/`severity` are typed with the local unions from ./types, whose
+  // members match the Prisma `AlarmType`/`AlarmSeverity` enums exactly. Keeping
+  // the existing local vocabulary avoids a second import while still letting
+  // TypeScript prove the value is a valid enum member — previously these were
+  // bare `string`, which the now-strict enum columns reject.
   private async raiseAlarm(a: {
-    siteId: string; type: string; severity: string;
+    siteId: string; type: AlarmType; severity: Severity;
     entityKind?: string; entityId?: string; message: string;
     value?: number; threshold?: number;
   }): Promise<number> {
@@ -1250,7 +1274,7 @@ class FgmpEngine {
    * was ever removed from `openAlarmKeys` and the affected alarm types could
    * never re-fire for the lifetime of the process.
    */
-  private async autoResolve(type: string, entityId: string, severity?: string) {
+  private async autoResolve(type: AlarmType, entityId: string, severity?: Severity) {
     if (severity) {
       const key = `${type}:${severity}:${entityId}`;
       if (!this.openAlarmKeys.has(key)) return;

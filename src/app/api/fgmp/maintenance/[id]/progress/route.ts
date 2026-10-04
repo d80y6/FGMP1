@@ -1,3 +1,4 @@
+import type { TicketStatus } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db, bootstrap } from "@/lib/fgmp";
@@ -55,7 +56,7 @@ const progressSchema = z
   .default({});
 
 /** Statuses a ticket may be started FROM. Anything else → 409. */
-const PROGRESS_FROM = ["OPEN", "SCHEDULED"];
+const PROGRESS_FROM: TicketStatus[] = ["OPEN", "SCHEDULED"];
 
 export async function POST(
   req: NextRequest,

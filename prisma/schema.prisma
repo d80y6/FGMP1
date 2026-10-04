@@ -100,6 +100,14 @@ enum TankStatus {
 enum FuelType {
   DIESEL
   PETROL
+  // BIOFUEL was missing from the first cut of this enum: it was built from the
+  // FuelDispenser doc comment (schema.prisma:608, "DIESEL | PETROL") and
+  // missed the FuelTank one (":456", "DIESEL | PETROL | BIOFUEL"). Four API
+  // routes validate input against ["DIESEL","PETROL","BIOFUEL"], so the enum
+  // would have rejected a value the API accepts. Adding an enum value is
+  // strictly safer than dropping one: it cannot break an existing writer,
+  // whereas removing BIOFUEL would reject requests users can already make.
+  BIOFUEL
 }
 
 enum GenStatus {

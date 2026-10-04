@@ -3,7 +3,7 @@
 // Run with: bun run scripts/seed-edge.ts
 //
 // This is idempotent: it checks for existing rows before inserting.
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, type OtaStatus } from "@prisma/client";
 
 const db = new PrismaClient();
 
@@ -192,7 +192,13 @@ async function main() {
     // are not persisted. `fromVersion`, `progressPct` and `errMsg` are kept
     // here only to keep the fixture readable; `toVersion` is the one that
     // matters, because it selects the EspFirmwareRelease row.
-    const targets = [
+    // Annotated so `status` keeps the OtaStatus enum type through the literal;
+    // a bare array widens it to `string`, which the strict column rejects.
+    const targets: Array<{
+      fromVersion: string; toVersion: string; status: OtaStatus;
+      progressPct: number; daysAgo: number; durSec: number;
+      inProgress?: boolean; errMsg?: string;
+    }> = [
       { fromVersion: "v2.3.0", toVersion: "v2.4.0", status: "SUCCESS", progressPct: 100, daysAgo: 28, durSec: 180 },
       { fromVersion: "v2.3.1", toVersion: "v2.4.1", status: "SUCCESS", progressPct: 100, daysAgo: 22, durSec: 220 },
       { fromVersion: "v2.3.2", toVersion: "v2.4.0", status: "SUCCESS", progressPct: 100, daysAgo: 18, durSec: 150 },

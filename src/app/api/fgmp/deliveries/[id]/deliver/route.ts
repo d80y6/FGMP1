@@ -1,3 +1,4 @@
+import type { FuelDeliveryStatus } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db, bootstrap } from "@/lib/fgmp";
@@ -53,7 +54,7 @@ const deliverSchema = z.object({
 });
 
 /** Statuses a delivery may be marked DELIVERED from. */
-const DELIVER_FROM = ["SCHEDULED", "IN_TRANSIT"];
+const DELIVER_FROM: FuelDeliveryStatus[] = ["SCHEDULED", "IN_TRANSIT"];
 
 export async function POST(
   req: NextRequest,

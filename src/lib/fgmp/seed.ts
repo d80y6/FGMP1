@@ -1,3 +1,5 @@
+import type { Prisma } from "@prisma/client";
+import type { Criticality, PowerSource, IotProtocol, FuelDeliveryStatus } from "@prisma/client";
 import { db } from "@/lib/db";
 import bcrypt from "bcryptjs";
 
@@ -73,7 +75,10 @@ const GEN_MAKERS = [
   { m: "Perkins", models: ["4016-61TRS", "4012-46TWG2"] },
 ];
 const IOT_VENDORS = ["E+E Elektronik", "Tetra Sensors", "Atlas Scientific", "Schneider PM5000", "Mikrotik hAP", "Siemens S7-1200"];
-const PROTOCOLS = ["RS485", "MODBUS_RTU", "MODBUS_TCP", "MQTT", "HTTP", "SNMP"];
+// Typed against the Prisma enum so `pick()` returns `IotProtocol` rather than a
+// widened `string`. `as const` is NOT used here — `pick<T>(arr: T[])` needs a
+// mutable array, and `readonly` would widen back to string at the call site.
+const PROTOCOLS: IotProtocol[] = ["RS485", "MODBUS_RTU", "MODBUS_TCP", "MQTT", "HTTP", "SNMP"];
 const DEVICE_TYPES = ["FUEL_SENSOR", "GENERATOR_CONTROLLER", "BATTERY_SENSOR", "POWER_METER", "ENVIRONMENTAL"];
 const SUPPLIERS = ["Yemen Oil Co.", "Hadramout Fuel Trading", "Aden Petroleum", "Al-Mokha Diesel Supply"];
 
@@ -109,7 +114,14 @@ export async function seedIfNeeded(): Promise<{ seeded: boolean; siteCount: numb
   });
 
   // Seed users for RBAC demo
-  const usersData = [
+  // Annotated so the Prisma `Role` enum is enforced at compile time; a bare
+  // array literal widens `role` to `string`, which the strict enum column rejects.
+  // `tenantId`/`passwordHash` are supplied by the upsert, not the literal.
+  type SeedUser = Pick<
+    Prisma.UserUncheckedCreateInput,
+    "id" | "name" | "email" | "role"
+  >;
+  const usersData: SeedUser[] = [
     { id: "u-admin-1", name: "L. Al-Hadhrami", email: "admin@fgmp.telecom", role: "ADMIN" },
     { id: "u-noc-1", name: "A. Al-Rashid", email: "noc.operator@fgmp.telecom", role: "NOC_OPERATOR" },
     { id: "u-rm-1", name: "M. Al-Mikhlafi", email: "regional.manager@fgmp.telecom", role: "REGIONAL_MANAGER" },
@@ -144,10 +156,10 @@ export async function seedIfNeeded(): Promise<{ seeded: boolean; siteCount: numb
           const code = `SITE-${String(siteCounter).padStart(3, "0")}`;
           const lat = gov.lat + range(-0.08, 0.08);
           const lng = gov.lng + range(-0.08, 0.08);
-          const criticality = pick(["CRITICAL", "HIGH", "MEDIUM", "LOW"]);
+          const criticality: Criticality = pick(["CRITICAL", "HIGH", "MEDIUM", "LOW"]);
           const loadKw = Math.round(range(2, 18) * 10) / 10;
           const gridAvailable = rnd() > 0.18;
-          const powerSource = !gridAvailable ? "GENERATOR" : pick(["HYBRID", "GRID"]);
+          const powerSource: PowerSource = !gridAvailable ? "GENERATOR" : pick(["HYBRID", "GRID"]);
 
           const site = await db.site.create({
             data: {
@@ -288,7 +300,7 @@ export async function seedIfNeeded(): Promise<{ seeded: boolean; siteCount: numb
   for (let i = 0; i < 8; i++) {
     const tank = pick(tanks);
     const volume = Math.round(tank.capacityLitres * range(0.3, 0.8));
-    const status = pick(["SCHEDULED", "SCHEDULED", "IN_TRANSIT", "DELIVERED", "VERIFIED"]);
+    const status: FuelDeliveryStatus = pick(["SCHEDULED", "SCHEDULED", "IN_TRANSIT", "DELIVERED", "VERIFIED"]);
     const scheduledAt = new Date(now + intRange(-2, 5) * 86400000);
     await db.fuelDelivery.create({
       data: {

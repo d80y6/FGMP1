@@ -1,5 +1,7 @@
 // FGMP shared types — used across engine, API, and UI.
 
+import type { Prisma } from "@prisma/client";
+
 export type Role =
   | "SUPERADMIN"
   | "ADMIN"
@@ -179,8 +181,15 @@ export interface FuelTransactionState {
   siteId: string;
   nozzle: number;
   volumeLitres: number;
-  amountYer: number;
-  unitPriceYer: number;
+  /**
+   * Monetary columns are PostgreSQL `numeric` (Phase 1 step 9), so Prisma
+   * returns Decimal rather than number. These stay Decimal in engine state and
+   * must be converted with `toJsonNumber()` from ./decimal at any JSON
+   * boundary — passing a Decimal straight to JSON.stringify emits a STRING and
+   * silently changes the API contract.
+   */
+  amountYer: Prisma.Decimal;
+  unitPriceYer: Prisma.Decimal;
   vehiclePlate?: string;
   operatorName?: string;
   status: FuelTransactionStatus;

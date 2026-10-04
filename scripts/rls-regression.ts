@@ -124,6 +124,8 @@ interface TableSpec {
  */
 const RUN = process.env.RLS_RUN_ID ?? String(process.pid)
 const SUFFIX = RUN
+// Stable numeric digest of the run id, for the synthetic phone number below.
+const SUFFIX_DIGITS = [...RUN].reduce((a, c) => a + c.charCodeAt(0), 0);
 const TENANT_A = `t-alpha-${RUN}`
 const TENANT_B = `t-beta-${RUN}`
 const SITE_ID = `rls-site-${RUN}`
@@ -482,7 +484,11 @@ const TABLES: TableSpec[] = [
     columns: {
       id: `'ntf-${SUFFIX}'`,
       channel: `'SMS'`,
-      recipient: `'+967700000${(SUFFIX % 1000).toString().padStart(3, '0')}'`,
+      // `SUFFIX` is the run identifier (an env string or the pid), not a
+      // number — `SUFFIX % 1000` is a type error and, had it compiled, would
+      // have produced NaN in the middle of the phone number. Derive a stable
+      // 3-digit block from a character sum instead, which works for any run id.
+      recipient: `'+967700000${(SUFFIX_DIGITS % 1000).toString().padStart(3, '0')}'`,
       subject: `'RLS subject ${SUFFIX}'`,
       body: `'RLS body ${SUFFIX}'`,
     },
