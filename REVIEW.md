@@ -1,9 +1,11 @@
 # FGMP — Comprehensive UX & Codebase Review
 
 > **Project:** FGMP (Fuel & Generator Monitoring Platform) — Next.js 16 + Prisma + SQLite + shadcn/ui
+> **Status:** **Prototype / demo.** Not production-ready. Telemetry is simulated, there are no automated tests, and the data layer is SQLite. See [Current Reality](#current-reality).
 > **Scope:** 27 views · 94 API routes · 40+ shared components · 30+ lib modules · ~55,600 LOC
 > **Method:** Four parallel deep-dive audits (Redundancy, Dead Code, UX/IA, Performance) with file:line evidence for every finding.
 > **Goal:** Concrete, prioritized refactoring roadmap toward Linear/Notion/Stripe/Vercel-grade quality.
+> **Note:** This audit covers the **frontend and codebase hygiene only**. It was never a production-readiness assessment, and its original "feature-complete" summary overstated what exists. Sections 2–8 remain accurate as written.
 
 ---
 
@@ -23,7 +25,30 @@
 
 ## 1. Executive Summary
 
-The FGMP platform is feature-complete (27 views, RBAC, i18n EN+AR, realtime, optimistic updates) but suffers from **codebase bloat** (~9,600 LOC of dead/redundant code) and **UX inconsistency** (6 native dialogs, 9 blank-screen loading states, 22 views with no error UI, 5 RBAC holes). Performance is acceptable on a single client but degrades under multi-client load due to **~25 req/min polling + 6 DB queries per snapshot**.
+> **⚠️ Status correction (Phase 0.5, 2026-10-04).** This review originally opened with "The FGMP platform is feature-complete." **That claim was wrong and has been retracted.** It described the *frontend surface*, not the product. The sections below remain accurate as a frontend UX/codebase audit, but the platform is a **working prototype**, not a production system. See [Current Reality](#current-reality) below for what actually exists.
+
+The FGMP platform has a broad frontend surface (27 views, RBAC, i18n EN+AR, realtime, optimistic updates) but suffers from **codebase bloat** (~9,600 LOC of dead/redundant code) and **UX inconsistency** (6 native dialogs, 9 blank-screen loading states, 22 views with no error UI, 5 RBAC holes). Performance is acceptable on a single client but degrades under multi-client load due to **~25 req/min polling + 6 DB queries per snapshot**.
+
+### Current Reality
+
+What this codebase is, stated plainly:
+
+| Area | Reality |
+|---|---|
+| **Data** | SQLite, not PostgreSQL/TimescaleDB. No partitioning, no time-series hypertable. 41 `Float` fields, 0 `Decimal` — for litre and rial accounting. |
+| **Telemetry** | **Simulated.** `engine.ts` generates tank levels, generator state, faults and comm-loss via ~44 `Math.random()` calls per tick. There is no Modbus/RS485 driver in the repo; `edge/rs485` returns hardcoded zeros. |
+| **"Fuel theft detection"** | **Not a detection.** Theft is randomly *injected* (`engine.ts:454`, `Math.random() < 0.0012`) and the analytics then report the fabricated litres as `stolenValueUsd`. The same applies to unauthorized refills. |
+| **Generator remote control** | A field flip. `ControlCommand` is written with `status:"SENT"`, `executedAt` set at *issue* time and `result:"OK"`; nothing transitions it to `EXECUTED`, and there are **no safety interlocks** (start is permitted at `FUEL_CRITICAL`). |
+| **Alarms** | All 10 required types are implemented with L1/L2/L3 severities, and the raise/dedup/suppress/reconcile machinery is genuinely built. But the *conditions* are driven by simulated state, and escalation thresholds are hardcoded rather than read from settings. |
+| **Correlation rules** | Advisory only. `rule-engine.ts` runs in the browser against `localStorage` rules and never mutates backend alarms. |
+| **Notifications** | DB rows only. No SMS/Email/Push/WhatsApp transport exists; rows sit `QUEUED` until an operator clicks "mark as sent". Recipients are hardcoded placeholders. |
+| **Analytics** | Consumption math and the least-squares drain-rate estimator are real, well-implemented TypeScript. But they run over the synthetic telemetry above, and the "7-day forecast" repeats one 24h total seven times. |
+| **Export** | CSV only. No PDF and no Excel generation. The `docx` dependency is imported nowhere. |
+| **Tests** | **Zero.** No test files, no test runner, no `test` script, and CI runs none. |
+| **Architecture** | One Next.js monolith + 2 thin Bun sidecars. Not the 15-service NestJS platform the original specification called for. |
+| **Migrations** | None. The schema is applied by a build-time `migrate diff` plus an imperative bootstrap; there is no versioned migration history. |
+
+**Do not connect this to real sites or real fuel data.** It is a demonstration and requirements-validation artifact. The frontend work surveyed below is real and worth keeping; the backend data layer is the gap.
 
 ### Top 10 findings (by impact)
 1. **~9,600 LOC removable** — 38 dead API routes, 21 dead shadcn components, 2 dead lib modules, 31 unused npm deps, ~410 unused i18n keys.
