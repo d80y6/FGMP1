@@ -153,6 +153,21 @@ export async function POST(req: NextRequest) {
   const { siteId, readings } = parsed.data;
   const now = new Date();
   const nowMs = now.getTime();
+  // Phase 1 step 4: SensorReading requires a tenantId, and the ingest body only
+  // carries siteId. Resolve the owning tenant once, from the Site already held
+  // in engine state. An unknown site is rejected rather than defaulted: a
+  // guessed tenant would place telemetry in the wrong tenant, and the step 6
+  // RLS policy would then protect it there forever.
+  const site = engine.sites.find((s) => s.id === siteId);
+  if (!site) {
+    const res = NextResponse.json(
+      { error: "Unknown site", code: "SITE_NOT_FOUND" },
+      { status: 404 },
+    );
+    applyRateLimitHeaders(res.headers, rl);
+    return res;
+  }
+  const tenantId = site.tenantId;
   const applied: {
     tank?: string;
     generator?: string;
@@ -176,6 +191,7 @@ export async function POST(req: NextRequest) {
       writes.push(
         db.sensorReading.create({
           data: {
+            tenantId,
             siteId,
             entityKind: "TANK",
             entityId: tank.id,
@@ -216,6 +232,7 @@ export async function POST(req: NextRequest) {
       writes.push(
         db.sensorReading.create({
           data: {
+            tenantId,
             siteId,
             entityKind: "GENERATOR",
             entityId: gen.id,
@@ -245,6 +262,7 @@ export async function POST(req: NextRequest) {
       writes.push(
         db.sensorReading.create({
           data: {
+            tenantId,
             siteId,
             entityKind: "BATTERY",
             entityId: batt.id,
@@ -257,6 +275,7 @@ export async function POST(req: NextRequest) {
       writes.push(
         db.sensorReading.create({
           data: {
+            tenantId,
             siteId,
             entityKind: "BATTERY",
             entityId: batt.id,
@@ -274,6 +293,7 @@ export async function POST(req: NextRequest) {
     writes.push(
       db.sensorReading.create({
         data: {
+          tenantId,
           siteId,
           entityKind: "SITE",
           entityId: siteId,

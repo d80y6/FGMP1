@@ -864,12 +864,16 @@ class FgmpEngine {
     const startedAt = d.startedAt ?? this.now;
     const durationSec = Math.max(1, Math.round((this.now - startedAt) / 1000));
     const status: FuelTransactionState["status"] = cancelled ? "CANCELLED" : "COMPLETED";
+    // Phase 1 step 4: FuelTransaction requires tenantId. Resolved from the
+    // parent Site already loaded in engine state.
+    const site = this.sites.find((s) => s.id === d.siteId)!;
 
     // Persist the FuelTransaction row (single source of truth).
     let txRow;
     try {
       txRow = await db.fuelTransaction.create({
         data: {
+          tenantId: site.tenantId,
           dispenserId: d.id,
           siteId: d.siteId,
           nozzle: 1 + Math.floor(Math.random() * d.nozzleCount),
@@ -1042,8 +1046,15 @@ class FgmpEngine {
     ipAddress?: string;
   }): Promise<DispenserState> {
     await this.ensureInit();
+    // Phase 1 step 4: FuelDispenser requires tenantId. The caller passes only
+    // siteId, so the tenant comes from the Site already in engine state.
+    const site = this.sites.find((s) => s.id === data.siteId);
+    if (!site) {
+      throw new Error(`createDispenser: site ${data.siteId} not found`);
+    }
     const row = await db.fuelDispenser.create({
       data: {
+        tenantId: site.tenantId,
         siteId: data.siteId,
         label: data.label,
         manufacturer: data.manufacturer,
@@ -1370,7 +1381,7 @@ class FgmpEngine {
     }
 
     const cmd = await db.controlCommand.create({
-      data: { generatorId: genId, command, status: "SENT", reason: reason ?? null, issuedById: userId, executedAt: new Date(this.now), result: "OK" },
+      data: { tenantId: site.tenantId, generatorId: genId, command, status: "SENT", reason: reason ?? null, issuedById: userId, executedAt: new Date(this.now), result: "OK" },
     });
 
     if (command === "START") {
@@ -1485,8 +1496,16 @@ class FgmpEngine {
     if (!release) {
       return { ok: false, message: "Firmware release not found" };
     }
+    // Phase 1 step 4: EspFirmwareDeployment requires tenantId (Tier A — a
+    // deployment is the tenant-scoped instance of a global release). Resolved
+    // through the target dispenser's site.
+    const dispenserSite = this.sites.find((s) => s.id === d.siteId);
+    if (!dispenserSite) {
+      return { ok: false, message: "Dispenser site not found in engine state" };
+    }
     const deployment = await db.espFirmwareDeployment.create({
       data: {
+        tenantId: dispenserSite.tenantId,
         dispenserId,
         releaseId,
         status: "QUEUED",
@@ -1548,8 +1567,16 @@ class FgmpEngine {
   private pushEvent(siteId: string, kind: string, message: string, meta?: Record<string, unknown>) {
     this.events.unshift({ id: uid("ev"), siteId, kind, message, ts: this.now, meta });
     if (this.events.length > MAX_EVENTS) this.events.pop();
-    // also persist to DB siteEvent
-    db.siteEvent.create({ data: { siteId, kind, message, meta: meta ? JSON.stringify(meta) : null } }).catch(() => {});
+    // also persist to DB siteEvent. Phase 1 step 4 requires tenantId, resolved
+    // from the Site in engine state. This is a best-effort fire-and-forget
+    // write, so an unknown site simply skips the row rather than throwing into
+    // the caller's tick.
+    const site = this.sites.find((s) => s.id === siteId);
+    if (site) {
+      db.siteEvent
+        .create({ data: { tenantId: site.tenantId, siteId, kind, message, meta: meta ? JSON.stringify(meta) : null } })
+        .catch(() => {});
+    }
   }
 
   // ── Snapshot ────────────────────────────────────────────────────────────

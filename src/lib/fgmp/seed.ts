@@ -183,6 +183,7 @@ export async function seedIfNeeded(): Promise<{ seeded: boolean; siteCount: numb
             }
             await db.fuelTank.create({
               data: {
+                tenantId: site.tenantId,
                 siteId: site.id,
                 label: `Tank ${String.fromCharCode(65 + t)}`,
                 fuelType: "DIESEL",
@@ -206,6 +207,7 @@ export async function seedIfNeeded(): Promise<{ seeded: boolean; siteCount: numb
             const runtime = Math.round(range(120, 9200) * 10) / 10;
             await db.generator.create({
               data: {
+                tenantId: site.tenantId,
                 siteId: site.id,
                 label: `Gen ${String.fromCharCode(65 + g)}`,
                 manufacturer: maker.m,
@@ -233,6 +235,7 @@ export async function seedIfNeeded(): Promise<{ seeded: boolean; siteCount: numb
           const nomV = pick([24, 48]);
           await db.batteryBank.create({
             data: {
+              tenantId: site.tenantId,
               siteId: site.id,
               label: "Bank A",
               chemistry: "VRLA",
@@ -258,6 +261,7 @@ export async function seedIfNeeded(): Promise<{ seeded: boolean; siteCount: numb
             usedTypes.add(type);
             await db.iotDevice.create({
               data: {
+                tenantId: site.tenantId,
                 siteId: site.id,
                 name: `${type.replace(/_/g, " ").toLowerCase()} #${d + 1}`,
                 type,
@@ -288,6 +292,7 @@ export async function seedIfNeeded(): Promise<{ seeded: boolean; siteCount: numb
     const scheduledAt = new Date(now + intRange(-2, 5) * 86400000);
     await db.fuelDelivery.create({
       data: {
+        tenantId: tank.site.tenantId,
         siteId: tank.siteId,
         tankId: tank.id,
         supplier: pick(SUPPLIERS),
@@ -311,6 +316,7 @@ export async function seedIfNeeded(): Promise<{ seeded: boolean; siteCount: numb
     const g = pick(gens);
     await db.maintenanceTicket.create({
       data: {
+        tenantId: g.site.tenantId,
         siteId: g.siteId,
         assetKind: "GENERATOR",
         assetId: g.id,
@@ -350,11 +356,21 @@ async function seedDispensers(): Promise<void> {
     where: { fuelType: "DIESEL" },
     include: { site: true },
   });
-  // group DIESEL tanks by site so each site only seeds dispensers once
-  const sitesWithDiesel = new Map<string, { siteId: string; siteName: string; siteCode: string }>();
+  // group DIESEL tanks by site so each site only seeds dispensers once.
+  // tenantId is carried through so FuelDispenser/FuelTransaction creates can
+  // supply their own required tenantId without re-querying the Site.
+  const sitesWithDiesel = new Map<
+    string,
+    { siteId: string; siteName: string; siteCode: string; tenantId: string }
+  >();
   for (const t of dieselTanks) {
     if (!sitesWithDiesel.has(t.siteId)) {
-      sitesWithDiesel.set(t.siteId, { siteId: t.siteId, siteName: t.site.name, siteCode: t.site.code });
+      sitesWithDiesel.set(t.siteId, {
+        siteId: t.siteId,
+        siteName: t.site.name,
+        siteCode: t.site.code,
+        tenantId: t.site.tenantId,
+      });
     }
   }
   // Pick the first ~12 sites (deterministic — first 12 in insertion order)
@@ -382,6 +398,7 @@ async function seedDispensers(): Promise<void> {
       const status = n === 0 && dispIdx % 7 === 0 ? "DISPENSING" : "IDLE";
       const dispenser = await db.fuelDispenser.create({
         data: {
+          tenantId: ds.tenantId,
           siteId: ds.siteId,
           label: `Dispenser ${String.fromCharCode(65 + n)}`,
           manufacturer: maker.m,
@@ -419,6 +436,7 @@ async function seedDispensers(): Promise<void> {
         const completed = new Date(startedAt.getTime() + duration * 1000);
         await db.fuelTransaction.create({
           data: {
+            tenantId: ds.tenantId,
             dispenserId: dispenser.id,
             siteId: ds.siteId,
             nozzle: 1 + intRange(0, nozzleCount - 1),
@@ -529,7 +547,7 @@ async function seedGateways(): Promise<void> {
     // Pull the site code to build a friendly hostname.
     const site = await db.site.findUnique({
       where: { id: ds.siteId },
-      select: { code: true, name: true },
+      select: { code: true, name: true, tenantId: true },
     });
     if (!site) continue;
     // 80% ONLINE, 15% DEGRADED, 5% OFFLINE — gives the dashboard a mix.
@@ -537,6 +555,7 @@ async function seedGateways(): Promise<void> {
     const status = r > 0.95 ? "OFFLINE" : r > 0.80 ? "DEGRADED" : "ONLINE";
     await db.siteGateway.create({
       data: {
+        tenantId: site.tenantId,
         siteId: ds.siteId,
         hostname: `gw-${site.code.toLowerCase()}`,
         model: pick(GATEWAY_MODELS),
