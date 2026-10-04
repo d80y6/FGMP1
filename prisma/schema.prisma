@@ -44,6 +44,29 @@ model Tenant {
   suppressions  AlarmSuppression[]
   // Task 48 — tenant-scoped backup history (MANUAL / AUTOMATIC / PRE_RESTORE).
   backupRecords BackupRecord[]
+  // Phase 1 steps 2-5: every tenant-owned table carries a `tenantId` FK so the
+  // RLS backstop (step 6) rests on a real constraint. These reverse relations
+  // exist only to give Prisma a referential path to `Tenant`.
+  regions                  Region[]
+  alarms                   Alarm[]
+  auditLogs                AuditLog[]
+  notifications            Notification[]
+  apiKeys                  ApiKey[]
+  shiftHandovers           ShiftHandover[]
+  tanks                    FuelTank[]
+  generators               Generator[]
+  batteries                BatteryBank[]
+  iotDevices               IotDevice[]
+  dispensers               FuelDispenser[]
+  fuelTransactions         FuelTransaction[]
+  sensorReadings           SensorReading[]
+  siteEvents               SiteEvent[]
+  fuelDeliveries           FuelDelivery[]
+  controlCommands          ControlCommand[]
+  maintenanceTickets       MaintenanceTicket[]
+  siteGateways             SiteGateway[]
+  notificationPreferences  NotificationPreference[]
+  espFirmwareDeployments   EspFirmwareDeployment[]
 }
 
 // role: ADMIN | NOC_OPERATOR | REGIONAL_MANAGER | FIELD_ENGINEER | EXECUTIVE | READONLY

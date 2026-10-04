@@ -61,6 +61,36 @@ enforced, and because `ON DELETE CASCADE` from `Site` removes children with
 their parent. Step 11's regression suite asserts a row cannot exist whose
 `tenant_id` disagrees with its site's.
 
+### `ControlCommand` is the exception — it has no `siteId`
+
+Eleven of the twelve Tier B models reach `Site` directly through `siteId`.
+`ControlCommand` does not; it reaches it via
+`generatorId → Generator.siteId`:
+
+    ControlCommand(id, generatorId, command, status, reason, issuedById, …)
+
+It therefore takes a **two-hop** backfill rather than the one-hop
+`SET tenant_id = s.tenantId FROM Site` the others use:
+
+    UPDATE "ControlCommand" c
+       SET tenant_id = g."tenantId"
+      FROM "Generator" g
+     WHERE c."generatorId" = g.id;
+
+A direct `siteId` column was considered and rejected. `ControlCommand` has
+zero rows, so there is no data-preservation argument either way, but adding a
+column would duplicate a relationship the schema already expresses through the
+generator FK. A two-hop path costs one migration; a redundant column costs
+forever. If step 11 later demonstrates that `ControlCommand.tenant_id` can
+diverge from its generator's site tenant, revisit — though the FK chain makes
+divergence unreachable in practice.
+
+Because this depends on `Generator.tenant_id` existing first, the backfill
+must run in topological order within the migration: assets (`FuelTank`,
+`Generator`, `BatteryBank`, `IotDevice`, `FuelDispenser`) → their children
+(`FuelTransaction`, `FuelDelivery`, `SiteEvent`, `SensorReading`) →
+`ControlCommand`.
+
 ## Backfill rule (was step 3, now part of the collapsed migration)
 
 Every existing row is assigned the tenant of its parent `Site`:
@@ -87,16 +117,35 @@ tenant, and RLS would then protect it there forever.
     ALTER TABLE <t> ENABLE ROW LEVEL SECURITY;
     ALTER TABLE <t> FORCE  ROW LEVEL SECURITY;
     CREATE POLICY tenant_isolation ON <t>
-      USING      (tenant_id = current_setting('app.tenant_id', true)::uuid)
-      WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);
+      USING      (tenant_id = current_setting('app.tenant_id', true))
+      WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
 
 `FORCE` is mandatory. RLS is skipped by the table owner, and the app role is
 deliberately not the owner — but `FORCE` means the policy holds even if that
 is ever changed by accident, which is the entire point of a backstop.
 
-`current_setting(..., true)` returns NULL when unset, `NULL = anything` is
-NULL, and a NULL predicate is not true, so an unset context **fails closed**
-rather than leaking. Verified in step 11.
+### The predicate is TEXT, not uuid — correction
+
+The original architecture note specified
+`current_setting('app.tenant_id', true)::uuid`. **That predicate cannot work in
+this schema and was removed.** `Tenant.id` is `String @default(cuid())`, which
+PostgreSQL stores as `TEXT`, and real tenant ids are `t-default` and
+`t-platform`. The cast fails outright:
+
+    ERROR:  invalid input syntax for type uuid: "t-default"
+
+Every RLS-protected query would have errored at runtime.
+
+Converting the tenant PK to a native `UUID` was rejected: all 29 primary keys
+in this schema are cuid-style `String`, so a UUID tenant PK would be
+inconsistent with every other table and would cascade a PK-type change through
+every foreign key — for no security benefit, since RLS compares values rather
+than types. `tenant_id` is therefore `TEXT` and the cast is dropped.
+
+The fail-closed property is unaffected by removing the cast:
+`current_setting(..., true)` returns NULL when the setting is absent,
+`NULL = <text>` evaluates to NULL, and a NULL predicate is not TRUE. An unset
+context still returns zero rows rather than everything. Verified in step 11.
 
 ## Roles (provisioned in step 1)
 
