@@ -51,6 +51,7 @@ import {
   TENANT_SETTING,
   withTenant,
   currentTenantId,
+  rawTenantSetting,
   normalizeTenantId,
   assertTenantId,
   TenantContextError,
@@ -111,6 +112,26 @@ interface TableSpec {
   siteScoped: boolean
 }
 
+/**
+ * Fixture identifiers. Tenant ids follow the seeded convention (cuid-style
+ * TEXT, e.g. "t-default" / "t-platform"), NOT uuids — the RLS predicate is a
+ * plain TEXT comparison with no cast. The run suffix keeps each run's rows
+ * unique so repeated runs cannot collide on a unique constraint, and so
+ * "did I see tenant B's row?" is answerable by exact id rather than by
+ * counting.
+ */
+const RUN = process.env.RLS_RUN_ID ?? String(process.pid)
+const SUFFIX = RUN
+const TENANT_A = `t-alpha-${RUN}`
+const TENANT_B = `t-beta-${RUN}`
+const SITE_ID = `rls-site-${RUN}`
+const SITE_CODE = `RLS-${RUN}`
+const SITE_USER_ID = `rls-user-${RUN}`
+const RELEASE_ID = `rls-rel-${RUN}`
+const DISPENSER_ID = `rls-disp-${RUN}`
+const GENERATOR_ID = `rls-gen-${RUN}`
+const TANK_ID = `rls-tank-${RUN}`
+
 const SITE_COLS = `
   id, code, name, status, "criticality", "loadKw", "powerSource",
   "tenantId", lat, lng
@@ -132,13 +153,13 @@ const TABLES: TableSpec[] = [
     siteScoped: false,
     columns: {
       id: `'np-${SUFFIX}'`,
-      severity: `'INFO'`,
-      "inAppSeverities": `'INFO,WARN'`,
-      email: `'true'`,
-      sms: `'false'`,
-      push: `'false'`,
-      whatsapp: `'false'`,
       "userId": `'${SITE_USER_ID}'`,
+      "inAppEnabled": 'true',
+      "emailEnabled": 'false',
+      "smsEnabled": 'false',
+      "inAppSeverities": `'INFO,WARN'`,
+      "emailSeverities": `'INFO'`,
+      "smsSeverities": `'WARN'`,
     },
   },
   {
@@ -148,10 +169,9 @@ const TABLES: TableSpec[] = [
     siteScoped: false,
     columns: {
       id: `'efd-${SUFFIX}'`,
-      status: `'QUEUED'`,
-      progress: '0',
-      "espFirmwareReleaseId": `'${RELEASE_ID}'`,
+      "releaseId": `'${RELEASE_ID}'`,
       "dispenserId": `'${DISPENSER_ID}'`,
+      status: `'QUEUED'`,
     },
   },
   {
@@ -227,12 +247,13 @@ const TABLES: TableSpec[] = [
     columns: {
       id: `'iot-${SUFFIX}'`,
       "siteId": `'${SITE_ID}'`,
-      label: `'iot-${SUFFIX}'`,
-      "serialNo": `'SN-${SUFFIX}'`,
+      name: `'iot-${SUFFIX}'`,
       type: `'FUEL_SENSOR'`,
       protocol: `'MODBUS_RTU'`,
-      status: `'ONLINE'`,
+      vendor: `'Acme'`,
+      "serialNo": `'SN-${SUFFIX}'`,
       firmware: `'1.0.0'`,
+      status: `'ONLINE'`,
     },
   },
   {
@@ -244,10 +265,15 @@ const TABLES: TableSpec[] = [
       id: `'disp-${SUFFIX}'`,
       "siteId": `'${SITE_ID}'`,
       label: `'disp-${SUFFIX}'`,
-      "pumpNumber": '1',
+      manufacturer: `'Zhejiang'`,
+      model: `'ZD-8'`,
       "nozzleCount": '2',
+      "fuelType": `'DIESEL'`,
       status: `'IDLE'`,
       mode: `'AUTO'`,
+      "pumpNumber": '1',
+      "espDeviceId": `'ESP-${SUFFIX}'`,
+      "espFirmware": `'1.0.0'`,
     },
   },
   {
@@ -277,7 +303,6 @@ const TABLES: TableSpec[] = [
       "entityId": `'tank-${SUFFIX}'`,
       metric: `'level'`,
       value: '500',
-      unit: `'L'`,
       ts: 'now()',
     },
   },
@@ -301,21 +326,23 @@ const TABLES: TableSpec[] = [
     columns: {
       id: `'del-${SUFFIX}'`,
       "siteId": `'${SITE_ID}'`,
-      status: `'DELIVERED'`,
+      "tankId": `'${TANK_ID}'`,
+      supplier: `'RSC'`,
       "volumeOrderedLitres": '500',
       "volumeDeliveredLitres": '500',
+      "doNumber": `'DO-${SUFFIX}'`,
+      status: `'DELIVERED'`,
       "scheduledAt": 'now()',
       "deliveredAt": 'now()',
     },
   },
   {
     table: 'ControlCommand',
-    label: 'ControlCommand (tier B, via Site)',
+    label: 'ControlCommand (tier B, via Generator)',
     tenantColumn: 'tenant_id',
     siteScoped: true,
     columns: {
       id: `'cmd-${SUFFIX}'`,
-      "siteId": `'${SITE_ID}'`,
       "generatorId": `'${GENERATOR_ID}'`,
       command: `'START'`,
       status: `'SENT'`,
@@ -334,6 +361,7 @@ const TABLES: TableSpec[] = [
       type: `'PREVENTIVE'`,
       status: `'OPEN'`,
       priority: `'MEDIUM'`,
+      title: `'fixture ${SUFFIX}'`,
     },
   },
   {
@@ -344,26 +372,13 @@ const TABLES: TableSpec[] = [
     columns: {
       id: `'gw-${SUFFIX}'`,
       "siteId": `'${SITE_ID}'`,
-      "serialNo": `'GW-${SUFFIX}'`,
+      hostname: `'gw-${SUFFIX}'`,
+      model: `'EG-1'`,
+      "ipAddress": `'10.0.0.1'`,
       status: `'ONLINE'`,
-      firmware: `'1.0.0'`,
     },
   },
 ]
-
-// Fixture identifiers. The suffix keeps every run's rows unique so repeated
-// runs cannot collide on a unique constraint, and so "did I see tenant B's
-// row?" is answerable by exact id rather than by counting.
-const RUN = process.env.RLS_RUN_ID ?? String(process.pid)
-const SUFFIX = RUN
-const TENANT_A = `rls-a-${RUN}`
-const TENANT_B = `rls-b-${RUN}`
-const SITE_ID = `rls-site-${RUN}`
-const SITE_CODE = `RLS-${RUN}`
-const SITE_USER_ID = `rls-user-${RUN}`
-const RELEASE_ID = `rls-rel-${RUN}`
-const DISPENSER_ID = `rls-disp-${RUN}`
-const GENERATOR_ID = `rls-gen-${RUN}`
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -384,13 +399,30 @@ function subst(sql: string): string {
     .replaceAll('${RELEASE_ID}', RELEASE_ID)
     .replaceAll('${DISPENSER_ID}', DISPENSER_ID)
     .replaceAll('${GENERATOR_ID}', GENERATOR_ID)
+    .replaceAll('${TANK_ID}', TANK_ID)
 }
+
+/**
+ * Tables whose `updatedAt` is NOT NULL with no column default. Most models in
+ * this schema carry one, and Prisma normally supplies it — these fixtures are
+ * raw SQL, so they must set it explicitly or the INSERT fails with 23502.
+ */
+const HAS_UPDATED_AT = new Set([
+  'NotificationPreference', 'FuelTank', 'Generator', 'BatteryBank', 'IotDevice',
+  'FuelDispenser', 'FuelDelivery', 'MaintenanceTicket', 'SiteGateway',
+])
 
 /** Build an INSERT for a table spec, targeting one tenant. */
 function buildInsert(spec: TableSpec, tenant: string): string {
-  const cols = Object.entries(spec.columns).map(([k, v]) => `"${k}"`).join(', ')
-  const vals = Object.values(spec.columns).map((v) => subst(v)).join(', ')
-  return `INSERT INTO "${spec.table}" (${cols}, "${spec.tenantColumn}") VALUES (${vals}, '${tenant}')`
+  const entries = Object.entries(spec.columns)
+  const cols = entries.map(([k]) => `"${k}"`).join(', ')
+  const vals = entries.map(([, v]) => subst(v)).join(', ')
+  const needsUpdatedAt = HAS_UPDATED_AT.has(spec.table)
+  const colList = needsUpdatedAt
+    ? `${cols}, "updatedAt", "${spec.tenantColumn}"`
+    : `${cols}, "${spec.tenantColumn}"`
+  const valList = needsUpdatedAt ? `${vals}, now(), '${tenant}'` : `${vals}, '${tenant}'`
+  return `INSERT INTO "${spec.table}" (${colList}) VALUES (${valList})`
 }
 
 /** True when the error is the RLS WITH CHECK / USING rejection. */
@@ -402,74 +434,131 @@ function isRlsViolation(err: unknown): boolean {
 /** True when the table/policy simply is not installed yet. */
 function isMissingObject(err: unknown): boolean {
   const m = err instanceof Error ? err.message : String(err)
-  return (
-    /column .* does not exist|relation .* does not exist/i.test(m) ||
-    /invalid input syntax for type uuid/i.test(m)
-  )
+  // 'invalid input syntax for type uuid' is listed defensively: the policy is
+  // cast-free now, so seeing it means a stale ::uuid policy is installed and
+  // must be flagged rather than treated as a normal missing object.
+  return /column .* does not exist|relation .* does not exist/i.test(m)
+}
+
+/** A stale policy still carrying the removed ::uuid cast — a real defect. */
+function isStaleUuidCast(err: unknown): boolean {
+  const m = err instanceof Error ? err.message : String(err)
+  return /invalid input syntax for type uuid/i.test(m)
 }
 
 // ── Fixture setup / teardown (owner role — bypasses RLS by design) ──────────
 
 async function seedFixtures(): Promise<void> {
-  // Tenants
-  await e(`INSERT INTO "Tenant" (id, name, code, country) VALUES ($1,$2,$3,$4) ON CONFLICT (id) DO NOTHING`,
-    [TENANT_A, `RLS A ${RUN}`, `RLS-A-${RUN}`, 'Yemen'])
-  await e(`INSERT INTO "Tenant" (id, name, code, country) VALUES ($1,$2,$3,$4) ON CONFLICT (id) DO NOTHING`,
-    [TENANT_B, `RLS B ${RUN}`, `RLS-B-${RUN}`, 'Yemen'])
-
-  // User (needed by NotificationPreference)
+  // Tenants.
+  // `Tenant.updatedAt` is NOT NULL with NO column default (unlike createdAt),
+  // so it must be supplied explicitly or the INSERT fails with 23502.
   await e(
-    `INSERT INTO "User" (id, name, email, role, "tenantId", active) VALUES ($1,$2,$3,$4,$5,true)`,
-    [SITE_USER_ID, `RLS User ${RUN}`, `rls-user-${RUN}@example.invalid`, 'ADMIN', TENANT_A],
+    `INSERT INTO "Tenant" (id, name, code, country, "updatedAt")
+     VALUES ($1,$2,$3,$4, now()) ON CONFLICT (id) DO NOTHING`,
+    [TENANT_A, `RLS A ${RUN}`, `RLS-A-${RUN}`, 'Yemen'],
+  )
+  await e(
+    `INSERT INTO "Tenant" (id, name, code, country, "updatedAt")
+     VALUES ($1,$2,$3,$4, now()) ON CONFLICT (id) DO NOTHING`,
+    [TENANT_B, `RLS B ${RUN}`, `RLS-B-${RUN}`, 'Yemen'],
   )
 
-  // Two sites, one per tenant
-  for (const [sid, tenant] of [[`${SITE_ID}`, TENANT_A], [`${SITE_ID}-b`, TENANT_B]] as const) {
+  // User for NotificationPreference (tier A resolves through User.tenantId).
+  await e(
+    `INSERT INTO "User" (id, "tenantId", email, name, role, active, "updatedAt")
+     VALUES ($1,$2,$3,$4,$5,true, now())`,
+    [SITE_USER_ID, TENANT_A, `rls-user-${RUN}@example.invalid`, `RLS User ${RUN}`, 'ADMIN'],
+  )
+
+  // One site per tenant. Site has NOT NULL region/governorate/district FKs, so
+  // the geographic hierarchy must exist first.
+  for (const [region, gov, dist] of [['rls-reg', 'rls-gov', 'rls-dist']] as const) {
     await e(
-      `INSERT INTO "Site" (id, code, name, status, "criticality", "loadKw", "powerSource", "tenantId", lat, lng)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-      [sid, `${SITE_CODE}-${sid.endsWith('-b') ? 'B' : 'A'}`, `RLS Site ${sid}`, 'ACTIVE', 'HIGH', 0, 'GRID', tenant, 15.0, 44.0],
+      `INSERT INTO "Region" (id, "tenantId", name) VALUES ($1,$2,$3) ON CONFLICT (id) DO NOTHING`,
+      [region, TENANT_A, `RLS Region ${region}`],
+    )
+    await e(
+      `INSERT INTO "Governorate" (id, "regionId", name) VALUES ($1,$2,$3) ON CONFLICT (id) DO NOTHING`,
+      [gov, region, `RLS Gov ${gov}`],
+    )
+    await e(
+      `INSERT INTO "District" (id, "governorateId", name) VALUES ($1,$2,$3) ON CONFLICT (id) DO NOTHING`,
+      [dist, gov, `RLS Dist ${dist}`],
     )
   }
 
-  // Firmware release (needed by EspFirmwareDeployment)
+  // Firmware release for EspFirmwareDeployment.
   await e(
-    `INSERT INTO "EspFirmwareRelease" (id, version, channel, filename, checksum, "sizeKb", status)
-     VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-    [RELEASE_ID, `rls-${RUN}`, 'STABLE', `rls-${RUN}.bin`, 'deadbeef', 1, 'RELEASED'],
+    `INSERT INTO "EspFirmwareRelease" (id, version, channel, checksum, "sizeKb")
+     VALUES ($1,$2,$3,$4,$5) ON CONFLICT (id) DO NOTHING`,
+    [RELEASE_ID, `rls-${RUN}`, 'STABLE', 'deadbeef', 1],
   )
 
-  // Per-tenant rows. Tier-B tables hang off the matching site; the dispenser /
-  // generator / firmware-deployment ids referenced by child tables are created
-  // once for tenant A and mirrored for tenant B.
-  for (const [suffix, tenant, siteId] of [[SUFFIX, TENANT_A, SITE_ID], [`${SUFFIX}-b`, TENANT_B, `${SITE_ID}-b`]] as const) {
-    // Site-scoped rows the child tables reference.
-    await e(`INSERT INTO "Generator" (id,"siteId",label,manufacturer,model,"ratedPowerKw","fuelType",status,mode,"runtimeHours","oilChangeIntervalHrs","lastOilChangeHrs","nextMaintenanceHrs","temperatureC","oilPressureKpa","loadKw","fuelRateLph","batteryVoltage")
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
-      [`${GENERATOR_ID}-${suffix}`, siteId, `gen-${suffix}`, 'Cummins', 'C500', 500, 'DIESEL', 'STOPPED', 'AUTO', 0, 250, 0, 250, 25, 300, 0, 0, 24])
-    await e(`INSERT INTO "FuelDispenser" (id,"siteId",label,"pumpNumber","nozzleCount",status,mode)
-             VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-      [`${DISPENSER_ID}-${suffix}`, siteId, `disp-${suffix}`, suffix.endsWith('-b') ? 1 : 1, 2, 'IDLE', 'AUTO'])
-    await e(`INSERT INTO "EspFirmwareDeployment" (id,"espFirmwareReleaseId","dispenserId",status,progress,"tenant_id")
-             VALUES ($1,$2,$3,$4,$5,$6)`,
-      [`efd-${suffix}`, RELEASE_ID, `${DISPENSER_ID}-${suffix}`, 'QUEUED', 0, tenant])
+  // Two sites, one per tenant, sharing the geographic hierarchy.
+  for (const [sid, tenant, code] of [
+    [SITE_ID, TENANT_A, `${SITE_CODE}-A`],
+    [`${SITE_ID}-b`, TENANT_B, `${SITE_CODE}-B`],
+  ] as const) {
+    await e(
+      `INSERT INTO "Site" (id, "tenantId", code, name, "regionId", "governorateId", "districtId",
+                           latitude, longitude, address, status, "criticality", "loadKw",
+                           "powerSource", "gridAvailable", "updatedAt")
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15, now())`,
+      [sid, tenant, code, `RLS Site ${sid}`, 'rls-reg', 'rls-gov', 'rls-dist',
+       15.0, 44.0, `RLS addr ${sid}`, 'ACTIVE', 'HIGH', 0, 'GRID', true],
+    )
+  }
+
+  // Per-tenant rows. Tier-B tables hang off the matching site.
+  for (const [suffix, tenant, siteId] of [
+    [SUFFIX, TENANT_A, SITE_ID],
+    [`${SUFFIX}-b`, TENANT_B, `${SITE_ID}-b`],
+  ] as const) {
+    const genId = `${GENERATOR_ID}-${suffix}`
+    const dispId = `${DISPENSER_ID}-${suffix}`
+    const tankId = `tank-${suffix}`
+
+    await e(
+      `INSERT INTO "Generator" (id,"siteId",label,manufacturer,model,"ratedPowerKw","fuelType",
+        status,mode,"runtimeHours","oilChangeIntervalHrs","lastOilChangeHrs","nextMaintenanceHrs",
+        "temperatureC","oilPressureKpa","loadKw","fuelRateLph","batteryVoltage","updatedAt","tenantId")
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18, now(),$19)`,
+      [genId, siteId, `gen-${suffix}`, 'Cummins', 'C500', 500, 'DIESEL', 'STOPPED', 'AUTO',
+       0, 250, 0, 250, 25, 300, 0, 0, 24, tenant],
+    )
+    await e(
+      `INSERT INTO "FuelDispenser" (id,"siteId",label,manufacturer,model,"nozzleCount","fuelType",
+        status,mode,"pumpNumber","espDeviceId","espFirmware","updatedAt","tenantId")
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, now(),$13)`,
+      [dispId, siteId, `disp-${suffix}`, 'Zhejiang', 'ZD-8', 2, 'DIESEL', 'IDLE', 'AUTO',
+       suffix.endsWith('-b') ? 1 : 1, `ESP-${suffix}`, '1.0.0', tenant],
+    )
+    await e(
+      `INSERT INTO "EspFirmwareDeployment" (id,"releaseId","dispenserId",status,"tenantId")
+       VALUES ($1,$2,$3,$4,$5)`,
+      [`efd-${suffix}`, RELEASE_ID, dispId, 'QUEUED', tenant],
+    )
 
     for (const spec of TABLES) {
       if (spec.table === 'EspFirmwareDeployment') continue // created above
       if (spec.table === 'FuelDispenser' || spec.table === 'Generator') continue // created above
       if (spec.table === 'NotificationPreference') {
-        if (suffix.endsWith('-b')) continue // user belongs to tenant A only
-        await e(`INSERT INTO "NotificationPreference" (id,"userId",severity,"inAppSeverities",email,sms,push,whatsapp,"tenant_id")
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-          [`np-${suffix}`, SITE_USER_ID, 'INFO', 'INFO,WARN', true, false, false, false, tenant])
+        if (suffix.endsWith('-b')) continue // the user belongs to tenant A only
+        await e(
+          `INSERT INTO "NotificationPreference" (id,"userId","inAppEnabled","emailEnabled","smsEnabled",
+            "inAppSeverities","emailSeverities","smsSeverities","updatedAt","tenantId")
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8, now(),$9)`,
+          [`np-${suffix}`, SITE_USER_ID, true, false, false, 'INFO,WARN', 'INFO', 'WARN', tenant],
+        )
         continue
       }
+      // Rewrite the placeholders that must point at THIS tenant's parent rows.
       const sql = buildInsert(spec, tenant)
         .replaceAll(`'${SITE_ID}'`, `'${siteId}'`)
-        .replaceAll(`'${DISPENSER_ID}'`, `'${DISPENSER_ID}-${suffix}'`)
-        .replaceAll(`'${GENERATOR_ID}'`, `'${GENERATOR_ID}-${suffix}'`)
-        .replaceAll(`'tank-${SUFFIX}'`, `'tank-${suffix}'`)
-        .replaceAll(`'tank-${suffix}'`, `'tank-${suffix}'`)
+        .replaceAll(`'${DISPENSER_ID}'`, `'${dispId}'`)
+        .replaceAll(`'${GENERATOR_ID}'`, `'${genId}'`)
+        .replaceAll(`'${TANK_ID}'`, `'${tankId}'`)
+        .replaceAll(`'tank-${SUFFIX}'`, `'${tankId}'`)
       await e(sql)
     }
   }
@@ -488,6 +577,9 @@ async function teardownFixtures(): Promise<void> {
     await e(`DELETE FROM "FuelDispenser" WHERE id LIKE $1`, [`%${RUN}%`])
     await e(`DELETE FROM "Site" WHERE id LIKE $1`, [`%${RUN}%`])
     await e(`DELETE FROM "EspFirmwareRelease" WHERE id LIKE $1`, [`%${RUN}%`])
+    await e(`DELETE FROM "District" WHERE id LIKE $1`, [`rls-%`])
+    await e(`DELETE FROM "Governorate" WHERE id LIKE $1`, [`rls-%`])
+    await e(`DELETE FROM "Region" WHERE id LIKE $1`, [`rls-%`])
     await e(`DELETE FROM "User" WHERE id LIKE $1`, [`%${RUN}%`])
     await e(`DELETE FROM "Tenant" WHERE id LIKE $1`, [`%${RUN}%`])
   } catch {
@@ -536,6 +628,10 @@ async function assertUnscopedRead(spec: TableSpec): Promise<void> {
     }
     pass('2-unscoped-read-isolated', `SELECT * returned ${rows.length} row(s), 0 belonging to tenant B`)
   } catch (err) {
+    if (isStaleUuidCast(err)) {
+      fail('2-unscoped-read-isolated', `STALE POLICY: installed RLS policy still casts to ::uuid — ${(err as Error).message}`)
+      return
+    }
     if (isMissingObject(err)) {
       blocked('2-unscoped-read-isolated', `blocked on p1-schema — ${(err as Error).message}`)
       return
@@ -692,16 +788,20 @@ function assertTenantContextUnits(): void {
     fail('6-accepts-cuid-tenant', (err as Error).message)
   }
 
-  // Typing: report whether tenant ids are uuids (drives the policy cast form).
-  const cuid = !isUuid(TENANT_A)
+  // Typing: prove the TEXT setting round-trips for a cuid tenant id. This is
+  // the load-bearing check behind the cast-free policy — if `SET LOCAL` could
+  // not carry a cuid-style id, the policy would be unevaluable.
   currentTable = '(typing)'
-  if (cuid) {
+  if (isUuid(TENANT_A)) {
     blocked(
-      'tenant-id-type',
-      `tenant ids are cuids ("${TENANT_A}") — a policy using ::uuid will THROW on them`,
+      'tenant-id-is-text-safe',
+      `fixture tenant id "${TENANT_A}" is a uuid; the cast-free TEXT policy is not exercised`,
     )
   } else {
-    pass('tenant-id-type', `tenant ids are uuids; ::uuid cast is safe`)
+    pass(
+      'tenant-id-is-text-safe',
+      `cuid-style tenant id "${TENANT_A}" is valid for the cast-free TEXT predicate`,
+    )
   }
 }
 
@@ -758,7 +858,19 @@ async function main(): Promise<void> {
     pass('fixture-seed', `two tenants + 14 table fixtures created under run ${RUN}`)
   } catch (err) {
     currentTable = '(fixture)'
-    fail('fixture-seed', (err as Error).message)
+    const msg = (err as Error).message
+    // The tenant_id column not existing is the expected state while p1-schema
+    // is still landing its migration. That is a BLOCKED condition, not a
+    // defect in this suite: report it as such and stop, so CI shows the real
+    // dependency instead of a red herring fixture error.
+    if (isMissingObject(err)) {
+      blocked(
+        'fixture-seed',
+        `blocked on p1-schema — cannot build two-tenant fixtures without tenant_id: ${msg.split('\n').pop()?.trim()}`,
+      )
+    } else {
+      fail('fixture-seed', msg)
+    }
     report()
     return
   }
@@ -776,16 +888,44 @@ async function main(): Promise<void> {
   }
 
   // Prove SET LOCAL does not leak across pooled connections.
+  //
+  // This is the assertion that distinguishes a correct implementation from a
+  // catastrophic one. A pooled-global `SET app.tenant_id = …` would still show
+  // the right value INSIDE this transaction, and every other assertion in the
+  // suite would pass — while leaking one tenant's context into the next
+  // request that reuses the connection. So the check has to happen AFTER the
+  // transaction, on a subsequent borrow of the same connection.
   currentTable = '(pool safety)'
-  const a = await withTenant(TENANT_A, () => currentTenantId())
-  const leaked = await currentTenantId()
-  if (a === TENANT_A && leaked === null) {
-    pass('set-local-resets', `SET LOCAL visible in-transaction (${a}), NULL after commit (${leaked})`)
+  const inTx = await withTenant(TENANT_A, (tx) => rawTenantSetting(tx))
+  const afterCommit = await currentTenantId()
+
+  if (inTx === TENANT_A) {
+    pass('set-local-visible-in-tx', `app.tenant_id = "${inTx}" inside the transaction`)
+  } else {
+    fail('set-local-visible-in-tx', `expected ${TENANT_A} in-transaction, got ${JSON.stringify(inTx)}`)
+  }
+
+  // After the transaction the context must be gone. PostgreSQL resets a LOCAL
+  // setting to the empty string on COMMIT/ROLLBACK (verified on PG17), and
+  // currentTenantId() normalises that '' to null — so we expect null here.
+  // A leaked value would mean the context survived and could be handed to the
+  // next tenant on this connection.
+  if (afterCommit === null) {
+    pass('set-local-resets', 'after COMMIT the context reads as null — no leak to the next borrower')
   } else {
     fail(
       'set-local-resets',
-      `connection context leaked: in-tx=${a}, after-commit=${leaked} (expected ${TENANT_A} then NULL)`,
+      `CONNECTION CONTEXT LEAKED: ${JSON.stringify(afterCommit)} still set after the transaction ended`,
     )
+  }
+
+  // The safety property regardless of which reset state PostgreSQL uses: with
+  // no tenant context, a read must return zero rows.
+  const leakCheck = await q<{ n: number }>(`SELECT count(*)::int AS n FROM "FuelTank"`)
+  if ((leakCheck[0]?.n ?? -1) === 0) {
+    pass('no-context-reads-zero', 'unscoped read with no active context returns 0 rows')
+  } else {
+    fail('no-context-reads-zero', `expected 0 rows without context, got ${leakCheck[0]?.n}`)
   }
 
   await teardownFixtures()

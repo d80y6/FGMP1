@@ -151,11 +151,59 @@ export function normalizeTenantId(tenantId: unknown): string {
 /**
  * Read the tenant context currently in effect on this connection.
  *
- * Returns null when unset. Callers must treat null as "no tenant" and refuse
- * to act — never as a default value.
+ * Returns null when there is no usable context — either because the GUC was
+ * never set on this connection, or because a previous `SET LOCAL` was reset
+ * by COMMIT/ROLLBACK.
+ *
+ * SUBTLETY, verified against PostgreSQL 17, and the reason for the empty-string
+ * check: after `SET LOCAL app.tenant_id = 'x'` followed by COMMIT or ROLLBACK,
+ * `current_setting('app.tenant_id', true)` returns the EMPTY STRING, not NULL.
+ * So:
+ *
+ *     current_setting('app.tenant_id', true) IS NULL   →  false   (post-rollback)
+ *     current_setting('app.tenant_id', true) IS NULL   →  true    (never set)
+ *
+ * Both states are equally safe — the RLS predicate is `tenant_id = <value>`,
+ * and `tenant_id` is never `''` (it is NOT NULL and references Tenant.id), so
+ * `'…' = ''` is FALSE and the row is filtered out either way. The backstop
+ * holds in both states.
+ *
+ * But a caller asking "which tenant am I acting as?" must not be handed `''`
+ * and treat it as a tenant id, so empty and NULL are both normalised to null
+ * here. Anything that relied on distinguishing "never set" from "reset" must
+ * query the setting itself rather than use this helper.
  */
-export async function currentTenantId(): Promise<string | null> {
-  const rows = await db.$queryRaw<Array<{ tenant_id: string | null }>>`
+export async function currentTenantId(
+  client: Pick<Prisma.TransactionClient, '$queryRaw'> = db,
+): Promise<string | null> {
+  const rows = await client.$queryRaw<Array<{ tenant_id: string | null }>>`
+    SELECT current_setting(${TENANT_SETTING}, true) AS tenant_id
+  `
+  const value = rows[0]?.tenant_id
+  // Normalise both "never set" (NULL) and "reset by rollback" ('') to null.
+  return value === null || value === undefined || value === '' ? null : value
+}
+
+/**
+ * Raw view of the session setting, for diagnostics and tests.
+ *
+ * IMPORTANT — pass the TRANSACTION client to read the context of an open
+ * `withTenant()` transaction:
+ *
+ *     await withTenant(id, (tx) => rawTenantSetting(tx))
+ *
+ * Calling it with the default global client borrows a DIFFERENT pooled
+ * connection, which by definition has no tenant context, so it will report
+ * null even while the surrounding transaction is correctly scoped.
+ *
+ * Unlike `currentTenantId()` this preserves the distinction between NULL
+ * (never set on this connection) and '' (set locally then rolled back), so a
+ * test can assert the true state of the GUC rather than the normalised view.
+ */
+export async function rawTenantSetting(
+  client: Pick<Prisma.TransactionClient, '$queryRaw'> = db,
+): Promise<string | null> {
+  const rows = await client.$queryRaw<Array<{ tenant_id: string | null }>>`
     SELECT current_setting(${TENANT_SETTING}, true) AS tenant_id
   `
   return rows[0]?.tenant_id ?? null
@@ -183,9 +231,24 @@ export async function withTenant<T>(
 
   return db.$transaction(
     async (tx) => {
-      // `SET LOCAL` — transaction-scoped, reset on COMMIT/ROLLBACK.
-      // Prisma parameterises the value; it is not string-concatenated into SQL.
-      await tx.$executeRawUnsafe(`SET LOCAL ${TENANT_SETTING} = $1`, tid)
+      // `set_config(name, value, is_local => true)` is the transaction-local
+      // equivalent of `SET LOCAL`, and is used instead of it for one concrete
+      // reason: PostgreSQL's SET grammar does NOT accept bind parameters —
+      //
+      //     SET LOCAL app.tenant_id = $1
+      //     ERROR:  syntax error at or near "$1"
+      //
+      // So the only way to pass the tenant id as a real bind parameter (rather
+      // than string-concatenated SQL) is set_config(). The third argument
+      // `true` scopes it to the current transaction, which gives exactly the
+      // `SET LOCAL` semantics required above: the value is discarded on
+      // COMMIT or ROLLBACK and cannot leak to the next borrower of the
+      // pooled connection.
+      //
+      // Verified against PostgreSQL 17: inside the transaction the setting
+      // reads back and RLS filters correctly; after ROLLBACK it is empty and
+      // reads return zero rows.
+      await tx.$executeRaw`SELECT set_config(${TENANT_SETTING}, ${tid}, true)`
       return fn(tx)
     },
     {
@@ -216,27 +279,32 @@ export async function withTenantTx<T>(
 }
 
 /**
- * Build the raw SQL fragment that sets the tenant context, for use inside an
- * EXISTING interactive transaction.
+ * The SQL used to establish tenant context inside an existing interactive
+ * transaction.
  *
- * Exposed for code that must join `withTenant`-style context onto a
- * transaction it already owns. It still emits `SET LOCAL`, never `SET`.
+ * Exposed for code that must add tenant context to a transaction it already
+ * owns. Note the tenant id is passed as a bind parameter — `SET LOCAL` cannot
+ * be used here because PostgreSQL's SET grammar rejects bind parameters, so
+ * `set_config(..., true)` provides the identical transaction-local semantics.
  *
  * @example
  * await db.$transaction(async (tx) => {
- *   await tx.$executeRawUnsafe(setTenantContextSql(), tid)
+ *   await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tid}, true)`
  *   // …tenant-scoped statements…
  * })
  */
-export function setTenantContextSql(): string {
-  return `SET LOCAL ${TENANT_SETTING} = $1`
+export function tenantContextSqlFragment(): string {
+  return `SELECT set_config('${TENANT_SETTING}', $1, true)`
 }
 
 /**
- * True when `tenantId` is a syntactically valid uuid.
+ * True when `value` looks like a RFC 4122 uuid.
  *
- * Exists so the regression suite can PROVE which policy cast form is
- * compatible with the ids this deployment actually uses, instead of assuming.
+ * NOT a requirement for tenant ids in this schema — they are cuid-style TEXT
+ * and the RLS predicate is a TEXT comparison. Retained because the regression
+ * suite uses it to PROVE the deployment's tenant ids are not uuids, which is
+ * what justifies the cast-free policy. A uuid here would mean the policy could
+ * safely use ::uuid, but it is not currently the case.
  */
 export function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim())

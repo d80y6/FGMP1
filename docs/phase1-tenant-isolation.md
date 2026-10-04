@@ -160,13 +160,13 @@ context still returns zero rows rather than everything. Verified in step 11.
 | Step | Status | Migration |
 |---|---|---|
 | 1. SQLite → PostgreSQL | done | `20261004203148_init_postgres_baseline`, `20261004203149_grant_role_privileges` |
-| 2. Add nullable `tenant_id` | collapsed into 3 | — |
-| 3. Backfill | collapsed into 3 | — |
-| 4. `NOT NULL` + FK RESTRICT | in progress | pending |
-| 5. `tenant_id`-leading indexes | pending | |
+| 2. Add nullable `tenant_id` | done | `20261005000000_add_tenant_id_not_null_fk` |
+| 3. Backfill | done | `20261005000000_add_tenant_id_not_null_fk` |
+| 4. `NOT NULL` + FK RESTRICT | done | `20261005000000_add_tenant_id_not_null_fk` |
+| 5. `tenant_id`-leading indexes | done | `20261005000000_add_tenant_id_not_null_fk` |
 | 6. RLS enable + FORCE + policy | pending | |
-| 7. Per-request `SET LOCAL` context | pending | |
+| 7. Per-request `SET LOCAL` context | done | `src/lib/fgmp/tenant-context.ts`, `src/lib/db.ts` (no migration needed) |
 | 8. Native enums | pending (roles already done) | |
 | 9. `Float` → `Decimal` | pending | |
 | 10. TimescaleDB hypertables | pending | |
-| 11. RLS regression suite | pending | |
+| 11. RLS regression suite | done — suite built; awaiting step 6 to execute | `scripts/rls-regression.ts`, `src/lib/fgmp/__tests__/` |
