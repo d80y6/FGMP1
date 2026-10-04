@@ -8,7 +8,7 @@ import {
   MUTATION_LIMIT,
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
-import { requireRole, ROLES } from "@/lib/fgmp/auth-helpers";
+import { requireRole, ROLES, assertTenantOwned } from "@/lib/fgmp/auth-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -62,6 +62,15 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       const res = NextResponse.json({ error: "Governorate not found" }, { status: 404 });
       applyRateLimitHeaders(res.headers, rl);
       return res;
+    }
+
+    // Tenant isolation: a Governorate has no tenantId column of its own — it
+    // inherits the owning tenant through its parent Region. Assert against
+    // `existing.region` (404 on mismatch, SUPERADMIN bypass inside).
+    const denied = assertTenantOwned(existing.region, auth.user);
+    if (denied) {
+      applyRateLimitHeaders(denied.headers, rl);
+      return denied;
     }
 
     if (data.name) {
@@ -133,6 +142,13 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
       const res = NextResponse.json({ error: "Governorate not found" }, { status: 404 });
       applyRateLimitHeaders(res.headers, rl);
       return res;
+    }
+
+    // Tenant isolation — see the PATCH handler above.
+    const denied = assertTenantOwned(existing.region, auth.user);
+    if (denied) {
+      applyRateLimitHeaders(denied.headers, rl);
+      return denied;
     }
 
     if (existing._count.sites > 0) {

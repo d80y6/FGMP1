@@ -8,7 +8,7 @@ import {
   MUTATION_LIMIT,
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
-import { requireRole, ROLES } from "@/lib/fgmp/auth-helpers";
+import { requireRole, ROLES, assertTenantOwned } from "@/lib/fgmp/auth-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -65,6 +65,14 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       const res = NextResponse.json({ error: "District not found" }, { status: 404 });
       applyRateLimitHeaders(res.headers, rl);
       return res;
+    }
+
+    // Tenant isolation: a District carries no tenantId — it inherits the owning
+    // tenant two levels up, through Governorate -> Region.
+    const denied = assertTenantOwned(existing.governorate.region, auth.user);
+    if (denied) {
+      applyRateLimitHeaders(denied.headers, rl);
+      return denied;
     }
 
     if (data.name) {
@@ -133,6 +141,13 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
       const res = NextResponse.json({ error: "District not found" }, { status: 404 });
       applyRateLimitHeaders(res.headers, rl);
       return res;
+    }
+
+    // Tenant isolation — see the PATCH handler above.
+    const denied = assertTenantOwned(existing.governorate.region, auth.user);
+    if (denied) {
+      applyRateLimitHeaders(denied.headers, rl);
+      return denied;
     }
 
     if (existing._count.sites > 0) {

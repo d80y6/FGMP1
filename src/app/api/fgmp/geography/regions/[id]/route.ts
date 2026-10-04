@@ -8,7 +8,7 @@ import {
   MUTATION_LIMIT,
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
-import { requireRole, ROLES } from "@/lib/fgmp/auth-helpers";
+import { requireRole, ROLES, assertTenantOwned } from "@/lib/fgmp/auth-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -63,6 +63,16 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       const res = NextResponse.json({ error: "Region not found" }, { status: 404 });
       applyRateLimitHeaders(res.headers, rl);
       return res;
+    }
+
+    // Tenant isolation: the owning tenantId was already selected above but was
+    // previously used only for the audit row. assertTenantOwned returns 404 (not
+    // 403) so a cross-tenant region id cannot be probed for existence, and it
+    // carries the SUPERADMIN bypass internally.
+    const denied = assertTenantOwned(existing, auth.user);
+    if (denied) {
+      applyRateLimitHeaders(denied.headers, rl);
+      return denied;
     }
 
     if (data.name) {
@@ -145,6 +155,16 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
       const res = NextResponse.json({ error: "Region not found" }, { status: 404 });
       applyRateLimitHeaders(res.headers, rl);
       return res;
+    }
+
+    // Tenant isolation — see the PATCH handler above. Without this, any tenant
+    // ADMIN could delete another tenant's region, and because
+    // Region.governorates is onDelete:Cascade that removal would cascade into
+    // its governorates and districts.
+    const denied = assertTenantOwned(existing, auth.user);
+    if (denied) {
+      applyRateLimitHeaders(denied.headers, rl);
+      return denied;
     }
 
     if (existing._count.sites > 0) {
