@@ -1,13 +1,29 @@
 // FGMP — Fuel & Generator Monitoring Platform
-// Prisma schema (SQLite). Enum-like fields are stored as String with
-// documented allowed values (SQLite has no native enum support).
+// Prisma schema (PostgreSQL).
+//
+// Phase 1 step 1 migrated this from SQLite to PostgreSQL. Two consequences
+// worth stating explicitly, because the SQLite version made both impossible:
+//
+//   * Enums can now be native `enum` types. The SQLite build stored every
+//     discriminator as a free `String` with the legal values documented only in
+//     a comment — nothing but application code prevented an invalid value from
+//     reaching the database. Native enums land in step 8.
+//   * RLS (step 6) is only meaningful on PostgreSQL. On SQLite there was no
+//     database-enforced tenant boundary at all: isolation was entirely
+//     application-level, so a single missed `assertTenantOwned` was a
+//     cross-tenant data breach — exactly the Phase 0 geography IDOR.
+//
+// Remaining migration steps: nullable tenant_id (2), backfill (3), NOT NULL +
+// FK (4), tenant_id-leading indexes (5), RLS (6), per-request context (7),
+// native enums (8), Float -> Decimal (9), TimescaleDB hypertables (10), RLS
+// regression suite (11).
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
