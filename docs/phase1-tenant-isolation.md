@@ -164,9 +164,9 @@ context still returns zero rows rather than everything. Verified in step 11.
 | 3. Backfill | done | `20261005000000_add_tenant_id_not_null_fk` |
 | 4. `NOT NULL` + FK RESTRICT | done | `20261005000000_add_tenant_id_not_null_fk` |
 | 5. `tenant_id`-leading indexes | done | `20261005000000_add_tenant_id_not_null_fk` |
-| 6. RLS enable + FORCE + policy | pending | |
+| 6. RLS enable + FORCE + policy | done | `20261005000300_enable_rls` (24 tables) |
 | 7. Per-request `SET LOCAL` context | done | `src/lib/fgmp/tenant-context.ts`, `src/lib/db.ts` (no migration needed) |
 | 8. Native enums | pending (roles already done) | |
 | 9. `Float` → `Decimal` | pending | |
 | 10. TimescaleDB hypertables | pending | |
-| 11. RLS regression suite | done — suite built; awaiting step 6 to execute | `scripts/rls-regression.ts`, `src/lib/fgmp/__tests__/` |
+| 11. RLS regression suite | done — 153 assertions, 24/24 tables, exit 0 | `scripts/rls-regression.ts`, `src/lib/fgmp/__tests__/` |
