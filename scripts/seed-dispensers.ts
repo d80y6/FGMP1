@@ -55,7 +55,7 @@ async function main() {
   console.log(`Found ${allSites.length} sites. Seeding dispensers…`);
 
   const now = Date.now();
-  const createdDispensers: { id: string; siteId: string; site: { name: string; code: string }; label: string; pumpNumber: number; totalizerStart: number }[] = [];
+  const createdDispensers: { id: string; siteId: string; tenantId: string; site: { name: string; code: string }; label: string; pumpNumber: number; totalizerStart: number }[] = [];
   let dispenserCounter = 0;
 
   for (const site of allSites) {
@@ -77,6 +77,7 @@ async function main() {
       const dispenser = await db.fuelDispenser.create({
         data: {
           siteId: site.id,
+          tenantId: site.tenantId,
           label: `Dispenser ${String.fromCharCode(65 + d)}`,
           pumpNumber: d + 1,
           nozzleCount: pick([1, 1, 2]),
@@ -100,6 +101,7 @@ async function main() {
       createdDispensers.push({
         id: dispenser.id,
         siteId: site.id,
+        tenantId: site.tenantId,
         site: { name: site.name, code: site.code },
         label: dispenser.label,
         pumpNumber: dispenser.pumpNumber,
@@ -132,6 +134,7 @@ async function main() {
         data: {
           dispenserId: disp.id,
           siteId: disp.siteId,
+          tenantId: disp.tenantId,
           nozzle: 1,
           startedAt: new Date(startedAt),
           completedAt: new Date(endedAt),

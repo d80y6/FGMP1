@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
       pref = await db.notificationPreference.upsert({
         where: { userId: user.id },
         update: {},
-        create: { userId: user.id, ...DEFAULT_PREFS },
+        create: { userId: user.id, tenantId: user.tenantId, ...DEFAULT_PREFS },
       });
     } catch (upsertErr) {
       // P2003 = foreign key constraint violation — the session user.id doesn't
@@ -154,6 +154,7 @@ export async function PUT(req: NextRequest) {
       },
       create: {
         userId: user.id,
+        tenantId: user.tenantId,
         inAppEnabled: data.inAppEnabled,
         emailEnabled: data.emailEnabled,
         smsEnabled: data.smsEnabled,

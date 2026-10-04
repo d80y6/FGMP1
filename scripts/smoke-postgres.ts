@@ -84,6 +84,7 @@ async function main() {
   const tank = await db.fuelTank.create({
     data: {
       siteId: site.id,
+      tenantId: tenant.id,
       label: "T1",
       capacityLitres: 5000,
       currentLitres: 3000,
@@ -101,6 +102,7 @@ async function main() {
   const reading = await db.sensorReading.create({
     data: {
       siteId: site.id,
+      tenantId: tenant.id,
       entityKind: "TANK",
       entityId: tank.id,
       metric: "level",

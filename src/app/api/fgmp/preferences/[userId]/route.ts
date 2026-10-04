@@ -69,7 +69,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ userId: str
     const pref = await db.notificationPreference.upsert({
       where: { userId: target.id },
       update: {},
-      create: { userId: target.id, ...DEFAULT_PREFS },
+      create: { userId: target.id, tenantId: target.tenantId, ...DEFAULT_PREFS },
     });
 
     // Return the prefs alongside the target user's profile so the admin UI
@@ -159,6 +159,7 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ userId: str
       },
       create: {
         userId: target.id,
+        tenantId: target.tenantId,
         inAppEnabled: data.inAppEnabled,
         emailEnabled: data.emailEnabled,
         smsEnabled: data.smsEnabled,

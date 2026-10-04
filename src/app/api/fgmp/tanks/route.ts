@@ -135,6 +135,7 @@ export async function POST(req: NextRequest) {
     const row = await db.fuelTank.create({
       data: {
         siteId: data.siteId,
+        tenantId: site.tenantId,
         label: data.label,
         fuelType: data.fuelType,
         capacityLitres: data.capacityLitres,

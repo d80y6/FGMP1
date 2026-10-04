@@ -118,7 +118,15 @@ async function main() {
   // One gateway per site that has dispensers. ~85% ONLINE, 10% DEGRADED, 5% OFFLINE.
   const sitesWithDispensers = await db.site.findMany({
     where: { dispensers: { some: {} } },
-    select: { id: true, code: true, name: true },
+    // tenantId + dispensers are needed to stamp the denormalised tenant_id on
+    // SiteGateway and EspFirmwareDeployment (Phase 1 steps 2-5).
+    select: {
+      id: true,
+      code: true,
+      name: true,
+      tenantId: true,
+      dispensers: { select: { id: true } },
+    },
     orderBy: { code: "asc" },
   });
 
@@ -149,6 +157,7 @@ async function main() {
     await db.siteGateway.create({
       data: {
         siteId: site.id,
+        tenantId: site.tenantId,
         hostname,
         model,
         ipAddress: ip,
@@ -198,11 +207,23 @@ async function main() {
       const releaseId = releaseIdByVersion.get(tgt.toVersion);
       if (!releaseId || dispensers.length === 0) continue;
       const disp = dispensers[i % dispensers.length]!;
+      // EspFirmwareDeployment inherits tenancy from the dispenser's site, so
+      // resolve the owning tenant from the site rather than from the
+      // deployment itself (Phase 1 steps 2-5).
+      const dispSite = sitesWithDispensers.find((s) =>
+        s.dispensers.some((d) => d.id === disp.id),
+      );
+      // Every dispenser was created under a site, so this must resolve. Skip
+      // rather than invent a tenant: EspFirmwareDeployment.tenant_id is NOT
+      // NULL, and a guessed tenant would be protected by RLS in the wrong
+      // place forever.
+      if (!dispSite) continue;
       const startedAt = new Date(Date.now() - tgt.daysAgo * 24 * 3600 * 1000 - (tgt.inProgress ? 90 * 1000 : 0));
       const completedAt = tgt.inProgress ? null : new Date(startedAt.getTime() + tgt.durSec * 1000);
       await db.espFirmwareDeployment.create({
         data: {
           dispenserId: disp.id,
+          tenantId: dispSite.tenantId,
           releaseId,
           status: tgt.status,
           startedAt,
