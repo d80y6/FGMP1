@@ -60,6 +60,24 @@ function uid(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+/**
+ * GEN_OFFLINE condition (Phase 0.6).
+ *
+ * A generator counts as offline only when it is STOPPED *and* its site
+ * genuinely depends on generator power. A stopped generator on a grid-powered
+ * site is correctly parked, not failed, and must not alarm.
+ *
+ * Both the raise path in tick() and the reconcile loop call this so the two
+ * can never drift apart again — drift is what caused the alarm to be
+ * auto-resolved on the tick after it was raised.
+ */
+function isGeneratorOffline(g: GenState, sites: SiteState[]): boolean {
+  if (g.status !== "STOPPED") return false;
+  const site = sites.find((s) => s.id === g.siteId);
+  if (!site) return false;
+  return !site.gridAvailable && site.powerSource === "GENERATOR";
+}
+
 class FgmpEngine {
   private initialized = false;
   private initializing: Promise<void> | null = null;
@@ -431,7 +449,8 @@ class FgmpEngine {
         g.fuelRateLph = 0;
         if (g.status === "STOPPED" && site.gridAvailable && site.powerSource !== "GENERATOR") {
           // generator offline but site powered by grid — no alarm
-        } else if (g.status === "STOPPED" && !site.gridAvailable && site.powerSource === "GENERATOR") {
+        } else if (isGeneratorOffline(g, this.sites)) {
+          // Shares its predicate with reconcileAlarms() — see isGeneratorOffline.
           alarmsCreated += await this.raiseAlarm({
             siteId: g.siteId, type: "GEN_OFFLINE", severity: "L2",
             entityKind: "GENERATOR", entityId: g.id,
@@ -489,7 +508,12 @@ class FgmpEngine {
         });
       } else if (tk.current <= tk.low) {
         alarmsCreated += await this.raiseAlarm({
-          siteId: tk.siteId, type: "FUEL_LOW", severity: "L1",
+          // Phase 0.6: this was raised as L1 while reconcileAlarms() looked for
+          // L2, so the `${type}:${severity}:${entityId}` dedup key never matched:
+          // every tick re-fired a duplicate alarm and left a permanent OPEN row
+          // on any tank sitting between its low and critical thresholds. L2 is
+          // also the semantically correct step below FUEL_CRITICAL (L3).
+          siteId: tk.siteId, type: "FUEL_LOW", severity: "L2",
           entityKind: "TANK", entityId: tk.id,
           message: `Low fuel level: ${Math.round(tk.current)}L at ${site.name}`,
           value: tk.current, threshold: tk.low,
@@ -759,6 +783,13 @@ class FgmpEngine {
       if (g.status === "FAULT") add("GEN_FAILURE", "L3", g.id);
       if (g.temperatureC > 104) add("GEN_OVERHEAT", "L3", g.id);
       else if (g.temperatureC > 95) add("GEN_OVERHEAT", "L2", g.id);
+      // GEN_OFFLINE (Phase 0.6): this was raised in tick() but never added to
+      // `stillTrue` here, so on the very next reconcile its key was absent and
+      // the alarm was auto-resolved with "condition cleared" while the
+      // generator was still offline — it could never be acknowledged. The
+      // condition must mirror isGeneratorOffline() exactly, so both paths call
+      // the same predicate.
+      if (isGeneratorOffline(g, this.sites)) add("GEN_OFFLINE", "L2", g.id);
     }
 
     for (const b of this.batteries) {
