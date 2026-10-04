@@ -204,8 +204,43 @@ io.on("connection", (socket: IOSocket) => {
   }
 
   // ── Browser subscriptions ─────────────────────────────────────────────
+  //
+  // SECURITY (Phase 0.4): these handlers used to join whatever room name the
+  // client sent, with no ownership check. `tenant:<tid>` is safe because the
+  // tid is signature-bound and never client-chosen, but `site:<id>` was NOT —
+  // any authenticated user could join another tenant's site room and receive
+  // whatever was emitted there. That was latent because every emit currently
+  // targets `tenant:<tid>` (see internal:broadcast below), but
+  // emitToRealtime(event, payload, `site:<id>`) is already used by
+  // realtime-emitter.ts for alarm/telemetry events, so the leak would arm
+  // itself the moment any emitter used that path.
+  //
+  // Ownership is resolved from `siteTenant`, rebuilt from every successful
+  // poll. An unresolvable site id is REJECTED rather than allowed, matching the
+  // fail-closed behaviour of internal:broadcast — the map may legitimately lag
+  // a newly created site by one poll interval, and a stale read is safer than
+  // a cross-tenant join.
+  //
+  // SUPERADMIN keeps platform-wide visibility, consistent with
+  // `state:tick` (broadcastStateTick), which also serves super-admin rooms the
+  // unfiltered snapshot. Server sockets (Next.js API, iot-bridge) are trusted
+  // and retain unrestricted access.
+  const canAccessSite = (siteId: string): boolean => {
+    if (isServer) return true;
+    if (socket.data.role === "SUPERADMIN") return true;
+    const owner = siteTenant.get(siteId);
+    return !!owner && !!tenantId && owner === tenantId;
+  };
+
   socket.on("subscribe:site", (siteId: unknown) => {
     if (typeof siteId !== "string" || !siteId) return;
+    if (!canAccessSite(siteId)) {
+      socket.emit("subscribe:error", {
+        room: `site:${siteId}`,
+        error: "forbidden",
+      });
+      return;
+    }
     socket.join(`site:${siteId}`);
     socket.emit("subscribed", { room: `site:${siteId}` });
   });
@@ -213,6 +248,11 @@ io.on("connection", (socket: IOSocket) => {
     if (typeof siteId !== "string" || !siteId) return;
     socket.leave(`site:${siteId}`);
   });
+  // NOTE: `subscribe:region` is left unchanged — region names are not
+  // tenant-unique (the snapshot carries no region→tenant index), so there is
+  // no map to validate against, and no emitter targets a region room either.
+  // If region-targeted emits are ever added, build a regionTenant map in
+  // broadcastStateTick and guard it the same way.
   socket.on("subscribe:region", (name: unknown) => {
     if (typeof name !== "string" || !name) return;
     socket.join(`region:${name}`);
