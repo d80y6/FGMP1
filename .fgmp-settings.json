@@ -1,0 +1,13 @@
+{
+  "fuelLowPct": 25,
+  "fuelCriticalPct": 10,
+  "genOvertempC": 95,
+  "battLowVoltagePct": 88,
+  "l1ToL2Minutes": 15,
+  "l2ToL3Minutes": 30,
+  "autoResolveHours": 72,
+  "platformName": "FGMP",
+  "supportEmail": "noc@fgmp.ye",
+  "timezone": "Asia/Aden",
+  "pollingIntervalSec": 5
+}

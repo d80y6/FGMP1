@@ -1,0 +1,520 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-arabic: var(--font-cairo);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+  --chart-emerald: #059669;
+  --chart-sky: #0284c7;
+  --chart-amber: #d97706;
+  --chart-rose: #e11d48;
+  --chart-violet: #7c3aed;
+  --chart-muted: #94a3b8;
+  --chart-grid: #e2e8f0;
+  --chart-text: #475569;
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+  --chart-emerald: #10b981;
+  --chart-sky: #0ea5e9;
+  --chart-amber: #f59e0b;
+  --chart-rose: #f43f5e;
+  --chart-violet: #8b5cf6;
+  --chart-muted: #64748b;
+  --chart-grid: #1e293b;
+  --chart-text: #94a3b8;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html, body {
+    @apply bg-background text-foreground;
+    /* Defensive: prevent horizontal scroll from wide charts/tables/maps.
+       Specific scroll containers handle their own overflow. */
+    overflow-x: hidden;
+  }
+  body {
+    -webkit-tap-highlight-color: transparent;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* Visible focus ring for keyboard navigation (a11y) */
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-ring;
+  }
+}
+
+/* ============================================================================
+   SKIP-TO-CONTENT LINK (a11y — keyboard users bypass 27 nav items)
+   ============================================================================ */
+.skip-link {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 100;
+  transform: translateY(-150%);
+  transition: transform 0.15s ease-out;
+  padding: 0.625rem 1rem;
+  border-radius: 0 0 0.5rem 0;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+.skip-link:focus {
+  transform: translateY(0);
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* ============================================================================
+   MOBILE TOUCH TARGETS — enforce 44×44px minimum (WCAG 2.5.5)
+   Only applies to icon-only buttons on touch/small viewports.
+   ============================================================================ */
+@media (max-width: 768px) {
+  button[class*="size-icon"],
+  [role="button"][class*="size-icon"],
+  a[class*="size-icon"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  /* Also bump sidebar nav items on mobile for easier tapping */
+  nav button[class*="px-"][class*="py-2"] {
+    min-height: 44px;
+  }
+}
+
+/* ============================================================================
+   RTL: keep skip-link on the right side in Arabic
+   ============================================================================ */
+html[dir="rtl"] .skip-link {
+  left: auto;
+  right: 0;
+  border-radius: 0 0 0 0.5rem;
+}
+
+/* FGMP custom animations */
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+@keyframes slide-in-right {
+  from { transform: translateX(8px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes slide-in-up {
+  from { transform: translateY(4px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes glow-ring {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0); }
+  50% { box-shadow: 0 0 0 4px rgba(244, 63, 94, 0.15); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes pin-pop {
+  0% { transform: scale(0.5); opacity: 0.2; }
+  60% { transform: scale(1.35); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.animate-pulse-soft {
+  animation: pulse-soft 2s ease-in-out infinite;
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.2s ease-out;
+}
+
+.animate-slide-in-up {
+  animation: slide-in-up 0.2s ease-out;
+}
+
+.animate-glow-ring {
+  animation: glow-ring 2s ease-in-out infinite;
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 2s linear infinite;
+}
+
+/* Task 33-C — skeleton shimmer gradient.
+   Uses CSS color-mix for the mid-stop so the gradient works in both light
+   and dark themes (the project's --muted / --muted-foreground vars are oklch).
+   Applied as a wrapper class around groups of Skeleton blocks. The wrapper
+   shows a slowly-sweeping gradient through the gaps between Skeleton pieces;
+   the Skeletons themselves keep their shadcn-default accent + pulse. */
+.shimmer {
+  position: relative;
+  background: linear-gradient(
+    90deg,
+    var(--muted) 0%,
+    color-mix(in oklch, var(--muted-foreground) 14%, var(--muted)) 50%,
+    var(--muted) 100%
+  );
+  background-size: 1000px 100%;
+  animation: shimmer 2s linear infinite;
+}
+
+.animate-pin-pop {
+  animation: pin-pop 0.32s ease-out;
+}
+
+/* Urgency-pulse: subtle rose pulse for OVERDUE badges */
+@keyframes urgency-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.0); }
+  50%      { box-shadow: 0 0 0 3px rgba(244, 63, 94, 0.18); }
+}
+
+.animate-urgency-pulse {
+  animation: urgency-pulse 1.8s ease-in-out infinite;
+}
+
+/* Custom thin scrollbar for Maintenance Prediction list */
+.maintenance-prediction-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(128, 128, 128, 0.25) transparent;
+}
+
+.maintenance-prediction-scroll::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.maintenance-prediction-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.maintenance-prediction-scroll::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.25);
+  border-radius: 3px;
+}
+
+.maintenance-prediction-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 128, 0.45);
+}
+
+/* Custom scrollbar for Site Notes list */
+.site-notes-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(128, 128, 128, 0.25) transparent;
+}
+
+.site-notes-scroll::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.site-notes-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.site-notes-scroll::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.25);
+  border-radius: 3px;
+}
+
+.site-notes-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 128, 0.45);
+}
+
+/* Custom thin scrollbar for System Health errors table (Task 32-A) */
+.health-errors-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(244, 63, 94, 0.25) transparent;
+}
+
+/* ============================================================================
+   SYSTEM HEALTH INDICATOR — Pulse animations (Task 33-B)
+   Three intensity tiers for the header mini-indicator dot:
+     green  : healthy  → slow 2s   pulse (subtle, "all good")
+     amber  : degraded → 1.5s      pulse (medium urgency)
+     red    : critical → 0.8s      pulse (fast, "needs attention")
+   The unknown/loading state has NO animation (gray, static).
+   ============================================================================ */
+@keyframes health-pulse-green {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
+  50% { box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); }
+}
+
+@keyframes health-pulse-amber {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7); }
+  50% { box-shadow: 0 0 0 6px rgba(245, 158, 11, 0); }
+}
+
+@keyframes health-pulse-red {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+  50% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+}
+
+.health-dot-green {
+  animation: health-pulse-green 2s ease-in-out infinite;
+}
+
+.health-dot-amber {
+  animation: health-pulse-amber 1.5s ease-in-out infinite;
+}
+
+.health-dot-red {
+  animation: health-pulse-red 0.8s ease-in-out infinite;
+}
+
+.health-errors-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.health-errors-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.health-errors-scroll::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.25);
+  border-radius: 3px;
+}
+
+.health-errors-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 128, 0.45);
+}
+
+/* Custom scrollbar for ScrollArea */
+[data-radix-scroll-area-viewport] {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(128, 128, 128, 0.2) transparent;
+}
+
+[data-radix-scroll-area-viewport]::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+[data-radix-scroll-area-viewport]::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+[data-radix-scroll-area-viewport]::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.2);
+  border-radius: 3px;
+}
+
+[data-radix-scroll-area-viewport]::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 128, 0.4);
+}
+
+/* ============================================================================
+   SONNER TOAST POLISH (#43-D)
+   Adds a 3px colored left-border accent to each toast type so operators can
+   tell at a glance whether a toast is success / error / warning / info. The
+   accent is implemented as a box-shadow inset (rather than a border) so it
+   doesn't shift the toast's content layout. Sonner exposes the toast type
+   via the `data-type` attribute on the outer <li>.
+   ============================================================================ */
+[data-sonner-toast][data-type="success"] {
+  box-shadow: inset 3px 0 0 0 var(--color-emerald-500, #10b981),
+              0 4px 12px rgba(0, 0, 0, 0.08);
+}
+[data-sonner-toast][data-type="error"] {
+  box-shadow: inset 3px 0 0 0 var(--color-rose-500, #f43f5e),
+              0 4px 12px rgba(0, 0, 0, 0.08);
+}
+[data-sonner-toast][data-type="warning"] {
+  box-shadow: inset 3px 0 0 0 var(--color-amber-500, #f59e0b),
+              0 4px 12px rgba(0, 0, 0, 0.08);
+}
+[data-sonner-toast][data-type="info"] {
+  box-shadow: inset 3px 0 0 0 var(--color-slate-500, #64748b),
+              0 4px 12px rgba(0, 0, 0, 0.08);
+}
+[data-sonner-toast][data-type="default"] {
+  box-shadow: inset 3px 0 0 0 var(--color-slate-400, #94a3b8),
+              0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+/* RTL: flip the accent to the right edge in Arabic mode. */
+html[dir="rtl"] [data-sonner-toast][data-type="success"] {
+  box-shadow: inset -3px 0 0 0 var(--color-emerald-500, #10b981),
+              0 4px 12px rgba(0, 0, 0, 0.08);
+}
+html[dir="rtl"] [data-sonner-toast][data-type="error"] {
+  box-shadow: inset -3px 0 0 0 var(--color-rose-500, #f43f5e),
+              0 4px 12px rgba(0, 0, 0, 0.08);
+}
+html[dir="rtl"] [data-sonner-toast][data-type="warning"] {
+  box-shadow: inset -3px 0 0 0 var(--color-amber-500, #f59e0b),
+              0 4px 12px rgba(0, 0, 0, 0.08);
+}
+html[dir="rtl"] [data-sonner-toast][data-type="info"] {
+  box-shadow: inset -3px 0 0 0 var(--color-slate-500, #64748b),
+              0 4px 12px rgba(0, 0, 0, 0.08);
+}
+html[dir="rtl"] [data-sonner-toast][data-type="default"] {
+  box-shadow: inset -3px 0 0 0 var(--color-slate-400, #94a3b8),
+              0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+/* ============================================================================
+   PREFERS-REDUCED-MOTION (#43-D)
+   Globally disable all custom CSS animations when the user has expressed a
+   preference for reduced motion. The Tailwind `motion-reduce:` / `motion-safe:`
+   variants only apply to Tailwind's own utility classes (which live inside
+   the `utilities` cascade layer); the FGMP custom animations defined above
+   (`.animate-pulse-soft`, `.animate-slide-in-up`, `.shimmer`, `.health-dot-*`,
+   etc.) are unlayered and therefore win over Tailwind utilities regardless
+   of source order. This block catches them all in one place with `!important`
+   so the reduced-motion preference is honoured uniformly across the app.
+   ============================================================================ */
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse-soft,
+  .animate-slide-in-right,
+  .animate-slide-in-up,
+  .animate-glow-ring,
+  .animate-shimmer,
+  .shimmer,
+  .animate-pin-pop,
+  .animate-urgency-pulse,
+  .health-dot-green,
+  .health-dot-amber,
+  .health-dot-red {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* ============================================================================
+   ARABIC / RTL TYPOGRAPHY — Use Cairo font for Arabic script
+   ============================================================================ */
+html[lang="ar"] body,
+html[dir="rtl"] body {
+  font-family: var(--font-cairo), var(--font-geist-sans), system-ui, sans-serif;
+}
+
+html[lang="ar"] *,
+html[dir="rtl"] * {
+  letter-spacing: 0;
+}
+
+/* Slightly tighter line-height for Arabic script which has taller glyphs */
+html[dir="rtl"] .leading-relaxed { line-height: 1.65; }
+html[dir="rtl"] .leading-normal { line-height: 1.5; }
+
+/* Arabic numerals: keep tabular alignment for KPI numbers */
+html[dir="rtl"] .tabular-nums {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}

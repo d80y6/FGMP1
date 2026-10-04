@@ -1,0 +1,186 @@
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { db, engine, bootstrap } from "@/lib/fgmp";
+import { audit } from "@/lib/fgmp/audit";
+import {
+  rateLimitByUser,
+  applyRateLimitHeaders,
+  MUTATION_LIMIT,
+  READ_LIMIT,
+} from "@/lib/fgmp/rate-limit";
+import { errorResponse } from "@/lib/fgmp/api-error";
+import { requireAuth, requireRole, ROLES, siteTenantWhereOrAll, assertTenantOwned } from "@/lib/fgmp/auth-helpers";
+
+export const dynamic = "force-dynamic";
+
+// Inline Zod schemas (kept local to avoid touching shared schemas.ts).
+const createTankSchema = z.object({
+  siteId: z.string().trim().min(1).max(200),
+  label: z.string().trim().min(1).max(120),
+  fuelType: z.enum(["DIESEL", "PETROL"]).default("DIESEL"),
+  capacityLitres: z.coerce.number().positive().max(5_000_000),
+  currentLitres: z.coerce.number().min(0).max(5_000_000).optional(),
+  lowThreshold: z.coerce.number().min(0).max(5_000_000).optional(),
+  criticalThreshold: z.coerce.number().min(0).max(5_000_000).optional(),
+});
+
+/**
+ * GET /api/fgmp/tanks
+ * Returns all fuel tanks (optionally filtered by ?siteId=), sorted by label
+ * ASC. Includes the related Site (name, code) and merges live telemetry from
+ * the engine (currentLitres, status, lastReadingAt) so the registry table
+ * reflects the latest tick.
+ *
+ * Any authenticated session may list tanks — ADMIN-only mutations are
+ * enforced on POST/PATCH/DELETE.
+ */
+export async function GET(req: NextRequest) {
+  const auth = await requireAuth();
+  if ("error" in auth) return auth.error;
+  try {
+    const { user } = await bootstrap();
+    const rl = rateLimitByUser(req, user.id, READ_LIMIT.limit, READ_LIMIT.windowMs);
+    if (!rl.success) {
+      const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
+    const { searchParams } = new URL(req.url);
+    const siteId = searchParams.get("siteId");
+    const where: Record<string, unknown> = { ...siteTenantWhereOrAll(user) };
+    if (siteId) where.siteId = siteId;
+    const tanks = await db.fuelTank.findMany({
+      where,
+      orderBy: { label: "asc" },
+      include: { site: { select: { id: true, name: true, code: true } } },
+    });
+
+    // Merge live telemetry from the engine.
+    const live = engine.tanks;
+    const merged = tanks.map((t) => {
+      const l = live.find((x) => x.id === t.id);
+      return {
+        ...t,
+        liveCurrentLitres: l?.current ?? t.currentLitres,
+        liveStatus: l?.status ?? t.status,
+        liveLastReadingAt: l?.lastReadingAt ?? t.lastReadingAt?.getTime(),
+        liveLowThreshold: l?.low ?? t.lowThreshold,
+        liveCriticalThreshold: l?.critical ?? t.criticalThreshold,
+      };
+    });
+
+    const res = NextResponse.json(merged);
+    applyRateLimitHeaders(res.headers, rl);
+    return res;
+  } catch (err) {
+    return errorResponse(err);
+  }
+}
+
+/**
+ * POST /api/fgmp/tanks
+ * Create a new fuel tank. ADMIN-only. Validates with createTankSchema
+ * (siteId, label, fuelType, capacityLitres, optional currentLitres,
+ * lowThreshold, criticalThreshold). The new row is persisted to the DB AND
+ * pushed into the engine's in-memory array so the next snapshot reflects it.
+ */
+export async function POST(req: NextRequest) {
+  const auth = await requireRole(req, ROLES.ADMIN_ONLY);
+  if ("error" in auth) return auth.error;
+  try {
+    const { user } = await bootstrap();
+    const rl = rateLimitByUser(req, user.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
+    if (!rl.success) {
+      const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
+
+    const body = await req.json().catch(() => ({}));
+    const r = createTankSchema.safeParse(body);
+    if (!r.success) {
+      const res = NextResponse.json(
+        { error: "Validation failed", details: r.error.flatten() },
+        { status: 400 },
+      );
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
+    const data = r.data;
+
+    // Verify the site exists in the acting admin's tenant
+    // (SUPERADMIN bypasses for cross-tenant asset creation).
+    const site = await db.site.findUnique({
+      where: { id: data.siteId },
+      select: { id: true, tenantId: true, name: true },
+    });
+    const siteDenied = assertTenantOwned(site, user);
+    if (siteDenied) {
+      applyRateLimitHeaders(siteDenied.headers, rl);
+      return siteDenied;
+    }
+    if (!site) {
+      const res = NextResponse.json(
+        { error: "Site not found in your tenant" },
+        { status: 404 },
+      );
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
+
+    const current = data.currentLitres ?? 0;
+    const low = data.lowThreshold ?? data.capacityLitres * 0.25;
+    const critical = data.criticalThreshold ?? data.capacityLitres * 0.1;
+
+    const row = await db.fuelTank.create({
+      data: {
+        siteId: data.siteId,
+        label: data.label,
+        fuelType: data.fuelType,
+        capacityLitres: data.capacityLitres,
+        currentLitres: current,
+        lowThreshold: low,
+        criticalThreshold: critical,
+        calibration: "[]",
+        status: "OPERATIONAL",
+      },
+      include: { site: { select: { id: true, name: true, code: true } } },
+    });
+
+    // Push into the engine so the next snapshot reflects the new tank.
+    engine.tanks.push({
+      id: row.id,
+      siteId: row.siteId,
+      label: row.label,
+      fuelType: row.fuelType,
+      capacity: row.capacityLitres,
+      current: row.currentLitres,
+      low: row.lowThreshold,
+      critical: row.criticalThreshold,
+      status: row.status,
+      lastReadingAt: row.lastReadingAt?.getTime() ?? Date.now(),
+      history: [],
+      prevLevel: row.currentLitres,
+    });
+
+    await audit({
+      userId: user.id,
+      tenantId: user.tenantId,
+      action: "TANK_CREATE",
+      entity: "FuelTank",
+      entityId: row.id,
+      details: {
+        siteId: data.siteId,
+        label: data.label,
+        fuelType: data.fuelType,
+        capacityLitres: data.capacityLitres,
+      },
+    });
+
+    const res = NextResponse.json(row, { status: 201 });
+    applyRateLimitHeaders(res.headers, rl);
+    return res;
+  } catch (err) {
+    return errorResponse(err);
+  }
+}

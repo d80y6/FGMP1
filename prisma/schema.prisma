@@ -1,0 +1,836 @@
+// FGMP — Fuel & Generator Monitoring Platform
+// Prisma schema (SQLite). Enum-like fields are stored as String with
+// documented allowed values (SQLite has no native enum support).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Identity & Multi-tenancy
+// ──────────────────────────────────────────────────────────────────────────
+
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  code      String   @unique
+  country   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users         User[]
+  sites         Site[]
+  suppressions  AlarmSuppression[]
+  // Task 48 — tenant-scoped backup history (MANUAL / AUTOMATIC / PRE_RESTORE).
+  backupRecords BackupRecord[]
+}
+
+// role: ADMIN | NOC_OPERATOR | REGIONAL_MANAGER | FIELD_ENGINEER | EXECUTIVE | READONLY
+model User {
+  id            String    @id @default(cuid())
+  tenantId      String
+  email         String    @unique
+  name          String
+  role          String    @default("NOC_OPERATOR")
+  phone         String?
+  // bcrypt-hashed password. Nullable for legacy / SSO users that have no
+  // local password; the user-management UI always sets a hash on creation
+  // and exposes a separate "Reset Password" action.
+  passwordHash         String?
+  active               Boolean   @default(true)
+  lastLoginAt          DateTime?
+  // Brute-force protection (Task 31-A). After 5 consecutive failed logins
+  // the account is locked for 15 minutes; a successful login resets both.
+  failedLoginAttempts  Int       @default(0)
+  lockedUntil          DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id])
+  auditLogs  AuditLog[]
+  commands   ControlCommand[]
+  alarmsAck  Alarm[]     @relation("AlarmAckedBy")
+  alarmsRes  Alarm[]     @relation("AlarmResolvedBy")
+  tickets    MaintenanceTicket[] @relation("TicketAssignee")
+  suppressions AlarmSuppression[]
+  notificationPreference NotificationPreference?
+  // Task 48 — backup & OTA reverse relations.
+  backupRecordsCreated  BackupRecord[] @relation("BackupCreatedBy")
+  backupRecordsRestored BackupRecord[] @relation("BackupRestoredBy")
+  espFirmwareDeployments EspFirmwareDeployment[]
+
+  @@index([tenantId])
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Geography hierarchy: Region -> Governorate -> District -> Site
+// ──────────────────────────────────────────────────────────────────────────
+
+model Region {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  createdAt DateTime @default(now())
+
+  governorates Governorate[]
+  sites        Site[]
+
+  @@unique([tenantId, name])
+}
+
+model Governorate {
+  id        String   @id @default(cuid())
+  regionId  String
+  name      String
+  createdAt DateTime @default(now())
+
+  region     Region   @relation(fields: [regionId], references: [id], onDelete: Cascade)
+  districts  District[]
+  sites      Site[]
+
+  @@unique([regionId, name])
+}
+
+model District {
+  id             String   @id @default(cuid())
+  governorateId  String
+  name           String
+  createdAt      DateTime @default(now())
+
+  governorate Governorate @relation(fields: [governorateId], references: [id], onDelete: Cascade)
+  sites       Site[]
+
+  @@unique([governorateId, name])
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Site & assets
+// ──────────────────────────────────────────────────────────────────────────
+
+// status: ONLINE | DEGRADED | OFFLINE | MAINTENANCE
+// criticality: CRITICAL | HIGH | MEDIUM | LOW
+model Site {
+  id            String   @id @default(cuid())
+  tenantId      String
+  code          String   @unique
+  name          String
+  regionId      String
+  governorateId String
+  districtId    String
+  latitude      Float
+  longitude     Float
+  address       String
+  status        String   @default("ONLINE")
+  criticality   String   @default("MEDIUM")
+  // Load profile (kW)
+  loadKw        Float    @default(0)
+  // Power preference: GRID | GENERATOR | HYBRID
+  powerSource   String   @default("HYBRID")
+  gridAvailable Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id])
+  region       Region       @relation(fields: [regionId], references: [id])
+  governorate  Governorate  @relation(fields: [governorateId], references: [id])
+  district     District     @relation(fields: [districtId], references: [id])
+
+  tanks        FuelTank[]
+  generators   Generator[]
+  batteries    BatteryBank[]
+  iotDevices   IotDevice[]
+  dispensers   FuelDispenser[]
+  dispenserTransactions FuelTransaction[]
+  // Task 48 — site-level ESP32/RS485 edge gateways aggregating dispenser traffic.
+  gateways     SiteGateway[]
+  alarms       Alarm[]
+  deliveries   FuelDelivery[]
+  tickets      MaintenanceTicket[]
+  events       SiteEvent[]
+  suppressions AlarmSuppression[]
+
+  @@index([tenantId])
+  @@index([regionId])
+  @@index([governorateId])
+  @@index([districtId])
+}
+
+// fuelType: DIESEL | PETROL | BIOFUEL
+// status: OPERATIONAL | EMPTY | MAINTENANCE | CALIBRATING
+model FuelTank {
+  id            String   @id @default(cuid())
+  siteId        String
+  label         String
+  fuelType      String   @default("DIESEL")
+  capacityLitres Float
+  // Current live level (litres) — updated by telemetry engine & persisted on tick
+  currentLitres Float
+  // Calibration curve: JSON array of [{litres, percent}] strapping points
+  calibration   String
+  // Thresholds (litres)
+  lowThreshold  Float
+  criticalThreshold Float
+  // Telemetry meta
+  lastReadingAt DateTime?
+  status        String   @default("OPERATIONAL")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  site       Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  deliveries FuelDelivery[]
+
+  @@index([siteId])
+}
+
+// status: RUNNING | STOPPED | FAULT | MAINTENANCE | OFFLINE
+// mode: AUTO | MANUAL | REMOTE
+model Generator {
+  id              String   @id @default(cuid())
+  siteId          String
+  label           String
+  manufacturer    String
+  model           String
+  ratedPowerKw    Float
+  fuelType        String   @default("DIESEL")
+  status          String   @default("STOPPED")
+  mode            String   @default("AUTO")
+  runtimeHours    Float    @default(0)
+  // Maintenance
+  oilChangeIntervalHrs Float @default(250)
+  lastOilChangeHrs     Float @default(0)
+  nextMaintenanceHrs   Float @default(250)
+  // Live telemetry (updated by engine)
+  temperatureC     Float   @default(65)
+  oilPressureKpa   Float   @default(320)
+  loadKw           Float   @default(0)
+  fuelRateLph      Float   @default(0)
+  batteryVoltage   Float   @default(24)
+  lastStartedAt    DateTime?
+  lastStoppedAt    DateTime?
+  lastReadingAt    DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  site     Site            @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  commands ControlCommand[]
+
+  @@index([siteId])
+}
+
+// status: OK | LOW | FAILING | REPLACEMENT_DUE | OFFLINE
+model BatteryBank {
+  id            String   @id @default(cuid())
+  siteId        String
+  label         String
+  chemistry     String   @default("VRLA")
+  capacityAh    Float
+  nominalVoltage Float   @default(48)
+  // Live telemetry
+  voltage       Float    @default(48)
+  currentA      Float    @default(0)
+  stateOfCharge Float    @default(80)   // %
+  stateOfHealth Float    @default(95)   // %
+  temperatureC  Float    @default(25)
+  charging      Boolean  @default(false)
+  status        String   @default("OK")
+  installedAt   DateTime @default(now())
+  lastReadingAt DateTime?
+  updatedAt     DateTime @updatedAt
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@index([siteId])
+}
+
+// type: FUEL_SENSOR | GENERATOR_CONTROLLER | BATTERY_SENSOR | POWER_METER | ENVIRONMENTAL
+// protocol: RS485 | MODBUS_RTU | MODBUS_TCP | MQTT | HTTP | SNMP
+// status: ONLINE | OFFLINE | DEGRADED | PROVISIONING
+model IotDevice {
+  id          String   @id @default(cuid())
+  siteId      String
+  name        String
+  type        String
+  protocol    String
+  vendor      String
+  serialNo    String   @unique
+  firmware    String
+  ipAddress   String?
+  modbusUnit  Int?
+  // Online state
+  status      String   @default("ONLINE")
+  lastSeenAt  DateTime?
+  signalRssi  Int      @default(-70)
+  // OTA
+  otaTargetFw String?
+  otaStatus   String?  // PENDING | IN_PROGRESS | COMPLETE | FAILED
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@index([siteId])
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Fuel Dispensers (Task 34-B)
+// ──────────────────────────────────────────────────────────────────────────
+// A fuel dispenser is a physical pump at a site, controlled by an ESP32 /
+// ESP8266 board that talks to the platform over RS485 (Modbus RTU). Each
+// dispenser has 1–4 nozzles and reports live transaction telemetry
+// (in-progress volume, flow rate, totalizer) plus the per-fueling-event
+// audit trail (FuelTransaction rows).
+//
+// status: IDLE | AUTHORIZED | DISPENSING | STOPPED | FAULT | MAINTENANCE | OFFLINE
+// mode:   AUTO | MANUAL | LOCKED
+// fuelType: DIESEL | PETROL
+model FuelDispenser {
+  id            String   @id @default(cuid())
+  siteId        String
+  label         String
+  manufacturer  String
+  model         String
+  nozzleCount   Int      @default(1)   // 1–4 nozzles
+  fuelType      String   @default("DIESEL") // DIESEL | PETROL
+  maxFlowLpm    Float    @default(40)  // max litres/min
+  status        String   @default("IDLE")
+  mode          String   @default("AUTO")
+  // Pump identifier 1..N within a site (unique per site). Task 48 — required
+  // by /api/fgmp/assets/dispensers (create + unique constraint siteId_pumpNumber),
+  // /api/fgmp/dispensers/reports (select + response), and
+  // /api/fgmp/edge/firmware/deployments (nested select on dispenser).
+  pumpNumber    Int      @default(1)
+
+  // ── ESP controller info ────────────────────────────────────────────────
+  espDeviceId     String  @unique       // ESP32 / ESP8266 board id
+  espFirmware     String  @default("v1.0.0")
+  rs485Baudrate   Int     @default(9600)
+  rs485Address    Int     @default(1)   // modbus unit address 1–247
+  rs485Parity     String  @default("8N1")
+  wifiRssi        Int     @default(-65)
+  ipAddress       String?
+  lastCommAt      DateTime?
+
+  // ── Live telemetry (updated by engine tick) ───────────────────────────
+  currentVolumeLitres  Float    @default(0)   // in-progress transaction volume
+  presetVolumeLitres   Float?                 // optional preset limit
+  flowRateLpm          Float    @default(0)
+  totalizerLitres      Float    @default(0)   // cumulative lifetime volume
+  currentTransactionId String?
+  lastTransactionAt    DateTime?
+  tempC                Float    @default(35)
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  site         Site             @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  transactions FuelTransaction[]
+  // Task 48 — reverse relation for OTA firmware deployments targeting this dispenser.
+  espFirmwareDeployments EspFirmwareDeployment[]
+
+  @@index([siteId])
+  @@index([status])
+  // Task 48 — pump identifier 1..N is unique within a site. Referenced by
+  // /api/fgmp/assets/dispensers as the `siteId_pumpNumber` compound unique key.
+  @@unique([siteId, pumpNumber])
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Fuel Transactions (Task 34-B)
+// ──────────────────────────────────────────────────────────────────────────
+// Each fueling event on a dispenser. Persisted on completion; the in-progress
+// one lives in FuelDispenser.currentTransactionId until the engine finalizes
+// it (volume → totalizer → tank decrement).
+//
+// status: IN_PROGRESS | COMPLETED | CANCELLED | FAILED
+model FuelTransaction {
+  id            String    @id @default(cuid())
+  dispenserId   String
+  siteId        String
+  nozzle        Int       @default(1)
+  volumeLitres  Float
+  amountYer     Float     @default(0)   // cost in Yemeni Rial
+  unitPriceYer  Float     @default(0)
+  vehiclePlate  String?
+  operatorName  String?
+  status        String    @default("COMPLETED")
+  startedAt     DateTime  @default(now())
+  completedAt   DateTime?
+  durationSec   Int       @default(0)
+  createdAt     DateTime  @default(now())
+
+  dispenser FuelDispenser @relation(fields: [dispenserId], references: [id], onDelete: Cascade)
+  site      Site          @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@index([dispenserId, startedAt])
+  @@index([siteId, startedAt])
+  @@index([status])
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Time-series readings (aggregated; high-frequency telemetry stays in-memory)
+// ──────────────────────────────────────────────────────────────────────────
+
+// metric: FUEL_LEVEL | GEN_TEMP | GEN_RUNTIME | BATT_VOLTAGE | BATT_SOC | LOAD_KW | FUEL_RATE
+// entityKind: TANK | GENERATOR | BATTERY | SITE
+model SensorReading {
+  id          String   @id @default(cuid())
+  siteId      String
+  entityKind  String
+  entityId    String
+  metric      String
+  value       Float
+  ts          DateTime @default(now())
+
+  @@index([siteId, ts])
+  @@index([entityId, metric, ts])
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Alarms
+// ──────────────────────────────────────────────────────────────────────────
+
+// type: FUEL_THEFT | FUEL_REFILL | FUEL_LOW | FUEL_CRITICAL |
+//       GEN_OFFLINE | GEN_FAILURE | GEN_OVERHEAT |
+//       BATT_LOW_VOLTAGE | BATT_FAILURE | COMM_LOSS
+// severity: L1 | L2 | L3   (L3 most severe)
+// status: OPEN | ACKNOWLEDGED | RESOLVED | ESCALATED
+model Alarm {
+  id            String   @id @default(cuid())
+  tenantId      String
+  siteId        String
+  type          String
+  severity      String   @default("L1")
+  status        String   @default("OPEN")
+  escalationLevel Int    @default(1)
+  entityKind    String?
+  entityId      String?
+  message       String
+  value         Float?
+  threshold     Float?
+  createdAt     DateTime @default(now())
+  acknowledgedAt DateTime?
+  acknowledgedById String?
+  resolvedAt    DateTime?
+  resolvedById  String?
+  resolution    String?
+
+  site          Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  acknowledgedBy User?   @relation("AlarmAckedBy", fields: [acknowledgedById], references: [id])
+  resolvedBy   User?     @relation("AlarmResolvedBy", fields: [resolvedById], references: [id])
+
+  @@index([siteId, status])
+  @@index([status, severity])
+  @@index([createdAt])
+}
+
+model SiteEvent {
+  id        String   @id @default(cuid())
+  siteId    String
+  kind      String   // INFO | WARN | CRITICAL | CONTROL | DELIVERY
+  message   String
+  meta      String?  // JSON
+  createdAt DateTime @default(now())
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@index([siteId, createdAt])
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Inventory, deliveries, control, maintenance, audit, notifications
+// ──────────────────────────────────────────────────────────────────────────
+
+// status: SCHEDULED | IN_TRANSIT | DELIVERED | VERIFIED | DISCREPANCY | CANCELLED
+model FuelDelivery {
+  id          String   @id @default(cuid())
+  siteId      String
+  tankId      String
+  supplier    String
+  driverName  String?
+  vehiclePlate String?
+  volumeOrderedLitres Float
+  volumeDeliveredLitres Float?
+  doNumber    String   // delivery order number
+  status      String   @default("SCHEDULED")
+  scheduledAt DateTime
+  dispatchedAt DateTime?
+  deliveredAt DateTime?
+  verifiedAt  DateTime?
+  discrepancyNote String?
+  unitPrice   Float    @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  site Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  tank FuelTank @relation(fields: [tankId], references: [id])
+
+  @@index([siteId, status])
+  @@index([scheduledAt])
+}
+
+// command: START | STOP | EMERGENCY_STOP | RESET
+// status: PENDING | SENT | EXECUTED | FAILED | TIMEOUT
+model ControlCommand {
+  id          String   @id @default(cuid())
+  generatorId String
+  command     String
+  status      String   @default("PENDING")
+  reason      String?
+  issuedById  String?
+  issuedAt    DateTime @default(now())
+  executedAt  DateTime?
+  result      String?
+
+  generator Generator @relation(fields: [generatorId], references: [id], onDelete: Cascade)
+  issuedBy  User?     @relation(fields: [issuedById], references: [id])
+
+  @@index([generatorId, status])
+}
+
+// type: PREVENTIVE | CORRECTIVE | OIL_CHANGE | INSPECTION | CALIBRATION
+// status: OPEN | SCHEDULED | IN_PROGRESS | DONE | CANCELLED
+// priority: P1 | P2 | P3 | P4
+model MaintenanceTicket {
+  id          String   @id @default(cuid())
+  siteId      String
+  assetKind   String   // GENERATOR | TANK | BATTERY | IOT
+  assetId     String
+  type        String
+  status      String   @default("OPEN")
+  priority    String   @default("P3")
+  title       String
+  description String?
+  assignedToId String?
+  scheduledFor DateTime?
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  site       Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  assignedTo User? @relation("TicketAssignee", fields: [assignedToId], references: [id])
+
+  @@index([siteId, status])
+  @@index([status, priority])
+}
+
+// action: CREATE | UPDATE | DELETE | CONTROL | ACK | RESOLVE | LOGIN | EXPORT | CONFIG
+model AuditLog {
+  id         String   @id @default(cuid())
+  tenantId   String
+  userId     String?
+  action     String
+  entity     String
+  entityId   String?
+  details    String   // JSON string
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([createdAt])
+  @@index([userId])
+}
+
+// channel: SMS | EMAIL | PUSH | WHATSAPP
+// status: QUEUED | SENT | DELIVERED | FAILED
+model Notification {
+  id        String   @id @default(cuid())
+  tenantId  String
+  channel   String
+  recipient String
+  subject   String
+  body      String
+  alarmId   String?
+  status    String   @default("QUEUED")
+  attempts  Int      @default(0)
+  sentAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([status])
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Alarm Suppression / Maintenance Windows (Task 32-B)
+// ──────────────────────────────────────────────────────────────────────────
+// Time-bound rule that prevents specific alarm types from firing during
+// planned maintenance windows. Used by the alarm engine (raiseAlarm) and
+// the suppression-check helper to short-circuit alarm creation when an
+// active suppression matches.
+//
+// Semantics:
+//   - siteId IS NULL  → applies to ALL sites (tenant-wide).
+//   - alarmType IS NULL → applies to ALL alarm types for the site(s).
+//   - isActive = false → rule cancelled (manual or auto after expiry).
+//   - The matching logic in src/lib/fgmp/suppression-check.ts treats a
+//     rule as "currently suppressing" when isActive=true AND now is
+//     between startsAt and endsAt. Expired-but-active rows are ignored
+//     by the matcher but kept in the DB for the audit history.
+model AlarmSuppression {
+  id         String   @id @default(cuid())
+  tenantId   String
+  siteId     String?  // null = all sites (tenant-wide)
+  alarmType  String?  // null = all alarm types (e.g. "FUEL_LOW", "GEN_FAULT")
+  reason     String   // human-readable reason for suppression
+  createdBy  String
+  startsAt   DateTime
+  endsAt     DateTime
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  site   Site?  @relation(fields: [siteId], references: [id])
+  user   User   @relation(fields: [createdBy], references: [id])
+
+  @@index([tenantId, isActive, endsAt])
+  @@index([siteId])
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Per-User Notification Preferences (Task 33-A)
+// ──────────────────────────────────────────────────────────────────────────
+// Lets each operator customize which alarm notifications they receive, by
+// severity and channel (in-app / email / SMS), plus optional quiet hours
+// during which in-app notifications are silenced (L3 critical alarms still
+// trigger audible alerts). One row per user (1:1).
+//
+// Semantics:
+//   - inAppSeverities / emailSeverities / smsSeverities are comma-separated
+//     subsets of {L1,L2,L3} (e.g. "L1,L2,L3"). The notification dispatcher
+//     filters a queued alarm by intersecting its severity with the list of
+//     the channel the user has enabled.
+//   - quietHoursStart / quietHoursEnd are integers 0-23 (AST timezone).
+//     When both are null, quiet hours are disabled. When start > end the
+//     window wraps past midnight (e.g. 22 → 6 = 10pm → 6am).
+//   - emailOverride / phoneOverride are optional contact overrides. When
+//     null/empty the dispatcher falls back to user.email / user.phone.
+model NotificationPreference {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Channels — which delivery methods the user wants
+  inAppEnabled  Boolean  @default(true)
+  emailEnabled  Boolean  @default(false)
+  smsEnabled    Boolean  @default(false)
+  // Severity filters — which severities trigger notifications per channel
+  inAppSeverities  String  @default("L1,L2,L3")  // comma-separated
+  emailSeverities  String  @default("L2,L3")
+  smsSeverities    String  @default("L3")
+  // Quiet hours — suppress in-app + sound during these hours (24h format, AST timezone)
+  quietHoursStart  Int?    // 0-23 (e.g. 22 for 10pm)
+  quietHoursEnd    Int?    // 0-23 (e.g. 6 for 6am)
+  // Email/SMS contact overrides (optional — defaults to user.email)
+  emailOverride    String?
+  phoneOverride    String?
+  updatedAt    DateTime @updatedAt
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// API Keys (Task 35-E) — programmatic access to the FGMP REST API
+// ──────────────────────────────────────────────────────────────────────────
+// Each key has a SHA-256 hash of the raw secret (only shown once at creation),
+// a set of scopes (comma-separated: read,write,control,admin), optional
+// IP allowlist, and an expiry. Revoked keys stay in the table for audit.
+//
+// scopes: comma-separated subset of {read,write,control,admin}
+model ApiKey {
+  id          String    @id @default(cuid())
+  tenantId    String
+  name        String
+  keyPrefix   String    // first 8 chars of the raw key, for identification
+  keyHash     String    @unique // SHA-256 hash of the full raw key
+  scopes      String    @default("read") // comma-separated
+  ipAllowlist String?   // comma-separated CIDRs, null = any IP
+  createdBy   String    // user id
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  revokedAt   DateTime?
+  revoked     Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+
+  @@index([tenantId, revoked])
+  @@index([keyHash])
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Shift Handover Log (Round 46) — NOC operator shift handover notes
+// ──────────────────────────────────────────────────────────────────────────
+// Each NOC is a 24/7 operation: operators rotate across shifts (Morning,
+// Evening, Night) and the outgoing operator leaves a structured handover
+// note for the incoming operator. This model stores those notes.
+//
+// Semantics:
+//   - shift: MORNING | EVENING | NIGHT  (the shift that PRODUCED the note)
+//   - status: OPEN | ACKNOWLEDGED  (OPEN = awaiting the incoming operator
+//     to read; ACKNOWLEDGED = incoming operator has confirmed receipt)
+//   - openAlarmsCount / criticalSitesCount are point-in-time snapshots the
+//     outgoing operator stamps onto the note (so the incoming operator sees
+//     the state of the network at handover time without re-deriving it).
+//   - priority: P1 | P2 | P3  (operator-set urgency of the handover note)
+//   - tenantId: tenant isolation (every operator only sees their tenant's
+//     handover log).
+//   - createdAt = handover note creation time; acknowledgedAt = when the
+//     incoming operator confirmed receipt.
+model ShiftHandover {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  authorId           String   // outgoing operator (User.id)
+  authorName         String   // denormalized for fast list rendering
+  authorRole         String   // denormalized role at handover time
+  shift              String   // MORNING | EVENING | NIGHT
+  status             String   @default("OPEN")  // OPEN | ACKNOWLEDGED
+  priority           String   @default("P3")    // P1 | P2 | P3
+  // Outgoing operator's free-form handover notes (required).
+  notes              String
+  // Optional: ongoing issues the incoming operator should watch.
+  ongoingIssues      String?
+  // Optional: site ids the outgoing operator flagged for attention.
+  flaggedSiteIds     String?  // comma-separated site ids
+  // Point-in-time snapshot of the network at handover.
+  openAlarmsCount    Int      @default(0)
+  criticalSitesCount Int      @default(0)
+  avgFuelPct         Float    @default(0)
+  // Acknowledgement (incoming operator confirms receipt).
+  acknowledgedById   String?
+  acknowledgedAt     DateTime?
+  acknowledgedNote   String?  // optional reply from the incoming operator
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, status])
+  @@index([shift, status])
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// System Settings (Task 35-E) — global platform configuration key-value store
+// ──────────────────────────────────────────────────────────────────────────
+// Simple key-value table for global settings (alarm thresholds, escalation
+// timers, branding colors, etc.). Each row is one setting; the UI groups them
+// by category. Values are stored as strings; the API coerces to the right type.
+//
+// category: ALARM | ESCALATION | BRANDING | PLATFORM | FORECAST
+model SystemSetting {
+  id        String   @id @default(cuid())
+  category  String
+  key       String   @unique
+  value     String
+  type      String   @default("string") // string | number | boolean | json
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  @@index([category])
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Site Gateways (Task 48) — ESP32/ESP8266 edge gateways
+// ──────────────────────────────────────────────────────────────────────────
+// A SiteGateway is the ESP32/ESP8266 board that aggregates RS485 traffic
+// from one or more fuel dispensers at a site and bridges it to the FGMP
+// platform over WiFi/Ethernet. Each gateway reports live health telemetry
+// (uptime, CPU temp, heap, WiFi RSSI) every tick.
+//
+// status: ONLINE | OFFLINE | DEGRADED
+model SiteGateway {
+  id          String   @id @default(cuid())
+  siteId      String
+  hostname    String
+  // Optional hardware identity, editable via PATCH /api/fgmp/edge/gateways/[id].
+  model       String?
+  ipAddress   String?
+  status      String   @default("ONLINE")  // ONLINE | OFFLINE | DEGRADED
+  uptimeSec   Int      @default(0)
+  cpuTempC    Float    @default(45)
+  heapKb      Int      @default(0)
+  wifiRssi    Int      @default(-65)
+  lastSeenAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@index([siteId])
+  @@index([status])
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// ESP Firmware Releases & Deployments (Task 48) — OTA management
+// ──────────────────────────────────────────────────────────────────────────
+// An EspFirmwareRelease is a versioned firmware image for the ESP32/ESP8266
+// controllers on fuel dispensers. Each release tracks its checksum, size,
+// channel (stable | beta | hotfix) and release notes; deployments are
+// recorded as EspFirmwareDeployment rows that reference a dispenser + a
+// release + the initiating user.
+//
+// channel: stable | beta | hotfix
+model EspFirmwareRelease {
+  id           String   @id @default(cuid())
+  version      String   @unique
+  channel      String   @default("stable")  // stable | beta | hotfix
+  checksum     String
+  sizeKb       Int
+  releaseNotes String   @default("")
+  releasedAt   DateTime @default(now())
+  createdAt    DateTime @default(now())
+
+  deployments EspFirmwareDeployment[]
+
+  @@index([channel])
+  @@index([releasedAt])
+}
+
+// status: QUEUED | DOWNLOADING | FLASHING | SUCCESS | FAILED | ROLLED_BACK
+model EspFirmwareDeployment {
+  id            String   @id @default(cuid())
+  dispenserId   String
+  releaseId     String
+  status        String   @default("QUEUED")
+  startedAt     DateTime @default(now())
+  completedAt   DateTime?
+  initiatedById String?
+
+  dispenser   FuelDispenser      @relation(fields: [dispenserId], references: [id], onDelete: Cascade)
+  release     EspFirmwareRelease @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  initiatedBy User?              @relation(fields: [initiatedById], references: [id], onDelete: SetNull)
+
+  @@index([dispenserId])
+  @@index([status])
+  @@index([startedAt])
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Backup Records (Task 48) — SQLite snapshot audit trail
+// ──────────────────────────────────────────────────────────────────────────
+// Each row records one backup snapshot of the live SQLite database file
+// (kind = MANUAL | SCHEDULED | PRE_RESTORE) with its SHA-256 hash, size, and
+// the user who created/restored it. The actual .db file lives on disk under
+// `backups/`; this table is the audit index.
+//
+// status: COMPLETED | FAILED | RESTORED
+// kind:   MANUAL | SCHEDULED | PRE_RESTORE
+model BackupRecord {
+  id            String   @id @default(cuid())
+  tenantId      String
+  filename      String
+  sizeBytes     Int      @default(0)
+  sha256        String?
+  kind          String   @default("MANUAL")
+  status        String   @default("COMPLETED")
+  note          String?
+  createdById   String?
+  restoredById  String?
+  createdAt     DateTime @default(now())
+  restoredAt    DateTime?
+
+  tenant     Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy  User?  @relation("BackupCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  restoredBy User?  @relation("BackupRestoredBy", fields: [restoredById], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@index([status])
+}

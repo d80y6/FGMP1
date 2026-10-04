@@ -1,0 +1,95 @@
+# FGMP — production stack
+#
+# Every secret below is REQUIRED and has no fallback. The previous defaults
+# (dev-secret-change-me, fgmp-iot-dev-key) shipped in this file and in the
+# firmware source, so a deployment that forgot to export them ran on publicly
+# known credentials. `${VAR:?message}` makes `docker compose up` fail loudly
+# instead.
+#
+# Generate the secrets once and keep them in your shell / secret manager:
+#   openssl rand -base64 32   # NEXTAUTH_SECRET, REALTIME_TOKEN_SECRET
+#   openssl rand -hex 32      # IOT_API_KEY, REALTIME_SERVICE_TOKEN, REALTIME_SERVER_SECRET
+
+services:
+  fgmp-app:
+    build: .
+    ports:
+      - "3151:3000"
+    environment:
+      - DATABASE_URL=file:/app/db/fgmp.db
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:?set NEXTAUTH_SECRET (openssl rand -base64 32)}
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
+      - IOT_API_KEY=${IOT_API_KEY:?set IOT_API_KEY (openssl rand -hex 32)}
+      - REALTIME_URL=http://fgmp-realtime:3003
+      - REALTIME_SERVER_SECRET=${REALTIME_SERVER_SECRET:?set REALTIME_SERVER_SECRET (openssl rand -hex 32)}
+      - REALTIME_SERVICE_TOKEN=${REALTIME_SERVICE_TOKEN:?set REALTIME_SERVICE_TOKEN (openssl rand -hex 32)}
+      - REALTIME_TOKEN_SECRET=${REALTIME_TOKEN_SECRET:?set REALTIME_TOKEN_SECRET (openssl rand -base64 32)}
+    volumes:
+      - fgmp-db:/app/db
+      - fgmp-backups:/app/backups
+    restart: unless-stopped
+    healthcheck:
+      # Unauthenticated probe — /api/fgmp/health requires ADMIN, so it would
+      # report unhealthy forever. Any HTTP response proves the server is up.
+      test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:3000/api/fgmp/health').then(r=>process.exit(0)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  fgmp-realtime:
+    build: ./mini-services/realtime
+    # NOTE: port 3003 is deliberately NOT published to the host. It used to be
+    # exposed, which bypassed the Caddy gateway and made the socket reachable
+    # directly. Browsers reach it through Caddy at /socket.io.
+    expose:
+      - "3003"
+    environment:
+      # These names matter: the service reads NEXT_API_BASE / REALTIME_ORIGIN.
+      # The file previously set NEXTJS_URL / CORS_ORIGIN, which nothing read,
+      # so both mini-services fell back to localhost:3000 — themselves — and
+      # spun in permanent error loops.
+      - NEXT_API_BASE=http://fgmp-app:3000
+      - REALTIME_ORIGIN=${REALTIME_ORIGIN:-http://localhost:3000}
+      - REALTIME_SERVER_SECRET=${REALTIME_SERVER_SECRET:?set REALTIME_SERVER_SECRET (openssl rand -hex 32)}
+      - REALTIME_SERVICE_TOKEN=${REALTIME_SERVICE_TOKEN:?set REALTIME_SERVICE_TOKEN (openssl rand -hex 32)}
+      - REALTIME_TOKEN_SECRET=${REALTIME_TOKEN_SECRET:?set REALTIME_TOKEN_SECRET (openssl rand -base64 32)}
+    depends_on:
+      fgmp-app:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:3003/health').then(r=>process.exit(0)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  fgmp-iot-bridge:
+    build: ./mini-services/iot-bridge
+    # No port exposure — this service only makes outbound calls.
+    environment:
+      - NEXT_API_BASE=http://fgmp-app:3000
+      - REALTIME_ORIGIN=${REALTIME_ORIGIN:-http://localhost:3000}
+      - IOT_API_KEY=${IOT_API_KEY:?set IOT_API_KEY (openssl rand -hex 32)}
+      - REALTIME_SERVER_SECRET=${REALTIME_SERVER_SECRET:?set REALTIME_SERVER_SECRET (openssl rand -hex 32)}
+    depends_on:
+      fgmp-app:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+volumes:
+  fgmp-db:
+  fgmp-backups:

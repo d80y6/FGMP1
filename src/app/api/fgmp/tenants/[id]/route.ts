@@ -1,0 +1,245 @@
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { db, bootstrap } from "@/lib/fgmp";
+import { audit } from "@/lib/fgmp/audit";
+import {
+  rateLimitByUser,
+  applyRateLimitHeaders,
+  MUTATION_LIMIT,
+  READ_LIMIT,
+} from "@/lib/fgmp/rate-limit";
+import { errorResponse } from "@/lib/fgmp/api-error";
+import { requireAuth, requireRole, ROLES, isSuperAdminUser } from "@/lib/fgmp/auth-helpers";
+
+export const dynamic = "force-dynamic";
+
+const tenantSelect = {
+  id: true,
+  name: true,
+  code: true,
+  country: true,
+  createdAt: true,
+  updatedAt: true,
+  _count: { select: { users: true, sites: true, suppressions: true } },
+} as const;
+
+const updateTenantSchema = z.object({
+  name: z.string().min(2).max(120).optional(),
+  code: z
+    .string()
+    .min(2)
+    .max(60)
+    .regex(/^[A-Z0-9-]+$/i, "code must be alphanumeric/dash")
+    .optional(),
+  country: z.string().min(2).max(80).optional(),
+});
+
+/**
+ * GET /api/fgmp/tenants/[id]
+ * Returns a single tenant by id with counts. Any authenticated session.
+ */
+export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const auth = await requireAuth();
+  if ("error" in auth) return auth.error;
+  try {
+    const { user } = await bootstrap();
+    void user;
+    const rl = rateLimitByUser(req, user.id, READ_LIMIT.limit, READ_LIMIT.windowMs);
+    if (!rl.success) {
+      const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
+    const { id } = await ctx.params;
+    const tenant = await db.tenant.findUnique({ where: { id }, select: tenantSelect });
+    // SUPERADMIN can read any tenant; everyone else only their own.
+    if (!isSuperAdminUser(user) && (!tenant || tenant.id !== user.tenantId)) {
+      const res = NextResponse.json({ error: "Tenant not found" }, { status: 404 });
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
+    if (!tenant) {
+      const res = NextResponse.json({ error: "Tenant not found" }, { status: 404 });
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
+    const res = NextResponse.json(tenant);
+    applyRateLimitHeaders(res.headers, rl);
+    return res;
+  } catch (err) {
+    return errorResponse(err);
+  }
+}
+
+/**
+ * PATCH /api/fgmp/tenants/[id]
+ * Update tenant mutable fields (name, code, country). SUPERADMIN-only
+ * (Task 49 — only the platform super-admin may edit tenant organizations;
+ * tenant admins no longer can). Enforces unique name + code when changed.
+ */
+export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const auth = await requireRole(req, ROLES.SUPERADMIN_ONLY);
+  if ("error" in auth) return auth.error;
+  try {
+    const { user } = await bootstrap();
+    const rl = rateLimitByUser(req, user.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
+    if (!rl.success) {
+      const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
+    const { id } = await ctx.params;
+
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
+      const res = NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
+
+    const parsed = updateTenantSchema.safeParse(body);
+    if (!parsed.success) {
+      const res = NextResponse.json(
+        { error: "Validation failed", issues: parsed.error.issues },
+        { status: 400 },
+      );
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
+    const data = parsed.data;
+    if (Object.keys(data).length === 0) {
+      const res = NextResponse.json({ error: "No fields to update" }, { status: 400 });
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
+
+    const existing = await db.tenant.findUnique({ where: { id }, select: tenantSelect });
+    if (!existing) {
+      const res = NextResponse.json({ error: "Tenant not found" }, { status: 404 });
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
+    // Enforce unique name + code if either is being changed.
+    if (data.name || data.code) {
+      const clash = await db.tenant.findFirst({
+        where: {
+          AND: [
+            { id: { not: id } },
+            {
+              OR: [
+                data.name ? { name: data.name } : {},
+                data.code ? { code: data.code } : {},
+              ],
+            },
+          ],
+        },
+        select: { id: true, name: true, code: true },
+      });
+      if (clash) {
+        const field = data.name && clash.name === data.name ? "name" : "code";
+        const res = NextResponse.json(
+          { error: `${field === "name" ? "Name" : "Code"} already in use`, field },
+          { status: 409 },
+        );
+        applyRateLimitHeaders(res.headers, rl);
+        return res;
+      }
+    }
+
+    const updated = await db.tenant.update({
+      where: { id },
+      data,
+      select: tenantSelect,
+    });
+
+    await audit({
+      userId: user.id,
+      tenantId: user.tenantId,
+      action: "TENANT_UPDATE",
+      entity: "Tenant",
+      entityId: id,
+      details: data as Record<string, unknown>,
+    });
+
+    const res = NextResponse.json(updated);
+    applyRateLimitHeaders(res.headers, rl);
+    return res;
+  } catch (err) {
+    return errorResponse(err);
+  }
+}
+
+/**
+ * DELETE /api/fgmp/tenants/[id]
+ * Hard-delete a tenant. SUPERADMIN-only (Task 49). The schema has no
+ * onDelete: Cascade on Tenant → User/Site relations (they reference
+ * Tenant.id without explicit cascade), so a tenant with dependent rows
+ * cannot be deleted at the DB layer. To prevent accidental mass data loss
+ * we explicitly pre-check the counts and refuse deletion if the tenant
+ * still has users or sites — the super-admin must reassign/retire them
+ * first.
+ */
+export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const auth = await requireRole(req, ROLES.SUPERADMIN_ONLY);
+  if ("error" in auth) return auth.error;
+  try {
+    const { user } = await bootstrap();
+    const rl = rateLimitByUser(req, user.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
+    if (!rl.success) {
+      const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
+    const { id } = await ctx.params;
+
+    const existing = await db.tenant.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        _count: { select: { users: true, sites: true, suppressions: true } },
+      },
+    });
+    if (!existing) {
+      const res = NextResponse.json({ error: "Tenant not found" }, { status: 404 });
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
+
+    // Safety: refuse to delete tenants that still own data. Deleting a tenant
+    // that still has users/sites would either cascade-destructively (data
+    // loss) or fail at the FK layer. Force the admin to clean up first.
+    if (existing._count.users > 0 || existing._count.sites > 0) {
+      const res = NextResponse.json(
+        {
+          error:
+            "Cannot delete a tenant with users or sites. Reassign or remove them first.",
+          counts: existing._count,
+        },
+        { status: 409 },
+      );
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
+
+    await db.tenant.delete({ where: { id } });
+
+    await audit({
+      userId: user.id,
+      tenantId: user.tenantId,
+      action: "TENANT_DELETE",
+      entity: "Tenant",
+      entityId: id,
+      details: { name: existing.name, code: existing.code },
+    });
+
+    const res = NextResponse.json({ ok: true, id });
+    applyRateLimitHeaders(res.headers, rl);
+    return res;
+  } catch (err) {
+    return errorResponse(err);
+  }
+}

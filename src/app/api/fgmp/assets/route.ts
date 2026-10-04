@@ -1,0 +1,88 @@
+import { NextRequest, NextResponse } from "next/server";
+import { db, bootstrap } from "@/lib/fgmp";
+import { requireRole, ROLES, tenantWhere, siteTenantWhere } from "@/lib/fgmp/auth-helpers";
+import {
+  rateLimitByUser,
+  applyRateLimitHeaders,
+  READ_LIMIT,
+} from "@/lib/fgmp/rate-limit";
+import { errorResponse } from "@/lib/fgmp/api-error";
+
+export const dynamic = "force-dynamic";
+
+/**
+ * GET /api/fgmp/assets
+ * ────────────────────────────────────────────────────────────────────────────
+ * Returns the full Asset Registry in one round-trip: all fuel tanks, generators,
+ * battery banks, IoT devices, and fuel dispensers — each with its parent site
+ * name/code (dispensers also carry their linked tank) — plus a flat `sites`
+ * array and a `tanks` array so the UI can populate the "Site" and "Tank"
+ * <Select> dropdowns in the create/edit dialogs without extra round-trips.
+ *
+ * Note: this is a *management* surface, so dispenser rows are the plain DB
+ * state (no live engine merge). Live flow/totalizer/status for dispensers is
+ * served by GET /api/fgmp/dispensers for the monitoring view.
+ *
+ * ADMIN-only (this is a management surface).
+ *
+ * Wrapped in try/catch + rate-limited at READ_LIMIT (Task 34-C pattern).
+ */
+export async function GET(req: NextRequest) {
+  const auth = await requireRole(req, ROLES.ADMIN_ONLY);
+  if ("error" in auth) return auth.error;
+  try {
+    await bootstrap();
+    const me = auth.user;
+    const rl = rateLimitByUser(req, me.id, READ_LIMIT.limit, READ_LIMIT.windowMs);
+    if (!rl.success) {
+      const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
+
+    const siteSelect = { select: { name: true, code: true } } as const;
+    const tankSelect = {
+      select: { id: true, label: true, fuelType: true, capacityLitres: true, siteId: true },
+    } as const;
+
+    // Run all five findMany in parallel for snappy load.
+    const [tanks, generators, batteries, iot, dispensers, sites] = await Promise.all([
+      db.fuelTank.findMany({
+        where: siteTenantWhere(me),
+        orderBy: { label: "asc" },
+        include: { site: siteSelect },
+      }),
+      db.generator.findMany({
+        where: siteTenantWhere(me),
+        orderBy: { label: "asc" },
+        include: { site: siteSelect },
+      }),
+      db.batteryBank.findMany({
+        where: siteTenantWhere(me),
+        orderBy: { label: "asc" },
+        include: { site: siteSelect },
+      }),
+      db.iotDevice.findMany({
+        where: siteTenantWhere(me),
+        orderBy: { name: "asc" },
+        include: { site: siteSelect },
+      }),
+      db.fuelDispenser.findMany({
+        where: siteTenantWhere(me),
+        orderBy: [{ siteId: "asc" }, { label: "asc" }],
+        include: { site: siteSelect },
+      }),
+      db.site.findMany({
+        where: tenantWhere(me),
+        orderBy: { name: "asc" },
+        select: { id: true, name: true, code: true },
+      }),
+    ]);
+
+    const res = NextResponse.json({ tanks, generators, batteries, iot, dispensers, sites });
+    applyRateLimitHeaders(res.headers, rl);
+    return res;
+  } catch (err) {
+    return errorResponse(err);
+  }
+}

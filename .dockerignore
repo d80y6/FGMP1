@@ -1,0 +1,54 @@
+# ── Docker build context ignore ────────────────────────────────────────────
+# Keeps the Docker build context lean so `COPY . .` in the Dockerfile doesn't
+# ship non-app artifacts into the builder stage.
+
+node_modules
+.next
+.git
+.gitignore
+
+# Secrets — must never enter the build context. `.next/standalone` output
+# tracing can re-emit a copied .env into the shipped image, so both the file
+# and any variants are excluded here.
+.env
+.env.*
+!.env.example
+
+# Tooling artifacts (security-scanner state, plugin pointers, agent briefs)
+.mimosa
+.v2c
+.initial_snapshot.json
+
+# Docs that are not needed to build or run the app
+REVIEW.md
+PRODUCTION.md
+AGENTS.md
+
+# Non-app deliverables (proposal documents, generated PDFs)
+*.docx
+*.pdf
+/FGMP_Arabic_Technical_Proposal*
+
+# QA screenshots & proposal mockup images (~18MB, not referenced by the app)
+/qa-shots/
+/verify/
+/proposal_imgs/
+/heatmap-filter-active.png
+
+# Workspace artifacts
+/upload/
+/download/
+/worklog.md
+/tool-results/
+/agent-ctx/
+/skills/
+
+# Logs
+*.log
+dev.log
+server.log
+
+# Live DB
+/db/*.db
+/db/*.db-journal
+/backups/
