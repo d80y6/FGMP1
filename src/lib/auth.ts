@@ -120,7 +120,17 @@ export const authOptions: NextAuthOptions = {
 
         const valid = await bcrypt.compare(password, user.passwordHash);
         if (!valid) {
-          const attempts = user.failedLoginAttempts + 1;
+          // Phase 0.7: an EXPIRED lock must reset the counter. Previously
+          // failedLoginAttempts was only cleared on a successful login, so
+          // once an account reached the threshold its counter stayed >= 5
+          // forever and the very first failure after the lock expired
+          // re-locked it immediately — a permanent lockout with no way out
+          // short of a successful login. Start the count fresh whenever the
+          // previous lock has lapsed.
+          const lockLapsed =
+            user.lockedUntil !== null && user.lockedUntil.getTime() <= Date.now();
+          const priorAttempts = lockLapsed ? 0 : user.failedLoginAttempts;
+          const attempts = priorAttempts + 1;
           const shouldLock = attempts >= LOCK_THRESHOLD;
           await db.user.update({
             where: { id: user.id },
@@ -128,7 +138,9 @@ export const authOptions: NextAuthOptions = {
               failedLoginAttempts: attempts,
               lockedUntil: shouldLock
                 ? new Date(Date.now() + LOCK_DURATION_MS)
-                : user.lockedUntil,
+                : lockLapsed
+                  ? null
+                  : user.lockedUntil,
             },
           });
           return null;

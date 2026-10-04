@@ -11,6 +11,8 @@
  *
  * Limits (per task spec):
  *   - Auth endpoints:    5 req / 15 min  per IP    (RATE_LIMIT_AUTH_*)
+ *                        Applied via rateLimitLogin(); see its comment for why
+ *                        the unknown-IP case uses a looser shared budget.
  *   - Mutation endpoints: 60 req / 1 min  per user  (RATE_LIMIT_MUTATION_*)
  *   - Read endpoints:    300 req / 1 min  per user
  *   - IoT ingest:        100 req / 1 min  per API key
@@ -141,6 +143,43 @@ export function rateLimitByIp(
   return rateLimit(`ip:${ip}`, limit, windowMs);
 }
 
+/**
+ * Rate limit for the LOGIN endpoint specifically.
+ *
+ * Why this is not just rateLimitByIp(): getClientIp() returns the literal
+ * "anon" unless TRUSTED_PROXY is set, because the forwarded headers are
+ * client-controlled and trusting them blindly lets an attacker rotate a fake
+ * IP per request and bypass the limiter entirely. The safe fallback, however,
+ * means that without TRUSTED_PROXY every anonymous client shares ONE bucket.
+ * Applying AUTH_LIMIT (5 / 15 min) to that bucket would mean five bad login
+ * attempts from anyone lock every operator on the platform out of logging in
+ * for a quarter of an hour — a self-inflicted denial of service.
+ *
+ * So the two failure modes are separated:
+ *
+ *   - Real client IP known (TRUSTED_PROXY set, headers trusted):
+ *     the full AUTH_LIMIT budget, per IP.
+ *   - IP unknown ("anon"): a deliberately MORE PERMISSIVE shared budget, so a
+ *     single attacker cannot lock out the whole fleet, while still bounding
+ *     automated guessing. The per-account `lockedUntil` lockout in
+ *     src/lib/auth.ts remains the real backstop against credential stuffing,
+ *     because it is DB-backed and keyed on the target account rather than on
+ *     a spoofable or shared IP.
+ */
+export function rateLimitLogin(
+  req: NextRequest | Request,
+): RateLimitResult {
+  const ip = getClientIp(req);
+  if (ip !== "anon") {
+    return rateLimit(`auth:ip:${ip}`, AUTH_LIMIT.limit, AUTH_LIMIT.windowMs);
+  }
+  return rateLimit(
+    "auth:shared",
+    envInt("RATE_LIMIT_AUTH_SHARED_MAX", 200),
+    AUTH_LIMIT.windowMs,
+  );
+}
+
 /** Rate limit by authenticated user id (or fall back to IP for anonymous). */
 export function rateLimitByUser(
   req: NextRequest | Request,
@@ -160,8 +199,7 @@ export function rateLimitByApiKey(
   limit: number,
   windowMs: number,
 ): RateLimitResult {
-  const key = req.headers.get("x-api-key") ?? "no-key";
-  return rateLimit(`k:${key}`, limit, windowMs);
+  const key = req.headers.get("x-api-key") ?? "no-key";  return rateLimit(`k:${key}`, limit, windowMs);
 }
 
 // ──────────────────────────────────────────────────────────────────────────
