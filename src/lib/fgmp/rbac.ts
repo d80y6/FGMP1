@@ -189,17 +189,25 @@ export function canView(role: Role, viewKey: string): boolean {
   return hasCapability(role, `view:${viewKey}`);
 }
 
-// ── Session (in-memory, single active operator) ────────────────────────────
+// ── Session (NextAuth-backed) ─────────────────────────────────────────────
 // Production auth is handled by NextAuth (Task 31-A, src/lib/auth.ts) and the
-// session is the source of truth. getCurrentUser() below first consults the
-// server-side NextAuth session; if there is one, it returns the authenticated
-// user (so audit logs + DB writes are attributed to the real operator).
+// session is the source of truth.
 //
-// The legacy "mock user" fallback is preserved for boot-time paths that run
-// before any HTTP request has a session (seed scripts, the seed-admin CLI,
-// and the engine's internal tick when invoked without a request scope). In
-// normal request handling the session is always present (requireAuth() at the
-// top of each route enforces it).
+// SECURITY (Phase 0.3): getCurrentUser() used to wrap the session lookup in a
+// bare `catch {}` that fell through to a hardcoded t-default "mock" identity.
+// bootstrap() (src/lib/fgmp/index.ts) feeds its result into 83 API route
+// handlers, and many use it for TENANT SCOPING (assertTenantOwned,
+// tenantWhere, rate-limit keys, audit attribution) rather than merely for
+// logging. So any transient failure of `import("next-auth")` silently
+// substituted the wrong tenant — a fail-open authorization bug triggered by an
+// operational fault. `_current` was also process-global module state, so once
+// degraded the wrong identity persisted for the life of the process and leaked
+// across requests.
+//
+// It now FAILS CLOSED: no session means an exception, never an identity.
+// System/seed contexts that legitimately have no HTTP session must call
+// getSystemUser() explicitly, so the intent is visible at every call site
+// instead of being an invisible side effect of an import failure.
 
 import { db } from "@/lib/db";
 
@@ -211,31 +219,56 @@ const DEFAULT_USER = {
   tenantId: "t-default",
 };
 
-let _current: { id: string; name: string; email: string; role: Role; tenantId: string } | null = null;
+export interface FgmpUser {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  tenantId: string;
+}
 
-export async function getCurrentUser() {
-  // Prefer the NextAuth session if one is present in this request scope.
-  try {
-    const { getServerSession } = await import("next-auth");
-    const { authOptions } = await import("@/lib/auth");
-    const session = await getServerSession(authOptions);
-    if (session?.user?.id) {
-      return {
-        id: session.user.id,
-        name: session.user.name,
-        email: session.user.email,
-        role: session.user.role as Role,
-        tenantId: session.user.tenantId,
-      };
-    }
-  } catch {
-    // Import-time / seed-script contexts where next-auth isn't reachable —
-    // fall through to the legacy mock-user path below.
+let _current: FgmpUser | null = null;
+
+/**
+ * Resolve the authenticated user for the current HTTP request.
+ *
+ * THROWS when no NextAuth session is present — deliberately. Callers on the
+ * request path have already passed requireAuth()/requireRole(), which return
+ * the session user; they should prefer `auth.user` over this helper.
+ *
+ * Request handlers that still need this should treat a throw as 401, not
+ * swallow it.
+ */
+export async function getCurrentUser(): Promise<FgmpUser> {
+  const { getServerSession } = await import("next-auth");
+  const { authOptions } = await import("@/lib/auth");
+  const session = await getServerSession(authOptions);
+  if (session?.user?.id) {
+    return {
+      id: session.user.id,
+      name: session.user.name,
+      email: session.user.email,
+      role: session.user.role as Role,
+      tenantId: session.user.tenantId,
+    };
   }
+  throw new Error(
+    "getCurrentUser(): no authenticated session. Request handlers must use the " +
+      "user returned by requireAuth()/requireRole(). Non-request contexts " +
+      "(seed/CLI/system jobs) must call getSystemUser() explicitly.",
+  );
+}
 
+/**
+ * The default platform identity for contexts that have no HTTP session —
+ * seed scripts, CLI jobs, and internal engine work.
+ *
+ * Callers must name this function deliberately. It is NEVER invoked as a
+ * fallback by getCurrentUser(), so it cannot silently mask an authentication
+ * failure on a request path.
+ */
+export async function getSystemUser(): Promise<FgmpUser> {
   if (_current) return _current;
-  // Ensure a DB user row exists for audit linkage (used by seed scripts and
-  // any code path that runs without an HTTP session).
   try {
     const tenant = await db.tenant.upsert({
       where: { code: "NATIONAL-TELCO" },
@@ -254,8 +287,15 @@ export async function getCurrentUser() {
   return _current;
 }
 
+/**
+ * Switch the *system* identity's role.
+ *
+ * This mutates a real User row, so it is only meaningful for seed/CLI contexts
+ * that have opted into getSystemUser(). It has no effect on a live NextAuth
+ * session — use PATCH /api/fgmp/me for that.
+ */
 export async function setCurrentRole(role: Role) {
-  const u = await getCurrentUser();
+  const u = await getSystemUser();
   _current = { ...u, role };
   try {
     await db.user.update({ where: { id: u.id }, data: { role } });

@@ -8,7 +8,6 @@ import {
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireAuth } from "@/lib/fgmp/auth-helpers";
-import { getCurrentUser } from "@/lib/fgmp/rbac";
 
 /**
  * GET /api/fgmp/proposal
@@ -22,7 +21,7 @@ export async function GET(req: NextRequest) {
   const auth = await requireAuth();
   if ("error" in auth) return auth.error;
   try {
-    const user = await getCurrentUser();
+    const user = auth.user;
     const rl = rateLimitByUser(req, user.id, READ_LIMIT.limit, READ_LIMIT.windowMs);
     if (!rl.success) {
       const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });

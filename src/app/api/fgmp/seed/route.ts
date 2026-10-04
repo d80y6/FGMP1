@@ -8,7 +8,6 @@ import {
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireRole, ROLES } from "@/lib/fgmp/auth-helpers";
-import { getCurrentUser } from "@/lib/fgmp/rbac";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +15,9 @@ export async function POST(req: NextRequest) {
   const auth = await requireRole(req, ROLES.ADMIN_ONLY);
   if ("error" in auth) return auth.error;
   try {
-    const user = await getCurrentUser();
+    // Use the session user requireRole() already resolved rather than
+    // re-resolving it (and rather than a getCurrentUser() that now fails closed).
+    const user = auth.user;
     const rl = rateLimitByUser(req, user.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
     if (!rl.success) {
       const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
