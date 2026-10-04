@@ -21,24 +21,22 @@ function ok(label: string, detail: string) {
 }
 
 async function main() {
-  // Children first: the hierarchy cascades, but explicit order keeps the
-  // teardown honest if a previous run aborted mid-way. FuelDelivery references
-  // a tank without ON DELETE CASCADE, so it must go before FuelTank.
-  await db.sensorReading.deleteMany();
-  await db.fuelDelivery.deleteMany();
-  await db.fuelTank.deleteMany();
-  await db.site.deleteMany();
-  await db.district.deleteMany();
-  await db.governorate.deleteMany();
-  await db.region.deleteMany();
-  await db.user.deleteMany();
-  await db.tenant.deleteMany();
+  // Scope the fixture to its own tenant and delete only that. An earlier
+  // revision wiped the whole database, which made the test destructive: run
+  // it after seedIfNeeded() and it would delete the seeded fleet, and the
+  // FK ordering then depended on how many tables happened to reference a site.
+  //
+  // Deleting the tenant itself cascades to every tenant-scoped child, so one
+  // delete is both sufficient and the only correct order-independent teardown.
+  const TENANT_ID = "t-smoke";
+
+  await db.tenant.deleteMany({ where: { id: TENANT_ID } });
 
   const tenant = await db.tenant.create({
     data: {
-      id: "t-default",
-      name: "National Telecom",
-      code: "NAT-TELCO",
+      id: TENANT_ID,
+      name: "Smoke Test Tenant",
+      code: "SMOKE-TEST",
       country: "Yemen",
     },
   });
