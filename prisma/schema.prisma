@@ -28,6 +28,254 @@ datasource db {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// Native enums (Phase 1 step 8)
+// ──────────────────────────────────────────────────────────────────────────
+// Phase 1 step 1 moved the datasource to PostgreSQL, which makes native enum
+// types possible for the first time. Under SQLite every discriminator below was
+// a free `String` whose legal values existed only in a comment — nothing but
+// application code prevented an invalid value reaching the database.
+//
+// IMPORTANT — these value lists were reconciled against the actual runtime
+// writers, NOT copied from the documentation comments above each model. Four
+// documented lists were incomplete, and a native enum built from them alone
+// would have rejected values the application legitimately writes:
+//
+//   * User.role               — the comment omitted SUPERADMIN (types.ts `Role`).
+//   * Notification.channel    — the comment listed none; engine.ts writes SMS,
+//                               EMAIL and WHATSAPP.
+//   * MaintenanceTicket.status — writers produce SCHEDULED / IN_PROGRESS /
+//                               DONE / CANCELLED.
+//   * FuelDelivery.status     — DISCREPANCY is declared but never written
+//                               (kept: a legitimate terminal state).
+//
+// Deliberately NOT enum-ised — open/extensible or write-once audit values where
+// a native enum adds write-time rejection with no integrity benefit:
+// AlarmSuppression.status/priority, SiteEvent.kind, AuditLog.action,
+// ApiKey.scopes, SystemSetting.type, and BackupRecord.kind/status (the latter
+// also orphaned after Phase 0 deleted the backup API).
+//
+// MaintenanceTicket.type/.assetKind and IotDevice.type stay String: the ticket
+// pair is constrained by zod at the API boundary (schemas.ts), and IotDevice.type
+// has no documented closed set.
+
+// SUPERADMIN is the platform cross-tenant owner, enforced server-side in
+// rbac.ts / auth-helpers.ts. The old `role` comment above model User omitted it.
+enum Role {
+  SUPERADMIN
+  ADMIN
+  NOC_OPERATOR
+  REGIONAL_MANAGER
+  FIELD_ENGINEER
+  EXECUTIVE
+  READONLY
+}
+
+enum SiteStatus {
+  ONLINE
+  DEGRADED
+  OFFLINE
+  MAINTENANCE
+}
+
+enum Criticality {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum PowerSource {
+  GRID
+  GENERATOR
+  HYBRID
+}
+
+enum TankStatus {
+  OPERATIONAL
+  EMPTY
+  MAINTENANCE
+  CALIBRATING
+}
+
+enum FuelType {
+  DIESEL
+  PETROL
+}
+
+enum GenStatus {
+  RUNNING
+  STOPPED
+  FAULT
+  MAINTENANCE
+  OFFLINE
+}
+
+enum GenMode {
+  AUTO
+  MANUAL
+  REMOTE
+}
+
+enum GenCommandType {
+  START
+  STOP
+  EMERGENCY_STOP
+  RESET
+}
+
+enum BatteryStatus {
+  OK
+  LOW
+  FAILING
+  REPLACEMENT_DUE
+  OFFLINE
+}
+
+enum EntityKind {
+  TANK
+  GENERATOR
+  BATTERY
+  SITE
+  DISPENSER
+}
+
+enum IotProtocol {
+  RS485
+  MODBUS_RTU
+  MODBUS_TCP
+  MQTT
+  HTTP
+  SNMP
+}
+
+enum IotStatus {
+  ONLINE
+  OFFLINE
+  DEGRADED
+  PROVISIONING
+}
+
+enum DispenserStatus {
+  IDLE
+  AUTHORIZED
+  DISPENSING
+  STOPPED
+  FAULT
+  MAINTENANCE
+  OFFLINE
+}
+
+enum FuelTransactionStatus {
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  FAILED
+}
+
+enum AlarmType {
+  FUEL_THEFT
+  FUEL_REFILL
+  FUEL_LOW
+  FUEL_CRITICAL
+  GEN_OFFLINE
+  GEN_FAILURE
+  GEN_OVERHEAT
+  BATT_LOW_VOLTAGE
+  BATT_FAILURE
+  COMM_LOSS
+  DISPENSER_FAULT
+}
+
+enum AlarmSeverity {
+  L1
+  L2
+  L3
+}
+
+enum AlarmStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+  ESCALATED
+}
+
+enum FuelDeliveryStatus {
+  SCHEDULED
+  IN_TRANSIT
+  DELIVERED
+  VERIFIED
+  DISCREPANCY
+  CANCELLED
+}
+
+enum ControlCommandStatus {
+  PENDING
+  SENT
+  EXECUTED
+  FAILED
+  TIMEOUT
+}
+
+enum TicketPriority {
+  P1
+  P2
+  P3
+  P4
+}
+
+enum TicketStatus {
+  OPEN
+  SCHEDULED
+  IN_PROGRESS
+  DONE
+  CANCELLED
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  SMS
+  PUSH
+  WHATSAPP
+}
+
+enum NotificationStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  FAILED
+}
+
+enum SystemSettingCategory {
+  ALARM
+  ESCALATION
+  BRANDING
+  PLATFORM
+  FORECAST
+}
+
+enum GatewayStatus {
+  ONLINE
+  OFFLINE
+  DEGRADED
+}
+
+enum OtaStatus {
+  // QUEUED is the real initial state: engine.ts creates every
+  // EspFirmwareDeployment with status "QUEUED" (5 sites), and it is the
+  // value documented on EspFirmwareDeployment.status. It was missing from
+  // the enum, which made the default unresolvable.
+  QUEUED
+  IDLE
+  PENDING
+  DOWNLOADING
+  FLASHING
+  SUCCESS
+  FAILED
+  ROLLED_BACK
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Identity & Multi-tenancy
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -75,7 +323,7 @@ model User {
   tenantId      String
   email         String    @unique
   name          String
-  role          String    @default("NOC_OPERATOR")
+  role          Role    @default(NOC_OPERATOR)
   phone         String?
   // bcrypt-hashed password. Nullable for legacy / SSO users that have no
   // local password; the user-management UI always sets a hash on creation
@@ -170,12 +418,12 @@ model Site {
   latitude      Float
   longitude     Float
   address       String
-  status        String   @default("ONLINE")
-  criticality   String   @default("MEDIUM")
+  status        SiteStatus   @default(ONLINE)
+  criticality   Criticality   @default(MEDIUM)
   // Load profile (kW)
   loadKw        Float    @default(0)
   // Power preference: GRID | GENERATOR | HYBRID
-  powerSource   String   @default("HYBRID")
+  powerSource   PowerSource   @default(HYBRID)
   gridAvailable Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -216,7 +464,7 @@ model FuelTank {
   // must not be deletable.
   tenantId      String
   label         String
-  fuelType      String   @default("DIESEL")
+  fuelType      FuelType   @default(DIESEL)
   capacityLitres Float
   // Current live level (litres) — updated by telemetry engine & persisted on tick
   currentLitres Float
@@ -227,7 +475,7 @@ model FuelTank {
   criticalThreshold Float
   // Telemetry meta
   lastReadingAt DateTime?
-  status        String   @default("OPERATIONAL")
+  status        TankStatus   @default(OPERATIONAL)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -255,8 +503,8 @@ model Generator {
   model           String
   ratedPowerKw    Float
   fuelType        String   @default("DIESEL")
-  status          String   @default("STOPPED")
-  mode            String   @default("AUTO")
+  status          GenStatus   @default(STOPPED)
+  mode            GenMode   @default(AUTO)
   runtimeHours    Float    @default(0)
   // Maintenance
   oilChangeIntervalHrs Float @default(250)
@@ -299,7 +547,7 @@ model BatteryBank {
   stateOfHealth Float    @default(95)   // %
   temperatureC  Float    @default(25)
   charging      Boolean  @default(false)
-  status        String   @default("OK")
+  status        BatteryStatus   @default(OK)
   installedAt   DateTime @default(now())
   // Last discharge / service date, used for battery health scoring.
   lastReadingAt DateTime?
@@ -322,14 +570,14 @@ model IotDevice {
   tenantId    String   // Phase 1 step 2-5: denormalised from Site.
   name        String
   type        String
-  protocol    String
+  protocol    IotProtocol
   vendor      String
   serialNo    String   @unique
   firmware    String
   ipAddress   String?
   modbusUnit  Int?
   // Online state
-  status      String   @default("ONLINE")
+  status      IotStatus   @default(ONLINE)
   lastSeenAt  DateTime?
   signalRssi  Int      @default(-70)
   // OTA
@@ -367,9 +615,9 @@ model FuelDispenser {
   manufacturer  String
   model         String
   nozzleCount   Int      @default(1)   // 1–4 nozzles
-  fuelType      String   @default("DIESEL") // DIESEL | PETROL
+  fuelType      FuelType   @default(DIESEL) // DIESEL | PETROL
   maxFlowLpm    Float    @default(40)  // max litres/min
-  status        String   @default("IDLE")
+  status        DispenserStatus   @default(IDLE)
   mode          String   @default("AUTO")
   // Pump identifier 1..N within a site (unique per site). Task 48 — required
   // by /api/fgmp/assets/dispensers (create + unique constraint siteId_pumpNumber),
@@ -429,11 +677,11 @@ model FuelTransaction {
   tenantId      String    // Phase 1 step 2-5: denormalised from Site.
   nozzle        Int       @default(1)
   volumeLitres  Float
-  amountYer     Float     @default(0)   // cost in Yemeni Rial
-  unitPriceYer  Float     @default(0)
+  amountYer     Decimal     @default(0)   // cost in Yemeni Rial
+  unitPriceYer  Decimal     @default(0)
   vehiclePlate  String?
   operatorName  String?
-  status        String    @default("COMPLETED")
+  status        FuelTransactionStatus    @default(COMPLETED)
   startedAt     DateTime  @default(now())
   completedAt   DateTime?
   durationSec   Int       @default(0)
@@ -460,7 +708,7 @@ model SensorReading {
   id          String   @id @default(cuid())
   siteId      String
   tenantId    String   // Phase 1 step 2-5: denormalised from Site.
-  entityKind  String
+  entityKind  EntityKind
   entityId    String
   metric      String
   value       Float
@@ -490,9 +738,9 @@ model Alarm {
   id            String   @id @default(cuid())
   tenantId      String
   siteId        String
-  type          String
-  severity      String   @default("L1")
-  status        String   @default("OPEN")
+  type          AlarmType
+  severity      AlarmSeverity   @default(L1)
+  status        AlarmStatus   @default(OPEN)
   escalationLevel Int    @default(1)
   entityKind    String?
   entityId      String?
@@ -555,13 +803,13 @@ model FuelDelivery {
   volumeOrderedLitres Float
   volumeDeliveredLitres Float?
   doNumber    String   // delivery order number
-  status      String   @default("SCHEDULED")
+  status      FuelDeliveryStatus   @default(SCHEDULED)
   scheduledAt DateTime
   dispatchedAt DateTime?
   deliveredAt DateTime?
   verifiedAt  DateTime?
   discrepancyNote String?
-  unitPrice   Float    @default(0)
+  unitPrice   Decimal    @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -585,8 +833,8 @@ model ControlCommand {
   // Adding a siteId column was considered and rejected: it would denormalise a
   // relationship the schema already expresses, and the table has no rows.
   tenantId    String
-  command     String
-  status      String   @default("PENDING")
+  command     GenCommandType
+  status      ControlCommandStatus   @default(PENDING)
   reason      String?
   issuedById  String?
   issuedAt    DateTime @default(now())
@@ -612,8 +860,8 @@ model MaintenanceTicket {
   assetKind   String   // GENERATOR | TANK | BATTERY | IOT
   assetId     String
   type        String
-  status      String   @default("OPEN")
-  priority    String   @default("P3")
+  status      TicketStatus   @default(OPEN)
+  priority    TicketPriority   @default(P3)
   title       String
   description String?
   assignedToId String?
@@ -659,12 +907,12 @@ model AuditLog {
 model Notification {
   id        String   @id @default(cuid())
   tenantId  String
-  channel   String
+  channel   NotificationChannel
   recipient String
   subject   String
   body      String
   alarmId   String?
-  status    String   @default("QUEUED")
+  status    NotificationStatus   @default(QUEUED)
   attempts  Int      @default(0)
   sentAt    DateTime?
   createdAt DateTime @default(now())
@@ -855,7 +1103,7 @@ model ShiftHandover {
 // category: ALARM | ESCALATION | BRANDING | PLATFORM | FORECAST
 model SystemSetting {
   id        String   @id @default(cuid())
-  category  String
+  category  SystemSettingCategory
   key       String   @unique
   value     String
   type      String   @default("string") // string | number | boolean | json
@@ -882,7 +1130,7 @@ model SiteGateway {
   // Optional hardware identity, editable via PATCH /api/fgmp/edge/gateways/[id].
   model       String?
   ipAddress   String?
-  status      String   @default("ONLINE")  // ONLINE | OFFLINE | DEGRADED
+  status      GatewayStatus   @default(ONLINE)  // ONLINE | OFFLINE | DEGRADED
   uptimeSec   Int      @default(0)
   cpuTempC    Float    @default(45)
   heapKb      Int      @default(0)
@@ -934,7 +1182,7 @@ model EspFirmwareDeployment {
   // deployment is the tenant-scoped instance of a global EspFirmwareRelease.
   tenantId      String
   releaseId     String
-  status        String   @default("QUEUED")
+  status        OtaStatus   @default(QUEUED)
   startedAt     DateTime @default(now())
   completedAt   DateTime?
   initiatedById String?

@@ -91,7 +91,9 @@ function blocked(name: string, detail: string): void {
 
 // ── Fixture definitions ─────────────────────────────────────────────────────
 //
-// The 14 tables that receive a `tenant_id` column, per
+// The 14 tables the suite exercises directly. Step 6 enables RLS on
+// ALL 24 tables that carry the column; the rest are covered by the same policy
+// and are enumerated in the step-6 migration.
 // docs/phase1-tenant-isolation.md §"Tier A"/"Tier B".
 //
 // Fixtures are inserted as the OWNER role (fgmp_migrate) because a
@@ -131,6 +133,9 @@ const RELEASE_ID = `rls-rel-${RUN}`
 const DISPENSER_ID = `rls-disp-${RUN}`
 const GENERATOR_ID = `rls-gen-${RUN}`
 const TANK_ID = `rls-tank-${RUN}`
+const REGION_ID = `rls-reg-${RUN}`
+const GOV_ID = `rls-gov-${RUN}`
+const DIST_ID = `rls-dist-${RUN}`
 
 const SITE_COLS = `
   id, code, name, status, "criticality", "loadKw", "powerSource",
@@ -149,7 +154,7 @@ const TABLES: TableSpec[] = [
   {
     table: 'NotificationPreference',
     label: 'NotificationPreference (tier A, via User)',
-    tenantColumn: 'tenant_id',
+    tenantColumn: 'tenantId',
     siteScoped: false,
     columns: {
       id: `'np-${SUFFIX}'`,
@@ -165,7 +170,7 @@ const TABLES: TableSpec[] = [
   {
     table: 'EspFirmwareDeployment',
     label: 'EspFirmwareDeployment (tier A, via FuelDispenser)',
-    tenantColumn: 'tenant_id',
+    tenantColumn: 'tenantId',
     siteScoped: false,
     columns: {
       id: `'efd-${SUFFIX}'`,
@@ -177,7 +182,7 @@ const TABLES: TableSpec[] = [
   {
     table: 'FuelTank',
     label: 'FuelTank (tier B, via Site)',
-    tenantColumn: 'tenant_id',
+    tenantColumn: 'tenantId',
     siteScoped: true,
     columns: {
       id: `'tank-${SUFFIX}'`,
@@ -195,7 +200,7 @@ const TABLES: TableSpec[] = [
   {
     table: 'Generator',
     label: 'Generator (tier B, via Site)',
-    tenantColumn: 'tenant_id',
+    tenantColumn: 'tenantId',
     siteScoped: true,
     columns: {
       id: `'gen-${SUFFIX}'`,
@@ -221,7 +226,7 @@ const TABLES: TableSpec[] = [
   {
     table: 'BatteryBank',
     label: 'BatteryBank (tier B, via Site)',
-    tenantColumn: 'tenant_id',
+    tenantColumn: 'tenantId',
     siteScoped: true,
     columns: {
       id: `'batt-${SUFFIX}'`,
@@ -242,7 +247,7 @@ const TABLES: TableSpec[] = [
   {
     table: 'IotDevice',
     label: 'IotDevice (tier B, via Site)',
-    tenantColumn: 'tenant_id',
+    tenantColumn: 'tenantId',
     siteScoped: true,
     columns: {
       id: `'iot-${SUFFIX}'`,
@@ -259,7 +264,7 @@ const TABLES: TableSpec[] = [
   {
     table: 'FuelDispenser',
     label: 'FuelDispenser (tier B, via Site)',
-    tenantColumn: 'tenant_id',
+    tenantColumn: 'tenantId',
     siteScoped: true,
     columns: {
       id: `'disp-${SUFFIX}'`,
@@ -279,7 +284,7 @@ const TABLES: TableSpec[] = [
   {
     table: 'FuelTransaction',
     label: 'FuelTransaction (tier B, via Dispenser)',
-    tenantColumn: 'tenant_id',
+    tenantColumn: 'tenantId',
     siteScoped: true,
     columns: {
       id: `'txn-${SUFFIX}'`,
@@ -294,7 +299,7 @@ const TABLES: TableSpec[] = [
   {
     table: 'SensorReading',
     label: 'SensorReading (tier B, via Site)',
-    tenantColumn: 'tenant_id',
+    tenantColumn: 'tenantId',
     siteScoped: true,
     columns: {
       id: `'read-${SUFFIX}'`,
@@ -309,7 +314,7 @@ const TABLES: TableSpec[] = [
   {
     table: 'SiteEvent',
     label: 'SiteEvent (tier B, via Site)',
-    tenantColumn: 'tenant_id',
+    tenantColumn: 'tenantId',
     siteScoped: true,
     columns: {
       id: `'evt-${SUFFIX}'`,
@@ -321,7 +326,7 @@ const TABLES: TableSpec[] = [
   {
     table: 'FuelDelivery',
     label: 'FuelDelivery (tier B, via Site)',
-    tenantColumn: 'tenant_id',
+    tenantColumn: 'tenantId',
     siteScoped: true,
     columns: {
       id: `'del-${SUFFIX}'`,
@@ -339,7 +344,7 @@ const TABLES: TableSpec[] = [
   {
     table: 'ControlCommand',
     label: 'ControlCommand (tier B, via Generator)',
-    tenantColumn: 'tenant_id',
+    tenantColumn: 'tenantId',
     siteScoped: true,
     columns: {
       id: `'cmd-${SUFFIX}'`,
@@ -351,7 +356,7 @@ const TABLES: TableSpec[] = [
   {
     table: 'MaintenanceTicket',
     label: 'MaintenanceTicket (tier B, via Site)',
-    tenantColumn: 'tenant_id',
+    tenantColumn: 'tenantId',
     siteScoped: true,
     columns: {
       id: `'mnt-${SUFFIX}'`,
@@ -367,7 +372,7 @@ const TABLES: TableSpec[] = [
   {
     table: 'SiteGateway',
     label: 'SiteGateway (tier B, via Site)',
-    tenantColumn: 'tenant_id',
+    tenantColumn: 'tenantId',
     siteScoped: true,
     columns: {
       id: `'gw-${SUFFIX}'`,
@@ -376,6 +381,135 @@ const TABLES: TableSpec[] = [
       model: `'EG-1'`,
       "ipAddress": `'10.0.0.1'`,
       status: `'ONLINE'`,
+    },
+  },
+  {
+    table: 'Site',
+    label: 'Site (root of every tier-B backfill)',
+    tenantColumn: 'tenantId',
+    siteScoped: false,
+    columns: {
+      id: `'${SITE_ID}'`,
+      code: `'${SITE_CODE}'`,
+      name: `'RLS Site ${SUFFIX}'`,
+      "regionId": `'${REGION_ID}'`,
+      "governorateId": `'${GOV_ID}'`,
+      "districtId": `'${DIST_ID}'`,
+      latitude: '15.0',
+      longitude: '44.0',
+      address: `'RLS addr ${SUFFIX}'`,
+    },
+  },
+  {
+    table: 'User',
+    label: 'User (identity root)',
+    tenantColumn: 'tenantId',
+    siteScoped: false,
+    columns: {
+      id: `'${SITE_USER_ID}'`,
+      email: `'rls-user-${SUFFIX}@example.invalid'`,
+      name: `'RLS User ${SUFFIX}'`,
+      role: `'ADMIN'`,
+      active: 'true',
+    },
+  },
+  {
+    table: 'Region',
+    label: 'Region (geography root)',
+    tenantColumn: 'tenantId',
+    siteScoped: false,
+    columns: {
+      id: `'${REGION_ID}'`,
+      name: `'RLS Region ${SUFFIX}'`,
+    },
+  },
+  {
+    table: 'Alarm',
+    label: 'Alarm (operational)',
+    tenantColumn: 'tenantId',
+    siteScoped: true,
+    columns: {
+      id: `'alm-${SUFFIX}'`,
+      "siteId": `'${SITE_ID}'`,
+      type: `'FUEL_LOW'`,
+      message: `'RLS alarm ${SUFFIX}'`,
+    },
+  },
+  {
+    table: 'AlarmSuppression',
+    label: 'AlarmSuppression (tenant-owned)',
+    tenantColumn: 'tenantId',
+    siteScoped: true,
+    columns: {
+      id: `'sup-${SUFFIX}'`,
+      "siteId": `'${SITE_ID}'`,
+      reason: `'RLS suppression ${SUFFIX}'`,
+      "createdBy": `'${SITE_USER_ID}'`,
+      "startsAt": 'now()',
+      "endsAt": 'now() + interval \'1 day\'',
+    },
+  },
+  {
+    table: 'ApiKey',
+    label: 'ApiKey (credential store)',
+    tenantColumn: 'tenantId',
+    siteScoped: false,
+    columns: {
+      id: `'key-${SUFFIX}'`,
+      name: `'RLS key ${SUFFIX}'`,
+      "keyPrefix": `'rlspfx${SUFFIX}'`,
+      "keyHash": `'${SUFFIX}${'0'.repeat(60)}'`,
+      "createdBy": `'${SITE_USER_ID}'`,
+    },
+  },
+  {
+    table: 'AuditLog',
+    label: 'AuditLog (highest disclosure risk)',
+    tenantColumn: 'tenantId',
+    siteScoped: false,
+    columns: {
+      id: `'aud-${SUFFIX}'`,
+      action: `'READ'`,
+      entity: `'Site'`,
+      details: `'{}'`,
+    },
+  },
+  {
+    table: 'Notification',
+    label: 'Notification (highest disclosure risk)',
+    tenantColumn: 'tenantId',
+    siteScoped: false,
+    columns: {
+      id: `'ntf-${SUFFIX}'`,
+      channel: `'SMS'`,
+      recipient: `'+967700000${(SUFFIX % 1000).toString().padStart(3, '0')}'`,
+      subject: `'RLS subject ${SUFFIX}'`,
+      body: `'RLS body ${SUFFIX}'`,
+    },
+  },
+  {
+    table: 'BackupRecord',
+    label: 'BackupRecord (holds password hashes indirectly)',
+    tenantColumn: 'tenantId',
+    siteScoped: false,
+    columns: {
+      id: `'bkp-${SUFFIX}'`,
+      filename: `'fgmp-rls-${SUFFIX}.db'`,
+      "sizeBytes": '1024',
+    },
+  },
+  {
+    table: 'ShiftHandover',
+    label: 'ShiftHandover (tenant-owned)',
+    tenantColumn: 'tenantId',
+    siteScoped: false,
+    columns: {
+      id: `'shf-${SUFFIX}'`,
+      "authorId": `'${SITE_USER_ID}'`,
+      "authorName": `'RLS User ${SUFFIX}'`,
+      "authorRole": `'NOC_OPERATOR'`,
+      shift: `'DAY'`,
+      notes: `'RLS handover ${SUFFIX}'`,
     },
   },
 ]
@@ -410,6 +544,7 @@ function subst(sql: string): string {
 const HAS_UPDATED_AT = new Set([
   'NotificationPreference', 'FuelTank', 'Generator', 'BatteryBank', 'IotDevice',
   'FuelDispenser', 'FuelDelivery', 'MaintenanceTicket', 'SiteGateway',
+  'AlarmSuppression', 'ShiftHandover', 'Site', 'User',
 ])
 
 /** Build an INSERT for a table spec, targeting one tenant. */
@@ -464,26 +599,41 @@ async function seedFixtures(): Promise<void> {
   )
 
   // User for NotificationPreference (tier A resolves through User.tenantId).
+  const USER_A = `${SITE_USER_ID}`
+  const USER_B = `${SITE_USER_ID}-b`
   await e(
     `INSERT INTO "User" (id, "tenantId", email, name, role, active, "updatedAt")
      VALUES ($1,$2,$3,$4,$5,true, now())`,
-    [SITE_USER_ID, TENANT_A, `rls-user-${RUN}@example.invalid`, `RLS User ${RUN}`, 'ADMIN'],
+    [USER_A, TENANT_A, `rls-user-${RUN}@example.invalid`, `RLS User ${RUN}`, 'ADMIN'],
+  )
+  await e(
+    `INSERT INTO "User" (id, "tenantId", email, name, role, active, "updatedAt")
+     VALUES ($1,$2,$3,$4,$5,true, now())`,
+    [USER_B, TENANT_B, `rls-user-${RUN}-b@example.invalid`, `RLS User ${RUN} B`, 'ADMIN'],
   )
 
-  // One site per tenant. Site has NOT NULL region/governorate/district FKs, so
-  // the geographic hierarchy must exist first.
-  for (const [region, gov, dist] of [['rls-reg', 'rls-gov', 'rls-dist']] as const) {
+  // Geographic hierarchy is itself tenant-owned (Region carries tenantId), so
+  // each tenant gets its own chain. Site requires all three FKs NOT NULL.
+  const chains: Record<string, { region: string; gov: string; dist: string }> = {}
+  for (const [tag, tenant] of [
+    [SUFFIX, TENANT_A],
+    [`${SUFFIX}-b`, TENANT_B],
+  ] as const) {
+    const region = `rls-reg-${tag}`
+    const gov = `rls-gov-${tag}`
+    const dist = `rls-dist-${tag}`
+    chains[tag] = { region, gov, dist }
     await e(
       `INSERT INTO "Region" (id, "tenantId", name) VALUES ($1,$2,$3) ON CONFLICT (id) DO NOTHING`,
-      [region, TENANT_A, `RLS Region ${region}`],
+      [region, tenant, `RLS Region ${tag}`],
     )
     await e(
       `INSERT INTO "Governorate" (id, "regionId", name) VALUES ($1,$2,$3) ON CONFLICT (id) DO NOTHING`,
-      [gov, region, `RLS Gov ${gov}`],
+      [gov, region, `RLS Gov ${tag}`],
     )
     await e(
       `INSERT INTO "District" (id, "governorateId", name) VALUES ($1,$2,$3) ON CONFLICT (id) DO NOTHING`,
-      [dist, gov, `RLS Dist ${dist}`],
+      [dist, gov, `RLS Dist ${tag}`],
     )
   }
 
@@ -495,17 +645,18 @@ async function seedFixtures(): Promise<void> {
   )
 
   // Two sites, one per tenant, sharing the geographic hierarchy.
-  for (const [sid, tenant, code] of [
-    [SITE_ID, TENANT_A, `${SITE_CODE}-A`],
-    [`${SITE_ID}-b`, TENANT_B, `${SITE_CODE}-B`],
+  for (const [tag, tenant, code] of [
+    [SUFFIX, TENANT_A, `${SITE_CODE}-A`],
+    [`${SUFFIX}-b`, TENANT_B, `${SITE_CODE}-B`],
   ] as const) {
+    const ch = chains[tag]
     await e(
       `INSERT INTO "Site" (id, "tenantId", code, name, "regionId", "governorateId", "districtId",
                            latitude, longitude, address, status, "criticality", "loadKw",
                            "powerSource", "gridAvailable", "updatedAt")
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15, now())`,
-      [sid, tenant, code, `RLS Site ${sid}`, 'rls-reg', 'rls-gov', 'rls-dist',
-       15.0, 44.0, `RLS addr ${sid}`, 'ACTIVE', 'HIGH', 0, 'GRID', true],
+      [`${SITE_ID}-${tag}`, tenant, code, `RLS Site ${tag}`, ch.region, ch.gov, ch.dist,
+       15.0, 44.0, `RLS addr ${tag}`, 'ACTIVE', 'HIGH', 0, 'GRID', true],
     )
   }
 
@@ -594,7 +745,7 @@ async function assertSameTenantAccess(spec: TableSpec): Promise<void> {
   try {
     const rows = await withTenant(TENANT_A, (tx) =>
       tx.$queryRawUnsafe<Array<{ id: string }>>(
-        `SELECT id FROM "${spec.table}" WHERE "tenant_id" = $1`,
+        `SELECT id FROM "${spec.table}" WHERE "tenantId" = $1`,
         TENANT_A,
       ) as Promise<Array<{ id: string }>>,
     )
@@ -633,7 +784,7 @@ async function assertUnscopedRead(spec: TableSpec): Promise<void> {
       return
     }
     if (isMissingObject(err)) {
-      blocked('2-unscoped-read-isolated', `blocked on p1-schema — ${(err as Error).message}`)
+      blocked('2-unscoped-read-isolated', `blocked on step 6 — ${(err as Error).message}`)
       return
     }
     fail('2-unscoped-read-isolated', (err as Error).message)
@@ -646,7 +797,7 @@ async function assertCrossTenantUpdate(spec: TableSpec): Promise<void> {
   try {
     const n = await withTenant(TENANT_A, (tx) =>
       tx.$executeRawUnsafe(
-        `UPDATE "${spec.table}" SET "tenant_id" = $1 WHERE id = $2`,
+        `UPDATE "${spec.table}" SET "tenantId" = $1 WHERE id = $2`,
         TENANT_A,
         bRowId,
       ),
@@ -662,7 +813,7 @@ async function assertCrossTenantUpdate(spec: TableSpec): Promise<void> {
       return
     }
     if (isMissingObject(err)) {
-      blocked('3-cross-tenant-update-blocked', `blocked on p1-schema — ${(err as Error).message}`)
+      blocked('3-cross-tenant-update-blocked', `blocked on step 6 — ${(err as Error).message}`)
       return
     }
     fail('3-cross-tenant-update-blocked', (err as Error).message)
@@ -687,7 +838,7 @@ async function assertCrossTenantDelete(spec: TableSpec): Promise<void> {
       return
     }
     if (isMissingObject(err)) {
-      blocked('4-cross-tenant-delete-blocked', `blocked on p1-schema — ${(err as Error).message}`)
+      blocked('4-cross-tenant-delete-blocked', `blocked on step 6 — ${(err as Error).message}`)
       return
     }
     fail('4-cross-tenant-delete-blocked', (err as Error).message)
@@ -710,7 +861,7 @@ async function assertCrossTenantInsert(spec: TableSpec): Promise<void> {
       return
     }
     if (isMissingObject(err)) {
-      blocked('2b-cross-tenant-insert-blocked', `blocked on p1-schema — ${(err as Error).message}`)
+      blocked('2b-cross-tenant-insert-blocked', `blocked on step 6 — ${(err as Error).message}`)
       return
     }
     fail('2b-cross-tenant-insert-blocked', (err as Error).message)
@@ -731,7 +882,7 @@ async function assertUnsetContextFailsClosed(spec: TableSpec): Promise<void> {
     }
   } catch (err) {
     if (isMissingObject(err)) {
-      blocked('5-unset-returns-zero', `blocked on p1-schema — ${(err as Error).message}`)
+      blocked('5-unset-returns-zero', `blocked on step 6 — ${(err as Error).message}`)
       return
     }
     fail('5-unset-returns-zero', (err as Error).message)
@@ -741,7 +892,7 @@ async function assertUnsetContextFailsClosed(spec: TableSpec): Promise<void> {
 /** Resolve the id of a fixture row that belongs to tenant B. */
 async function bRowIdFor(spec: TableSpec): Promise<string> {
   const rows = await q<{ id: string }>(
-    `SELECT id FROM "${spec.table}" WHERE "tenant_id" = $1 ORDER BY id LIMIT 1`,
+    `SELECT id FROM "${spec.table}" WHERE "tenantId" = $1 ORDER BY id LIMIT 1`,
     [TENANT_B],
   )
   if (rows[0]) return rows[0].id
@@ -826,10 +977,10 @@ async function main(): Promise<void> {
     return
   }
 
-  // Detect whether the tenant_id columns / policies exist yet.
+  // Detect whether the tenantId columns / policies exist yet.
   const colCount = await q<{ n: number }>(
     `SELECT count(*)::int AS n FROM information_schema.columns
-     WHERE table_schema='public' AND column_name='tenant_id'`,
+     WHERE table_schema='public' AND column_name='tenantId'`,
   )
   const hasColumns = (colCount[0]?.n ?? 0) > 0
   const rlsCount = await q<{ n: number }>(
@@ -840,14 +991,14 @@ async function main(): Promise<void> {
   const hasPolicies = (rlsCount[0]?.n ?? 0) > 0
 
   console.log(
-    `\n  tenant_id columns: ${colCount[0]?.n ?? 0}   RLS-enabled tables: ${rlsCount[0]?.n ?? 0}`,
+    `\n  tenantId columns: ${colCount[0]?.n ?? 0}   RLS-enabled tables: ${rlsCount[0]?.n ?? 0}`,
   )
 
   if (!hasColumns || !hasPolicies) {
     console.log(
-      `\n\x1b[33m  p1-schema has not installed tenant_id columns and/or RLS policies yet.\n` +
+      `\n\x1b[33m  tenantId columns and/or RLS policies are not installed yet.\n` +
         `  Per-table isolation assertions will report BLOCKED/FAIL. That is expected\n` +
-        `  and is NOT a pass. Re-run once p1-schema lands its migration.\x1b[0m\n`,
+        `  and is NOT a pass. Re-run once the step-6 migration is applied.\x1b[0m\n`,
     )
   }
 
@@ -859,14 +1010,14 @@ async function main(): Promise<void> {
   } catch (err) {
     currentTable = '(fixture)'
     const msg = (err as Error).message
-    // The tenant_id column not existing is the expected state while p1-schema
-    // is still landing its migration. That is a BLOCKED condition, not a
-    // defect in this suite: report it as such and stop, so CI shows the real
-    // dependency instead of a red herring fixture error.
+    // The tenantId column not existing is the expected state before step 6
+    // has been applied. That is a BLOCKED condition, not a defect in this
+    // suite: report it as such and stop, so CI shows the real dependency
+    // instead of a red herring fixture error.
     if (isMissingObject(err)) {
       blocked(
         'fixture-seed',
-        `blocked on p1-schema — cannot build two-tenant fixtures without tenant_id: ${msg.split('\n').pop()?.trim()}`,
+        `blocked on step 6 — cannot build two-tenant fixtures without tenantId: ${msg.split('\n').pop()?.trim()}`,
       )
     } else {
       fail('fixture-seed', msg)

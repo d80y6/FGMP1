@@ -22,8 +22,10 @@ function ok(label: string, detail: string) {
 
 async function main() {
   // Children first: the hierarchy cascades, but explicit order keeps the
-  // teardown honest if a previous run aborted mid-way.
+  // teardown honest if a previous run aborted mid-way. FuelDelivery references
+  // a tank without ON DELETE CASCADE, so it must go before FuelTank.
   await db.sensorReading.deleteMany();
+  await db.fuelDelivery.deleteMany();
   await db.fuelTank.deleteMany();
   await db.site.deleteMany();
   await db.district.deleteMany();
