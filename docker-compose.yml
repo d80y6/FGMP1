@@ -11,12 +11,63 @@
 #   openssl rand -hex 32      # IOT_API_KEY, REALTIME_SERVICE_TOKEN, REALTIME_SERVER_SECRET
 
 services:
+  # ── PostgreSQL (Phase 1, step 1: SQLite → PostgreSQL) ────────────────────
+  # Replaces the SQLite file that backed every model. TimescaleDB is included
+  # from step 10 (SensorReadings hypertables); until then this is plain
+  # PostgreSQL and the extension is simply unused.
+  #
+  # THREE ROLES, provisioned on first init by scripts/pg-init-roles.sh:
+  #   fgmp_app     — DML only, NOT the table owner, so RLS is enforced (step 6)
+  #   fgmp_ops     — BYPASSRLS for internal ops (pg_dump, support investigations)
+  #   fgmp_migrate — owns the schema; CI only
+  #
+  # NOTE: the web app connects as fgmp_app and MUST NOT be given fgmp_ops.
+  # If the app ever holds a BYPASSRLS role, one injection bug anywhere would
+  # defeat tenant isolation completely. See scripts/pg-init-roles.sql.
+  fgmp-db:
+    image: timescale/timescaledb:latest-pg17
+    environment:
+      - POSTGRES_USER=${PGMIGRATE_USER:-fgmp_migrate}
+      - POSTGRES_PASSWORD=${PGMIGRATE_PASSWORD:?set PGMIGRATE_PASSWORD (openssl rand -hex 24)}
+      - POSTGRES_DB=fgmp
+      - PGAPP_PASSWORD=${PGAPP_PASSWORD:?set PGAPP_PASSWORD (openssl rand -hex 24)}
+      - PGOPS_PASSWORD=${PGOPS_PASSWORD:?set PGOPS_PASSWORD (openssl rand -hex 24)}
+      # Deterministic collation so ORDER BY is stable across host locales.
+      - POSTGRES_INITDB_ARGS=--locale=C.UTF-8 --encoding=UTF8
+    volumes:
+      - fgmp-pgdata:/var/lib/postgresql/data
+      # First-boot provisioning only; on an existing volume these do not re-run.
+      # The .sh MUST live in /docker-entrypoint-initdb.d or the entrypoint will
+      # not execute it. It sorts as 00- so roles exist before any .sql runs.
+      # The .sql is referenced by absolute path from the wrapper, because psql
+      # cannot read passwords from the environment without --set.
+      - ./scripts/pg-init-roles.sh:/docker-entrypoint-initdb.d/00-pg-init-roles.sh:ro
+      - ./scripts/pg-init-roles.sql:/opt/fgmp/pg-init-roles.sql:ro
+    ports:
+      # Bound to loopback: Postgres must not be reachable from the app subnet
+      # by accident, only via the compose network. Remove this mapping in
+      # production entirely and reach it over the private network.
+      - "127.0.0.1:5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PGMIGRATE_USER:-fgmp_migrate} -d fgmp"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
   fgmp-app:
     build: .
     ports:
       - "3151:3000"
     environment:
-      - DATABASE_URL=file:/app/db/fgmp.db
+      # Phase 1 step 1: the app now runs as fgmp_app (RLS-enforced, NOT the
+      # owner). DATABASE_URL must never carry fgmp_ops — see note above.
+      - DATABASE_URL=postgresql://fgmp_app:${PGAPP_PASSWORD}@fgmp-db:5432/fgmp?schema=public&connection_limit=10
+      - FGMP_OPS_DATABASE_URL=postgresql://fgmp_ops:${PGOPS_PASSWORD}@fgmp-db:5432/fgmp?schema=public
+      # Set to "0" ONLY for local development where no RLS policy exists yet.
+      # Any non-zero environment MUST be "1" or the app refuses to start.
+      - FGMP_REQUIRE_RLS=${FGMP_REQUIRE_RLS:-1}
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:?set NEXTAUTH_SECRET (openssl rand -base64 32)}
       - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
       - IOT_API_KEY=${IOT_API_KEY:?set IOT_API_KEY (openssl rand -hex 32)}
@@ -25,8 +76,13 @@ services:
       - REALTIME_SERVICE_TOKEN=${REALTIME_SERVICE_TOKEN:?set REALTIME_SERVICE_TOKEN (openssl rand -hex 32)}
       - REALTIME_TOKEN_SECRET=${REALTIME_TOKEN_SECRET:?set REALTIME_TOKEN_SECRET (openssl rand -base64 32)}
     volumes:
-      - fgmp-db:/app/db
+      # SQLite volume mount removed in Phase 1 step 1. The /app/db path is
+      # retained only because the standalone image expects the directory to
+      # exist; nothing is written there any more.
       - fgmp-backups:/app/backups
+    depends_on:
+      fgmp-db:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       # Unauthenticated probe — /api/fgmp/health requires ADMIN, so it would
@@ -91,5 +147,9 @@ services:
           memory: 256M
 
 volumes:
+  # SQLite volume — removed in Phase 1 step 1. Retained only so an existing
+  # deployment can still reach its old database file during cutover.
   fgmp-db:
   fgmp-backups:
+  # PostgreSQL data directory (Phase 1 step 1).
+  fgmp-pgdata:
