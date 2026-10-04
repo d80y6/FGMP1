@@ -7,7 +7,7 @@ import {
   Truck, TrendingUp, FileText, Cpu, Wrench, ScrollText, Fuel,
   Search, CornerDownLeft, Moon, Sun, Pause, Play, ArrowRight,
   MapPin, AlertTriangle, HardDrive, GitBranch, BarChart3, Map,
-  KeyRound, DatabaseBackup, Settings, Layers, ShieldCheck, type LucideIcon,
+  KeyRound, Settings, Layers, ShieldCheck, type LucideIcon,
 } from "lucide-react";
 import {
   CommandDialog, CommandEmpty, CommandGroup, CommandInput,
@@ -41,7 +41,6 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: LucideIcon; cap: string; g
   { key: "roles", label: "Roles & Permissions", icon: ShieldCheck, cap: "view:roles", group: "Administration", shortcut: "G L" },
   { key: "system-settings", label: "System Settings", icon: Settings, cap: "view:system-settings", group: "Administration", shortcut: "G ," },
   { key: "api-keys", label: "API Keys", icon: KeyRound, cap: "view:api-keys", group: "Administration", shortcut: "G K" },
-  { key: "backup", label: "Backup & Restore", icon: DatabaseBackup, cap: "view:backup", group: "Administration", shortcut: "G B" },
   { key: "audit", label: "Audit Log", icon: ScrollText, cap: "view:audit", group: "Insights", shortcut: "G U" },
 ];
 

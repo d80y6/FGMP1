@@ -40,7 +40,7 @@ export interface Permission {
 //
 // Every other `view:*` key the sidebar renders is retained below, because
 // ADMIN's routes really do permit those surfaces (settings PUT = ADMIN_ONLY,
-// api-keys = SUPER_OR_ADMIN, backups = SUPER_OR_ADMIN, health = ADMIN_ONLY).
+// api-keys = SUPER_OR_ADMIN, health = ADMIN_ONLY).
 // This is an ALLOW-list, not a deny-list: an unrecognised capability is denied
 // for ADMIN until someone adds it here deliberately.
 //
@@ -67,7 +67,6 @@ export const ROLE_PERMISSIONS: Record<Role, {
       "view:suppressions", "view:preferences", "view:dispensers", "view:asset-registry",
       "view:edge-firmware", "view:fuel-forecast", "view:consumption-patterns",
       "view:roles", "view:geography", "view:system-settings", "view:api-keys",
-      "view:backup",
       // Actions — mirrors ROLES.ALARM_OPS / CONTROL / DELIVERY / MAINTENANCE /
       // NOTIFICATION / EDGE_MANAGE / DISPENSER_CONTROL in auth-helpers.ts.
       "alarm:ack", "alarm:resolve", "gen:control", "ticket:create", "ticket:assign",
@@ -78,7 +77,7 @@ export const ROLE_PERMISSIONS: Record<Role, {
       // tenant-scoped state refresh.
       "simul:tick",
       // Tenant-scoped user administration (SUPER_OR_ADMIN routes).
-      "user:manage", "backup:manage",
+      "user:manage",
       // DELIBERATELY ABSENT — SUPERADMIN only:
       //   view:tenants, view:tenant-isolation, tenant:manage,
       //   platform:firmware, user:grant-superadmin

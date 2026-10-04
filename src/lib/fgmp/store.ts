@@ -20,7 +20,7 @@ export type ViewKey =
   | "maintenance" | "audit" | "users" | "system-health" | "suppressions"
   | "preferences" | "dispensers" | "asset-registry" | "edge-firmware"
   | "fuel-forecast" | "consumption-patterns" | "tenants" | "geography"
-  | "roles" | "system-settings" | "api-keys" | "backup"
+  | "roles" | "system-settings" | "api-keys"
   | "tenant-isolation";
 
 interface FgmpState {

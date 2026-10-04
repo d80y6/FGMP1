@@ -8,7 +8,7 @@ import {
   Pause, Play, Activity, ChevronRight, ShieldCheck, Radio, Command, Search, Keyboard,
   Loader2, LogOut, ShieldOff, Bell,
   HardDrive, GitBranch, BarChart3, CalendarClock, Network, Map, KeyRound,
-  DatabaseBackup, Settings, Layers,
+  Settings, Layers,
 } from "lucide-react";
 import { useSession, signOut } from "next-auth/react";
 import { toast } from "sonner";
@@ -67,7 +67,6 @@ const GeographyView = dyn(() => import("@/components/fgmp/views/geography-view")
 const RolesView = dyn(() => import("@/components/fgmp/views/roles-view").then(m => ({ default: m.RolesView })));
 const SystemSettingsView = dyn(() => import("@/components/fgmp/views/system-settings-view").then(m => ({ default: m.SystemSettingsView })));
 const ApiKeysView = dyn(() => import("@/components/fgmp/views/api-keys-view").then(m => ({ default: m.ApiKeysView })));
-const BackupView = dyn(() => import("@/components/fgmp/views/backup-view").then(m => ({ default: m.BackupView })));
 const TenantIsolationView = dyn(() => import("@/components/fgmp/views/tenant-isolation-view").then(m => ({ default: m.TenantIsolationView })));
 
 import { CommandPalette } from "@/components/fgmp/command-palette";
@@ -111,7 +110,6 @@ const NAV: { key: ViewKey; tKey: string; icon: typeof LayoutDashboard; cap: stri
   { key: "roles", tKey: "nav.roles", icon: ShieldCheck, cap: "view:roles", group: "Administration", groupTKey: "nav.group.administration" },
   { key: "system-settings", tKey: "nav.system-settings", icon: Settings, cap: "view:system-settings", group: "Administration", groupTKey: "nav.group.administration" },
   { key: "api-keys", tKey: "nav.api-keys", icon: KeyRound, cap: "view:api-keys", group: "Administration", groupTKey: "nav.group.administration" },
-  { key: "backup", tKey: "nav.backup", icon: DatabaseBackup, cap: "view:backup", group: "Administration", groupTKey: "nav.group.administration" },
   { key: "system-health", tKey: "nav.systemHealth", icon: Activity, cap: "view:system-health", group: "Administration", groupTKey: "nav.group.administration" },
   // Tenant Isolation testing — SUPERADMIN-only. The cap `view:tenant-isolation`
   // is granted to SUPERADMIN via the `*` wildcard. The nav filter below
@@ -152,7 +150,6 @@ const VIEW_COMPONENTS: Record<ViewKey, React.ComponentType> = {
   roles: RolesView,
   "system-settings": SystemSettingsView,
   "api-keys": ApiKeysView,
-  backup: BackupView,
   "tenant-isolation": TenantIsolationView,
 };
 
