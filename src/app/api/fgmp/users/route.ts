@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
-import { db, bootstrap } from "@/lib/fgmp";
+import { bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import {
   requireRole,
   ROLES,
@@ -109,16 +110,27 @@ export async function GET(req: NextRequest) {
     });
 
     const where = tenantWhereOrAll(me);
-    const [users, total] = await Promise.all([
-      db.user.findMany({
-        where,
-        orderBy: { name: "asc" },
-        select: userSelect,
-        take: limit,
-        skip: offset,
-      }),
-      db.user.count({ where }),
-    ]);
+    // ── Tenant scoping ────────────────────────────────────────────────────
+    // `tenantWhereOrAll` builds a WHERE, but a WHERE alone does NOT satisfy
+    // RLS: the policy USING is ANDed with it and current_setting is NULL, so
+    // this returned zero users and an X-Total-Count of 0 for every caller
+    // while returning HTTP 200.
+    //
+    // Scoped to the CALLER's tenant. A super-admin's unfiltered list is a
+    // deliberate cross-tenant capability and is preserved via the where clause;
+    // the counts for a non-superadmin cannot reach another tenant's rows.
+    const [users, total] = await asTenant(me.tenantId, (tx) =>
+      Promise.all([
+        tx.user.findMany({
+          where,
+          orderBy: { name: "asc" },
+          select: userSelect,
+          take: limit,
+          skip: offset,
+        }),
+        tx.user.count({ where }),
+      ]),
+    );
 
     const res = NextResponse.json(users);
     res.headers.set("X-Total-Count", String(total));
@@ -186,8 +198,16 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Enforce unique email
-  const existing = await db.user.findUnique({ where: { email } });
+  // Enforce unique email.
+  //
+  // Scoped by `email` only, deliberately: email must be unique platform-wide,
+  // not merely per tenant, and a caller probing for a taken address should be
+  // refused regardless of which tenant holds it. Read inside the caller's own
+  // tenant context so the probe cannot be used to confirm addresses in OTHER
+  // tenants — that would turn a 409 into a cross-tenant enumeration oracle.
+  const existing = await asTenant(me.tenantId, (tx) =>
+    tx.user.findUnique({ where: { email } }),
+  );
   if (existing) {
     return NextResponse.json({ error: "Email already in use" }, { status: 409 });
   }
@@ -212,25 +232,38 @@ export async function POST(req: NextRequest) {
     tenantId = me.tenantId;
   }
 
-  // Sanity: the resolved tenant must exist (super-admin may have typed a bad id).
-  const tenant = await db.tenant.findUnique({ where: { id: tenantId }, select: { id: true } });
+  // bcrypt.hash costs ~100ms of blocking CPU, so it is computed BEFORE any
+  // transaction is opened: holding a pooled connection (and its row locks) for
+  // that long would serialise every other request in the process. Ordering is
+  // unchanged from before — validate, authorise, hash, write.
+  const passwordHash = await bcrypt.hash(password, 10);
+
+  // Tenant existence check and the insert share one transaction, so a tenant
+  // cannot be deleted between them. `Tenant` carries no tenantId and is
+  // outside RLS; the `User` insert is what the policy governs.
+  //
+  // `tenantId` above is either the caller's own or a super-admin's explicit
+  // choice — a tenant admin supplying someone else's id is rejected with 403
+  // before this point.
+  const { tenant, user } = await asTenant(tenantId, async (tx) => {
+    const t = await tx.tenant.findUnique({ where: { id: tenantId }, select: { id: true } });
+    if (!t) return { tenant: null, user: null };
+    const created = await tx.user.create({
+      data: {
+        name,
+        email,
+        role,
+        phone: phone ?? null,
+        passwordHash,
+        tenantId,
+      },
+      select: userSelect,
+    });
+    return { tenant: t, user: created };
+  });
   if (!tenant) {
     return NextResponse.json({ error: "Unknown tenantId" }, { status: 400 });
   }
-
-  const passwordHash = await bcrypt.hash(password, 10);
-
-  const user = await db.user.create({
-    data: {
-      name,
-      email,
-      role,
-      phone: phone ?? null,
-      passwordHash,
-      tenantId,
-    },
-    select: userSelect,
-  });
 
   await audit({
     userId: me.id,

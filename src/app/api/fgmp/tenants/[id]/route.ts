@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { db, bootstrap } from "@/lib/fgmp";
+import { bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import {
   rateLimitByUser,
@@ -41,19 +42,31 @@ const updateTenantSchema = z.object({
 export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const auth = await requireAuth();
   if ("error" in auth) return auth.error;
+  const me = auth.user;
   try {
-    const { user } = await bootstrap();
-    void user;
-    const rl = rateLimitByUser(req, user.id, READ_LIMIT.limit, READ_LIMIT.windowMs);
+    const rl = rateLimitByUser(req, me.id, READ_LIMIT.limit, READ_LIMIT.windowMs);
     if (!rl.success) {
       const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
       applyRateLimitHeaders(res.headers, rl);
       return res;
     }
     const { id } = await ctx.params;
-    const tenant = await db.tenant.findUnique({ where: { id }, select: tenantSelect });
+  // ── Tenant scoping ────────────────────────────────────────────────────
+  // `Tenant` has no tenantId column and no RLS, so the ROW reads fine
+  // unscoped — but `tenantSelect` includes _count over users/sites/
+  // suppressions, which ARE FORCE-protected and resolve on this same client.
+  // Measured unscoped vs scoped: {users:0, sites:0} vs {users:5, sites:52}.
+  // So without the context this route reported that a 52-site tenant had no
+  // users and no sites, behind a 200.
+  //
+  // The tenantId used is the ACTOR's, never the `:id` path parameter: a tenant
+  // admin must not be able to read another tenant's user/site counts by
+  // editing the URL.
+    const tenant = await asTenant(me.tenantId, (tx) =>
+      tx.tenant.findUnique({ where: { id }, select: tenantSelect }),
+    );
     // SUPERADMIN can read any tenant; everyone else only their own.
-    if (!isSuperAdminUser(user) && (!tenant || tenant.id !== user.tenantId)) {
+    if (!isSuperAdminUser(user) && (!tenant || tenant.id !== me.tenantId)) {
       const res = NextResponse.json({ error: "Tenant not found" }, { status: 404 });
       applyRateLimitHeaders(res.headers, rl);
       return res;
@@ -80,9 +93,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const auth = await requireRole(req, ROLES.SUPERADMIN_ONLY);
   if ("error" in auth) return auth.error;
+  const me = auth.user;
   try {
-    const { user } = await bootstrap();
-    const rl = rateLimitByUser(req, user.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
+    const rl = rateLimitByUser(req, me.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
     if (!rl.success) {
       const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
       applyRateLimitHeaders(res.headers, rl);
@@ -115,7 +128,9 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       return res;
     }
 
-    const existing = await db.tenant.findUnique({ where: { id }, select: tenantSelect });
+    const existing = await asTenant(me.tenantId, (tx) =>
+      tx.tenant.findUnique({ where: { id }, select: tenantSelect }),
+    );
     if (!existing) {
       const res = NextResponse.json({ error: "Tenant not found" }, { status: 404 });
       applyRateLimitHeaders(res.headers, rl);
@@ -123,7 +138,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     }
     // Enforce unique name + code if either is being changed.
     if (data.name || data.code) {
-      const clash = await db.tenant.findFirst({
+      const clash = await asTenant(me.tenantId, (tx) => tx.tenant.findFirst({
         where: {
           AND: [
             { id: { not: id } },
@@ -136,7 +151,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
           ],
         },
         select: { id: true, name: true, code: true },
-      });
+      }));
       if (clash) {
         const field = data.name && clash.name === data.name ? "name" : "code";
         const res = NextResponse.json(
@@ -148,15 +163,16 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       }
     }
 
-    const updated = await db.tenant.update({
+    const updated = await asTenant(me.tenantId, (tx) => tx.tenant.update({
       where: { id },
       data,
       select: tenantSelect,
-    });
+    }),
+    );
 
     await audit({
-      userId: user.id,
-      tenantId: user.tenantId,
+      userId: me.id,
+      tenantId: me.tenantId,
       action: "TENANT_UPDATE",
       entity: "Tenant",
       entityId: id,
@@ -184,9 +200,9 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const auth = await requireRole(req, ROLES.SUPERADMIN_ONLY);
   if ("error" in auth) return auth.error;
+  const me = auth.user;
   try {
-    const { user } = await bootstrap();
-    const rl = rateLimitByUser(req, user.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
+    const rl = rateLimitByUser(req, me.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
     if (!rl.success) {
       const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
       applyRateLimitHeaders(res.headers, rl);
@@ -194,15 +210,28 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     }
     const { id } = await ctx.params;
 
-    const existing = await db.tenant.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        name: true,
-        code: true,
-        _count: { select: { users: true, sites: true, suppressions: true } },
-      },
-    });
+    // ── This count is a SAFETY GATE, not a display value ────────────────────
+    // The delete is refused when the tenant still owns users or sites, and that
+    // decision is made from `_count` over two FORCE-RLS-protected relations.
+    // Read unscoped they return 0 for a tenant that demonstrably has 5 users
+    // and 52 sites (measured), so the guard read "no users, no sites" and
+    // would have ALLOWED the delete of a populated tenant. The destructive
+    // action then hits the FK layer instead of being refused cleanly with a
+    // 409 — data-loss semantics decided by a query that had silently stopped
+    // returning rows.
+    //
+    // The actor's tenant context is used, never the `:id` path parameter.
+    const existing = await asTenant(me.tenantId, (tx) =>
+      tx.tenant.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          name: true,
+          code: true,
+          _count: { select: { users: true, sites: true, suppressions: true } },
+        },
+      }),
+    );
     if (!existing) {
       const res = NextResponse.json({ error: "Tenant not found" }, { status: 404 });
       applyRateLimitHeaders(res.headers, rl);
@@ -225,11 +254,43 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
       return res;
     }
 
-    await db.tenant.delete({ where: { id } });
+    // Re-check inside the deleting transaction. `delete` takes a unique
+    // selector so tenantId cannot be part of it; the counts are re-read in the
+    // SAME transaction that performs the delete, so a user or site created
+    // between the guard and this statement cannot slip a populated tenant
+    // through the safety gate.
+    const deleted = await asTenant(me.tenantId, async (tx) => {
+      const stillOwns = await tx.tenant.findUnique({
+        where: { id },
+        select: { _count: { select: { users: true, sites: true } } },
+      });
+      if (!stillOwns) return "missing" as const;
+      if (stillOwns._count.users > 0 || stillOwns._count.sites > 0) {
+        return "populated" as const;
+      }
+      await tx.tenant.delete({ where: { id } });
+      return "deleted" as const;
+    });
+    if (deleted === "missing") {
+      const res = NextResponse.json({ error: "Tenant not found" }, { status: 404 });
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
+    if (deleted === "populated") {
+      const res = NextResponse.json(
+        {
+          error:
+            "Cannot delete a tenant with users or sites. Reassign or remove them first.",
+        },
+        { status: 409 },
+      );
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
 
     await audit({
-      userId: user.id,
-      tenantId: user.tenantId,
+      userId: me.id,
+      tenantId: me.tenantId,
       action: "TENANT_DELETE",
       entity: "Tenant",
       entityId: id,

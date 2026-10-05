@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { db, bootstrap } from "@/lib/fgmp";
+import { bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import {
   requireRole,
   ROLES,
@@ -104,7 +105,18 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   const limited = limitFor(req, me, false);
   if (limited) return limited;
   const { id } = await ctx.params;
-  const user = await db.user.findUnique({ where: { id }, select: userSelect });
+  // ── Tenant scoping ──────────────────────────────────────────────────────
+  // Scoped in the QUERY, not filtered after the fetch. assertTenantOwned
+  // compares record.tenantId after the row is read, and under FORCE RLS the
+  // unscoped read returned null for EVERY user, so that check — and
+  // guardSuperAdminTarget below — were comparing against nothing. The Phase 0
+  // IDOR fixes were inert rather than merely weak.
+  //
+  // Cross-tenant and non-existent ids are both null here, so this cannot be
+  // used to enumerate user ids.
+  const user = await asTenant(me.tenantId, (tx) =>
+    tx.user.findFirst({ where: { id, tenantId: me.tenantId }, select: userSelect }),
+  );
   const denied = assertTenantOwned(user, me);
   if (denied) return denied;
   const guarded = guardSuperAdminTarget(user, me);
@@ -151,7 +163,9 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
     );
   }
 
-  const existing = await db.user.findUnique({ where: { id } });
+  const existing = await asTenant(me.tenantId, (tx) =>
+    tx.user.findFirst({ where: { id, tenantId: me.tenantId } }),
+  );
   const denied = assertTenantOwned(existing, me);
   if (denied) return denied;
   const guarded = guardSuperAdminTarget(existing, me);
@@ -170,11 +184,21 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
   if (parsed.data.phone !== undefined) data.phone = parsed.data.phone;
   if (parsed.data.active !== undefined) data.active = parsed.data.active;
 
-  const updated = await db.user.update({
-    where: { id },
-    data,
-    select: userSelect,
+  // `update` takes a unique selector so tenantId cannot be part of it. The
+  // ownership re-read below happens in the SAME transaction as the write, so a
+  // row that changed tenants between the authorising read and this write cannot
+  // be clobbered.
+  const updated = await asTenant(me.tenantId, async (tx) => {
+    const owned = await tx.user.findFirst({
+      where: { id, tenantId: me.tenantId },
+      select: { id: true },
+    });
+    if (!owned) return null;
+    return tx.user.update({ where: { id: owned.id }, data, select: userSelect });
   });
+  if (!updated) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
 
   await audit({
     userId: me.id,
@@ -220,17 +244,27 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     );
   }
 
-  const existing = await db.user.findUnique({ where: { id } });
+  const existing = await asTenant(me.tenantId, (tx) =>
+    tx.user.findFirst({ where: { id, tenantId: me.tenantId } }),
+  );
   const denied = assertTenantOwned(existing, me);
   if (denied) return denied;
   const guarded = guardSuperAdminTarget(existing, me);
   if (guarded) return guarded;
 
-  const updated = await db.user.update({
-    where: { id },
-    data: { active: body.active },
-    select: userSelect,
+  // Ownership re-asserted inside the writing transaction — `update` takes a
+  // unique selector so tenantId cannot be part of it.
+  const updated = await asTenant(me.tenantId, async (tx) => {
+    const owned = await tx.user.findFirst({
+      where: { id, tenantId: me.tenantId },
+      select: { id: true },
+    });
+    if (!owned) return null;
+    return tx.user.update({ where: { id: owned.id }, data: { active: body.active }, select: userSelect });
   });
+  if (!updated) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
 
   await audit({
     userId: me.id,
@@ -266,17 +300,27 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     );
   }
 
-  const existing = await db.user.findUnique({ where: { id } });
+  const existing = await asTenant(me.tenantId, (tx) =>
+    tx.user.findFirst({ where: { id, tenantId: me.tenantId } }),
+  );
   const denied = assertTenantOwned(existing, me);
   if (denied) return denied;
   const guarded = guardSuperAdminTarget(existing, me);
   if (guarded) return guarded;
 
-  const updated = await db.user.update({
-    where: { id },
-    data: { active: false },
-    select: userSelect,
+  // Ownership re-asserted inside the writing transaction — `update` takes a
+  // unique selector so tenantId cannot be part of it.
+  const updated = await asTenant(me.tenantId, async (tx) => {
+    const owned = await tx.user.findFirst({
+      where: { id, tenantId: me.tenantId },
+      select: { id: true },
+    });
+    if (!owned) return null;
+    return tx.user.update({ where: { id: owned.id }, data: { active: false }, select: userSelect });
   });
+  if (!updated) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
 
   await audit({
     userId: me.id,
