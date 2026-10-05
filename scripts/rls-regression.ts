@@ -880,6 +880,16 @@ async function purgeStaleFixtures(): Promise<void> {
     // confusing "RLS may be over-strict" message. Every table in `order` needs
     // an entry in `patterns` too.
     'InterlockOverride',
+    // Phase 2 vertical 4 — alarm correlation. CorrelationMatch holds an FK to
+    // CorrelationRule, so the child is deleted first; a parent-first delete
+    // would be rejected. Both are listed for the same reason as
+    // InterlockOverride above: a table missing from this list does not fail
+    // loudly, it leaves a stale row behind, and the NEXT run surfaces that as a
+    // misleading policy failure rather than as leftover fixture data.
+    'CorrelationMatch', 'CorrelationRule',
+    // Phase 2 vertical 1/2 — RS-485 fieldbus diagnostics. The bus is the
+    // parent of the diagnostic, which is the parent of the latency sample.
+    'Rs485LatencySample', 'Rs485BusDiagnostic', 'Rs485Bus',
     'Site', 'User', 'EspFirmwareRelease', 'District', 'Governorate', 'Region',
     'Tenant',
   ]
@@ -895,6 +905,9 @@ async function purgeStaleFixtures(): Promise<void> {
     User: 'rls-user-%', EspFirmwareRelease: 'rls-rel%', District: 'rls-dist%',
     Governorate: 'rls-gov%', Region: 'rls-reg%',
     InterlockOverride: 'ovr-%',
+    CorrelationRule: 'rule-%', CorrelationMatch: 'match-%',
+    Rs485Bus: 'bus-%', Rs485BusDiagnostic: 'diag-%',
+    Rs485LatencySample: 'lat-%',
   }
   for (const table of order) {
     const pattern = patterns[table]
