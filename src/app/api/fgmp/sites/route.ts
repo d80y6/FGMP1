@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { engine, bootstrap } from "@/lib/fgmp";
 import { asTenant } from "@/lib/fgmp/route-tenant";
+import { resolveGeographyPath } from "@/lib/fgmp/geography";
 import { requireAuth, requireRole, ROLES, tenantWhere } from "@/lib/fgmp/auth-helpers";
 import { audit } from "@/lib/fgmp/audit";
 import {
@@ -147,34 +148,43 @@ export async function POST(req: NextRequest) {
     // transaction so the validation and the insert cannot observe different
     // snapshots. Without a context, `region` came back null and every create
     // failed with INVALID_HIERARCHY — a wrong answer, not an error.
-    const { codeClash, region, governorate, district } = await asTenant(
+    const { codeClash, path } = await asTenant(
       tenantId,
       async (tx) => {
         // Unique code check (the DB enforces this too, but a 409 here gives a
         // cleaner error than the generic P2002 from api-error.)
         const existing = await tx.site.findUnique({ where: { code: data.code } });
         if (existing) {
-          return { codeClash: true, region: null, governorate: null, district: null };
+          return { codeClash: true, path: null };
         }
 
         // Validate hierarchical consistency: governorate.regionId === regionId
         // AND district.governorateId === governorateId.
         //
-        // `Governorate` and `District` carry no tenantId of their own — tenancy
-        // flows Region -> Governorate -> District, and only Region is directly
-        // RLS-filtered. They are therefore read INSIDE the region they are being
-        // validated against: if the region is not this tenant's, the nested
-        // read cannot run at all, because the enclosing Region row is already
-        // filtered by the policy. This is the hierarchy the Phase 1 doc records
-        // as "Tier B — reaches Site via Region".
-        const r = await tx.region.findFirst({ where: { id: data.regionId, tenantId } });
-        if (!r) return { codeClash: false, region: null, governorate: null, district: null };
-
-        const [g, d] = await Promise.all([
-          tx.governorate.findUnique({ where: { id: data.governorateId } }),
-          tx.district.findUnique({ where: { id: data.districtId } }),
-        ]);
-        return { codeClash: false, region: r, governorate: g, district: d };
+        // PHASE 3 — this now resolves through the RLS-filtered `v_geography`
+        // view in a SINGLE read. The previous version did three independent
+        // lookups on Region, Governorate and District and carried a comment
+        // claiming the Region read "gated" the other two. That was wrong, and
+        // wrong in a way that mattered: the Region check gated whether the WRITE
+        // proceeded, but `tx.governorate.findUnique` and `tx.district.findUnique`
+        // ran against base tables that no policy protected — neither carries a
+        // tenantId, so neither could be given one. Both returned any tenant's
+        // rows. A caller could pair their own region with another tenant's
+        // district.
+        //
+        // The view filters on Region."tenantId" and the base tables are now
+        // REVOKEd from fgmp_app, so this read is tenant-scoped by construction.
+        // One row matching all three ids also PROVES the chain is internally
+        // consistent, which three separate lookups could not.
+        const path = await resolveGeographyPath(tx, {
+          regionId: data.regionId,
+          governorateId: data.governorateId,
+          districtId: data.districtId,
+        });
+        return {
+          codeClash: false,
+          path,
+        };
       },
     );
 
@@ -187,15 +197,16 @@ export async function POST(req: NextRequest) {
       return res;
     }
 
-    if (!region || !governorate || !district) {
-      const res = NextResponse.json(
-        { error: "Region/Governorate/District hierarchy is invalid", code: "INVALID_HIERARCHY" },
-        { status: 400 },
-      );
-      applyRateLimitHeaders(res.headers, rl);
-      return res;
-    }
-    if (governorate.regionId !== region.id || district.governorateId !== governorate.id) {
+    // One null check now covers BOTH former failures. Previously this was two
+    // checks: existence, and then `governorate.regionId !== region.id ||
+    // district.governorateId !== governorate.id`. The second is now impossible
+    // to reach — a single `v_geography` row matching all three ids already
+    // proves the chain is consistent, because the view joins
+    // region → governorate → district rather than looking each up separately.
+    // A district belonging to a different tenant is simply absent from the
+    // tenant-filtered view, so it yields the same 400 as a nonexistent one
+    // rather than disclosing that the id exists elsewhere.
+    if (!path) {
       const res = NextResponse.json(
         { error: "Region/Governorate/District hierarchy is invalid", code: "INVALID_HIERARCHY" },
         { status: 400 },
@@ -237,8 +248,8 @@ export async function POST(req: NextRequest) {
       details: {
         code: site.code,
         name: site.name,
-        region: region.name,
-        governorate: governorate.name,
+        region: path.regionName,
+        governorate: path.governorateName,
       },
     });
 

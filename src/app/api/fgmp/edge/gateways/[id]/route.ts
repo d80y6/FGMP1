@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, engine, bootstrap } from "@/lib/fgmp";
+import { engine } from "@/lib/fgmp";
+import { withTenant } from "@/lib/fgmp/tenant-context";
 import { audit } from "@/lib/fgmp/audit";
 import {
   rateLimitByUser,
@@ -23,9 +24,9 @@ export async function PATCH(
 ) {
   const auth = await requireRole(req, ROLES.EDGE_MANAGE);
   if ("error" in auth) return auth.error;
+  const me = auth.user;
   try {
-    const { user } = await bootstrap();
-    const rl = rateLimitByUser(req, user.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
+    const rl = rateLimitByUser(req, me.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
     if (!rl.success) {
       const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
       applyRateLimitHeaders(res.headers, rl);
@@ -39,26 +40,30 @@ export async function PATCH(
     if (typeof body.model === "string" && body.model.trim()) data.model = body.model.trim().slice(0, 60);
     if (typeof body.ipAddress === "string") data.ipAddress = body.ipAddress.trim().slice(0, 60) || null;
 
-    const existing = await db.siteGateway.findUnique({
-      where: { id },
-      select: { id: true, hostname: true, site: { select: { tenantId: true } } },
-    });
+    const existing = await withTenant(me.tenantId, (tx) =>
+      tx.siteGateway.findUnique({
+        where: { id },
+        select: { id: true, hostname: true, site: { select: { tenantId: true } } },
+      }),
+    );
     if (!existing) {
       const res = NextResponse.json({ error: "Gateway not found" }, { status: 404 });
       applyRateLimitHeaders(res.headers, rl);
       return res;
     }
-    const denied = assertSiteTenantOwned(existing.site, user);
+    const denied = assertSiteTenantOwned(existing.site, me);
     if (denied) {
       applyRateLimitHeaders(denied.headers, rl);
       return denied;
     }
 
-    const updated = await db.siteGateway.update({
-      where: { id },
-      data,
-      include: { site: { select: { id: true, name: true, code: true } } },
-    });
+    const updated = await withTenant(me.tenantId, (tx) =>
+      tx.siteGateway.update({
+        where: { id },
+        data,
+        include: { site: { select: { id: true, name: true, code: true } } },
+      }),
+    );
 
     // Mirror the changes into the engine's in-memory state so the next
     // snapshot reflects the new hostname/model/IP without waiting for reload().
@@ -70,8 +75,8 @@ export async function PATCH(
     }
 
     await audit({
-      userId: user.id,
-      tenantId: user.tenantId,
+      userId: me.id,
+      tenantId: me.tenantId,
       action: "DISPENSER_CONTROL",
       entity: "SiteGateway",
       entityId: id,
@@ -98,9 +103,9 @@ export async function DELETE(
 ) {
   const auth = await requireRole(req, ROLES.EDGE_MANAGE);
   if ("error" in auth) return auth.error;
+  const me = auth.user;
   try {
-    const { user } = await bootstrap();
-    const rl = rateLimitByUser(req, user.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
+    const rl = rateLimitByUser(req, me.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
     if (!rl.success) {
       const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
       applyRateLimitHeaders(res.headers, rl);
@@ -108,26 +113,28 @@ export async function DELETE(
     }
 
     const { id } = await params;
-    const existing = await db.siteGateway.findUnique({
-      where: { id },
-      select: { id: true, hostname: true, site: { select: { tenantId: true } } },
-    });
+    const existing = await withTenant(me.tenantId, (tx) =>
+      tx.siteGateway.findUnique({
+        where: { id },
+        select: { id: true, hostname: true, site: { select: { tenantId: true } } },
+      }),
+    );
     if (!existing) {
       const res = NextResponse.json({ error: "Gateway not found" }, { status: 404 });
       applyRateLimitHeaders(res.headers, rl);
       return res;
     }
-    const denied = assertSiteTenantOwned(existing.site, user);
+    const denied = assertSiteTenantOwned(existing.site, me);
     if (denied) {
       applyRateLimitHeaders(denied.headers, rl);
       return denied;
     }
 
-    await db.siteGateway.delete({ where: { id } });
+    await withTenant(me.tenantId, (tx) => tx.siteGateway.delete({ where: { id } }));
 
     await audit({
-      userId: user.id,
-      tenantId: user.tenantId,
+      userId: me.id,
+      tenantId: me.tenantId,
       action: "DISPENSER_CONTROL",
       entity: "SiteGateway",
       entityId: id,
@@ -158,9 +165,9 @@ export async function POST(
 ) {
   const auth = await requireRole(req, ROLES.EDGE_MANAGE);
   if ("error" in auth) return auth.error;
+  const me = auth.user;
   try {
-    const { user } = await bootstrap();
-    const rl = rateLimitByUser(req, user.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
+    const rl = rateLimitByUser(req, me.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
     if (!rl.success) {
       const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
       applyRateLimitHeaders(res.headers, rl);
@@ -177,22 +184,27 @@ export async function POST(
 
     // Tenant guard: verify the gateway belongs to the caller's tenant before
     // dispatching the reboot through the engine.
-    const existing = await db.siteGateway.findUnique({
-      where: { id },
-      select: { id: true, site: { select: { tenantId: true } } },
-    });
+    const existing = await withTenant(me.tenantId, (tx) =>
+      tx.siteGateway.findUnique({
+        where: { id },
+        select: { id: true, site: { select: { tenantId: true } } },
+      }),
+    );
     if (!existing) {
       const res = NextResponse.json({ error: "Gateway not found" }, { status: 404 });
       applyRateLimitHeaders(res.headers, rl);
       return res;
     }
-    const denied = assertSiteTenantOwned(existing.site, user);
+    const denied = assertSiteTenantOwned(existing.site, me);
     if (denied) {
       applyRateLimitHeaders(denied.headers, rl);
       return denied;
     }
 
-    const result = await engine.applyGatewayReboot(id, user.id);
+    // Phase 3: the authenticated tenant is required. Without it the engine's
+    // scope assertion refuses every reboot (fail-closed, but the feature is
+    // then broken rather than protected).
+    const result = await engine.applyGatewayReboot(id, me.id, me.tenantId);
     const res = NextResponse.json(result, { status: result.ok ? 202 : 404 });
     applyRateLimitHeaders(res.headers, rl);
     return res;
