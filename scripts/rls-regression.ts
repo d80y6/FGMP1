@@ -1262,6 +1262,42 @@ async function main(): Promise<void> {
     pass('force-rls-coverage', `all ${nForced} tenant tables carry FORCE ROW LEVEL SECURITY`)
   }
 
+  // ── Per-table EXERCISE coverage ──────────────────────────────────────────
+  // A policy that exists but is never queried proves nothing. Adding a
+  // tenant-carrying model with a policy and no fixture here would leave the
+  // suite green while that table's isolation was completely untested — which
+  // is precisely what happened with the five Phase 2 tables
+  // (CorrelationRule, CorrelationMatch, Rs485Bus, Rs485BusDiagnostic,
+  // Rs485LatencySample): all had live policies and zero assertions.
+  //
+  // So this asserts COVERAGE, not correctness: every RLS-protected table must
+  // appear in the fixture set. The per-table isolation assertions below then
+  // prove each one actually blocks.
+  const exercisedTables = new Set(TABLES.map((f) => f.table))
+  const protectedTables = (
+    await q<{ relname: string }>(
+      `SELECT c.relname FROM pg_class c
+       JOIN pg_namespace ns ON ns.oid=c.relnamespace
+       WHERE ns.nspname='public' AND c.relkind='r' AND c.relforcerowsecurity
+       ORDER BY 1`,
+    )
+  ).map((r) => r.relname)
+  const unexercised = protectedTables.filter((t) => !exercisedTables.has(t))
+
+  if (unexercised.length > 0) {
+    fail(
+      'table-exercise-coverage',
+      `${unexercised.length} RLS-protected table(s) have no isolation assertion: ` +
+        `${unexercised.join(', ')}. A policy nobody queries is not a proven ` +
+        `control. Add a fixture for each.`,
+    )
+  } else {
+    pass(
+      'table-exercise-coverage',
+      `all ${protectedTables.length} RLS-protected tables have isolation assertions`,
+    )
+  }
+
   if (!hasColumns || !hasPolicies) {
     console.log(
       `\n\x1b[33m  tenantId columns and/or RLS policies are not installed yet.\n` +
