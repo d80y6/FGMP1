@@ -1,5 +1,6 @@
 import { Prisma, type FuelType } from "@prisma/client";
 import { db } from "@/lib/db";
+import { withTenant } from "./tenant-context";
 import { toJsonNumber } from "./decimal";
 import type {
   TankState, GenState, BattState, SiteState, IoTDeviceState,
@@ -15,6 +16,49 @@ import {
 } from "./thresholds-time";
 import { Rng, streamsFor, DEFAULT_SIM_SEED } from "./prng";
 import { assertSimulationAllowed } from "./simulation";
+
+/**
+ * Raised when the engine is asked to initialise without being told which
+ * tenant to load.
+ *
+ * This exists as a distinct error on purpose. The failure it replaces was
+ * silent: loading nothing and reporting an empty platform, which is
+ * indistinguishable from a tenant that genuinely has no sites.
+ */
+export class EngineTenantContextError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "EngineTenantContextError";
+  }
+}
+
+/**
+ * Raised when a query returns rows belonging to a tenant the engine was not
+ * asked to load. Defence in depth against the RLS context silently not
+ * applying (wrong role, missing FORCE, a pooled connection mismatch).
+ */
+export class EngineTenantScopeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "EngineTenantScopeError";
+  }
+}
+
+/**
+ * Resolve the tenants to load when a caller did not name one explicitly.
+ *
+ * The Tenant table has no `tenantId` column and is therefore outside RLS, so
+ * this listing is legitimately unscoped. It is the ONLY unscoped read in the
+ * engine, and it returns tenant IDs — not operational data.
+ *
+ * Callers that know which tenant they want should pass it. Relying on this
+ * means loading every tenant into one instance, which is correct only because
+ * the engine holds one combined snapshot; see `loadedTenants()`.
+ */
+async function resolveActiveTenantIds(): Promise<string[]> {
+  const rows = await db.tenant.findMany({ select: { id: true }, orderBy: { id: "asc" } });
+  return rows.map((r) => r.id);
+}
 
 // ── Deterministic PRNG for stable backfill ─────────────────────────────────
 function mulberry32(seed: number) {
@@ -105,6 +149,12 @@ function isGeneratorOffline(g: GenState, sites: SiteState[]): boolean {
 class FgmpEngine {
   private initialized = false;
   private initializing: Promise<void> | null = null;
+  /** Tenants whose state this instance currently holds. Empty = not loaded. */
+  private loadedTenantIds: string[] = [];
+  /** Cache key for the loaded set, so a changed scope forces a reload. */
+  private loadedKey = "";
+  /** Which scope an in-flight initialisation is for, for single-flight dedup. */
+  private initializingKey: string | null = null;
   private now = Date.now();
   private tickCount = 0;
   private startedAt = Date.now();
@@ -156,20 +206,140 @@ class FgmpEngine {
   // site -> tank index pointer for consumption round-robin
   private tankPtr = new Map<string, number>();
 
-  async ensureInit() {
-    if (this.initialized) return;
-    if (this.initializing) return this.initializing;
-    this.initializing = this.init();
+  /**
+   * Initialise the snapshot for EXPLICITLY NAMED tenants.
+   *
+   * WHY THIS IS NOW A PARAMETER (Phase 2)
+   * -------------------------------------
+   * This used to be `init()` with no arguments, reading the module-level `db`
+   * client — the RLS-enforced `fgmp_app` role — with NO tenant context in scope.
+   * Under Phase 1's FORCE row-level security that is not a partial failure, it
+   * is a total one: measured against the live database,
+   *
+   *     fgmp_app, no tenant context       ->  0 sites   (what this used to load)
+   *     fgmp_app, app.tenant_id=t-default -> 52 sites
+   *     fgmp_ops (BYPASSRLS)              -> 52 sites
+   *
+   * so the engine reported an empty platform while the database was full. The
+   * previous line made that worse than a silent bug:
+   *
+   *     this.tenantId = sites[0]?.tenantId ?? "t-default";
+   *
+   * which invented a hardcoded tenant id whenever the (empty) result set had no
+   * first row. Loading nothing therefore looked exactly like loading a
+   * tenant that genuinely has nothing, which is why this survived the entire
+   * Phase 1 audit.
+   *
+   * The fix is to make the tenant an explicit input rather than something
+   * inferred from whichever rows happened to come back. A caller that does not
+   * name a tenant gets an error, not an empty platform.
+   */
+  async ensureInit(tenants?: readonly string[]): Promise<void> {
+    const wanted =
+      tenants && tenants.length > 0 ? [...new Set(tenants)] : await resolveActiveTenantIds();
+    if (wanted.length === 0) {
+      throw new EngineTenantContextError(
+        "FgmpEngine.ensureInit() needs at least one tenantId. The engine holds a " +
+          "single tenant's state in memory and must be told which tenant to load; " +
+          "inferring it from query results silently produced an empty platform.",
+      );
+    }
+    const key = wanted.slice().sort().join(",");
+    if (this.initialized && this.loadedKey === key) return;
+    if (this.initializing && this.initializingKey === key) return this.initializing;
+    this.initializingKey = key;
+    this.initializing = this.init(wanted).finally(() => {
+      this.initializing = null;
+      this.initializingKey = null;
+    });
     return this.initializing;
   }
 
-  private async init() {
+  /**
+   * Which tenants the engine is currently holding.
+   *
+   * Empty means not yet initialised. It is deliberately a list rather than the
+   * old single `tenantId` field so a multi-tenant load cannot masquerade as a
+   * single-tenant one.
+   */
+  loadedTenants(): readonly string[] {
+    return this.loadedTenantIds;
+  }
+
+  /**
+   * True when the snapshot was populated.
+   *
+   * Distinct from `loadedTenants().length > 0`: a tenant with genuinely no
+   * sites is a different state from "nothing has been loaded", and conflating
+   * them is the defect this refactor exists to remove.
+   */
+  isLoaded(): boolean {
+    return this.initialized;
+  }
+
+  private async init(tenants: readonly string[]) {
+    this.loadedTenantIds = [...tenants];
+    // Compatibility for the many call sites that read `engine.tenantId`. It is
+    // the first loaded tenant and must not be used to infer scope.
+    this.tenantId = tenants[0] ?? "t-default";
+
+    // Reset every snapshot collection before loading, so a reload for a
+    // DIFFERENT tenant set cannot leave rows from the previous scope behind.
+    this.clearSnapshot();
+
+    // Each tenant is loaded inside its OWN withTenant(). RLS scopes on a single
+    // app.tenant_id, so two tenants cannot be read in one context — asking for
+    // both under one setting would silently return only one of them.
+    //
+    // Reads run on the transaction client, not the module-level `db`. Setting
+    // the GUC on one pooled connection and then reading from another does not
+    // work, which is the trap scheduler.ts documents; on a transaction client
+    // the context and the reads share one connection by construction.
+    for (const tenantId of tenants) {
+      await withTenant(tenantId, async (tx) => {
+        await this.loadInto(tx, [tenantId], true);
+      });
+    }
+
+    // Once, after every tenant is resident — see the note in loadInto().
+    this.backfillHistory();
+    this.initialized = true;
+  }
+
+  /**
+   * Empty every snapshot collection.
+   *
+   * Required on reload: the engine keeps parallel arrays keyed by id, so
+   * loading a new scope without clearing first would leave the previous
+   * tenant's assets resident and readable through the getters.
+   */
+  private clearSnapshot() {
+    this.sites = [];
+    this.tanks = [];
+    this.generators = [];
+    this.batteries = [];
+    this.iotDevices = [];
+    this.dispensers = [];
+    this.fuelTransactions = [];
+    this.events = [];
+    this.gateways = [];
+    this.regions = [];
+    this.openAlarmKeys = new Set();
+    this.transientRaisedAt = new Map();
+    this.tankPtr = new Map();
+  }
+
+  private async loadInto(
+    tx: Prisma.TransactionClient,
+    tenants: readonly string[],
+    append = false,
+  ) {
     // Load geo hierarchy
-    const regions = await db.region.findMany({
+    const regions = await tx.region.findMany({
       include: { governorates: { include: { districts: true } } },
       orderBy: { name: "asc" },
     });
-    this.regions = regions.map((r) => ({
+    this.regions.push(...regions.map((r) => ({
       id: r.id,
       name: r.name,
       governorates: r.governorates.map((g) => ({
@@ -177,18 +347,30 @@ class FgmpEngine {
         name: g.name,
         districts: g.districts.map((d) => ({ id: d.id, name: d.name })),
       })),
-    }));
+    })));
 
-    const sites = await db.site.findMany({
+    const sites = await tx.site.findMany({
       include: {
         region: true, governorate: true, district: true,
         tanks: true, generators: true, batteries: true, iotDevices: true,
         dispensers: { include: { transactions: { orderBy: { startedAt: "desc" }, take: MAX_DISPENSER_TXN_MEMORY } } },
       },
     });
-    this.tenantId = sites[0]?.tenantId ?? "t-default";
+    // The old line here read `sites[0]?.tenantId ?? "t-default"` — inferring
+    // scope from the result set and inventing a hardcoded tenant id when the
+    // set was empty. Scope is now the explicit `tenants` argument, and every
+    // loaded row is asserted to belong to it, so a row from the wrong tenant
+    // fails loudly instead of being adopted.
 
-    this.sites = sites.map((s) => ({
+    this.sites.push(...sites.map((s) => {
+      if (!tenants.includes(s.tenantId)) {
+        throw new EngineTenantScopeError(
+          `Engine asked for tenants [${tenants.join(", ")}] but the query returned ` +
+            `site ${s.id} owned by "${s.tenantId}". Refusing to hold state for a ` +
+            `tenant that was not requested.`,
+        );
+      }
+      return {
       id: s.id, tenantId: s.tenantId, code: s.code, name: s.name,
       regionId: s.regionId, region: s.region.name,
       governorateId: s.governorateId, governorate: s.governorate.name,
@@ -196,17 +378,18 @@ class FgmpEngine {
       latitude: s.latitude, longitude: s.longitude, address: s.address,
       status: s.status, criticality: s.criticality, loadKw: s.loadKw,
       powerSource: s.powerSource, gridAvailable: s.gridAvailable,
+      };
     }));
 
-    this.tanks = sites.flatMap((s) => s.tanks.map((t) => ({
+    this.tanks.push(...sites.flatMap((s) => s.tanks.map((t) => ({
       id: t.id, siteId: t.siteId, label: t.label, fuelType: t.fuelType,
       capacity: t.capacityLitres, current: t.currentLitres,
       low: t.lowThreshold, critical: t.criticalThreshold, status: t.status,
       lastReadingAt: t.lastReadingAt?.getTime() ?? Date.now(),
       history: [], prevLevel: t.currentLitres,
-    })));
+    }))))
 
-    this.generators = sites.flatMap((s) => s.generators.map((g) => ({
+    this.generators.push(...sites.flatMap((s) => s.generators.map((g) => ({
       id: g.id, siteId: g.siteId, label: g.label, manufacturer: g.manufacturer,
       model: g.model, ratedPowerKw: g.ratedPowerKw, status: g.status as GenStatus,
       mode: g.mode as GenState["mode"], runtimeHours: g.runtimeHours,
@@ -216,9 +399,9 @@ class FgmpEngine {
       nextMaintenanceHrs: g.nextMaintenanceHrs,
       lastStartedAt: g.lastStartedAt?.getTime(), lastStoppedAt: g.lastStoppedAt?.getTime(),
       lastReadingAt: g.lastReadingAt?.getTime() ?? Date.now(), history: [],
-    })));
+    }))))
 
-    this.batteries = sites.flatMap((s) => s.batteries.map((b) => ({
+    this.batteries.push(...sites.flatMap((s) => s.batteries.map((b) => ({
       id: b.id, siteId: b.siteId, label: b.label, chemistry: b.chemistry,
       capacityAh: b.capacityAh, nominalVoltage: b.nominalVoltage,
       voltage: b.voltage, currentA: b.currentA, stateOfCharge: b.stateOfCharge,
@@ -226,18 +409,18 @@ class FgmpEngine {
       charging: b.charging, status: b.status,
       installedAt: b.installedAt.getTime(), lastReadingAt: b.lastReadingAt?.getTime() ?? Date.now(),
       history: [],
-    })));
+    }))))
 
-    this.iotDevices = sites.flatMap((s) => s.iotDevices.map((d) => ({
+    this.iotDevices.push(...sites.flatMap((s) => s.iotDevices.map((d) => ({
       id: d.id, siteId: d.siteId, name: d.name, type: d.type, protocol: d.protocol,
       vendor: d.vendor, serialNo: d.serialNo, firmware: d.firmware,
       ipAddress: d.ipAddress ?? undefined, modbusUnit: d.modbusUnit ?? undefined,
       status: d.status, lastSeenAt: d.lastSeenAt?.getTime() ?? Date.now(),
       signalRssi: d.signalRssi, otaTargetFw: d.otaTargetFw ?? undefined,
       otaStatus: d.otaStatus ?? undefined,
-    })));
+    }))))
 
-    this.dispensers = sites.flatMap((s) => s.dispensers.map((d) => ({
+    this.dispensers.push(...sites.flatMap((s) => s.dispensers.map((d) => ({
       id: d.id, siteId: d.siteId, label: d.label, manufacturer: d.manufacturer,
       model: d.model, nozzleCount: d.nozzleCount, fuelType: d.fuelType,
       maxFlowLpm: d.maxFlowLpm,
@@ -254,30 +437,37 @@ class FgmpEngine {
       currentTransactionId: d.currentTransactionId ?? undefined,
       lastTransactionAt: d.lastTransactionAt?.getTime(),
       tempC: d.tempC, history: [],
-    })));
+    }))))
 
-    this.fuelTransactions = sites.flatMap((s) =>
-      s.dispensers.flatMap((d) =>
-        d.transactions.map((tx) => ({
-          id: tx.id, dispenserId: tx.dispenserId, siteId: tx.siteId,
-          nozzle: tx.nozzle, volumeLitres: tx.volumeLitres, amountYer: tx.amountYer,
-          unitPriceYer: tx.unitPriceYer, vehiclePlate: tx.vehiclePlate ?? undefined,
-          operatorName: tx.operatorName ?? undefined,
-          status: tx.status as FuelTransactionState["status"],
-          startedAt: tx.startedAt.getTime(),
-          completedAt: tx.completedAt?.getTime(),
-          durationSec: tx.durationSec,
-        })),
-      ),
-    ).sort((a, b) => b.startedAt - a.startedAt).slice(0, MAX_RECENT_TXN_SNAPSHOT);
+    // `.slice(…, MAX_RECENT_TXN_SNAPSHOT)` caps the combined list across tenants,
+    // so the snapshot stays bounded no matter how many tenants are loaded.
+    this.fuelTransactions.push(
+      ...sites
+        .flatMap((s) =>
+          s.dispensers.flatMap((d) =>
+            d.transactions.map((tx) => ({
+              id: tx.id, dispenserId: tx.dispenserId, siteId: tx.siteId,
+              nozzle: tx.nozzle, volumeLitres: tx.volumeLitres, amountYer: tx.amountYer,
+              unitPriceYer: tx.unitPriceYer, vehiclePlate: tx.vehiclePlate ?? undefined,
+              operatorName: tx.operatorName ?? undefined,
+              status: tx.status as FuelTransactionState["status"],
+              startedAt: tx.startedAt.getTime(),
+              completedAt: tx.completedAt?.getTime(),
+              durationSec: tx.durationSec,
+            })),
+          ),
+        )
+        .sort((a, b) => b.startedAt - a.startedAt)
+        .slice(0, MAX_RECENT_TXN_SNAPSHOT),
+    );
 
     // Task 48 — load all site gateways (with site relation for the dashboard's
     // site badge). The gateway tick loop in tick() simulates small live
     // fluctuations on top of these persisted values.
-    const gatewayRows = await db.siteGateway.findMany({
+    const gatewayRows = await tx.siteGateway.findMany({
       include: { site: { select: { id: true, name: true, code: true } } },
     });
-    this.gateways = gatewayRows.map((g) => ({
+    this.gateways.push(...gatewayRows.map((g) => ({
       id: g.id,
       siteId: g.siteId,
       hostname: g.hostname,
@@ -289,22 +479,25 @@ class FgmpEngine {
       heapKb: g.heapKb,
       wifiRssi: g.wifiRssi,
       lastSeenAt: g.lastSeenAt.getTime(),
-    }));
+    })));
 
     // Load existing open alarm keys for dedup. The key shape must match
     // `raiseAlarm`/`autoResolve` exactly, so severity is part of it.
-    const openAlarms = await db.alarm.findMany({
+    const openAlarms = await tx.alarm.findMany({
       where: { status: { in: ["OPEN", "ACKNOWLEDGED", "ESCALATED"] } },
       select: { type: true, entityId: true, severity: true },
     });
-    this.openAlarmKeys = new Set(
-      openAlarms.map(
-        (a) => `${a.type}:${a.severity}:${a.entityId ?? "site"}`,
-      ),
-    );
+    // Additive, not reassigned: each tenant is loaded in its own context, so
+    // this must union across tenants. Reassigning here would discard the
+    // dedup keys of every tenant loaded before the last one.
+    for (const a of openAlarms) {
+      this.openAlarmKeys.add(`${a.type}:${a.severity}:${a.entityId ?? "site"}`);
+    }
 
-    this.backfillHistory();
-    this.initialized = true;
+    // backfillHistory() and the initialized flag belong to init(), not here: this
+    // method runs once PER TENANT, so backfilling here would seed synthetic
+    // history for a single tenant on every pass and reset `initialized` after
+    // each one.
   }
 
   // ── Backfill 24h synthetic history so charts render immediately ──────────
@@ -1483,10 +1676,25 @@ class FgmpEngine {
    * Safe to call repeatedly. Resets `initialized` so the next ensureInit()
    * re-runs init(); callers don't need to await the init promise directly.
    */
+  /**
+   * Reload the snapshot.
+   *
+   * Reloads the SAME tenants that are currently loaded, not "whatever tenants
+   * exist". Re-resolving the tenant list here would silently change the
+   * engine's scope — so a reload intended to refresh data could quietly widen
+   * or narrow which tenants are resident.
+   */
   async reload(): Promise<void> {
+    const scope = this.loadedTenantIds.slice();
     this.initialized = false;
     this.initializing = null;
-    await this.ensureInit();
+    this.loadedKey = "";
+    if (scope.length === 0) {
+      // Never loaded: fall back to the normal resolution.
+      await this.ensureInit();
+      return;
+    }
+    await this.ensureInit(scope);
   }
 
   // ── Edge: ESP controller reboot (Task 48) ───────────────────────────────
@@ -1664,7 +1872,17 @@ class FgmpEngine {
    * efficiency.
    */
   async snapshotForTenant(tenantId: string | null = null): Promise<Snapshot> {
-    await this.ensureInit();
+    // Load SCOPE, not just the returned slice. Previously this called
+    // `ensureInit()` with no argument, which loaded every tenant into memory
+    // and then filtered the result. That put a whole platform's assets in
+    // process memory for a single tenant's request — and, because the
+    // unfiltered load previously returned zero rows under RLS, it was also
+    // how an empty platform masqueraded as an empty tenant.
+    //
+    // A non-null tenantId now scopes the LOAD itself, so only that tenant's
+    // rows are ever resident. `null` remains the deliberate cross-tenant
+    // escape hatch for super-admin / the realtime service.
+    await this.ensureInit(tenantId ? [tenantId] : undefined);
 
     // Tenant-scoped in-memory slices. For tenantId === null (super-admin /
     // realtime service) we use the full arrays unchanged.
