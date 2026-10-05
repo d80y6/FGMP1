@@ -133,7 +133,10 @@ const SITE_ID = `rls-site-${RUN}`
 const SITE_CODE = `RLS-${RUN}`
 const SITE_USER_ID = `rls-user-${RUN}`
 const RELEASE_ID = `rls-rel-${RUN}`
+// Phase 2: CorrelationRule is the parent of CorrelationMatch.
 const DISPENSER_ID = `rls-disp-${RUN}`
+// Phase 2: CorrelationMatch's parent rule, per tenant.
+const RULE_ID = `rule-${SUFFIX}`
 const GENERATOR_ID = `rls-gen-${RUN}`
 const TANK_ID = `rls-tank-${RUN}`
 const RS485_BUS_ID = `rls-bus-${RUN}`
@@ -483,6 +486,11 @@ const TABLES: TableSpec[] = [
     // Phase 2 vertical 4 — server-side alarm correlation. Both are tenant-owned
     // and FORCE-RLS protected; the suite refuses to pass while they are
     // unexercised, because a policy nobody queries is not a proven control.
+    //
+    // columns.id is required by bRowIdFor() when the suite fabricates a
+    // tenant-B row to prove cross-tenant access is blocked, so a real column
+    // map is needed even though the row itself is inserted explicitly per
+    // tenant in the loop below.
     table: 'CorrelationRule',
     label: 'CorrelationRule (Phase 2 correlation)',
     tenantColumn: 'tenantId',
@@ -782,6 +790,7 @@ function subst(sql: string, suffix: string = SUFFIX, parents: ParentIds = {}): s
     .replaceAll('${SITE_ID}', parents.siteId ?? SITE_ID)
     .replaceAll('${SITE_USER_ID}', parents.userId ?? SITE_USER_ID)
     .replaceAll('${RELEASE_ID}', RELEASE_ID)
+    .replaceAll('${RULE_ID}', parents.ruleId ?? RULE_ID)
     .replaceAll('${DISPENSER_ID}', parents.dispenserId ?? DISPENSER_ID)
     .replaceAll('${GENERATOR_ID}', parents.generatorId ?? GENERATOR_ID)
     .replaceAll('${TANK_ID}', parents.tankId ?? TANK_ID)
@@ -1066,6 +1075,30 @@ async function seedFixtures(): Promise<void> {
             "inAppSeverities","emailSeverities","smsSeverities","updatedAt","tenantId")
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8, now(),$9)`,
           [`np-${suffix}`, userId, true, false, false, 'INFO,WARN', 'INFO', 'WARN', tenant],
+        )
+        continue
+      }
+      if (spec.table === 'CorrelationRule') {
+        // CorrelationMatch has an FK to this, so a rule must exist for THIS
+        // tenant before its match row is inserted. Created explicitly with a
+        // per-tenant id, mirroring NotificationPreference above.
+        await oe(
+          `INSERT INTO "CorrelationRule" (id,"tenantId",name,description,enabled,
+            "alarmType","threshold","windowMinutes",scope,"escalateTo","updatedAt")
+           VALUES ($1,$2,$3,$4,$5,$6::"RuleAlarmType",$7,$8,$9::"RuleScope",$10::"AlarmSeverity", now())`,
+          [`rule-${suffix}`, tenant, `RLS rule ${suffix}`, 'RLS correlation rule', true,
+           'GEN_FAILURE', 2, 15, 'SITE', 'L3'],
+        )
+        continue
+      }
+      if (spec.table === 'CorrelationMatch') {
+        // The parent rule is `rule-${suffix}` for THIS tenant (created above).
+        await oe(
+          `INSERT INTO "CorrelationMatch" (id,"tenantId","ruleId","scopeKey",scope,"scopeLabel",
+            outcome,"escalateTo","matchCount","alarmIds","evaluatedAt","createdAt")
+           VALUES ($1,$2,$3,$4,$5::"RuleScope",$6,$7::"RuleEvaluationOutcome",$8::"AlarmSeverity",$9,$10, now(), now())`,
+          [`match-${suffix}`, tenant, `rule-${suffix}`, 's1', 'SITE', 'Site: S1',
+           'SUPPRESSED', 'L3', 2, 'a1,a2'],
         )
         continue
       }

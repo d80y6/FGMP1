@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, engine, bootstrap } from "@/lib/fgmp";
+import { engine, bootstrap } from "@/lib/fgmp";
 import {
   rateLimitByUser,
   applyRateLimitHeaders,
   READ_LIMIT,
 } from "@/lib/fgmp/rate-limit";
-import { errorResponse } from "@/lib/fgmp/api-error";
+import { errorResponse, forbidden } from "@/lib/fgmp/api-error";
 import { requireAuth, siteTenantWhere } from "@/lib/fgmp/auth-helpers";
 import { withTenant } from "@/lib/fgmp/tenant-context";
 
@@ -48,18 +48,43 @@ export async function GET(req: NextRequest) {
       return res;
     }
 
-    const dispensers = await db.fuelDispenser.findMany({
-      where: siteTenantWhere(auth.user),
-      orderBy: [{ siteId: "asc" }, { label: "asc" }],
-      include: {
-        site: { select: { id: true, name: true, code: true } },
-      },
-    });
+    // Every database read here must run INSIDE withTenant().
+    //
+    // RLS is FORCE-enabled, so a `db.*` query with no tenant context in scope
+    // returns ZERO rows — including a query with an explicit tenantId filter,
+    // because the policy's USING clause is ANDed with it and `current_setting`
+    // is still NULL:
+    //
+    //     db.fuelDispenser.count()                                      -> 0
+    //     db.fuelDispenser.count({ where: { tenantId: "t-default" } })  -> 0
+    //     withTenant("t-default", tx => tx.fuelDispenser.count())       -> 24
+    //
+    // The explicit filter looks like it should work and does not. Verified
+    // against the real fgmp_app role, not the ops or migrate connection —
+    // running this route on the owner role would have returned rows and
+    // proved nothing about production behaviour.
+    const tenantId = requireTenant(auth.user);
+    const dispenserRows = await withTenant(tenantId, (tx) =>
+      tx.fuelDispenser.findMany({
+        where: siteTenantWhere(auth.user),
+        orderBy: [{ siteId: "asc" }, { label: "asc" }],
+        include: {
+          site: { select: { id: true, name: true, code: true } },
+        },
+      }),
+    );
 
-    // Diagnostics are tenant-scoped, so this read needs a tenant context or
-    // RLS returns zero rows. A superadmin has no single tenant: read across the
-    // sites they can see rather than silently returning an empty list.
-    const diagnosticsByUnit = await loadDiagnostics(user);
+    // Diagnostics are tenant-scoped too, and must share the transaction context
+    // — a second withTenant() call would open a different transaction on a
+    // different pooled connection, which has no tenant context.
+    const diagnosticRows = await withTenant(tenantId, (tx) =>
+      tx.rs485BusDiagnostic.findMany({
+        include: { bus: { select: { label: true, online: true } } },
+      }),
+    );
+
+    const dispensers = dispenserRows;
+    const diagnosticsByUnit = indexDiagnostics(diagnosticRows);
 
     const live = engine.dispensers;
     const merged = dispensers.map((d) => {
@@ -149,33 +174,46 @@ type DiagnosticRow = {
 };
 
 /**
- * Load persisted diagnostics, keyed by Modbus unit address.
+ * Resolve the tenant this request may read.
  *
- * Reads inside `withTenant` because RLS is enforced. The tenant is taken from
- * the authenticated user rather than from a query parameter, so this cannot be
- * used to read another tenant's bus data.
+ * Fails closed rather than falling back to a default tenant. Returning data
+ * for the wrong tenant, or silently returning nothing, are both worse than an
+ * error the caller can act on.
  */
-async function loadDiagnostics(user: {
-  tenantId?: string | null;
-  role?: string;
-}): Promise<Map<number, DiagnosticRow>> {
-  const tenantId = user.tenantId;
+function requireTenant(user: { tenantId?: string | null }): string {
+  if (!user.tenantId) {
+    // SUPERADMIN spans tenants and has no single tenantId. It cannot use this
+    // route; attempting to guess a tenant would be exactly the cross-tenant
+    // read the backstop exists to prevent.
+    throw forbidden("This endpoint requires a tenant-scoped account");
+  }
+  return user.tenantId;
+}
+
+/** Index diagnostics by Modbus unit address. */
+function indexDiagnostics(
+  rows: {
+    busId: string;
+    unitAddress: number;
+    lastLatencyMs: number;
+    averageLatencyMs: number | null;
+    crcErrors: number;
+    timeouts: number;
+    retries: number;
+    retriesExhausted: number;
+    exceptionResponses: number;
+    successfulReads: number;
+    failedReads: number;
+    lastPollAt: Date | null;
+    lastError: string | null;
+    lastErrorKind: string | null;
+    bus: { label: string; online: boolean };
+  }[],
+): Map<number, DiagnosticRow> {
   const out = new Map<number, DiagnosticRow>();
-
-  const rows = tenantId
-    ? await withTenant(tenantId, (tx) =>
-        tx.rs485BusDiagnostic.findMany({
-          include: { bus: { select: { label: true, online: true } } },
-        }),
-      )
-    : // Superadmin spans tenants; read the buses whose site the caller can see.
-      await db.rs485BusDiagnostic.findMany({
-        include: { bus: { select: { label: true, online: true } } },
-      });
-
   for (const r of rows) {
-    // Keep the most recently polled row if two tenants somehow share a unit
-    // address, so the newest measurement wins rather than an arbitrary one.
+    // Keep the most recently polled row if two buses share a unit address, so
+    // the newest measurement wins rather than an arbitrary one.
     const existing = out.get(r.unitAddress);
     if (existing && (existing.lastPollAt?.getTime() ?? 0) > (r.lastPollAt?.getTime() ?? 0)) {
       continue;
