@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, bootstrap } from "@/lib/fgmp";
+import { bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import {
   rateLimitByUser,
   applyRateLimitHeaders,
@@ -84,13 +85,18 @@ export async function GET(req: NextRequest) {
     });
     const where: Record<string, unknown> = { ...tenantWhereOrAll(me) };
     if (action) where.action = action;
-    const logs = await db.auditLog.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      take: limit,
-      skip: offset,
-      include: { user: { select: { name: true, role: true } } },
-    });
+    // AuditLog is one of the 24 FORCE-RLS-protected tables, so this read must
+    // carry the caller's tenant context. Previously it ran unscoped and
+    // returned [] for every request.
+    const logs = await asTenant(me.tenantId, (tx) =>
+      tx.auditLog.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        take: limit,
+        skip: offset,
+        include: { user: { select: { name: true, role: true } } },
+      }),
+    );
     const res = NextResponse.json(logs.map((l) => ({ ...l, details: tryParse(l.details) })));
     res.headers.set("X-Limit", String(limit));
     res.headers.set("X-Offset", String(offset));

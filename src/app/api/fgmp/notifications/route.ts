@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, bootstrap } from "@/lib/fgmp";
+import { bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import { notificationActionSchema, validateBody } from "@/lib/fgmp/schemas";
 import {
@@ -29,7 +30,9 @@ export async function GET(req: NextRequest) {
     const status = searchParams.get("status");
     const where: Record<string, unknown> = { ...tenantWhereOrAll(me) };
     if (status) where.status = { in: status.split(",") };
-    const notifs = await db.notification.findMany({ where, orderBy: { createdAt: "desc" }, take: 100 });
+    const notifs = await asTenant(me.tenantId, (tx) =>
+      tx.notification.findMany({ where, orderBy: { createdAt: "desc" }, take: 100 }),
+    );
     const res = NextResponse.json(notifs);
     applyRateLimitHeaders(res.headers, rl);
     return res;
@@ -64,26 +67,37 @@ export async function POST(req: NextRequest) {
     const data = r.data;
 
     if (data.action === "markSent") {
-      const existing = await db.notification.findUnique({ where: { id: data.notificationId } });
-      const denied = assertTenantOwned(existing, me);
-      if (denied) {
-        applyRateLimitHeaders(denied.headers, rl);
-        return denied;
-      }
-      const updated = await db.notification.update({
-        where: { id: data.notificationId },
-        data: { status: "SENT", sentAt: new Date() },
+      // Scoped in the QUERY so the rightful tenant can actually find the row.
+      // assertTenantOwned is KEPT as defence in depth — it compares
+      // record.tenantId after the fetch, so it cannot work until the read is
+      // scoped, but it still guards against a future where-clause regression.
+      const updated = await asTenant(me.tenantId, async (tx) => {
+        const existing = await tx.notification.findFirst({
+          where: { id: data.notificationId, tenantId: me.tenantId },
+        });
+        const denied = assertTenantOwned(existing, me);
+        if (denied) {
+          applyRateLimitHeaders(denied.headers, rl);
+          return denied;
+        }
+        return tx.notification.update({
+          where: { id: data.notificationId },
+          data: { status: "SENT", sentAt: new Date() },
+        });
       });
+      if (updated instanceof NextResponse) return updated;
       await audit({ userId: user.id, action: "NOTIF_DISMISS", entity: "notification", entityId: data.notificationId });
       const res = NextResponse.json(updated);
       applyRateLimitHeaders(res.headers, rl);
       return res;
     }
     // markAllSent
-    const result = await db.notification.updateMany({
-      where: { status: "QUEUED", ...tenantWhereOrAll(me) },
-      data: { status: "SENT", sentAt: new Date() },
-    });
+    const result = await asTenant(me.tenantId, (tx) =>
+      tx.notification.updateMany({
+        where: { status: "QUEUED", ...tenantWhereOrAll(me) },
+        data: { status: "SENT", sentAt: new Date() },
+      }),
+    );
     await audit({ userId: user.id, action: "NOTIF_DISMISS_ALL", entity: "notification", entityId: "batch" });
     const res = NextResponse.json({ updated: result.count });
     applyRateLimitHeaders(res.headers, rl);

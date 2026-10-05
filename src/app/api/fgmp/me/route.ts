@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import { ROLE_PERMISSIONS, ALL_ROLES } from "@/lib/fgmp/rbac";
 import { requireRole, isSuperAdminUser, ROLES } from "@/lib/fgmp/auth-helpers";
 import type { Role } from "@/lib/fgmp/types";
@@ -20,10 +20,19 @@ export async function GET(req: NextRequest) {
   const { user } = auth;
 
   // Re-read the user from the DB so we pick up role changes from PATCH.
-  const dbUser = await db.user.findUnique({
-    where: { id: user.id },
-    select: { id: true, name: true, email: true, role: true, tenantId: true, lastLoginAt: true },
-  });
+  //
+  // Scoped to the caller's OWN tenant, consistent with `auth-identity.ts`,
+  // which reads the same row through a client that can see it. The difference
+  // is deliberate and worth stating: `findUserIdentity` runs in the JWT
+  // callback BEFORE a tenant is established, so it cannot use withTenant. Here
+  // the session already carries `user.tenantId`, so the read is properly
+  // scoped — no second identity pattern is invented here.
+  const dbUser = await asTenant(user.tenantId, (tx) =>
+    tx.user.findFirst({
+      where: { id: user.id, tenantId: user.tenantId },
+      select: { id: true, name: true, email: true, role: true, tenantId: true, lastLoginAt: true },
+    }),
+  );
   if (!dbUser) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
@@ -69,11 +78,17 @@ export async function PATCH(req: Request) {
       { status: 403 },
     );
   }
-  const updated = await db.user.update({
-    where: { id: user.id },
-    data: { role },
-    select: { id: true, name: true, email: true, role: true, tenantId: true },
-  });
+  const updated = await asTenant(user.tenantId, (tx) =>
+    tx.user.update({
+      // Scoped in the QUERY, not filtered afterwards. Under FORCE RLS an
+      // unscoped update matches nothing, so `update` would have thrown rather
+      // than silently succeeded — but scoping here also means a caller cannot
+      // pass an id belonging to another tenant.
+      where: { id: user.id, tenantId: user.tenantId },
+      data: { role },
+      select: { id: true, name: true, email: true, role: true, tenantId: true },
+    }),
+  );
   return NextResponse.json({
     ...updated,
     role: updated.role as Role,

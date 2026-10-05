@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { db } from "@/lib/db";
+import { PrismaClient } from "@prisma/client";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import { auditFailureCount } from "@/lib/fgmp/audit";
 import { requireRole, ROLES, isSuperAdminUser } from "@/lib/fgmp/auth-helpers";
 import { errorResponse } from "@/lib/fgmp/api-error";
@@ -52,6 +53,48 @@ export const dynamic = "force-dynamic";
  * client count) remain global by nature — they describe the server, not a
  * tenant's data, and are needed for the NOC display.
  */
+
+/**
+ * Platform-wide counts for the SUPERADMIN view, on the ops connection.
+ *
+ * A super-admin is not a member of any one tenant and legitimately wants
+ * platform-wide figures, so this path cannot use a tenant context — there is
+ * no single tenant to scope to. That makes it a deliberate BY-DESIGN-OPS
+ * access, documented here so it is not mistaken for the same bug the tenant
+ * path just had.
+ *
+ * It THROWS rather than falling back to the ambient client. A health endpoint
+ * that silently reports zeros when its privileged connection is unavailable is
+ * precisely the monitoring lie this route previously told.
+ */
+async function opsCounts(twentyFourHoursAgo: Date) {
+  const url =
+    process.env.FGMP_OPS_DATABASE_URL ?? process.env.FGPS_OPS_DATABASE_URL ??
+    process.env.FGMP_MIGRATE_DATABASE_URL;
+  if (!url) {
+    throw new Error(
+      "SUPERADMIN health view requires FGMP_OPS_DATABASE_URL (or FGMP_MIGRATE_DATABASE_URL). " +
+        "Platform-wide counts cannot be served by a tenant-scoped connection. Refusing rather " +
+        "than reporting zero, because an empty platform reported as healthy is a monitoring lie.",
+    );
+  }
+  const client = new PrismaClient({ datasources: { db: { url } } });
+  try {
+    const [s, a, u, al, au] = await Promise.all([
+      client.site.count(),
+      client.alarm.count(),
+      client.user.count(),
+      client.auditLog.count(),
+      client.user.count({ where: { lastLoginAt: { gte: twentyFourHoursAgo } } }),
+    ]);
+    return {
+      sites: s, alarms: a, sensorReadings: 0, users: u, auditLogs: al, activeUsers: au,
+      scopeMode: "platform" as const,
+    };
+  } finally {
+    await client.$disconnect();
+  }
+}
 
 // ── Config ────────────────────────────────────────────────────────────────
 const CACHE_TTL_MS = 10_000;
@@ -137,6 +180,14 @@ export interface HealthResponse {
     message: string;
   }[];
   timestamp: string;
+  /**
+   * Three-state verdict. `HEALTHY` requires positive evidence that the scoped
+   * read returned rows; an empty scope reports `HEALTHY_BUT_EMPTY` rather than
+   * claiming health; an unreadable database throws and produces no verdict.
+   */
+  verdict: "HEALTHY" | "HEALTHY_BUT_EMPTY";
+  /** Whether `tableCounts` covers one tenant or the whole platform. */
+  scopeMode: "tenant" | "platform";
 }
 
 /** Relative, non-disclosing label for the live SQLite file. */
@@ -328,29 +379,44 @@ export async function GET(req: NextRequest) {
     // (see prisma/schema.prisma) — only `siteId` — so its scope is resolved
     // by materialising the caller's site ids first.
     const twentyFourHoursAgo = new Date(now - ONE_DAY_MS);
-    const tenantSiteIds = tenantId
-      ? (await db.site.findMany({
-          where: { tenantId },
-          select: { id: true },
-        })).map((s) => s.id)
-      : null;
 
-    const [sites, alarms, sensorReadings, users, auditLogs, activeUsers] =
-      await Promise.all([
-        db.site.count(tenantId ? { where: { tenantId } } : undefined),
-        db.alarm.count(tenantId ? { where: { tenantId } } : undefined),
-        db.sensorReading.count(
-          tenantSiteIds ? { where: { siteId: { in: tenantSiteIds } } } : undefined,
-        ),
-        db.user.count(tenantId ? { where: { tenantId } } : undefined),
-        db.auditLog.count(tenantId ? { where: { tenantId } } : undefined),
-        db.user.count({
-          where: {
-            lastLoginAt: { gte: twentyFourHoursAgo },
-            ...(tenantId ? { tenantId } : {}),
-          },
-        }),
-      ]);
+    // ── Scope the reads, and never let an empty read mean "healthy" ──────
+    //
+    // Previously all six counts ran on the module-level `db` with NO tenant
+    // context. Under FORCE RLS that returns 0 for every model, so the health
+    // endpoint reported `sites: 0, alarms: 0, users: 0` for a platform that
+    // actually holds 52 sites — and, because nothing downstream distinguished
+    // "zero rows" from "zero rows because the policy hid them", it reported an
+    // EMPTY PLATFORM AS HEALTHY. Same bug class as the tenant-isolation-test
+    // route, in a different costume: an unmeasured read presented as a
+    // measured result.
+    //
+    // A tenant caller is scoped with withTenant(theirTenantId). A SUPERADMIN has
+    // no single tenant and legitimately wants platform-wide figures, so that
+    // path uses the ops connection deliberately — documented below — rather
+    // than inheriting the tenant path's scoping.
+    const { sites, alarms, sensorReadings, users, auditLogs, activeUsers, scopeMode } =
+      await (tenantId
+        ? asTenant(tenantId, async (tx) => {
+            const tenantSiteIds = (await tx.site.findMany({
+              where: { tenantId },
+              select: { id: true },
+            })).map((s) => s.id);
+
+            const [s, a, sr, u, al, au] = await Promise.all([
+              tx.site.count({ where: { tenantId } }),
+              tx.alarm.count({ where: { tenantId } }),
+              tx.sensorReading.count({ where: { siteId: { in: tenantSiteIds } } }),
+              tx.user.count({ where: { tenantId } }),
+              tx.auditLog.count({ where: { tenantId } }),
+              tx.user.count({ where: { lastLoginAt: { gte: twentyFourHoursAgo }, tenantId } }),
+            ]);
+            return {
+              sites: s, alarms: a, sensorReadings: sr, users: u, auditLogs: al, activeUsers: au,
+              scopeMode: "tenant" as const,
+            };
+          })
+        : opsCounts(twentyFourHoursAgo));
 
     // ── Metrics tracker ───────────────────────────────────────────────
     const metricsSnapshot = getMetrics();
@@ -393,6 +459,24 @@ export async function GET(req: NextRequest) {
       sessions: {
         activeUsers,
       },
+      /**
+       * Explicit three-state verdict.
+       *
+       * The previous shape had no verdict at all, so a caller could not tell a
+       * working platform from one whose rows were invisible. `HEALTHY` requires
+       * positive evidence that data is reachable; a read that returns nothing
+       * yields `HEALTHY_BUT_EMPTY`, and an unreadable one throws rather than
+       * degrading. `EMPTY` is deliberately NOT reported as healthy.
+       *
+       * - `HEALTHY`         — the scoped read returned rows
+       * - `HEALTHY_BUT_EMPTY` — the query succeeded and the scope genuinely has
+       *   no rows yet (a brand-new tenant, or pre-seed). Not a fault.
+       * - the request FAILS   — the database could not be read at all, so no
+       *   verdict is invented from a failed read.
+       */
+      verdict: sites + alarms + users > 0 ? "HEALTHY" : "HEALTHY_BUT_EMPTY",
+      /** Whether the counts above cover one tenant or the whole platform. */
+      scopeMode,
       errors: redactErrors(errors),
       timestamp: new Date(now).toISOString(),
     };
