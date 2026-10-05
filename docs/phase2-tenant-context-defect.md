@@ -226,3 +226,45 @@ party touching the database**, and "ran it twice and it passed" is not evidence.
 - **Not production-ready.** The user's precondition was that Phase 1's RLS suite
   passes and Phase 2's simulated telemetry is gone. Both are true. Neither makes
   the platform production-ready with 81 unscoped route queries outstanding.
+## Addendum — a test route that reported success without measuring anything
+
+`src/app/api/fgmp/admin/tenant-isolation-test/route.ts` exists to assert tenant
+isolation. Under Phase 1's RLS it asserted nothing, and reported that isolation
+was intact.
+
+```
+tenants found unscoped: 2
+totalTests: 0   passed: 0   failed: 0
+summary.isolationIntact = true
+```
+
+Two independent flaws, both reproduced rather than inferred:
+
+**Flaw 1 — vacuous pass from the aggregation.** `isolationIntact: failed === 0`
+(line 317). All eight sample queries (lines 140–167) are unscoped
+`db.*.findFirst(...)`, so under FORCE RLS every one returns null. Each assertion
+sits behind `if (sampleX)`, so all are skipped, `allTests` is empty, and
+`failed === 0` on an empty array is `true`. The guard was written to skip absent
+resources — which, once RLS makes every resource absent, skips everything.
+
+This is worse than a route returning empty data, because empty data looks broken
+while this looks authoritative. **A test suite whose "0 failures" means "0 tests
+ran" is the most misleading artefact a codebase can contain.**
+
+**Flaw 2 — a null record passes for the wrong reason.** `pass: denied !== null
+&& saAccess === null` (line 189). `assertTenantOwned(null, …)` returns 404 for an
+ordinary user and `null` for SUPERADMIN, so a null sample scores `pass: true`.
+`assertTenantOwned` cannot distinguish "belongs to another tenant" from "does not
+exist" — both are `record == null`. Even a fully-loaded version of this route
+could report PASS while the RLS policy hid every row, which is precisely the
+failure mode that concealed the original defect.
+
+Note why the route got far enough to produce a report at all: `db.tenant.findMany`
+still returns rows because `Tenant` has no `tenantId` column and so is not
+RLS-protected. Cross-tenant enumeration worked; per-tenant sampling did not.
+
+**The generalisable lesson.** `failed === 0` is not a pass. Any summary that
+aggregates over a possibly-empty set must distinguish *nothing failed* from
+*nothing ran*, and must refuse to claim success when it measured nothing. The
+same shape appears in the RLS suite itself, which is why it now names BLOCKED
+assertions and asserts per-table coverage rather than only counting outcomes.
