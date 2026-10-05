@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, bootstrap } from "@/lib/fgmp";
+import { bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import {
   rateLimitByUser,
@@ -38,7 +39,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     }
 
     const { id } = await ctx.params;
-    const k = await db.apiKey.findUnique({ where: { id } });
+    // Scoped in the query. assertTenantOwned is KEPT as defence in depth.
+    const k = await asTenant(user.tenantId, (tx) =>
+      tx.apiKey.findFirst({ where: { id, tenantId: user.tenantId } }),
+    );
     const denied = assertTenantOwned(k, user);
     if (denied) {
       applyRateLimitHeaders(denied.headers, rl);
@@ -52,10 +56,12 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
 
     // Resolve creator (plain-string FK, not a Prisma relation).
     const creator = k.createdBy
-      ? await db.user.findUnique({
-          where: { id: k.createdBy },
-          select: { id: true, name: true, email: true },
-        })
+      ? await asTenant(user.tenantId, (tx) =>
+          tx.user.findFirst({
+            where: { id: k.createdBy, tenantId: user.tenantId },
+            select: { id: true, name: true, email: true },
+          }),
+        )
       : null;
 
     const res = NextResponse.json({
@@ -102,7 +108,9 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     }
 
     const { id } = await ctx.params;
-    const existing = await db.apiKey.findUnique({ where: { id } });
+    const existing = await asTenant(user.tenantId, (tx) =>
+      tx.apiKey.findFirst({ where: { id, tenantId: user.tenantId } }),
+    );
     const denied = assertTenantOwned(existing, user);
     if (denied) {
       applyRateLimitHeaders(denied.headers, rl);
@@ -128,10 +136,29 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     }
 
     const now = new Date();
-    const updated = await db.apiKey.update({
-      where: { id },
-      data: { revoked: true, revokedAt: now },
+    // Scoped update. An unscoped `update` would throw Prisma P2025 when the id
+    // belongs to another tenant, producing a 500 that distinguishes it from
+    // the 404 above.
+    // updateMany returns a count rather than a row, so the record is read back
+    // inside the SAME transaction. The response shape below is unchanged.
+    const updated = await asTenant(user.tenantId, async (tx) => {
+      const result = await tx.apiKey.updateMany({
+        where: { id, tenantId: user.tenantId },
+        data: { revoked: true, revokedAt: now },
+      });
+      if (result.count === 0) return null;
+      return tx.apiKey.findFirst({
+        where: { id, tenantId: user.tenantId },
+        select: { id: true, revoked: true, revokedAt: true },
+      });
     });
+    if (!updated) {
+      // Indistinguishable from "does not exist": same 404 body as the guard
+      // above, so a cross-tenant id cannot be told apart from a wrong one.
+      const res = NextResponse.json({ error: "API key not found" }, { status: 404 });
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    };
 
     await audit({
       userId: user.id,

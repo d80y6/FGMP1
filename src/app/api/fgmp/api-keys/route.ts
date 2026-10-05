@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
-import { db, bootstrap } from "@/lib/fgmp";
+import { bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import {
   rateLimitByUser,
@@ -93,19 +94,26 @@ export async function GET(req: NextRequest) {
       return res;
     }
 
-    const keys = await db.apiKey.findMany({
-      where: tenantWhereOrAll(user),
-      orderBy: { createdAt: "desc" },
-    });
+    const keys = await asTenant(user.tenantId, (tx) =>
+      tx.apiKey.findMany({
+        where: tenantWhereOrAll(user),
+        orderBy: { createdAt: "desc" },
+      }),
+    );
 
     // Resolve creator names in a single batched query (ApiKey.createdBy is
     // a plain String column, not a Prisma relation).
     const creatorIds = Array.from(new Set(keys.map((k) => k.createdBy)));
     const creators = creatorIds.length > 0
-      ? await db.user.findMany({
-          where: { id: { in: creatorIds } },
-          select: { id: true, name: true, email: true },
-        })
+      ? await asTenant(user.tenantId, (tx) =>
+          tx.user.findMany({
+            // Scoped to the caller's tenant as well: creator ids are derived
+            // from the keys just fetched, so they are already tenant-local,
+            // but User is RLS-protected and an unscoped read returns [].
+            where: { id: { in: creatorIds }, tenantId: user.tenantId },
+            select: { id: true, name: true, email: true },
+          }),
+        )
       : [];
     const creatorMap = new Map(creators.map((u) => [u.id, u]));
 
@@ -215,7 +223,8 @@ export async function POST(req: NextRequest) {
     const ipAllowlist = parseIpAllowlist((body as { ipAllowlist?: unknown }).ipAllowlist);
 
     const { raw, prefix, hash } = generateApiKey();
-    const created = await db.apiKey.create({
+    const created = await asTenant(user.tenantId, (tx) =>
+      tx.apiKey.create({
       data: {
         tenantId: user.tenantId,
         name,
@@ -226,7 +235,7 @@ export async function POST(req: NextRequest) {
         createdBy: user.id,
         expiresAt,
       },
-    });
+    }));
 
     await audit({
       userId: user.id,
