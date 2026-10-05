@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, bootstrap } from "@/lib/fgmp";
+import { bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import {
   rateLimitByUser,
   applyRateLimitHeaders,
@@ -23,7 +24,17 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       return res;
     }
     const { id } = await params;
-    const d = await db.fuelDelivery.findUnique({ where: { id }, include: { site: true, tank: true } });
+    // NESTED READS MATTER HERE. The `include: { site, tank }` traversal is
+    // resolved on the same client and site/tank are BOTH RLS-protected, so a
+    // top-level-scoped query that leaves the include unscoped still returns a
+    // row with empty relations. Both are inside the tenant context, and the
+    // relation filter is expressed in the query rather than checked afterwards.
+    const d = await asTenant(me.tenantId, (tx) =>
+      tx.fuelDelivery.findFirst({
+        where: { id, site: { tenantId: me.tenantId } },
+        include: { site: true, tank: true },
+      }),
+    );
     const denied = assertSiteTenantOwned(d?.site ?? null, me);
     if (denied) return denied;
     const res = NextResponse.json(d);

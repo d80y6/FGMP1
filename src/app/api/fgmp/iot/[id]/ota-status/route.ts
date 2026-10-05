@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, bootstrap } from "@/lib/fgmp";
+import { bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import {
   rateLimitByUser,
   applyRateLimitHeaders,
@@ -47,10 +48,15 @@ export async function GET(
 
     const { id } = await params;
 
-    const device = await db.iotDevice.findUnique({
-      where: { id },
+    // Scoped in the query. IotDevice reaches tenancy through its Site, so an
+    // unscoped findUnique returns null for every device and this endpoint 404s
+    // for existing hardware.
+    // Tenant comes from the authenticated session (`user` here, from
+    // bootstrap()), never from the path parameter.
+    const device = await asTenant(user.tenantId, (tx) => tx.iotDevice.findFirst({
+      where: { id, site: { tenantId: user.tenantId } },
       include: { site: { select: { name: true, code: true, tenantId: true } } },
-    });
+    }));
     const tenantDenied = assertSiteTenantOwned(device?.site ?? null, user);
     if (tenantDenied) {
       applyRateLimitHeaders(tenantDenied.headers, rl);

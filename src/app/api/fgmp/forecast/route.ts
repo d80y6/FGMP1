@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, engine, bootstrap } from "@/lib/fgmp";
+import { engine, bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import {
   rateLimitByUser,
   applyRateLimitHeaders,
@@ -197,8 +198,22 @@ export async function GET(req: NextRequest) {
     // physically reached the tank (`schema.prisma:448`). SCHEDULED / IN_TRANSIT
     // have not landed yet.
     const tankIds = tanks.map((t) => t.id);
+    // FuelDelivery reaches tenancy through its Site and is RLS-protected, so
+    // this read needs a tenant context.
+    //
+    // Scope is me.tenantId — the authenticated session, the only trustworthy
+    // source. The tank list above is ENGINE state, and engine state is
+    // currently empty under RLS, so it cannot be used to infer a tenant; a
+    // route that derives its DB scope from engine state would silently read
+    // the wrong tenant the day that state is populated again.
+    //
+    // For a SUPERADMIN, siteTenantWhereOrAll(me) returns {} (no tenant filter)
+    // and withTenant(me.tenantId) scopes the query to the super-admin's own
+    // tenant — which is the safe direction: an empty result rather than a
+    // cross-tenant read. `siteTenantWhereOrAll` is deliberately KEPT so the
+    // non-superadmin filter is unchanged.
     const deliveryRows = tankIds.length
-      ? await db.fuelDelivery.findMany({
+      ? await asTenant(me.tenantId, (tx) => tx.fuelDelivery.findMany({
           where: {
             ...siteTenantWhereOrAll(me),
             tankId: { in: tankIds },
@@ -213,7 +228,7 @@ export async function GET(req: NextRequest) {
           },
           orderBy: { deliveredAt: "asc" },
           take: MAX_DELIVERIES,
-        })
+        }))
       : [];
     const deliveriesByTank = new Map<string, DeliveryEvent[]>();
     for (const d of deliveryRows) {

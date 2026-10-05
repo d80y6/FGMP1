@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, engine, bootstrap } from "@/lib/fgmp";
+import { engine, bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import {
   rateLimitByUser,
   applyRateLimitHeaders,
@@ -193,7 +194,10 @@ export async function GET(req: NextRequest) {
       : engine.sites
           .filter((s) => s.tenantId === me.tenantId)
           .map((s) => s.id);
-    const readings = await db.sensorReading.findMany({
+    // SensorReading carries no tenantId of its own — tenancy reaches it
+    // through Site — so the context comes from the caller's tenant and the
+    // existing siteId filter remains as defence in depth.
+    const readings = await asTenant(me.tenantId, (tx) => tx.sensorReading.findMany({
       where: {
         metric: "FUEL_LEVEL",
         entityKind: "TANK",
@@ -203,7 +207,7 @@ export async function GET(req: NextRequest) {
       select: { entityId: true, value: true, ts: true },
       orderBy: { ts: "desc" },
       take: MAX_DB_READINGS,
-    });
+    }));
 
     // Group readings by tank id, then re-sort each group ascending by ts.
     const readingsByTank = new Map<string, LevelPoint[]>();
