@@ -1,7 +1,50 @@
 import type { Prisma } from "@prisma/client";
+// PrismaClient is imported as a VALUE, not a type: `systemDb()` constructs a
+// dedicated owner-role client for system-level seeding under RLS.
+import { PrismaClient } from "@prisma/client";
 import type { Criticality, PowerSource, IotProtocol, FuelDeliveryStatus } from "@prisma/client";
 import { db } from "@/lib/db";
 import bcrypt from "bcryptjs";
+
+/**
+ * Owner-role client for system-level work (Phase 1 step 6).
+ *
+ * RLS is now FORCE-enabled on every tenant-carrying table, so the table owner
+ * is subject to the policies too. An INSERT with no `app.tenant_id` in scope
+ * fails its WITH CHECK:
+ *
+ *   ERROR: new row violates row-level security policy for table "User"
+ *
+ * Seeding is system-level work spanning two tenants — t-default owns the
+ * fleet, t-platform owns the super-admin — and a single per-tenant context
+ * cannot cover both, so it runs on a separate OWNER connection where RLS does
+ * not apply.
+ *
+ * This is not a bypass of the backstop. It is the same separation the three
+ * database roles already encode: fgmp_migrate (migrations/CI/ops) versus
+ * fgmp_app (application traffic). What matters is that the web app NEVER
+ * holds this URL — it comes from a distinct variable so it cannot be
+ * inherited by accident.
+ *
+ * If the owner URL is absent, the seed falls back to the ambient client and
+ * fails loudly rather than silently writing rows into an arbitrary tenant.
+ */
+let ownerClient: PrismaClient | null = null;
+
+function systemDb(): PrismaClient {
+  const url = process.env.FGMP_MIGRATE_DATABASE_URL;
+  if (!url) return db;
+  if (!ownerClient) {
+    ownerClient = new PrismaClient({
+      datasources: { db: { url } },
+      log: [
+        { level: "warn", emit: "stdout" as const },
+        { level: "error", emit: "stdout" as const },
+      ],
+    });
+  }
+  return ownerClient;
+}
 
 /**
  * Default demo password for all seeded users. Mirrors the value documented in
@@ -87,23 +130,34 @@ function siteName(prefix: string, district: string) {
 }
 
 export async function seedIfNeeded(): Promise<{ seeded: boolean; siteCount: number }> {
+  // Phase 1 step 6 — RLS. Policies are FORCE-enabled on every tenant table, so
+  // the ambient app connection cannot write tenant rows without a tenant
+  // context. Seeding is system-level and spans two tenants, so it runs on the
+  // owner client (see `systemDb`). See that comment for why this is the role
+  // split rather than a bypass.
+  return seedTopology();
+}
+
+/** Create the tenant topology. */
+async function seedTopology(): Promise<{ seeded: boolean; siteCount: number }> {
+  const db = systemDb();
   // Task 49 — always ensure the platform super-admin exists, even when the
   // rest of the topology is already seeded. This is idempotent and cheap
   // (a single upsert per call) so it's safe to run on every bootstrap().
-  await seedSuperAdmin();
+  await seedSuperAdmin(db);
 
   const existing = await db.site.count();
   if (existing > 0) {
     // Even when the main topology is already seeded, ensure dispensers
     // (Task 34-B) are present. This idempotent step seeds dispensers +
     // historical transactions only at sites that have a DIESEL tank.
-    await seedDispensers();
+    await seedDispensers(db);
     // Task 48 — idempotent seeders for the new edge/OTA tables. Run on
     // every bootstrap() so an existing DB picks up the new rows without a
     // full re-seed. Each is guarded by an existence check so it's a no-op
     // on the second and subsequent calls.
-    await seedGateways();
-    await seedFirmwareReleases();
+    await seedGateways(db);
+    await seedFirmwareReleases(db);
     return { seeded: false, siteCount: existing };
   }
 
@@ -344,11 +398,11 @@ export async function seedIfNeeded(): Promise<{ seeded: boolean; siteCount: numb
   }
 
   // ── Fuel dispensers + historical transactions (Task 34-B) ──────────────
-  await seedDispensers();
+  await seedDispensers(db);
 
   // ── Task 48 — edge gateways + ESP firmware releases ─────────────────────
-  await seedGateways();
-  await seedFirmwareReleases();
+  await seedGateways(db);
+  await seedFirmwareReleases(db);
 
   return { seeded: true, siteCount: siteCounter };
 }
@@ -360,7 +414,7 @@ export async function seedIfNeeded(): Promise<{ seeded: boolean; siteCount: numb
  * fuel/transport hubs. Skipped silently if any dispenser already exists so
  * this can be called on every bootstrap() without duplicating data.
  */
-async function seedDispensers(): Promise<void> {
+async function seedDispensers(db: PrismaClient): Promise<void> {
   const existingDispensers = await db.fuelDispenser.count();
   if (existingDispensers > 0) return;
 
@@ -486,7 +540,7 @@ async function seedDispensers(): Promise<void> {
  * a forgotten super-admin password can be healed by editing the constant
  * above and restarting the dev server).
  */
-async function seedSuperAdmin(): Promise<void> {
+async function seedSuperAdmin(db: PrismaClient): Promise<void> {
   const platformTenant = await db.tenant.upsert({
     where: { code: "PLATFORM" },
     update: {},
@@ -541,7 +595,7 @@ async function seedSuperAdmin(): Promise<void> {
  * Skipped silently if any gateway already exists so this is safe to call
  * on every bootstrap() without duplicating data.
  */
-async function seedGateways(): Promise<void> {
+async function seedGateways(db: PrismaClient): Promise<void> {
   const existing = await db.siteGateway.count();
   if (existing > 0) return;
 
@@ -596,7 +650,7 @@ async function seedGateways(): Promise<void> {
  * Note: EspFirmwareDeployment rows are NOT seeded — they're created
  * on-demand when an admin kicks off an OTA deployment from the UI.
  */
-async function seedFirmwareReleases(): Promise<void> {
+async function seedFirmwareReleases(db: PrismaClient): Promise<void> {
   const existing = await db.espFirmwareRelease.count();
   if (existing > 0) return;
 
