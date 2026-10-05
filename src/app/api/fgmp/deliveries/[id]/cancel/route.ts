@@ -1,3 +1,4 @@
+import type { FuelDeliveryStatus } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db, bootstrap } from "@/lib/fgmp";
@@ -51,7 +52,7 @@ const cancelSchema = z.object({
 });
 
 /** Statuses a delivery may be cancelled FROM. */
-const CANCEL_FROM = ["SCHEDULED", "IN_TRANSIT", "DELIVERED"];
+const CANCEL_FROM: FuelDeliveryStatus[] = ["SCHEDULED", "IN_TRANSIT", "DELIVERED"];
 
 export async function POST(
   req: NextRequest,

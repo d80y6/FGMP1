@@ -1,3 +1,4 @@
+import type { Prisma, OtaStatus } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { db, bootstrap } from "@/lib/fgmp";
 import {
@@ -53,12 +54,11 @@ export async function GET(req: NextRequest) {
     const status = searchParams.get("status") ?? undefined;
     const dispenserId = searchParams.get("dispenserId") ?? undefined;
 
-    const where: {
-      status?: string;
-      dispenserId?: string;
-      dispenser?: { site: { tenantId: string } };
-    } = {};
-    if (status) where.status = status;
+    // Typed with Prisma's own generated type so the query keeps tracking the
+    // schema; the hand-written shape widened `status` to `string`, which the
+    // strict OtaStatus enum column rejects.
+    const where: Prisma.EspFirmwareDeploymentWhereInput = {};
+    if (status) where.status = status as OtaStatus;
     if (dispenserId) where.dispenserId = dispenserId;
     // Tenant isolation: scope deployments to those whose dispenser belongs to
     // a site owned by the caller's tenant. (EspFirmwareDeployment has no

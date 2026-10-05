@@ -1,3 +1,4 @@
+import { toJsonNumber } from "@/lib/fgmp/decimal";
 import { NextRequest, NextResponse } from "next/server";
 import { db, bootstrap } from "@/lib/fgmp";
 import {
@@ -136,7 +137,7 @@ export async function GET(req: NextRequest) {
           siteCode: site?.code ?? "",
           txns: s._count,
           volume: Math.round(s._sum.volumeLitres ?? 0),
-          revenue: Math.round(s._sum.amountYer ?? 0),
+          revenue: toJsonNumber(s._sum.amountYer),
         };
       })
       .sort((a, b) => b.volume - a.volume);
@@ -151,7 +152,7 @@ export async function GET(req: NextRequest) {
           siteName: disp?.site?.name ?? "",
           txns: d._count,
           volume: Math.round(d._sum.volumeLitres ?? 0),
-          revenue: Math.round(d._sum.amountYer ?? 0),
+          revenue: toJsonNumber(d._sum.amountYer),
         };
       })
       .sort((a, b) => b.volume - a.volume);
@@ -161,7 +162,7 @@ export async function GET(req: NextRequest) {
         vehiclePlate: v.vehiclePlate ?? "—",
         txns: v._count,
         volume: Math.round(v._sum.volumeLitres ?? 0),
-        revenue: Math.round(v._sum.amountYer ?? 0),
+        revenue: toJsonNumber(v._sum.amountYer),
       }))
       .sort((a, b) => b.volume - a.volume);
 
@@ -188,7 +189,7 @@ export async function GET(req: NextRequest) {
       const entry = dailyMap.get(key) ?? { txns: 0, volume: 0, revenue: 0 };
       entry.txns++;
       entry.volume += t.volumeLitres;
-      entry.revenue += t.amountYer;
+      entry.revenue += toJsonNumber(t.amountYer);
       dailyMap.set(key, entry);
     }
     const daily = Array.from(dailyMap.entries())
@@ -198,7 +199,7 @@ export async function GET(req: NextRequest) {
     const totals = {
       txns: totalAgg._count,
       volume: Math.round(totalAgg._sum.volumeLitres ?? 0),
-      revenue: Math.round(totalAgg._sum.amountYer ?? 0),
+      revenue: toJsonNumber(totalAgg._sum.amountYer),
       avgVolume: Math.round((totalAgg._avg.volumeLitres ?? 0) * 10) / 10,
       avgDuration: Math.round(totalAgg._avg.durationSec ?? 0),
       faultCount,

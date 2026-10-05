@@ -72,10 +72,19 @@ export async function POST(req: NextRequest) {
       applyRateLimitHeaders(siteDenied.headers, rl);
       return siteDenied;
     }
+    // `site` is null when it does not exist; assertSiteTenantOwned returns
+    // null (allowed) for a same-tenant site, so the null case needs its own
+    // check before `site.tenantId` is read.
+    if (!site) {
+      const res = NextResponse.json({ error: "Site not found" }, { status: 404 });
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
 
     const battery = await db.batteryBank.create({
       data: {
         siteId,
+        tenantId: site.tenantId,
         label,
         chemistry,
         capacityAh,

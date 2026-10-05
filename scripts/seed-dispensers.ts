@@ -4,7 +4,37 @@
 // This is idempotent: if dispensers already exist, it exits without changes.
 import { PrismaClient } from "@prisma/client";
 
-const db = new PrismaClient();
+/**
+ * Owner-role client for system-level seeding (Phase 1 step 6).
+ *
+ * RLS is FORCE-enabled on every tenant-carrying table, so a write with no
+ * `app.tenant_id` in scope fails its WITH CHECK:
+ *
+ *   ERROR: new row violates row-level security policy for table "User"
+ *
+ * These scripts seed across tenants (and seed the tenants themselves), so a
+ * single per-tenant context cannot cover the work. They run on the owner role
+ * instead — the same pattern as src/lib/fgmp/seed.ts. This is a ROLE SPLIT,
+ * not a bypass of a tenant boundary: the script picks which tenant each row
+ * belongs to.
+ */
+function systemDb(): PrismaClient {
+  const url = process.env.FGMP_MIGRATE_DATABASE_URL;
+  if (!url) {
+    throw new Error(
+      "FGMP_MIGRATE_DATABASE_URL is required: RLS blocks writes on the app role.",
+    );
+  }
+  return new PrismaClient({
+    datasources: { db: { url } },
+    log: [
+      { level: "warn", emit: "stdout" as const },
+      { level: "error", emit: "stdout" as const },
+    ],
+  });
+}
+
+const db = systemDb();
 
 function mulberry32(seed: number) {
   return function () {
@@ -55,7 +85,7 @@ async function main() {
   console.log(`Found ${allSites.length} sites. Seeding dispensers…`);
 
   const now = Date.now();
-  const createdDispensers: { id: string; siteId: string; site: { name: string; code: string }; label: string; pumpNumber: number; totalizerStart: number }[] = [];
+  const createdDispensers: { id: string; siteId: string; tenantId: string; site: { name: string; code: string }; label: string; pumpNumber: number; totalizerStart: number }[] = [];
   let dispenserCounter = 0;
 
   for (const site of allSites) {
@@ -77,6 +107,7 @@ async function main() {
       const dispenser = await db.fuelDispenser.create({
         data: {
           siteId: site.id,
+          tenantId: site.tenantId,
           label: `Dispenser ${String.fromCharCode(65 + d)}`,
           pumpNumber: d + 1,
           nozzleCount: pick([1, 1, 2]),
@@ -100,6 +131,7 @@ async function main() {
       createdDispensers.push({
         id: dispenser.id,
         siteId: site.id,
+        tenantId: site.tenantId,
         site: { name: site.name, code: site.code },
         label: dispenser.label,
         pumpNumber: dispenser.pumpNumber,
@@ -132,6 +164,7 @@ async function main() {
         data: {
           dispenserId: disp.id,
           siteId: disp.siteId,
+          tenantId: disp.tenantId,
           nozzle: 1,
           startedAt: new Date(startedAt),
           completedAt: new Date(endedAt),

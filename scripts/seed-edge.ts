@@ -3,9 +3,39 @@
 // Run with: bun run scripts/seed-edge.ts
 //
 // This is idempotent: it checks for existing rows before inserting.
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, type OtaStatus } from "@prisma/client";
 
-const db = new PrismaClient();
+/**
+ * Owner-role client for system-level seeding (Phase 1 step 6).
+ *
+ * RLS is FORCE-enabled on every tenant-carrying table, so a write with no
+ * `app.tenant_id` in scope fails its WITH CHECK:
+ *
+ *   ERROR: new row violates row-level security policy for table "User"
+ *
+ * These scripts seed across tenants (and seed the tenants themselves), so a
+ * single per-tenant context cannot cover the work. They run on the owner role
+ * instead — the same pattern as src/lib/fgmp/seed.ts. This is a ROLE SPLIT,
+ * not a bypass of a tenant boundary: the script picks which tenant each row
+ * belongs to.
+ */
+function systemDb(): PrismaClient {
+  const url = process.env.FGMP_MIGRATE_DATABASE_URL;
+  if (!url) {
+    throw new Error(
+      "FGMP_MIGRATE_DATABASE_URL is required: RLS blocks writes on the app role.",
+    );
+  }
+  return new PrismaClient({
+    datasources: { db: { url } },
+    log: [
+      { level: "warn", emit: "stdout" as const },
+      { level: "error", emit: "stdout" as const },
+    ],
+  });
+}
+
+const db = systemDb();
 
 function mulberry32(seed: number) {
   return function () {
@@ -118,7 +148,15 @@ async function main() {
   // One gateway per site that has dispensers. ~85% ONLINE, 10% DEGRADED, 5% OFFLINE.
   const sitesWithDispensers = await db.site.findMany({
     where: { dispensers: { some: {} } },
-    select: { id: true, code: true, name: true },
+    // tenantId + dispensers are needed to stamp the denormalised tenant_id on
+    // SiteGateway and EspFirmwareDeployment (Phase 1 steps 2-5).
+    select: {
+      id: true,
+      code: true,
+      name: true,
+      tenantId: true,
+      dispensers: { select: { id: true } },
+    },
     orderBy: { code: "asc" },
   });
 
@@ -149,6 +187,7 @@ async function main() {
     await db.siteGateway.create({
       data: {
         siteId: site.id,
+        tenantId: site.tenantId,
         hostname,
         model,
         ipAddress: ip,
@@ -183,7 +222,13 @@ async function main() {
     // are not persisted. `fromVersion`, `progressPct` and `errMsg` are kept
     // here only to keep the fixture readable; `toVersion` is the one that
     // matters, because it selects the EspFirmwareRelease row.
-    const targets = [
+    // Annotated so `status` keeps the OtaStatus enum type through the literal;
+    // a bare array widens it to `string`, which the strict column rejects.
+    const targets: Array<{
+      fromVersion: string; toVersion: string; status: OtaStatus;
+      progressPct: number; daysAgo: number; durSec: number;
+      inProgress?: boolean; errMsg?: string;
+    }> = [
       { fromVersion: "v2.3.0", toVersion: "v2.4.0", status: "SUCCESS", progressPct: 100, daysAgo: 28, durSec: 180 },
       { fromVersion: "v2.3.1", toVersion: "v2.4.1", status: "SUCCESS", progressPct: 100, daysAgo: 22, durSec: 220 },
       { fromVersion: "v2.3.2", toVersion: "v2.4.0", status: "SUCCESS", progressPct: 100, daysAgo: 18, durSec: 150 },
@@ -198,11 +243,23 @@ async function main() {
       const releaseId = releaseIdByVersion.get(tgt.toVersion);
       if (!releaseId || dispensers.length === 0) continue;
       const disp = dispensers[i % dispensers.length]!;
+      // EspFirmwareDeployment inherits tenancy from the dispenser's site, so
+      // resolve the owning tenant from the site rather than from the
+      // deployment itself (Phase 1 steps 2-5).
+      const dispSite = sitesWithDispensers.find((s) =>
+        s.dispensers.some((d) => d.id === disp.id),
+      );
+      // Every dispenser was created under a site, so this must resolve. Skip
+      // rather than invent a tenant: EspFirmwareDeployment.tenant_id is NOT
+      // NULL, and a guessed tenant would be protected by RLS in the wrong
+      // place forever.
+      if (!dispSite) continue;
       const startedAt = new Date(Date.now() - tgt.daysAgo * 24 * 3600 * 1000 - (tgt.inProgress ? 90 * 1000 : 0));
       const completedAt = tgt.inProgress ? null : new Date(startedAt.getTime() + tgt.durSec * 1000);
       await db.espFirmwareDeployment.create({
         data: {
           dispenserId: disp.id,
+          tenantId: dispSite.tenantId,
           releaseId,
           status: tgt.status,
           startedAt,

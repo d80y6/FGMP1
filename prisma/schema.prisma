@@ -28,6 +28,262 @@ datasource db {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// Native enums (Phase 1 step 8)
+// ──────────────────────────────────────────────────────────────────────────
+// Phase 1 step 1 moved the datasource to PostgreSQL, which makes native enum
+// types possible for the first time. Under SQLite every discriminator below was
+// a free `String` whose legal values existed only in a comment — nothing but
+// application code prevented an invalid value reaching the database.
+//
+// IMPORTANT — these value lists were reconciled against the actual runtime
+// writers, NOT copied from the documentation comments above each model. Four
+// documented lists were incomplete, and a native enum built from them alone
+// would have rejected values the application legitimately writes:
+//
+//   * User.role               — the comment omitted SUPERADMIN (types.ts `Role`).
+//   * Notification.channel    — the comment listed none; engine.ts writes SMS,
+//                               EMAIL and WHATSAPP.
+//   * MaintenanceTicket.status — writers produce SCHEDULED / IN_PROGRESS /
+//                               DONE / CANCELLED.
+//   * FuelDelivery.status     — DISCREPANCY is declared but never written
+//                               (kept: a legitimate terminal state).
+//
+// Deliberately NOT enum-ised — open/extensible or write-once audit values where
+// a native enum adds write-time rejection with no integrity benefit:
+// AlarmSuppression.status/priority, SiteEvent.kind, AuditLog.action,
+// ApiKey.scopes, SystemSetting.type, and BackupRecord.kind/status (the latter
+// also orphaned after Phase 0 deleted the backup API).
+//
+// MaintenanceTicket.type/.assetKind and IotDevice.type stay String: the ticket
+// pair is constrained by zod at the API boundary (schemas.ts), and IotDevice.type
+// has no documented closed set.
+
+// SUPERADMIN is the platform cross-tenant owner, enforced server-side in
+// rbac.ts / auth-helpers.ts. The old `role` comment above model User omitted it.
+enum Role {
+  SUPERADMIN
+  ADMIN
+  NOC_OPERATOR
+  REGIONAL_MANAGER
+  FIELD_ENGINEER
+  EXECUTIVE
+  READONLY
+}
+
+enum SiteStatus {
+  ONLINE
+  DEGRADED
+  OFFLINE
+  MAINTENANCE
+}
+
+enum Criticality {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum PowerSource {
+  GRID
+  GENERATOR
+  HYBRID
+}
+
+enum TankStatus {
+  OPERATIONAL
+  EMPTY
+  MAINTENANCE
+  CALIBRATING
+}
+
+enum FuelType {
+  DIESEL
+  PETROL
+  // BIOFUEL was missing from the first cut of this enum: it was built from the
+  // FuelDispenser doc comment (schema.prisma:608, "DIESEL | PETROL") and
+  // missed the FuelTank one (":456", "DIESEL | PETROL | BIOFUEL"). Four API
+  // routes validate input against ["DIESEL","PETROL","BIOFUEL"], so the enum
+  // would have rejected a value the API accepts. Adding an enum value is
+  // strictly safer than dropping one: it cannot break an existing writer,
+  // whereas removing BIOFUEL would reject requests users can already make.
+  BIOFUEL
+}
+
+enum GenStatus {
+  RUNNING
+  STOPPED
+  FAULT
+  MAINTENANCE
+  OFFLINE
+}
+
+enum GenMode {
+  AUTO
+  MANUAL
+  REMOTE
+}
+
+enum GenCommandType {
+  START
+  STOP
+  EMERGENCY_STOP
+  RESET
+}
+
+enum BatteryStatus {
+  OK
+  LOW
+  FAILING
+  REPLACEMENT_DUE
+  OFFLINE
+}
+
+enum EntityKind {
+  TANK
+  GENERATOR
+  BATTERY
+  SITE
+  DISPENSER
+}
+
+enum IotProtocol {
+  RS485
+  MODBUS_RTU
+  MODBUS_TCP
+  MQTT
+  HTTP
+  SNMP
+}
+
+enum IotStatus {
+  ONLINE
+  OFFLINE
+  DEGRADED
+  PROVISIONING
+}
+
+enum DispenserStatus {
+  IDLE
+  AUTHORIZED
+  DISPENSING
+  STOPPED
+  FAULT
+  MAINTENANCE
+  OFFLINE
+}
+
+enum FuelTransactionStatus {
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  FAILED
+}
+
+enum AlarmType {
+  FUEL_THEFT
+  FUEL_REFILL
+  FUEL_LOW
+  FUEL_CRITICAL
+  GEN_OFFLINE
+  GEN_FAILURE
+  GEN_OVERHEAT
+  BATT_LOW_VOLTAGE
+  BATT_FAILURE
+  COMM_LOSS
+  DISPENSER_FAULT
+}
+
+enum AlarmSeverity {
+  L1
+  L2
+  L3
+}
+
+enum AlarmStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+  ESCALATED
+}
+
+enum FuelDeliveryStatus {
+  SCHEDULED
+  IN_TRANSIT
+  DELIVERED
+  VERIFIED
+  DISCREPANCY
+  CANCELLED
+}
+
+enum ControlCommandStatus {
+  PENDING
+  SENT
+  EXECUTED
+  FAILED
+  TIMEOUT
+}
+
+enum TicketPriority {
+  P1
+  P2
+  P3
+  P4
+}
+
+enum TicketStatus {
+  OPEN
+  SCHEDULED
+  IN_PROGRESS
+  DONE
+  CANCELLED
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  SMS
+  PUSH
+  WHATSAPP
+}
+
+enum NotificationStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  FAILED
+}
+
+enum SystemSettingCategory {
+  ALARM
+  ESCALATION
+  BRANDING
+  PLATFORM
+  FORECAST
+}
+
+enum GatewayStatus {
+  ONLINE
+  OFFLINE
+  DEGRADED
+}
+
+enum OtaStatus {
+  // QUEUED is the real initial state: engine.ts creates every
+  // EspFirmwareDeployment with status "QUEUED" (5 sites), and it is the
+  // value documented on EspFirmwareDeployment.status. It was missing from
+  // the enum, which made the default unresolvable.
+  QUEUED
+  IDLE
+  PENDING
+  DOWNLOADING
+  FLASHING
+  SUCCESS
+  FAILED
+  ROLLED_BACK
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Identity & Multi-tenancy
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -44,6 +300,29 @@ model Tenant {
   suppressions  AlarmSuppression[]
   // Task 48 — tenant-scoped backup history (MANUAL / AUTOMATIC / PRE_RESTORE).
   backupRecords BackupRecord[]
+  // Phase 1 steps 2-5: every tenant-owned table carries a `tenantId` FK so the
+  // RLS backstop (step 6) rests on a real constraint. These reverse relations
+  // exist only to give Prisma a referential path to `Tenant`.
+  regions                  Region[]
+  alarms                   Alarm[]
+  auditLogs                AuditLog[]
+  notifications            Notification[]
+  apiKeys                  ApiKey[]
+  shiftHandovers           ShiftHandover[]
+  tanks                    FuelTank[]
+  generators               Generator[]
+  batteries                BatteryBank[]
+  iotDevices               IotDevice[]
+  dispensers               FuelDispenser[]
+  fuelTransactions         FuelTransaction[]
+  sensorReadings           SensorReading[]
+  siteEvents               SiteEvent[]
+  fuelDeliveries           FuelDelivery[]
+  controlCommands          ControlCommand[]
+  maintenanceTickets       MaintenanceTicket[]
+  siteGateways             SiteGateway[]
+  notificationPreferences  NotificationPreference[]
+  espFirmwareDeployments   EspFirmwareDeployment[]
 }
 
 // role: ADMIN | NOC_OPERATOR | REGIONAL_MANAGER | FIELD_ENGINEER | EXECUTIVE | READONLY
@@ -52,7 +331,7 @@ model User {
   tenantId      String
   email         String    @unique
   name          String
-  role          String    @default("NOC_OPERATOR")
+  role          Role    @default(NOC_OPERATOR)
   phone         String?
   // bcrypt-hashed password. Nullable for legacy / SSO users that have no
   // local password; the user-management UI always sets a hash on creation
@@ -96,7 +375,13 @@ model Region {
   governorates Governorate[]
   sites        Site[]
 
+  // Phase 1: tenantId existed but had NO FK to Tenant, so nothing constrained
+  // it. The RLS backstop is weak on an unconstrained column — a bad write
+  // would be permanently invisible to every policy. Added here.
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
   @@unique([tenantId, name])
+  @@index([tenantId])
 }
 
 model Governorate {
@@ -141,12 +426,12 @@ model Site {
   latitude      Float
   longitude     Float
   address       String
-  status        String   @default("ONLINE")
-  criticality   String   @default("MEDIUM")
+  status        SiteStatus   @default(ONLINE)
+  criticality   Criticality   @default(MEDIUM)
   // Load profile (kW)
   loadKw        Float    @default(0)
   // Power preference: GRID | GENERATOR | HYBRID
-  powerSource   String   @default("HYBRID")
+  powerSource   PowerSource   @default(HYBRID)
   gridAvailable Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -181,8 +466,13 @@ model Site {
 model FuelTank {
   id            String   @id @default(cuid())
   siteId        String
+  // Phase 1 step 2-5: denormalised from the parent Site so the RLS policy is a
+  // local `tenant_id = ...` predicate rather than a join. Backfilled from
+  // Site.tenantId; ON DELETE RESTRICT, not CASCADE — a tenant holding assets
+  // must not be deletable.
+  tenantId      String
   label         String
-  fuelType      String   @default("DIESEL")
+  fuelType      FuelType   @default(DIESEL)
   capacityLitres Float
   // Current live level (litres) — updated by telemetry engine & persisted on tick
   currentLitres Float
@@ -193,13 +483,18 @@ model FuelTank {
   criticalThreshold Float
   // Telemetry meta
   lastReadingAt DateTime?
-  status        String   @default("OPERATIONAL")
+  status        TankStatus   @default(OPERATIONAL)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   site       Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   deliveries FuelDelivery[]
 
+  // Phase 1 step 5: the RLS policy filters on tenantId, so the index leads
+  // with it. The original siteId index is kept for the existing access paths.
+  @@index([tenantId])
+  @@index([tenantId, siteId])
   @@index([siteId])
 }
 
@@ -208,13 +503,16 @@ model FuelTank {
 model Generator {
   id              String   @id @default(cuid())
   siteId          String
+  // Phase 1 step 2-5: denormalised from Site. ControlCommand backfills from
+  // this column via `generatorId` (ControlCommand has no siteId of its own).
+  tenantId        String
   label           String
   manufacturer    String
   model           String
   ratedPowerKw    Float
   fuelType        String   @default("DIESEL")
-  status          String   @default("STOPPED")
-  mode            String   @default("AUTO")
+  status          GenStatus   @default(STOPPED)
+  mode            GenMode   @default(AUTO)
   runtimeHours    Float    @default(0)
   // Maintenance
   oilChangeIntervalHrs Float @default(250)
@@ -233,8 +531,11 @@ model Generator {
   updatedAt        DateTime @updatedAt
 
   site     Site            @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  tenant   Tenant          @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   commands ControlCommand[]
 
+  @@index([tenantId])
+  @@index([tenantId, siteId])
   @@index([siteId])
 }
 
@@ -242,6 +543,7 @@ model Generator {
 model BatteryBank {
   id            String   @id @default(cuid())
   siteId        String
+  tenantId      String   // Phase 1 step 2-5: denormalised from Site.
   label         String
   chemistry     String   @default("VRLA")
   capacityAh    Float
@@ -253,13 +555,17 @@ model BatteryBank {
   stateOfHealth Float    @default(95)   // %
   temperatureC  Float    @default(25)
   charging      Boolean  @default(false)
-  status        String   @default("OK")
+  status        BatteryStatus   @default(OK)
   installedAt   DateTime @default(now())
+  // Last discharge / service date, used for battery health scoring.
   lastReadingAt DateTime?
   updatedAt     DateTime @updatedAt
 
-  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
 
+  @@index([tenantId])
+  @@index([tenantId, siteId])
   @@index([siteId])
 }
 
@@ -269,16 +575,17 @@ model BatteryBank {
 model IotDevice {
   id          String   @id @default(cuid())
   siteId      String
+  tenantId    String   // Phase 1 step 2-5: denormalised from Site.
   name        String
   type        String
-  protocol    String
+  protocol    IotProtocol
   vendor      String
   serialNo    String   @unique
   firmware    String
   ipAddress   String?
   modbusUnit  Int?
   // Online state
-  status      String   @default("ONLINE")
+  status      IotStatus   @default(ONLINE)
   lastSeenAt  DateTime?
   signalRssi  Int      @default(-70)
   // OTA
@@ -287,8 +594,11 @@ model IotDevice {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
 
+  @@index([tenantId])
+  @@index([tenantId, siteId])
   @@index([siteId])
 }
 
@@ -307,13 +617,15 @@ model IotDevice {
 model FuelDispenser {
   id            String   @id @default(cuid())
   siteId        String
+  tenantId      String   // Phase 1 step 2-5: denormalised from Site. Also the
+                        // Tier A backfill path for EspFirmwareDeployment.
   label         String
   manufacturer  String
   model         String
   nozzleCount   Int      @default(1)   // 1–4 nozzles
-  fuelType      String   @default("DIESEL") // DIESEL | PETROL
+  fuelType      FuelType   @default(DIESEL) // DIESEL | PETROL
   maxFlowLpm    Float    @default(40)  // max litres/min
-  status        String   @default("IDLE")
+  status        DispenserStatus   @default(IDLE)
   mode          String   @default("AUTO")
   // Pump identifier 1..N within a site (unique per site). Task 48 — required
   // by /api/fgmp/assets/dispensers (create + unique constraint siteId_pumpNumber),
@@ -344,10 +656,13 @@ model FuelDispenser {
   updatedAt     DateTime @updatedAt
 
   site         Site             @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  tenant       Tenant           @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   transactions FuelTransaction[]
   // Task 48 — reverse relation for OTA firmware deployments targeting this dispenser.
   espFirmwareDeployments EspFirmwareDeployment[]
 
+  @@index([tenantId])
+  @@index([tenantId, siteId])
   @@index([siteId])
   @@index([status])
   // Task 48 — pump identifier 1..N is unique within a site. Referenced by
@@ -367,13 +682,14 @@ model FuelTransaction {
   id            String    @id @default(cuid())
   dispenserId   String
   siteId        String
+  tenantId      String    // Phase 1 step 2-5: denormalised from Site.
   nozzle        Int       @default(1)
   volumeLitres  Float
-  amountYer     Float     @default(0)   // cost in Yemeni Rial
-  unitPriceYer  Float     @default(0)
+  amountYer     Decimal     @default(0)   // cost in Yemeni Rial
+  unitPriceYer  Decimal     @default(0)
   vehiclePlate  String?
   operatorName  String?
-  status        String    @default("COMPLETED")
+  status        FuelTransactionStatus    @default(COMPLETED)
   startedAt     DateTime  @default(now())
   completedAt   DateTime?
   durationSec   Int       @default(0)
@@ -381,7 +697,10 @@ model FuelTransaction {
 
   dispenser FuelDispenser @relation(fields: [dispenserId], references: [id], onDelete: Cascade)
   site      Site          @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  tenant    Tenant        @relation(fields: [tenantId], references: [id], onDelete: Restrict)
 
+  @@index([tenantId])
+  @@index([tenantId, siteId])
   @@index([dispenserId, startedAt])
   @@index([siteId, startedAt])
   @@index([status])
@@ -396,12 +715,20 @@ model FuelTransaction {
 model SensorReading {
   id          String   @id @default(cuid())
   siteId      String
-  entityKind  String
+  tenantId    String   // Phase 1 step 2-5: denormalised from Site.
+  entityKind  EntityKind
   entityId    String
   metric      String
   value       Float
   ts          DateTime @default(now())
 
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  // Step 5 note: this is the table step 10 turns into a hypertable, so the
+  // tenant-leading index is also the one the RLS predicate rides on. Keeping
+  // (tenantId, ts) lets a per-tenant time-range scan use one index for both.
+  @@index([tenantId])
+  @@index([tenantId, ts])
   @@index([siteId, ts])
   @@index([entityId, metric, ts])
 }
@@ -419,9 +746,9 @@ model Alarm {
   id            String   @id @default(cuid())
   tenantId      String
   siteId        String
-  type          String
-  severity      String   @default("L1")
-  status        String   @default("OPEN")
+  type          AlarmType
+  severity      AlarmSeverity   @default(L1)
+  status        AlarmStatus   @default(OPEN)
   escalationLevel Int    @default(1)
   entityKind    String?
   entityId      String?
@@ -436,24 +763,35 @@ model Alarm {
   resolution    String?
 
   site          Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  // Phase 1: added the FK that was missing on tenantId (see Region).
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   acknowledgedBy User?   @relation("AlarmAckedBy", fields: [acknowledgedById], references: [id])
   resolvedBy   User?     @relation("AlarmResolvedBy", fields: [resolvedById], references: [id])
 
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt])
   @@index([siteId, status])
   @@index([status, severity])
   @@index([createdAt])
+  @@index([acknowledgedById])
+  @@index([resolvedById])
 }
 
 model SiteEvent {
   id        String   @id @default(cuid())
   siteId    String
+  tenantId  String   // Phase 1 step 2-5: denormalised from Site.
   kind      String   // INFO | WARN | CRITICAL | CONTROL | DELIVERY
   message   String
   meta      String?  // JSON
   createdAt DateTime @default(now())
 
-  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
 
+  @@index([tenantId])
+  @@index([tenantId, createdAt])
   @@index([siteId, createdAt])
 }
 
@@ -465,6 +803,7 @@ model SiteEvent {
 model FuelDelivery {
   id          String   @id @default(cuid())
   siteId      String
+  tenantId    String   // Phase 1 step 2-5: denormalised from Site.
   tankId      String
   supplier    String
   driverName  String?
@@ -472,19 +811,22 @@ model FuelDelivery {
   volumeOrderedLitres Float
   volumeDeliveredLitres Float?
   doNumber    String   // delivery order number
-  status      String   @default("SCHEDULED")
+  status      FuelDeliveryStatus   @default(SCHEDULED)
   scheduledAt DateTime
   dispatchedAt DateTime?
   deliveredAt DateTime?
   verifiedAt  DateTime?
   discrepancyNote String?
-  unitPrice   Float    @default(0)
+  unitPrice   Decimal    @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  site Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   tank FuelTank @relation(fields: [tankId], references: [id])
 
+  @@index([tenantId])
+  @@index([tenantId, siteId])
   @@index([siteId, status])
   @@index([scheduledAt])
 }
@@ -494,8 +836,13 @@ model FuelDelivery {
 model ControlCommand {
   id          String   @id @default(cuid())
   generatorId String
-  command     String
-  status      String   @default("PENDING")
+  // Phase 1 step 2-5. ControlCommand is the one table with no `siteId` of its
+  // own, so it backfills via generatorId -> Generator.tenantId (two hops).
+  // Adding a siteId column was considered and rejected: it would denormalise a
+  // relationship the schema already expresses, and the table has no rows.
+  tenantId    String
+  command     GenCommandType
+  status      ControlCommandStatus   @default(PENDING)
   reason      String?
   issuedById  String?
   issuedAt    DateTime @default(now())
@@ -503,8 +850,11 @@ model ControlCommand {
   result      String?
 
   generator Generator @relation(fields: [generatorId], references: [id], onDelete: Cascade)
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   issuedBy  User?     @relation(fields: [issuedById], references: [id])
 
+  @@index([tenantId])
+  @@index([tenantId, status])
   @@index([generatorId, status])
 }
 
@@ -514,11 +864,12 @@ model ControlCommand {
 model MaintenanceTicket {
   id          String   @id @default(cuid())
   siteId      String
+  tenantId    String   // Phase 1 step 2-5: denormalised from Site.
   assetKind   String   // GENERATOR | TANK | BATTERY | IOT
   assetId     String
   type        String
-  status      String   @default("OPEN")
-  priority    String   @default("P3")
+  status      TicketStatus   @default(OPEN)
+  priority    TicketPriority   @default(P3)
   title       String
   description String?
   assignedToId String?
@@ -527,9 +878,12 @@ model MaintenanceTicket {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  site       Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  assignedTo User? @relation("TicketAssignee", fields: [assignedToId], references: [id])
+  site       Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  tenant     Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  assignedTo User?  @relation("TicketAssignee", fields: [assignedToId], references: [id])
 
+  @@index([tenantId])
+  @@index([tenantId, siteId])
   @@index([siteId, status])
   @@index([status, priority])
 }
@@ -547,7 +901,11 @@ model AuditLog {
   createdAt  DateTime @default(now())
 
   user User? @relation(fields: [userId], references: [id])
+  // Phase 1: added the FK that was missing on tenantId (see Region).
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
 
+  @@index([tenantId])
+  @@index([tenantId, createdAt])
   @@index([createdAt])
   @@index([userId])
 }
@@ -557,16 +915,22 @@ model AuditLog {
 model Notification {
   id        String   @id @default(cuid())
   tenantId  String
-  channel   String
+  channel   NotificationChannel
   recipient String
   subject   String
   body      String
   alarmId   String?
-  status    String   @default("QUEUED")
+  status    NotificationStatus   @default(QUEUED)
   attempts  Int      @default(0)
   sentAt    DateTime?
   createdAt DateTime @default(now())
 
+  // Phase 1: added the FK that was missing on tenantId (see Region).
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt])
   @@index([status])
 }
 
@@ -628,7 +992,11 @@ model AlarmSuppression {
 model NotificationPreference {
   id           String   @id @default(cuid())
   userId       String   @unique
+  // Tier A (Phase 1 step 2-5): resolved through User.tenantId, not a parent
+  // Site — an operator's preferences exist independently of any site.
+  tenantId     String
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   // Channels — which delivery methods the user wants
   inAppEnabled  Boolean  @default(true)
   emailEnabled  Boolean  @default(false)
@@ -644,6 +1012,8 @@ model NotificationPreference {
   emailOverride    String?
   phoneOverride    String?
   updatedAt    DateTime @updatedAt
+
+  @@index([tenantId])
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -669,6 +1039,10 @@ model ApiKey {
   revoked     Boolean   @default(false)
   createdAt   DateTime  @default(now())
 
+  // Phase 1: added the FK that was missing on tenantId (see Region).
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId])
   @@index([tenantId, revoked])
   @@index([keyHash])
 }
@@ -718,6 +1092,10 @@ model ShiftHandover {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
+  // Phase 1: added the FK that was missing on tenantId (see Region).
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId])
   @@index([tenantId, createdAt])
   @@index([tenantId, status])
   @@index([shift, status])
@@ -733,7 +1111,7 @@ model ShiftHandover {
 // category: ALARM | ESCALATION | BRANDING | PLATFORM | FORECAST
 model SystemSetting {
   id        String   @id @default(cuid())
-  category  String
+  category  SystemSettingCategory
   key       String   @unique
   value     String
   type      String   @default("string") // string | number | boolean | json
@@ -755,11 +1133,12 @@ model SystemSetting {
 model SiteGateway {
   id          String   @id @default(cuid())
   siteId      String
+  tenantId    String   // Phase 1 step 2-5: denormalised from Site.
   hostname    String
   // Optional hardware identity, editable via PATCH /api/fgmp/edge/gateways/[id].
   model       String?
   ipAddress   String?
-  status      String   @default("ONLINE")  // ONLINE | OFFLINE | DEGRADED
+  status      GatewayStatus   @default(ONLINE)  // ONLINE | OFFLINE | DEGRADED
   uptimeSec   Int      @default(0)
   cpuTempC    Float    @default(45)
   heapKb      Int      @default(0)
@@ -768,8 +1147,11 @@ model SiteGateway {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
 
+  @@index([tenantId])
+  @@index([tenantId, siteId])
   @@index([siteId])
   @@index([status])
 }
@@ -804,16 +1186,22 @@ model EspFirmwareRelease {
 model EspFirmwareDeployment {
   id            String   @id @default(cuid())
   dispenserId   String
+  // Tier A (Phase 1 step 2-5): resolved through FuelDispenser.tenantId. A
+  // deployment is the tenant-scoped instance of a global EspFirmwareRelease.
+  tenantId      String
   releaseId     String
-  status        String   @default("QUEUED")
+  status        OtaStatus   @default(QUEUED)
   startedAt     DateTime @default(now())
   completedAt   DateTime?
   initiatedById String?
 
   dispenser   FuelDispenser      @relation(fields: [dispenserId], references: [id], onDelete: Cascade)
+  tenant      Tenant             @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   release     EspFirmwareRelease @relation(fields: [releaseId], references: [id], onDelete: Cascade)
   initiatedBy User?              @relation(fields: [initiatedById], references: [id], onDelete: SetNull)
 
+  @@index([tenantId])
+  @@index([tenantId, dispenserId])
   @@index([dispenserId])
   @@index([status])
   @@index([startedAt])

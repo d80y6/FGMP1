@@ -1,5 +1,50 @@
+import type { Prisma } from "@prisma/client";
+// PrismaClient is imported as a VALUE, not a type: `systemDb()` constructs a
+// dedicated owner-role client for system-level seeding under RLS.
+import { PrismaClient } from "@prisma/client";
+import type { Criticality, PowerSource, IotProtocol, FuelDeliveryStatus } from "@prisma/client";
 import { db } from "@/lib/db";
 import bcrypt from "bcryptjs";
+
+/**
+ * Owner-role client for system-level work (Phase 1 step 6).
+ *
+ * RLS is now FORCE-enabled on every tenant-carrying table, so the table owner
+ * is subject to the policies too. An INSERT with no `app.tenant_id` in scope
+ * fails its WITH CHECK:
+ *
+ *   ERROR: new row violates row-level security policy for table "User"
+ *
+ * Seeding is system-level work spanning two tenants — t-default owns the
+ * fleet, t-platform owns the super-admin — and a single per-tenant context
+ * cannot cover both, so it runs on a separate OWNER connection where RLS does
+ * not apply.
+ *
+ * This is not a bypass of the backstop. It is the same separation the three
+ * database roles already encode: fgmp_migrate (migrations/CI/ops) versus
+ * fgmp_app (application traffic). What matters is that the web app NEVER
+ * holds this URL — it comes from a distinct variable so it cannot be
+ * inherited by accident.
+ *
+ * If the owner URL is absent, the seed falls back to the ambient client and
+ * fails loudly rather than silently writing rows into an arbitrary tenant.
+ */
+let ownerClient: PrismaClient | null = null;
+
+function systemDb(): PrismaClient {
+  const url = process.env.FGMP_MIGRATE_DATABASE_URL;
+  if (!url) return db;
+  if (!ownerClient) {
+    ownerClient = new PrismaClient({
+      datasources: { db: { url } },
+      log: [
+        { level: "warn", emit: "stdout" as const },
+        { level: "error", emit: "stdout" as const },
+      ],
+    });
+  }
+  return ownerClient;
+}
 
 /**
  * Default demo password for all seeded users. Mirrors the value documented in
@@ -73,7 +118,10 @@ const GEN_MAKERS = [
   { m: "Perkins", models: ["4016-61TRS", "4012-46TWG2"] },
 ];
 const IOT_VENDORS = ["E+E Elektronik", "Tetra Sensors", "Atlas Scientific", "Schneider PM5000", "Mikrotik hAP", "Siemens S7-1200"];
-const PROTOCOLS = ["RS485", "MODBUS_RTU", "MODBUS_TCP", "MQTT", "HTTP", "SNMP"];
+// Typed against the Prisma enum so `pick()` returns `IotProtocol` rather than a
+// widened `string`. `as const` is NOT used here — `pick<T>(arr: T[])` needs a
+// mutable array, and `readonly` would widen back to string at the call site.
+const PROTOCOLS: IotProtocol[] = ["RS485", "MODBUS_RTU", "MODBUS_TCP", "MQTT", "HTTP", "SNMP"];
 const DEVICE_TYPES = ["FUEL_SENSOR", "GENERATOR_CONTROLLER", "BATTERY_SENSOR", "POWER_METER", "ENVIRONMENTAL"];
 const SUPPLIERS = ["Yemen Oil Co.", "Hadramout Fuel Trading", "Aden Petroleum", "Al-Mokha Diesel Supply"];
 
@@ -82,23 +130,34 @@ function siteName(prefix: string, district: string) {
 }
 
 export async function seedIfNeeded(): Promise<{ seeded: boolean; siteCount: number }> {
+  // Phase 1 step 6 — RLS. Policies are FORCE-enabled on every tenant table, so
+  // the ambient app connection cannot write tenant rows without a tenant
+  // context. Seeding is system-level and spans two tenants, so it runs on the
+  // owner client (see `systemDb`). See that comment for why this is the role
+  // split rather than a bypass.
+  return seedTopology();
+}
+
+/** Create the tenant topology. */
+async function seedTopology(): Promise<{ seeded: boolean; siteCount: number }> {
+  const db = systemDb();
   // Task 49 — always ensure the platform super-admin exists, even when the
   // rest of the topology is already seeded. This is idempotent and cheap
   // (a single upsert per call) so it's safe to run on every bootstrap().
-  await seedSuperAdmin();
+  await seedSuperAdmin(db);
 
   const existing = await db.site.count();
   if (existing > 0) {
     // Even when the main topology is already seeded, ensure dispensers
     // (Task 34-B) are present. This idempotent step seeds dispensers +
     // historical transactions only at sites that have a DIESEL tank.
-    await seedDispensers();
+    await seedDispensers(db);
     // Task 48 — idempotent seeders for the new edge/OTA tables. Run on
     // every bootstrap() so an existing DB picks up the new rows without a
     // full re-seed. Each is guarded by an existence check so it's a no-op
     // on the second and subsequent calls.
-    await seedGateways();
-    await seedFirmwareReleases();
+    await seedGateways(db);
+    await seedFirmwareReleases(db);
     return { seeded: false, siteCount: existing };
   }
 
@@ -109,7 +168,14 @@ export async function seedIfNeeded(): Promise<{ seeded: boolean; siteCount: numb
   });
 
   // Seed users for RBAC demo
-  const usersData = [
+  // Annotated so the Prisma `Role` enum is enforced at compile time; a bare
+  // array literal widens `role` to `string`, which the strict enum column rejects.
+  // `tenantId`/`passwordHash` are supplied by the upsert, not the literal.
+  type SeedUser = Pick<
+    Prisma.UserUncheckedCreateInput,
+    "id" | "name" | "email" | "role"
+  >;
+  const usersData: SeedUser[] = [
     { id: "u-admin-1", name: "L. Al-Hadhrami", email: "admin@fgmp.telecom", role: "ADMIN" },
     { id: "u-noc-1", name: "A. Al-Rashid", email: "noc.operator@fgmp.telecom", role: "NOC_OPERATOR" },
     { id: "u-rm-1", name: "M. Al-Mikhlafi", email: "regional.manager@fgmp.telecom", role: "REGIONAL_MANAGER" },
@@ -131,11 +197,32 @@ export async function seedIfNeeded(): Promise<{ seeded: boolean; siteCount: numb
 
   let siteCounter = 0;
   for (const reg of GEO) {
-    const region = await db.region.create({ data: { tenantId: tenant.id, name: reg.region } });
+    // Geography is UPSERTED, not created. The only guard on this function is
+    // `site.count() > 0`, so a partially torn-down environment (sites deleted,
+    // regions left behind by a failed migration or a manual cleanup) reached
+    // here and died on:
+    //   Unique constraint failed on the fields: (`tenantId`,`name`)
+    // which left the platform unrecoverable without hand-written SQL.
+    //
+    // Resolving on (tenantId, name) makes the geography tree idempotent, so a
+    // re-seed adopts the existing rows instead of colliding with them.
+    const region = await db.region.upsert({
+      where: { tenantId_name: { tenantId: tenant.id, name: reg.region } },
+      update: {},
+      create: { tenantId: tenant.id, name: reg.region },
+    });
     for (const gov of reg.governorates) {
-      const governorate = await db.governorate.create({ data: { regionId: region.id, name: gov.name } });
+      const governorate = await db.governorate.upsert({
+        where: { regionId_name: { regionId: region.id, name: gov.name } },
+        update: {},
+        create: { regionId: region.id, name: gov.name },
+      });
       for (const distName of gov.districts) {
-        const district = await db.district.create({ data: { governorateId: governorate.id, name: distName } });
+        const district = await db.district.upsert({
+          where: { governorateId_name: { governorateId: governorate.id, name: distName } },
+          update: {},
+          create: { governorateId: governorate.id, name: distName },
+        });
         // 1-2 sites per district
         const nSites = intRange(1, 2);
         for (let i = 0; i < nSites; i++) {
@@ -144,10 +231,10 @@ export async function seedIfNeeded(): Promise<{ seeded: boolean; siteCount: numb
           const code = `SITE-${String(siteCounter).padStart(3, "0")}`;
           const lat = gov.lat + range(-0.08, 0.08);
           const lng = gov.lng + range(-0.08, 0.08);
-          const criticality = pick(["CRITICAL", "HIGH", "MEDIUM", "LOW"]);
+          const criticality: Criticality = pick(["CRITICAL", "HIGH", "MEDIUM", "LOW"]);
           const loadKw = Math.round(range(2, 18) * 10) / 10;
           const gridAvailable = rnd() > 0.18;
-          const powerSource = !gridAvailable ? "GENERATOR" : pick(["HYBRID", "GRID"]);
+          const powerSource: PowerSource = !gridAvailable ? "GENERATOR" : pick(["HYBRID", "GRID"]);
 
           const site = await db.site.create({
             data: {
@@ -183,6 +270,7 @@ export async function seedIfNeeded(): Promise<{ seeded: boolean; siteCount: numb
             }
             await db.fuelTank.create({
               data: {
+                tenantId: site.tenantId,
                 siteId: site.id,
                 label: `Tank ${String.fromCharCode(65 + t)}`,
                 fuelType: "DIESEL",
@@ -206,6 +294,7 @@ export async function seedIfNeeded(): Promise<{ seeded: boolean; siteCount: numb
             const runtime = Math.round(range(120, 9200) * 10) / 10;
             await db.generator.create({
               data: {
+                tenantId: site.tenantId,
                 siteId: site.id,
                 label: `Gen ${String.fromCharCode(65 + g)}`,
                 manufacturer: maker.m,
@@ -233,6 +322,7 @@ export async function seedIfNeeded(): Promise<{ seeded: boolean; siteCount: numb
           const nomV = pick([24, 48]);
           await db.batteryBank.create({
             data: {
+              tenantId: site.tenantId,
               siteId: site.id,
               label: "Bank A",
               chemistry: "VRLA",
@@ -258,6 +348,7 @@ export async function seedIfNeeded(): Promise<{ seeded: boolean; siteCount: numb
             usedTypes.add(type);
             await db.iotDevice.create({
               data: {
+                tenantId: site.tenantId,
                 siteId: site.id,
                 name: `${type.replace(/_/g, " ").toLowerCase()} #${d + 1}`,
                 type,
@@ -284,10 +375,11 @@ export async function seedIfNeeded(): Promise<{ seeded: boolean; siteCount: numb
   for (let i = 0; i < 8; i++) {
     const tank = pick(tanks);
     const volume = Math.round(tank.capacityLitres * range(0.3, 0.8));
-    const status = pick(["SCHEDULED", "SCHEDULED", "IN_TRANSIT", "DELIVERED", "VERIFIED"]);
+    const status: FuelDeliveryStatus = pick(["SCHEDULED", "SCHEDULED", "IN_TRANSIT", "DELIVERED", "VERIFIED"]);
     const scheduledAt = new Date(now + intRange(-2, 5) * 86400000);
     await db.fuelDelivery.create({
       data: {
+        tenantId: tank.site.tenantId,
         siteId: tank.siteId,
         tankId: tank.id,
         supplier: pick(SUPPLIERS),
@@ -311,6 +403,7 @@ export async function seedIfNeeded(): Promise<{ seeded: boolean; siteCount: numb
     const g = pick(gens);
     await db.maintenanceTicket.create({
       data: {
+        tenantId: g.site.tenantId,
         siteId: g.siteId,
         assetKind: "GENERATOR",
         assetId: g.id,
@@ -326,11 +419,11 @@ export async function seedIfNeeded(): Promise<{ seeded: boolean; siteCount: numb
   }
 
   // ── Fuel dispensers + historical transactions (Task 34-B) ──────────────
-  await seedDispensers();
+  await seedDispensers(db);
 
   // ── Task 48 — edge gateways + ESP firmware releases ─────────────────────
-  await seedGateways();
-  await seedFirmwareReleases();
+  await seedGateways(db);
+  await seedFirmwareReleases(db);
 
   return { seeded: true, siteCount: siteCounter };
 }
@@ -342,7 +435,7 @@ export async function seedIfNeeded(): Promise<{ seeded: boolean; siteCount: numb
  * fuel/transport hubs. Skipped silently if any dispenser already exists so
  * this can be called on every bootstrap() without duplicating data.
  */
-async function seedDispensers(): Promise<void> {
+async function seedDispensers(db: PrismaClient): Promise<void> {
   const existingDispensers = await db.fuelDispenser.count();
   if (existingDispensers > 0) return;
 
@@ -350,11 +443,21 @@ async function seedDispensers(): Promise<void> {
     where: { fuelType: "DIESEL" },
     include: { site: true },
   });
-  // group DIESEL tanks by site so each site only seeds dispensers once
-  const sitesWithDiesel = new Map<string, { siteId: string; siteName: string; siteCode: string }>();
+  // group DIESEL tanks by site so each site only seeds dispensers once.
+  // tenantId is carried through so FuelDispenser/FuelTransaction creates can
+  // supply their own required tenantId without re-querying the Site.
+  const sitesWithDiesel = new Map<
+    string,
+    { siteId: string; siteName: string; siteCode: string; tenantId: string }
+  >();
   for (const t of dieselTanks) {
     if (!sitesWithDiesel.has(t.siteId)) {
-      sitesWithDiesel.set(t.siteId, { siteId: t.siteId, siteName: t.site.name, siteCode: t.site.code });
+      sitesWithDiesel.set(t.siteId, {
+        siteId: t.siteId,
+        siteName: t.site.name,
+        siteCode: t.site.code,
+        tenantId: t.site.tenantId,
+      });
     }
   }
   // Pick the first ~12 sites (deterministic — first 12 in insertion order)
@@ -382,6 +485,7 @@ async function seedDispensers(): Promise<void> {
       const status = n === 0 && dispIdx % 7 === 0 ? "DISPENSING" : "IDLE";
       const dispenser = await db.fuelDispenser.create({
         data: {
+          tenantId: ds.tenantId,
           siteId: ds.siteId,
           label: `Dispenser ${String.fromCharCode(65 + n)}`,
           manufacturer: maker.m,
@@ -419,6 +523,7 @@ async function seedDispensers(): Promise<void> {
         const completed = new Date(startedAt.getTime() + duration * 1000);
         await db.fuelTransaction.create({
           data: {
+            tenantId: ds.tenantId,
             dispenserId: dispenser.id,
             siteId: ds.siteId,
             nozzle: 1 + intRange(0, nozzleCount - 1),
@@ -456,7 +561,7 @@ async function seedDispensers(): Promise<void> {
  * a forgotten super-admin password can be healed by editing the constant
  * above and restarting the dev server).
  */
-async function seedSuperAdmin(): Promise<void> {
+async function seedSuperAdmin(db: PrismaClient): Promise<void> {
   const platformTenant = await db.tenant.upsert({
     where: { code: "PLATFORM" },
     update: {},
@@ -511,7 +616,7 @@ async function seedSuperAdmin(): Promise<void> {
  * Skipped silently if any gateway already exists so this is safe to call
  * on every bootstrap() without duplicating data.
  */
-async function seedGateways(): Promise<void> {
+async function seedGateways(db: PrismaClient): Promise<void> {
   const existing = await db.siteGateway.count();
   if (existing > 0) return;
 
@@ -529,7 +634,7 @@ async function seedGateways(): Promise<void> {
     // Pull the site code to build a friendly hostname.
     const site = await db.site.findUnique({
       where: { id: ds.siteId },
-      select: { code: true, name: true },
+      select: { code: true, name: true, tenantId: true },
     });
     if (!site) continue;
     // 80% ONLINE, 15% DEGRADED, 5% OFFLINE — gives the dashboard a mix.
@@ -537,6 +642,7 @@ async function seedGateways(): Promise<void> {
     const status = r > 0.95 ? "OFFLINE" : r > 0.80 ? "DEGRADED" : "ONLINE";
     await db.siteGateway.create({
       data: {
+        tenantId: site.tenantId,
         siteId: ds.siteId,
         hostname: `gw-${site.code.toLowerCase()}`,
         model: pick(GATEWAY_MODELS),
@@ -565,7 +671,7 @@ async function seedGateways(): Promise<void> {
  * Note: EspFirmwareDeployment rows are NOT seeded — they're created
  * on-demand when an admin kicks off an OTA deployment from the UI.
  */
-async function seedFirmwareReleases(): Promise<void> {
+async function seedFirmwareReleases(db: PrismaClient): Promise<void> {
   const existing = await db.espFirmwareRelease.count();
   if (existing > 0) return;
 

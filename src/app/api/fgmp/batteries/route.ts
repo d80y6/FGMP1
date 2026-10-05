@@ -134,6 +134,7 @@ export async function POST(req: NextRequest) {
     const row = await db.batteryBank.create({
       data: {
         siteId: data.siteId,
+        tenantId: site.tenantId,
         label: data.label,
         chemistry: data.chemistry,
         capacityAh: data.capacityAh,

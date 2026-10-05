@@ -1,8 +1,11 @@
+import { Prisma, type FuelType } from "@prisma/client";
 import { db } from "@/lib/db";
+import { toJsonNumber } from "./decimal";
 import type {
   TankState, GenState, BattState, SiteState, IoTDeviceState,
   DispenserState, FuelTransactionState, GatewayState,
   EventItem, Kpis, Snapshot, GenCommand, GenStatus,
+  AlarmType, Severity,
 } from "./types";
 import { isAlarmSuppressed } from "./suppression-check";
 import { isBatteryLowVoltage, battLowVoltageTripVolts } from "./thresholds-battery";
@@ -42,14 +45,24 @@ const TRANSIENT_REARM_MS = 30 * 60 * 1000; // 30 minutes
  * and never contain `:`, so the first separator delimits the type and the
  * second the severity.
  */
-function splitAlarmKey(key: string): [string, string, string] {
+/**
+ * Split a `${type}:${severity}:${entityId}` alarm key back into its parts.
+ *
+ * Returns the type/severity as the narrowed unions rather than plain strings:
+ * the key is only ever built by `raiseAlarm` from validated enum members, so
+ * the values flowing back out here are always valid members too. Typing them
+ * keeps the `db.alarm.where` filters type-checked against the Prisma enum.
+ */
+function splitAlarmKey(key: string): [AlarmType, Severity | "", string] {
   const firstSep = key.indexOf(":");
   const secondSep = key.indexOf(":", firstSep + 1);
-  if (firstSep < 0) return [key, "", ""];
-  if (secondSep < 0) return [key.slice(0, firstSep), "", key.slice(firstSep + 1)];
+  if (firstSep < 0) return [key as AlarmType, "", ""];
+  if (secondSep < 0) {
+    return [key.slice(0, firstSep) as AlarmType, "", key.slice(firstSep + 1)];
+  }
   return [
-    key.slice(0, firstSep),
-    key.slice(firstSep + 1, secondSep),
+    key.slice(0, firstSep) as AlarmType,
+    key.slice(firstSep + 1, secondSep) as Severity,
     key.slice(secondSep + 1),
   ];
 }
@@ -771,7 +784,7 @@ class FgmpEngine {
    */
   private async reconcileAlarms(): Promise<void> {
     const stillTrue = new Set<string>();
-    const add = (type: string, severity: string, id: string) =>
+    const add = (type: AlarmType, severity: Severity, id: string) =>
       stillTrue.add(`${type}:${severity}:${id}`);
 
     for (const tk of this.tanks) {
@@ -864,12 +877,16 @@ class FgmpEngine {
     const startedAt = d.startedAt ?? this.now;
     const durationSec = Math.max(1, Math.round((this.now - startedAt) / 1000));
     const status: FuelTransactionState["status"] = cancelled ? "CANCELLED" : "COMPLETED";
+    // Phase 1 step 4: FuelTransaction requires tenantId. Resolved from the
+    // parent Site already loaded in engine state.
+    const site = this.sites.find((s) => s.id === d.siteId)!;
 
     // Persist the FuelTransaction row (single source of truth).
     let txRow;
     try {
       txRow = await db.fuelTransaction.create({
         data: {
+          tenantId: site.tenantId,
           dispenserId: d.id,
           siteId: d.siteId,
           nozzle: 1 + Math.floor(Math.random() * d.nozzleCount),
@@ -889,15 +906,21 @@ class FgmpEngine {
       txRow = null;
     }
 
-    // In-memory transaction record (cap memory at MAX_RECENT_TXN_SNAPSHOT)
+    // In-memory transaction record (cap memory at MAX_RECENT_TXN_SNAPSHOT).
+    // Money columns are `numeric` since Phase 1 step 9, so the state carries
+    // Decimal. Prefer the values Prisma already parsed off the persisted row —
+    // they are the source of truth and avoid re-quantising the same money twice
+    // — and only construct them when the row write failed. Constructing via
+    // `new Prisma.Decimal(<number>)` would go through a float, so the computed
+    // fallback is routed through the tested toJsonNumber() first.
     const txn: FuelTransactionState = {
       id: txRow?.id ?? d.currentTransactionId ?? uid("tx"),
       dispenserId: d.id,
       siteId: d.siteId,
       nozzle: txRow?.nozzle ?? 1,
       volumeLitres: volume,
-      amountYer: amount,
-      unitPriceYer: unitPrice,
+      amountYer: txRow?.amountYer ?? new Prisma.Decimal(toJsonNumber(amount)),
+      unitPriceYer: txRow?.unitPriceYer ?? new Prisma.Decimal(toJsonNumber(unitPrice)),
       vehiclePlate: txRow?.vehiclePlate ?? undefined,
       status,
       startedAt,
@@ -1032,7 +1055,7 @@ class FgmpEngine {
     manufacturer: string;
     model: string;
     nozzleCount: number;
-    fuelType: string;
+    fuelType: FuelType;
     maxFlowLpm: number;
     espDeviceId: string;
     espFirmware: string;
@@ -1042,8 +1065,15 @@ class FgmpEngine {
     ipAddress?: string;
   }): Promise<DispenserState> {
     await this.ensureInit();
+    // Phase 1 step 4: FuelDispenser requires tenantId. The caller passes only
+    // siteId, so the tenant comes from the Site already in engine state.
+    const site = this.sites.find((s) => s.id === data.siteId);
+    if (!site) {
+      throw new Error(`createDispenser: site ${data.siteId} not found`);
+    }
     const row = await db.fuelDispenser.create({
       data: {
+        tenantId: site.tenantId,
         siteId: data.siteId,
         label: data.label,
         manufacturer: data.manufacturer,
@@ -1154,8 +1184,13 @@ class FgmpEngine {
   }
 
   // ── Alarm helpers ───────────────────────────────────────────────────────
+  // `type`/`severity` are typed with the local unions from ./types, whose
+  // members match the Prisma `AlarmType`/`AlarmSeverity` enums exactly. Keeping
+  // the existing local vocabulary avoids a second import while still letting
+  // TypeScript prove the value is a valid enum member — previously these were
+  // bare `string`, which the now-strict enum columns reject.
   private async raiseAlarm(a: {
-    siteId: string; type: string; severity: string;
+    siteId: string; type: AlarmType; severity: Severity;
     entityKind?: string; entityId?: string; message: string;
     value?: number; threshold?: number;
   }): Promise<number> {
@@ -1239,7 +1274,7 @@ class FgmpEngine {
    * was ever removed from `openAlarmKeys` and the affected alarm types could
    * never re-fire for the lifetime of the process.
    */
-  private async autoResolve(type: string, entityId: string, severity?: string) {
+  private async autoResolve(type: AlarmType, entityId: string, severity?: Severity) {
     if (severity) {
       const key = `${type}:${severity}:${entityId}`;
       if (!this.openAlarmKeys.has(key)) return;
@@ -1370,7 +1405,7 @@ class FgmpEngine {
     }
 
     const cmd = await db.controlCommand.create({
-      data: { generatorId: genId, command, status: "SENT", reason: reason ?? null, issuedById: userId, executedAt: new Date(this.now), result: "OK" },
+      data: { tenantId: site.tenantId, generatorId: genId, command, status: "SENT", reason: reason ?? null, issuedById: userId, executedAt: new Date(this.now), result: "OK" },
     });
 
     if (command === "START") {
@@ -1485,8 +1520,16 @@ class FgmpEngine {
     if (!release) {
       return { ok: false, message: "Firmware release not found" };
     }
+    // Phase 1 step 4: EspFirmwareDeployment requires tenantId (Tier A — a
+    // deployment is the tenant-scoped instance of a global release). Resolved
+    // through the target dispenser's site.
+    const dispenserSite = this.sites.find((s) => s.id === d.siteId);
+    if (!dispenserSite) {
+      return { ok: false, message: "Dispenser site not found in engine state" };
+    }
     const deployment = await db.espFirmwareDeployment.create({
       data: {
+        tenantId: dispenserSite.tenantId,
         dispenserId,
         releaseId,
         status: "QUEUED",
@@ -1548,8 +1591,16 @@ class FgmpEngine {
   private pushEvent(siteId: string, kind: string, message: string, meta?: Record<string, unknown>) {
     this.events.unshift({ id: uid("ev"), siteId, kind, message, ts: this.now, meta });
     if (this.events.length > MAX_EVENTS) this.events.pop();
-    // also persist to DB siteEvent
-    db.siteEvent.create({ data: { siteId, kind, message, meta: meta ? JSON.stringify(meta) : null } }).catch(() => {});
+    // also persist to DB siteEvent. Phase 1 step 4 requires tenantId, resolved
+    // from the Site in engine state. This is a best-effort fire-and-forget
+    // write, so an unknown site simply skips the row rather than throwing into
+    // the caller's tick.
+    const site = this.sites.find((s) => s.id === siteId);
+    if (site) {
+      db.siteEvent
+        .create({ data: { tenantId: site.tenantId, siteId, kind, message, meta: meta ? JSON.stringify(meta) : null } })
+        .catch(() => {});
+    }
   }
 
   // ── Snapshot ────────────────────────────────────────────────────────────

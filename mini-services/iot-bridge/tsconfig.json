@@ -1,0 +1,17 @@
+{
+  "//": "CI type-gate for the IoT bridge. It previously had no tsconfig, so the `mini-services` CI job silently skipped it and this 295-line device-ingest service was never type-checked. strict is on because this service accepts telemetry from field devices and reconciles commands — untyped payloads here become bogus readings.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["bun-types"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true
+  },
+  "include": ["index.ts"]
+}

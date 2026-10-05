@@ -1,3 +1,4 @@
+import type { FuelDeliveryStatus } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { db, bootstrap } from "@/lib/fgmp";
 import { audit } from "@/lib/fgmp/audit";
@@ -36,8 +37,8 @@ export const dynamic = "force-dynamic";
  * endpoints, and `dispatch` is applied as a conditional `updateMany` so the
  * guard and the write are a single atomic statement.
  */
-const VERIFY_FROM = ["SCHEDULED", "IN_TRANSIT", "DELIVERED"];
-const DISPATCH_FROM = ["SCHEDULED"];
+const VERIFY_FROM: FuelDeliveryStatus[] = ["SCHEDULED", "IN_TRANSIT", "DELIVERED"];
+const DISPATCH_FROM: FuelDeliveryStatus[] = ["SCHEDULED"];
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuth();
@@ -183,9 +184,16 @@ export async function POST(req: NextRequest) {
     });
     const siteDenied = assertSiteTenantOwned(site, me);
     if (siteDenied) return siteDenied;
+    // `site` is null when it does not exist; assertSiteTenantOwned returns
+    // null (allowed) for a same-tenant site, so the null case needs its own
+    // check before `site.tenantId` is read.
+    if (!site) {
+      return NextResponse.json({ error: "Site not found" }, { status: 404 });
+    }
     const created = await db.fuelDelivery.create({
       data: {
         siteId: data.siteId,
+        tenantId: site.tenantId,
         tankId: data.tankId,
         supplier: data.supplier,
         volumeOrderedLitres: data.volumeOrderedLitres,

@@ -65,6 +65,18 @@ services:
       # owner). DATABASE_URL must never carry fgmp_ops — see note above.
       - DATABASE_URL=postgresql://fgmp_app:${PGAPP_PASSWORD}@fgmp-db:5432/fgmp?schema=public&connection_limit=10
       - FGMP_OPS_DATABASE_URL=postgresql://fgmp_ops:${PGOPS_PASSWORD}@fgmp-db:5432/fgmp?schema=public
+      # ── The web app is NEVER given FGMP_MIGRATE_DATABASE_URL ──────────────
+      # Seeding used to run inside bootstrap(), so this container needed an
+      # owner (superuser) credential just to serve a request. It now runs at
+      # DEPLOY TIME via the `seed` profile below, and the credential lives only
+      # in that one-shot container. Do not re-add it here: a superuser URL in
+      # this service would let any injection bug bypass RLS entirely.
+      #
+      # Seeding a fresh environment is an explicit operator step:
+      #     docker compose --profile seed run --rm fgmp-seed
+      # A deployment that skips it starts against an empty database and the app
+      # reports that visibly rather than serving a blank platform.
+      #
       # Set to "0" ONLY for local development where no RLS policy exists yet.
       # Any non-zero environment MUST be "1" or the app refuses to start.
       - FGMP_REQUIRE_RLS=${FGMP_REQUIRE_RLS:-1}
@@ -145,6 +157,58 @@ services:
       resources:
         limits:
           memory: 256M
+
+  # ── Deploy-time seeding (one-shot) ────────────────────────────────────────
+  # Seeding creates tenants and rows across every one of them, so it cannot run
+  # inside withTenant() and needs the owner role. It is deliberately NOT part of
+  # the default `up`: the web app must never hold this credential, and a fresh
+  # environment is seeded by an explicit operator action.
+  #
+  #   docker compose --profile seed run --rm fgmp-seed
+  #
+  # Idempotent — prints {"seeded":false} when the topology already exists.
+  # ── Deploy-time seeding (one-shot) ────────────────────────────────────────
+  # Seeding creates tenants and rows across every one of them, so it cannot run
+  # inside withTenant() and needs the owner role. It is deliberately NOT part of
+  # the default `up`: the web app must never hold this credential, and a fresh
+  # environment is seeded by an explicit operator action.
+  #
+  #   docker compose --profile seed run --rm fgmp-seed
+  #
+  # Idempotent — the seed reports {"seeded":false} when the topology exists, and
+  # exits non-zero if it produces no sites, so a broken seed cannot be mistaken
+  # for a successful one.
+  fgmp-seed:
+    profiles: ["seed"]
+    # Uses the toolchain image rather than the slim runtime image: the seed is a
+    # TypeScript script run with Bun, and the standalone runtime image ships
+    # neither the script nor the prisma CLI needed to apply migrations first.
+    image: oven/bun:1
+    working_dir: /app
+    volumes:
+      - .:/app
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -e
+        echo "fgmp-seed: installing dependencies…"
+        bun install --frozen-lockfile
+        echo "fgmp-seed: generating Prisma client…"
+        bun run db:generate
+        echo "fgmp-seed: applying migrations…"
+        bun run db:deploy
+        echo "fgmp-seed: seeding…"
+        bun run db:seed
+        echo "fgmp-seed: done."
+    environment:
+      - DATABASE_URL=postgresql://fgmp_app:${PGAPP_PASSWORD}@fgmp-db:5432/fgmp?schema=public
+      - FGMP_MIGRATE_DATABASE_URL=postgresql://fgmp_migrate:${PGMIGRATE_PASSWORD}@fgmp-db:5432/fgmp?schema=public
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:?set NEXTAUTH_SECRET (openssl rand -base64 32)}
+    depends_on:
+      fgmp-db:
+        condition: service_healthy
+    restart: "no"
 
 volumes:
   # SQLite volume — removed in Phase 1 step 1. Retained only so an existing

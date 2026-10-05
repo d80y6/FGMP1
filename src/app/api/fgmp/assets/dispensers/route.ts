@@ -66,6 +66,14 @@ export async function POST(req: NextRequest) {
       applyRateLimitHeaders(siteDenied.headers, rl);
       return siteDenied;
     }
+    // `site` is null when it does not exist; assertSiteTenantOwned returns
+    // null (allowed) for a same-tenant site, so the null case needs its own
+    // check before `site.tenantId` is read.
+    if (!site) {
+      const res = NextResponse.json({ error: "Site not found" }, { status: 404 });
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
 
     // Enforce the unique [siteId, pumpNumber] constraint up front (Prisma will
     // also enforce it, but a friendlier 409 is nicer than a P2002 error).
@@ -85,6 +93,7 @@ export async function POST(req: NextRequest) {
     const dispenser = await db.fuelDispenser.create({
       data: {
         siteId: data.siteId,
+        tenantId: site.tenantId,
         label: data.label,
         pumpNumber: data.pumpNumber,
         nozzleCount: data.nozzleCount,

@@ -1,3 +1,4 @@
+import type { Prisma, SystemSettingCategory } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { db, bootstrap } from "@/lib/fgmp";
 import { audit } from "@/lib/fgmp/audit";
@@ -68,7 +69,14 @@ const DEFAULT_SETTINGS: DefaultSetting[] = [
   { key: "enableOta",         category: "PLATFORM", value: "true", type: "boolean" },
 ];
 
-const VALID_CATEGORIES = new Set(["ALARM", "ESCALATION", "BRANDING", "PLATFORM"]);
+// Typed against the Prisma enum so the membership test below also narrows the
+// query param to a valid `SystemSettingCategory` instead of a bare string.
+const VALID_CATEGORIES: ReadonlySet<SystemSettingCategory> = new Set<SystemSettingCategory>([
+  "ALARM",
+  "ESCALATION",
+  "BRANDING",
+  "PLATFORM",
+]);
 
 /** Coerce a stringified setting value into the type stored in the row. */
 export function coerceValue(value: string, type: DefaultSetting["type"]): unknown {
@@ -132,8 +140,14 @@ export async function GET(req: NextRequest) {
     }
 
     const { searchParams } = new URL(req.url);
-    const category = searchParams.get("category")?.toUpperCase();
-    if (category && !VALID_CATEGORIES.has(category)) {
+    const rawCategory = searchParams.get("category")?.toUpperCase();
+    // Type predicate so the validated value narrows to SystemSettingCategory —
+    // the membership test IS the runtime validation, this just lets TypeScript
+    // see it, rather than casting an unvalidated string into the enum.
+    const isValidCategory = (v: string): v is SystemSettingCategory =>
+      (VALID_CATEGORIES as ReadonlySet<string>).has(v);
+    const category = rawCategory && isValidCategory(rawCategory) ? rawCategory : undefined;
+    if (rawCategory && !isValidCategory(rawCategory)) {
       const res = NextResponse.json(
         { error: "Invalid category", allowed: Array.from(VALID_CATEGORIES) },
         { status: 400 },
@@ -149,7 +163,7 @@ export async function GET(req: NextRequest) {
       for (const cat of VALID_CATEGORIES) await seedCategoryDefaults(cat);
     }
 
-    const where = category ? { category } : {};
+    const where: Prisma.SystemSettingWhereInput = category ? { category } : {};
     const rows = await db.systemSetting.findMany({
       where,
       orderBy: { key: "asc" },

@@ -94,9 +94,16 @@ export async function POST(req: NextRequest) {
     });
     const siteDenied = assertSiteTenantOwned(site, me);
     if (siteDenied) return siteDenied;
+    // `site` is null when it does not exist; assertSiteTenantOwned returns
+    // null (allowed) for a same-tenant site, so the null case needs its own
+    // check before `site.tenantId` is read.
+    if (!site) {
+      return NextResponse.json({ error: "Site not found" }, { status: 404 });
+    }
     const created = await db.maintenanceTicket.create({
       data: {
         siteId: data.siteId,
+        tenantId: site.tenantId,
         assetKind: data.assetKind,
         assetId: data.assetId ?? "",
         type: data.type,

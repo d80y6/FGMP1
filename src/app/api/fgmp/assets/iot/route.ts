@@ -85,6 +85,14 @@ export async function POST(req: NextRequest) {
       applyRateLimitHeaders(siteDenied.headers, rl);
       return siteDenied;
     }
+    // `site` is null when it does not exist; assertSiteTenantOwned returns
+    // null (allowed) for a same-tenant site, so the null case needs its own
+    // check before `site.tenantId` is read.
+    if (!site) {
+      const res = NextResponse.json({ error: "Site not found" }, { status: 404 });
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
 
     // Friendly 409 for duplicate serial number (instead of relying on the
     // Prisma P2002 path which says "Resource already exists" — too generic).
@@ -101,6 +109,7 @@ export async function POST(req: NextRequest) {
     const device = await db.iotDevice.create({
       data: {
         siteId,
+        tenantId: site.tenantId,
         name,
         type,
         protocol,

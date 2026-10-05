@@ -1,0 +1,17 @@
+{
+  "//": "CI type-gate for the realtime service. It previously had no tsconfig, so the `mini-services` CI job silently skipped it and this 480-line socket.io service was never type-checked. strict is on because this service terminates authenticated websocket connections and fans out tenant state — the exact code where a wrong type becomes a data leak.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["bun-types"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true
+  },
+  "include": ["index.ts"]
+}
