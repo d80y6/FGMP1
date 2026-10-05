@@ -313,3 +313,44 @@ const [sampleSite, sampleAlarm] = await withTenant(t, () => Promise.all([q1, q2]
 
 Neither `tsc` nor `eslint` catches this, so it is worth stating explicitly in
 any code that batches multiple tenant-scoped reads.
+
+## Addendum — the same defect gating a DESTRUCTIVE operation
+
+`tenants/[id]` DELETE refuses to remove a tenant that still owns users or sites.
+That refusal reads `_count` over two FORCE-protected relations.
+
+Unscoped, those counts return 0 for a tenant that measurably has 5 users and 52
+sites. The gate therefore read *"no users, no sites"* and **allowed the delete**.
+The destructive statement then hit the FK layer instead of being refused cleanly
+with a 409 — so data-loss semantics were decided by a query that had silently
+stopped returning rows.
+
+This is why the tenant-context defect is not merely a display problem:
+
+> A read returning `[]` is **visibly** broken. A safety gate returning "nothing
+> to worry about" is **invisibly** destructive.
+
+Every other manifestation in this document produces an empty response that some
+human eventually notices. This one produced a *passing* result. The counts are
+now read inside the same transaction that performs the delete, so a row created
+between the guard and the statement cannot slip a populated tenant through.
+
+Proven without executing a destructive test, by reading the gate the way it now
+reads:
+
+```
+t-default _count as the gate reads it: {"users":5,"sites":52}
+gate would REFUSE delete: true
+```
+
+## Two more traps that typecheck cleanly
+
+1. **A duplicated `where:` key silently overwrites the scoped one** with
+   `where: { id }` and still passes `tsc`. Two independent agents hit this.
+2. **A scoped top-level query with an unfiltered `include:`** returns a
+   *populated* response carrying a null or foreign relation. That is worse than
+   the original empty list, because it looks correct.
+
+Both were caught by agents reading each other's diffs rather than by tooling.
+Neither is detectable by `tsc` or `eslint`, which is the argument for reading
+diff line-by-line when a mechanical transform touches authorisation code.
