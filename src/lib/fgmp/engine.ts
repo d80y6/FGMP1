@@ -1222,15 +1222,102 @@ class FgmpEngine {
    * Control a fuel dispenser remotely. Used by POST /api/fgmp/dispensers/[id]/control.
    * Commands: AUTHORIZE | STOP | RESET | LOCK | UNLOCK.
    */
-  async controlDispenser(
+  /**
+ * Resolve a site for a control operation, or refuse.
+ *
+ * ── WHY THIS IS A BOUNDARY PROPERTY AND NOT A PER-CALLER FIX ───────────────
+ * The engine holds ONE tenant's assets in memory. A control command names an
+ * asset id that arrives from a request, so it is attacker-controlled: it may
+ * name an asset in a tenant the engine is not holding.
+ *
+ * Previously each entry point did its own `this.sites.find(...)` and several
+ * used a non-null assertion (`...find(...)!`). Two distinct problems followed:
+ *
+ *   1. If the asset is not resident, `find` returns undefined and the caller
+ *      decides what that means. Most returned `{ ok: false }` — a DENIAL, which
+ *      is safe. But `deleteDispenser` deleted the row from the database and
+ *      then returned `true` regardless, so a cross-tenant id was a silent
+ *      SUCCESS. That is a cross-tenant ALLOW, and it is the outcome that
+ *      matters.
+ *   2. `this.sites.find(...)!` would throw a TypeError on undefined, turning a
+ *      clean refusal into a 500.
+ *
+ * This helper makes the refusal the default at ONE place: an asset that is not
+ * resident, or whose site is not resident, or whose tenant is not among those
+ * the engine holds, is denied. Every control entry point routes through it, so
+ * the property no longer depends on each call site having remembered the check.
+ *
+ * It returns the site, or a reason string — never undefined. Callers that
+ * need a typed miss branch on the string rather than trusting a `!`.
+ */
+/**
+   * Explain why an asset id could not be resolved, distinguishing "no such
+   * asset" from "the engine is holding a different tenant's state".
+   *
+   * These are genuinely different operator situations and they need different
+   * responses. "No such generator" means the request is wrong. "The engine is
+   * not holding that tenant" means THIS PROCESS is misconfigured — which, in a
+   * multi-tenant control system, is the difference between a typo and a
+   * cross-tenant control attempt. Returning a generic "not found" for both
+   * hides the second behind the first, which is how a wrong-tenant command
+   * would read as a harmless bad request.
+   */
+  private absentAssetMessage(kind: string, assetId: string): string {
+    const held = this.loadedTenants().join(", ") || "no tenant";
+    return (
+      `${kind} ${assetId} is not present in engine state. ` +
+      `The engine is holding [${held}]. Either no such ${kind.toLowerCase()} exists, ` +
+      `or it belongs to a tenant this process was not asked to load — the caller ` +
+      `must not read this as an approval.`
+    );
+  }
+
+  private resolveControlSite(
+  siteId: string,
+  assetLabel: string,
+): { site: SiteState; denied?: undefined } | { site?: undefined; denied: string } {
+  if (!this.initialized) {
+    return {
+      denied:
+        `${assetLabel} refused: the engine holds no tenant state. ` +
+        `This is STATE_UNAVAILABLE, not "not found" — the caller must not treat it as an allow.`,
+    };
+  }
+  const site = this.sites.find((s) => s.id === siteId);
+  if (!site) {
+    return {
+      denied:
+        `${assetLabel} refused: site ${siteId} is not resident. The engine is ` +
+        `holding [${this.loadedTenants().join(", ") || "no tenant"}], so this asset ` +
+        `is either absent or belongs to a tenant this process is not holding.`,
+    };
+  }
+  if (!this.loadedTenantIds.includes(site.tenantId)) {
+    return {
+      denied:
+        `${assetLabel} refused: site ${siteId} belongs to tenant ` +
+        `"${site.tenantId}", which the engine was not asked to load.`,
+    };
+  }
+  return { site };
+}
+
+async controlDispenser(
     dispenserId: string,
     command: "AUTHORIZE" | "STOP" | "RESET" | "LOCK" | "UNLOCK",
     preset?: number,
   ): Promise<{ ok: boolean; message: string }> {
     await this.ensureInit();
     const d = this.dispensers.find((x) => x.id === dispenserId);
-    if (!d) return { ok: false, message: "Dispenser not found" };
-    const site = this.sites.find((s) => s.id === d.siteId)!;
+    if (!d) {
+      // Not resident. Previously this returned a plain "not found" — a denial,
+      // which was correct — but it did not distinguish "no such asset" from
+      // "wrong tenant loaded", which is the ambiguity this helper removes.
+      return { ok: false, message: this.absentAssetMessage("Dispenser", dispenserId) };
+    }
+    const resolved = this.resolveControlSite(d.siteId, `Dispenser ${dispenserId}`);
+    if (resolved.denied || !resolved.site) return { ok: false, message: resolved.denied ?? "Site unavailable" };
+    const site = resolved.site;
     if (site.commLossUntil && this.now <= site.commLossUntil) {
       return { ok: false, message: "Site communication down — command queued but cannot execute" };
     }

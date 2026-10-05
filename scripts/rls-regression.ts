@@ -779,6 +779,8 @@ interface ParentIds {
   dispenserId?: string
   generatorId?: string
   tankId?: string
+  /** Phase 2: CorrelationMatch belongs to a per-tenant CorrelationRule. */
+  ruleId?: string
   /** Phase 2: Rs485BusDiagnostic belongs to a bus; a sample to a diagnostic. */
   rs485BusId?: string
   rs485DiagnosticId?: string
@@ -1260,6 +1262,80 @@ async function assertCrossTenantDelete(spec: TableSpec): Promise<void> {
 
 /** 2b. INSERT with tenant B's id from tenant A's context → WITH CHECK violation. */
 async function assertCrossTenantInsert(spec: TableSpec): Promise<void> {
+  // Tables whose rows are created by a dedicated per-tenant INSERT above cannot
+  // go through this generic builder: their column values reference per-tenant
+  // parent ids (${RS485_BUS_ID} etc.) that only `subst()` can resolve when given
+  // those parents. Without them the placeholder survives into the SQL as a
+  // literal, and the statement fails on `column "bus" does not exist` — which
+  // then reads as "step 6 blocked" instead of the real cause.
+  const PER_TENANT_PARENT_TABLES = new Set([
+    'Rs485Bus',
+    'Rs485BusDiagnostic',
+    'Rs485LatencySample',
+    'EspFirmwareDeployment',
+    'NotificationPreference',
+  ])
+  if (PER_TENANT_PARENT_TABLES.has(spec.table)) {
+    // Still assert something real: a tenant-B row must be rejected. Build the
+    // statement against the tenant-A fixture row's real parent ids.
+    const rows = await withTenant(TENANT_A, (tx) =>
+      tx.$queryRawUnsafe<Array<Record<string, unknown>>>(
+        `SELECT * FROM "${spec.table}" WHERE "tenantId" = '${TENANT_A}' LIMIT 1`,
+      ),
+    ) as Array<Record<string, unknown>>
+    const row = rows[0]
+    if (!row) {
+      blocked(
+        '2b-cross-tenant-insert-blocked',
+        `no ${spec.table} fixture for ${TENANT_A}; cross-tenant INSERT not exercised`,
+      )
+      return
+    }
+    // Replay the REAL tenant-A fixture row verbatim, changing only the primary key
+    // and the tenant column. Every other value keeps its own type, so the
+    // statement cannot fail on a boolean/timestamp/enum cast before RLS is
+    // reached — which is what makes this an assertion about the POLICY rather
+    // than about our own SQL. The earlier version substituted `'t-beta-N'` into
+    // every column and PostgreSQL rejected it on a boolean cast, proving
+    // nothing about isolation.
+    const cols = Object.keys(row)
+      .filter((c) => c !== spec.tenantColumn)
+      .map((c) => `"${c}"`)
+      .join(', ')
+    const vals = Object.entries(row)
+      .filter(([c]) => c !== spec.tenantColumn)
+      .map(([c, v]) => {
+        if (c === 'id') return `'${TENANT_B}-planted'`
+        if (v === null) return 'NULL'
+        if (typeof v === 'boolean' || typeof v === 'number') return String(v)
+        if (v instanceof Date) return `'${v.toISOString()}'`
+        return `'${String(v).replace(/'/g, "''")}'`
+      })
+      .join(', ')
+    const sql =
+      `INSERT INTO "${spec.table}" (${cols}, "${spec.tenantColumn}") ` +
+      `VALUES (${vals}, '${TENANT_B}')`
+    try {
+      await withTenant(TENANT_A, (tx) => tx.$executeRawUnsafe(sql))
+      fail(
+        '2b-cross-tenant-insert-blocked',
+        'INSERT of a tenant-B row SUCCEEDED — WITH CHECK not enforced',
+      )
+    } catch (err) {
+      if (isRlsViolation(err)) {
+        pass(
+          '2b-cross-tenant-insert-blocked',
+          `rejected: ${(err as Error).message.split('\n')[0]}`,
+        )
+      } else if (isMissingObject(err)) {
+        blocked('2b-cross-tenant-insert-blocked', `blocked on step 6 — ${(err as Error).message}`)
+      } else {
+        fail('2b-cross-tenant-insert-blocked', (err as Error).message)
+      }
+    }
+    return
+  }
+
   // Build an insert row stamped with TENANT_A in the tenant column but using
   // a tenant-B id, i.e. an attempt to plant data into B's namespace.
   const cols = Object.entries(spec.columns).map(([k, v]) => `"${k}"`).join(', ')
@@ -1583,6 +1659,13 @@ function report(): void {
   console.log(`  PASS    : ${totals.PASS}`)
   console.log(`  FAIL    : \x1b[31m${totals.FAIL}\x1b[0m`)
   console.log(`  BLOCKED : \x1b[33m${totals.BLOCKED}\x1b[0m (awaiting p1-schema)`)
+
+  // Name the BLOCKED assertions. A bare count is not actionable: it says three
+  // things are unproven but not WHICH, and the exit code alone reads as an
+  // infrastructure dependency when the detail is often a real gap.
+  for (const a of assertions.filter((x) => x.status === 'BLOCKED')) {
+    console.log(`\x1b[33m   • BLOCKED [${a.table ?? 'suite'}] ${a.name}: ${a.detail}\x1b[0m`)
+  }
   if (totals.FAIL > 0) {
     console.log('\n\x1b[31m  Failing assertions:\x1b[0m')
     for (const a of assertions.filter((x) => x.status === 'FAIL')) {
