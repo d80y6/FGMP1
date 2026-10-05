@@ -53,12 +53,11 @@ import {
   type Severity,
   type RuleScope,
 } from "@/lib/fgmp/use-correlation-rules";
+import { formatRuleCondition, type AlarmState } from "@/lib/fgmp/rule-engine";
 import {
-  evaluateAllRules,
-  formatRuleCondition,
-  type AlarmState,
-  type EvaluatedRule,
-} from "@/lib/fgmp/rule-engine";
+  useCorrelationMatches,
+  useTriggerEvaluation,
+} from "@/lib/fgmp/use-correlation-matches";
 import { useT } from "@/lib/fgmp/use-language";
 
 interface Props {
@@ -208,14 +207,45 @@ export function CorrelationRulesEditor({ open, onOpenChange }: Props) {
     };
   }, [open]);
 
-  const evaluated: EvaluatedRule[] = useMemo(
-    () => evaluateAllRules(rules, alarms, sites),
-    [rules, alarms, sites],
-  );
+  // Phase 2: the counts used to come from `evaluateAllRules(rules, alarms,
+  // sites)` running in this browser — so "triggered" meant "would fire, per my
+  // local copy of the alarms". They now come from matches the server evaluated
+  // and persisted, which is the only figure that reflects what the platform
+  // actually acted on. `alarms`/`sites` are still fetched for display context
+  // but no longer decide a correlation outcome.
+  const { matches: serverMatches, error: matchesError } = useCorrelationMatches();
+  const { trigger: runEvaluation, busy: evaluating } = useTriggerEvaluation();
 
-  const triggeredCount = evaluated.filter((r) => r.triggered).length;
-  const idleCount = evaluated.length - triggeredCount;
-  const disabledCount = evaluated.filter((r) => !r.enabled).length;
+  const triggeredCount = useMemo(
+    () => new Set(serverMatches.map((m) => m.ruleId)).size,
+    [serverMatches],
+  );
+  const disabledCount = useMemo(
+    () => rules.filter((r) => !r.enabled).length,
+    [rules],
+  );
+  // "Idle" is now derived from authored rules minus those that have fired,
+  // rather than from a local evaluation of every rule.
+  const enabledRuleCount = useMemo(() => rules.filter((r) => r.enabled).length, [rules]);
+  const firedRuleIds = useMemo(
+    () => new Set(serverMatches.map((m) => m.ruleId)),
+    [serverMatches],
+  );
+  // Newest match per rule. serverMatches is ordered evaluatedAt DESC, so the
+  // first entry seen for a rule id is its most recent one.
+  const matchByRuleId = useMemo(() => {
+    const m = new Map<string, { scopeLabel: string; matchCount: number }>();
+    for (const match of serverMatches) {
+      if (!m.has(match.ruleId)) {
+        m.set(match.ruleId, {
+          scopeLabel: match.scopeLabel,
+          matchCount: match.matchCount,
+        });
+      }
+    }
+    return m;
+  }, [serverMatches]);
+  const idleCount = Math.max(0, enabledRuleCount - triggeredCount);
 
   if (!canView) {
     // Defensive: the trigger button is also gated, but if the dialog opens
@@ -288,7 +318,11 @@ export function CorrelationRulesEditor({ open, onOpenChange }: Props) {
 
           <ScrollArea className="max-h-[calc(80vh-9rem)] flex-1">
             <TabsContent value="active" className="m-0 p-4">
-              <ActiveRulesTab evaluated={evaluated} />
+              <ActiveRulesTab
+                rules={rules}
+                firedRuleIds={firedRuleIds}
+                matchByRuleId={matchByRuleId}
+              />
             </TabsContent>
             <TabsContent value="editor" className="m-0 p-4">
               <EditorTab rules={rules} />
@@ -304,17 +338,29 @@ export function CorrelationRulesEditor({ open, onOpenChange }: Props) {
 /* Active Rules tab — read-only list with live evaluation                     */
 /* -------------------------------------------------------------------------- */
 
-function ActiveRulesTab({ evaluated }: { evaluated: EvaluatedRule[] }) {
+function ActiveRulesTab({
+  rules,
+  firedRuleIds,
+  matchByRuleId,
+}: {
+  rules: CorrelationRule[];
+  /** Rule ids the SERVER evaluated and recorded a match for. */
+  firedRuleIds: Set<string>;
+  /** Newest persisted match per rule, for scope label and alarm count. */
+  matchByRuleId: Map<string, { scopeLabel: string; matchCount: number }>;
+}) {
   const t = useT();
-  // Sort: triggered first, then by name ascending. Disabled rules sink to the
-  // bottom of their respective tier.
+  // Sort: rules the server has fired first, then by name ascending. Disabled
+  // rules sink to the bottom of their respective tier.
   const sorted = useMemo(() => {
-    return [...evaluated].sort((a, b) => {
-      if (a.triggered !== b.triggered) return a.triggered ? -1 : 1;
+    return [...rules].sort((a, b) => {
+      const at = firedRuleIds.has(a.id);
+      const bt = firedRuleIds.has(b.id);
+      if (at !== bt) return at ? -1 : 1;
       if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
       return a.name.localeCompare(b.name);
     });
-  }, [evaluated]);
+  }, [rules, firedRuleIds]);
 
   if (sorted.length === 0) {
     return (
@@ -331,25 +377,43 @@ function ActiveRulesTab({ evaluated }: { evaluated: EvaluatedRule[] }) {
   return (
     <div className="space-y-2.5">
       {sorted.map((rule, idx) => (
-        <ActiveRuleCard key={rule.id} rule={rule} index={idx} />
+        <ActiveRuleCard
+            key={rule.id}
+            rule={rule}
+            index={idx}
+            triggered={firedRuleIds.has(rule.id)}
+            match={matchByRuleId.get(rule.id)}
+          />
       ))}
     </div>
   );
 }
 
-function ActiveRuleCard({ rule, index }: { rule: EvaluatedRule; index: number }) {
+function ActiveRuleCard({
+  rule,
+  index,
+  triggered,
+  match,
+}: {
+  rule: CorrelationRule;
+  index: number;
+  /** True when the server recorded a match for this rule. */
+  triggered: boolean;
+  /** The newest persisted match, for the scope label and alarm count. */
+  match?: { scopeLabel: string; matchCount: number };
+}) {
   const t = useT();
   const { canToggle } = useRulePermissions();
   const toggleRule = useCorrelationRules((s) => s.toggleRule);
 
   // Border tone: rose if triggered, amber if enabled-but-not-triggered, slate if disabled.
-  const borderTone = rule.triggered
+  const borderTone = triggered
     ? "border-l-rose-500"
     : rule.enabled
       ? "border-l-amber-500"
       : "border-l-slate-400/50";
 
-  const bgTone = rule.triggered
+  const bgTone = triggered
     ? "bg-rose-500/[0.04] hover:bg-rose-500/[0.07]"
     : rule.enabled
       ? "bg-card hover:bg-muted/40"
@@ -377,7 +441,7 @@ function ActiveRuleCard({ rule, index }: { rule: EvaluatedRule; index: number })
             >
               {rule.name}
             </h4>
-            {rule.triggered && <TriggeredBadge />}
+            {triggered && <TriggeredBadge />}
             {!rule.enabled && (
               <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
                 <Power className="h-2.5 w-2.5" /> {t("rules.disabled")}
@@ -399,10 +463,10 @@ function ActiveRuleCard({ rule, index }: { rule: EvaluatedRule; index: number })
 
           {/* Evaluation status */}
           <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
-            {rule.triggered ? (
+            {triggered ? (
               <span className="inline-flex items-center gap-1 font-medium text-rose-600 dark:text-rose-400">
                 <AlertTriangle className="h-3.5 w-3.5" />
-                {t("rules.triggeredIn")} {rule.scopeLabel} ({rule.triggeringAlarms.length})
+                {t("rules.triggeredIn")} {match?.scopeLabel ?? "—"} ({match?.matchCount ?? 0})
               </span>
             ) : rule.enabled ? (
               <span className="inline-flex items-center gap-1 text-muted-foreground">

@@ -27,7 +27,7 @@ import { timeAgo, fmtDateTime } from "@/lib/fgmp/format";
 import { csvFilename, type CsvColumn } from "@/lib/fgmp/csv-export";
 import { ExportButton } from "@/components/fgmp/export-button";
 import { useCorrelationRulesHydration, useCorrelationRulesList } from "@/lib/fgmp/use-correlation-rules";
-import { evaluateAllRules, type AlarmState } from "@/lib/fgmp/rule-engine";
+import { useCorrelationMatches } from "@/lib/fgmp/use-correlation-matches";
 import { useT, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 import { translate } from "@/lib/fgmp/i18n";
@@ -388,23 +388,20 @@ export function AlarmsView() {
   const role = me?.role ?? "READONLY";
   const canManageRules = role === "ADMIN" || role === "REGIONAL_MANAGER";
 
-  // Live-triggered rule count for the Rules button badge. We evaluate against
-  // the unfiltered alarms feed (the same data the table shows, which already
-  // comes from the API filtered by status = active set). Computing on every
-  // tick is cheap — rules.length is small (typically ≤ 20) and alarms.length
-  // is bounded by the API limit=300. Placed BEFORE the early `if (!snapshot)`
-  // return so the hook order is stable on every render.
+  // Triggered-rule count for the Rules button badge.
+  //
+  // Phase 2: this used to call `evaluateAllRules` in the browser, which meant
+  // the badge counted matches the CLIENT would have produced from the alarms
+  // it happened to have loaded. It now counts matches the SERVER evaluated and
+  // persisted, so the number an operator sees is the number the platform
+  // actually acted on. Placed BEFORE the early `if (!snapshot)` return so the
+  // hook order is stable on every render.
+  const { matches: serverMatches } = useCorrelationMatches();
   const triggeredRuleCount = useMemo(() => {
     if (!canManageRules) return 0;
-    if (!snapshot) return 0;
-    if (!rulesFromStore || rulesFromStore.length === 0) return 0;
-    const evaluated = evaluateAllRules(
-      rulesFromStore,
-      (mergedAlarms ?? []) as AlarmState[],
-      snapshot.sites,
-    );
-    return evaluated.filter((r) => r.triggered).length;
-  }, [canManageRules, snapshot, rulesFromStore, mergedAlarms]);
+    // Distinct rules that fired, counted from persisted matches.
+    return new Set(serverMatches.map((m) => m.ruleId)).size;
+  }, [canManageRules, serverMatches]);
 
   // NOTE: there is deliberately no `const k = snapshot?.kpis` alias here. An
   // alias through optional chaining does not participate in TS's narrowing, so
