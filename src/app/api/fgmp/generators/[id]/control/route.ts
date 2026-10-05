@@ -9,6 +9,7 @@ import {
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireRole, ROLES, assertSiteTenantOwned } from "@/lib/fgmp/auth-helpers";
+import { enforceInterlock, denialResponseBody } from "@/lib/fgmp/interlock-enforce";
 import type { GenCommand } from "@/lib/fgmp/types";
 
 export const dynamic = "force-dynamic";
@@ -50,9 +51,49 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
     const { command, reason } = r.data;
 
+    // ── SAFETY INTERLOCKS (Phase 2) ────────────────────────────────────────
+    // Enforced BEFORE the engine is touched. Ordering is the safety property:
+    // if this ran after applyCommand() the command would already be at the
+    // generator and the interlock would be decoration.
+    //
+    // A refused command is recorded, not silently dropped — an operator who
+    // sees nothing will simply retry, and retrying blindly against a hard
+    // interlock is how a transient reading becomes a repeated unsafe action.
+    const enforced = await enforceInterlock({
+      tenantId: user.tenantId,
+      generatorId: id,
+      command: command as GenCommand,
+      userId: user.id,
+      override: null,
+    });
+    if (!enforced.ok) {
+      await audit({
+        userId: user.id,
+        action: "CONTROL_DENIED",
+        entity: "generator",
+        entityId: id,
+        details: { command, reasonCode: denialResponseBody(enforced.verdict).reasonCode },
+      });
+      const res = NextResponse.json(
+        { ...denialResponseBody(enforced.verdict), recordedAs: enforced.recordedId },
+        { status: 409 },
+      );
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
+
     const result = await engine.applyCommand(id, command as GenCommand, user.id, reason);
     await audit({ userId: user.id, action: "CONTROL", entity: "generator", entityId: id, details: { command, reason, result } });
-    const res = NextResponse.json(result, { status: result.ok ? 200 : 409 });
+    const res = NextResponse.json(
+      {
+        ...result,
+        interlockWarnings: enforced.verdict.warnings.map((w) => ({
+          ruleId: w.ruleId,
+          explanation: w.explanation,
+        })),
+      },
+      { status: result.ok ? 200 : 409 },
+    );
     applyRateLimitHeaders(res.headers, rl);
     return res;
   } catch (err) {

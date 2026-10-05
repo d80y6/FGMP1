@@ -540,6 +540,27 @@ const TABLES: TableSpec[] = [
       notes: `'RLS handover ${SUFFIX}'`,
     },
   },
+  {
+    // Phase 2 vertical 3 — generator control safety interlocks.
+    //
+    // Highest disclosure risk of any tenant table added in Phase 2: a row here
+    // is evidence that a human deliberately bypassed a safety interlock, and it
+    // names both the operator who requested it and the operator who signed it
+    // off. Leaking one across tenants would disclose not just site data but who
+    // at another operator is carrying which safety risk.
+    table: 'InterlockOverride',
+    label: 'InterlockOverride (records who bypassed a safety interlock)',
+    tenantColumn: 'tenantId',
+    siteScoped: false,
+    columns: {
+      id: idFor('ovr'),
+      "generatorId": generatorRef(),
+      command: `'STOP'`,
+      "ruleId": `'CRITICAL_LOAD_SHED'`,
+      "requestedById": userRef(),
+      "justification": `'RLS regression fixture ${SUFFIX}'`,
+    },
+  },
 ]
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
