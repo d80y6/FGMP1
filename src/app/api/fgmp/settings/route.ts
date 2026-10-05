@@ -1,6 +1,7 @@
 import type { Prisma, SystemSettingCategory } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
-import { db, bootstrap } from "@/lib/fgmp";
+import { withTenant } from "@/lib/fgmp/tenant-context";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import {
   rateLimitByUser,
@@ -103,19 +104,26 @@ function findDefault(key: string): DefaultSetting | undefined {
  * after first call. Returns the upserted count (0 if everything was already
  * present) so callers can log/audit the seeding event.
  */
-async function seedCategoryDefaults(category: string): Promise<number> {
+async function seedCategoryDefaults(tenantId: string, category: string): Promise<number> {
   const defs = DEFAULT_SETTINGS.filter((d) => d.category === category);
   if (defs.length === 0) return 0;
   let seeded = 0;
-  for (const def of defs) {
-    const existing = await db.systemSetting.findUnique({ where: { key: def.key } });
-    if (!existing) {
-      await db.systemSetting.create({
-        data: { key: def.key, category: def.category, value: def.value, type: def.type },
-      });
-      seeded += 1;
+  // Phase 3: scoped. These writes used the bare `db` client, which under FORCE
+  // RLS is rejected by WITH CHECK — so auto-seeding defaults failed on a fresh
+  // database. (SystemSetting is one of three tables deliberately EXCLUDED from
+  // the tenant_isolation policy because it carries no tenantId, but the write
+  // still needs an ambient transaction for the SET LOCAL to be valid.)
+  await withTenant(tenantId, async (tx) => {
+    for (const def of defs) {
+      const existing = await tx.systemSetting.findUnique({ where: { key: def.key } });
+      if (!existing) {
+        await tx.systemSetting.create({
+          data: { key: def.key, category: def.category, value: def.value, type: def.type },
+        });
+        seeded += 1;
+      }
     }
-  }
+  });
   return seeded;
 }
 
@@ -130,9 +138,9 @@ async function seedCategoryDefaults(category: string): Promise<number> {
 export async function GET(req: NextRequest) {
   const auth = await requireAuth();
   if ("error" in auth) return auth.error;
+  const me = auth.user;
   try {
-    const { user } = await bootstrap();
-    const rl = rateLimitByUser(req, user.id, READ_LIMIT.limit, READ_LIMIT.windowMs);
+    const rl = rateLimitByUser(req, me.id, READ_LIMIT.limit, READ_LIMIT.windowMs);
     if (!rl.success) {
       const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
       applyRateLimitHeaders(res.headers, rl);
@@ -158,16 +166,18 @@ export async function GET(req: NextRequest) {
 
     // Auto-seed defaults for the requested category (or all of them).
     if (category) {
-      await seedCategoryDefaults(category);
+      await seedCategoryDefaults(me.tenantId, category);
     } else {
-      for (const cat of VALID_CATEGORIES) await seedCategoryDefaults(cat);
+      for (const cat of VALID_CATEGORIES) await seedCategoryDefaults(me.tenantId, cat);
     }
 
     const where: Prisma.SystemSettingWhereInput = category ? { category } : {};
-    const rows = await db.systemSetting.findMany({
-      where,
-      orderBy: { key: "asc" },
-    });
+    const rows = await withTenant(me.tenantId, (tx) =>
+      tx.systemSetting.findMany({
+        where,
+        orderBy: { key: "asc" },
+      }),
+    );
 
     // Build a {key: value} map with type coercion + metadata for the UI.
     const out: Record<string, { value: unknown; type: string; category: string; updatedAt: string }> = {};
@@ -203,8 +213,8 @@ export async function PATCH(req: NextRequest) {
   const auth = await requireRole(req, ROLES.ADMIN_ONLY);
   if ("error" in auth) return auth.error;
   try {
-    const { user } = await bootstrap();
-    const rl = rateLimitByUser(req, user.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
+    const me = await bootstrap();
+    const rl = rateLimitByUser(req, me.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
     if (!rl.success) {
       const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
       applyRateLimitHeaders(res.headers, rl);
@@ -250,19 +260,21 @@ export async function PATCH(req: NextRequest) {
       else if (typeof op.value === "boolean") stored = op.value ? "true" : "false";
       else stored = JSON.stringify(op.value);
 
-      await db.systemSetting.upsert({
-        where: { key: op.key },
-        update: { value: stored, category: def.category, type: def.type },
-        create: { key: op.key, category: def.category, value: stored, type: def.type },
-      });
+      await withTenant(me.tenantId, (tx) =>
+        tx.systemSetting.upsert({
+          where: { key: op.key },
+          update: { value: stored, category: def.category, type: def.type },
+          create: { key: op.key, category: def.category, value: stored, type: def.type },
+        }),
+      );
       updatedKeys.push(op.key);
       results.push({ key: op.key, ok: true });
     }
 
     if (updatedKeys.length > 0) {
       await audit({
-        userId: user.id,
-        tenantId: user.tenantId,
+        userId: me.id,
+        tenantId: me.tenantId,
         action: "CONFIG",
         entity: "SystemSetting",
         entityId: updatedKeys[0],

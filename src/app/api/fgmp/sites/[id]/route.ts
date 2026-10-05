@@ -11,6 +11,7 @@ import {
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { audit } from "@/lib/fgmp/audit";
 import { requireAuth, requireRole, assertTenantOwned, isSuperAdminUser, ROLES } from "@/lib/fgmp/auth-helpers";
+import { resolveGeographyPath } from "@/lib/fgmp/geography";
 
 export const dynamic = "force-dynamic";
 
@@ -192,26 +193,29 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
       // Hierarchy consistency check — only when moving the whole trio.
       if (data.regionId && data.governorateId && data.districtId) {
-        // Region carries tenantId and is RLS-protected; Governorate and District
-        // reach tenancy through it, so all three are resolved on the tx client.
-        const [region, governorate, district] = await Promise.all([
-          tx.region.findFirst({
-            where: isSuperAdminUser(me) ? { id: data.regionId } : { id: data.regionId, tenantId: me.tenantId },
-          }),
-          tx.governorate.findFirst({
-            where: isSuperAdminUser(me) ? { id: data.governorateId } : { id: data.governorateId, region: { tenantId: me.tenantId } },
-          }),
-          tx.district.findFirst({
-            where: isSuperAdminUser(me) ? { id: data.districtId } : { id: data.districtId, governorate: { region: { tenantId: me.tenantId } } },
-          }),
-        ]);
-        if (!region || !governorate || !district) return { kind: "bad-hierarchy" as const };
-        if (governorate.regionId !== region.id || district.governorateId !== governorate.id) {
-          return { kind: "bad-hierarchy" as const };
-        }
-        // Defence in depth — the where clauses above already scoped these.
-        const regionDenied = assertTenantOwned(region, me);
-        if (regionDenied) return { kind: "region-denied" as const, regionDenied };
+        // PHASE 3 — resolved through the RLS-filtered `v_geography` view in a
+        // SINGLE read, replacing three lookups on Region/Governorate/District.
+        //
+        // Two things were wrong with the previous version. First, Region carries
+        // tenantId and is RLS-protected, but Governorate and District do NOT —
+        // tenancy reaches them only through Region, so neither could be given a
+        // policy and both were readable across every tenant. The `region:
+        // { tenantId }` filters in those where clauses did nothing: they filter
+        // on a joined column of an unprotected table, so the reads still
+        // returned another tenant's rows.
+        //
+        // Second, the separate chain check below was NECESSARY precisely
+        // because the three lookups were independent — they proved each row
+        // existed but never that they belonged together. One view row matching
+        // all three ids proves the chain by construction, because the view joins
+        // region -> governorate -> district. The check is now unreachable rather
+        // than merely defensive.
+        const path = await resolveGeographyPath(tx, {
+          regionId: data.regionId,
+          governorateId: data.governorateId,
+          districtId: data.districtId,
+        });
+        if (!path) return { kind: "bad-hierarchy" as const };
       }
 
       const updated = await tx.site.update({
@@ -243,10 +247,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       applyRateLimitHeaders(res.headers, rl);
       return res;
     }
-    if (outcome.kind === "region-denied") {
-      applyRateLimitHeaders(outcome.regionDenied.headers, rl);
-      return outcome.regionDenied;
-    }
+    // The `region-denied` outcome is gone: it existed only to carry the 404 from
+    // assertTenantOwned(region) inside the hierarchy check. The view read returns
+    // null for another tenant's path, which is the same 400 as a nonexistent one,
+    // so a distinct cross-tenant outcome would disclose that those ids exist
+    // elsewhere. The site-level ownership check just below still runs and still
+    // 404s for a site the caller does not own.
 
     // Defence in depth — the where clause above already enforced ownership.
     const denied = assertTenantOwned(outcome.existing, me);
