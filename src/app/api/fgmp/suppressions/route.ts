@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, bootstrap } from "@/lib/fgmp";
+import { bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import {
   createSuppressionSchema,
@@ -38,7 +39,8 @@ export async function GET(req: NextRequest) {
       return res;
     }
 
-    const suppressions = await db.alarmSuppression.findMany({
+    const suppressions = await asTenant(user.tenantId, (tx) =>
+      tx.alarmSuppression.findMany({
       where: tenantWhereOrAll(user),
       orderBy: { endsAt: "desc" },
       take: 200,
@@ -46,7 +48,7 @@ export async function GET(req: NextRequest) {
         site: { select: { id: true, name: true, code: true } },
         user: { select: { id: true, name: true, email: true } },
       },
-    });
+    }));
 
     const res = NextResponse.json(suppressions);
     applyRateLimitHeaders(res.headers, rl);
@@ -114,11 +116,22 @@ export async function POST(req: NextRequest) {
     }
 
     // If siteId is supplied, ensure it belongs to the same tenant.
-    if (data.siteId) {
-      const site = await db.site.findUnique({
-        where: { id: data.siteId },
-        select: { id: true, tenantId: true },
-      });
+    // Declared in the outer scope because the create below is scoped to
+    // `site.tenantId` once verified — declaring it inside the `if` left the
+    // later reference unbound.
+    let verifiedSiteTenantId = user.tenantId;
+    // Narrowed to a concrete string so it can be used inside the closure —
+    // TypeScript does not carry the `if (data.siteId)` narrowing into an
+    // arrow function body, so the property is re-read as a local.
+    const requestedSiteId = data.siteId;
+    if (requestedSiteId) {
+      const site = await asTenant(user.tenantId, (tx) =>
+        tx.site.findFirst({
+          where: { id: requestedSiteId, tenantId: user.tenantId },
+          select: { id: true, tenantId: true },
+        }),
+      );
+      if (site) verifiedSiteTenantId = site.tenantId;
       if (!site || site.tenantId !== user.tenantId) {
         const res = NextResponse.json(
           { error: "Site not found in your tenant" },
@@ -133,7 +146,8 @@ export async function POST(req: NextRequest) {
     // blow up the column (SQLite is permissive, but the UI shows it).
     const alarmType = data.alarmType ? data.alarmType.slice(0, 60) : null;
 
-    const created = await db.alarmSuppression.create({
+    const created = await asTenant(verifiedSiteTenantId, (tx) =>
+      tx.alarmSuppression.create({
       data: {
         tenantId: user.tenantId,
         siteId: data.siteId ?? null,
@@ -148,7 +162,7 @@ export async function POST(req: NextRequest) {
         site: { select: { id: true, name: true, code: true } },
         user: { select: { id: true, name: true, email: true } },
       },
-    });
+    }));
 
     // Invalidate the matcher cache so the engine picks up the new rule
     // immediately on the next raiseAlarm() call (no 30s lag).

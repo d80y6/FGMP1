@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, bootstrap } from "@/lib/fgmp";
+import { bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import {
   updateSuppressionSchema,
@@ -61,10 +62,12 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       return res;
     }
 
-    const existing = await db.alarmSuppression.findUnique({
-      where: { id },
-      select: { id: true, tenantId: true, startsAt: true, endsAt: true, isActive: true },
-    });
+    const existing = await asTenant(user.tenantId, (tx) =>
+      tx.alarmSuppression.findFirst({
+        where: { id, tenantId: user.tenantId },
+        select: { id: true, tenantId: true, startsAt: true, endsAt: true, isActive: true },
+      }),
+    );
     const denied = assertTenantOwned(existing, user);
     if (denied) {
       applyRateLimitHeaders(denied.headers, rl);
@@ -105,14 +108,18 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       update.isActive = data.isActive;
     }
 
-    const updated = await db.alarmSuppression.update({
-      where: { id },
-      data: update,
-      include: {
-        site: { select: { id: true, name: true, code: true } },
-        user: { select: { id: true, name: true, email: true } },
-      },
-    });
+    // Nested include of site + user: both are RLS-protected, so the relation
+    // traversal must be inside the same context as the update.
+    const updated = await asTenant(user.tenantId, (tx) =>
+      tx.alarmSuppression.update({
+        where: { id },
+        data: update,
+        include: {
+          site: { select: { id: true, name: true, code: true } },
+          user: { select: { id: true, name: true, email: true } },
+        },
+      }),
+    );
 
     invalidateSuppressionCache();
 
@@ -154,10 +161,12 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     }
 
     const { id } = await ctx.params;
-    const existing = await db.alarmSuppression.findUnique({
-      where: { id },
-      select: { id: true, tenantId: true, reason: true, siteId: true, alarmType: true },
-    });
+    const existing = await asTenant(user.tenantId, (tx) =>
+      tx.alarmSuppression.findFirst({
+        where: { id, tenantId: user.tenantId },
+        select: { id: true, tenantId: true, reason: true, siteId: true, alarmType: true },
+      }),
+    );
     const denied = assertTenantOwned(existing, user);
     if (denied) {
       applyRateLimitHeaders(denied.headers, rl);
@@ -172,7 +181,9 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
       return res;
     }
 
-    await db.alarmSuppression.delete({ where: { id } });
+    await asTenant(user.tenantId, (tx) =>
+      tx.alarmSuppression.deleteMany({ where: { id, tenantId: user.tenantId } }),
+    );
 
     invalidateSuppressionCache();
 
