@@ -294,6 +294,49 @@ behind `profiles: ["seed"]` so it never starts with a normal `docker compose up`
 This phase added a backstop. It did not make the application correct, and the
 following are real and outstanding.
 
+### Governorate and District have no RLS backstop at all
+
+**This is the one geography hierarchy is NOT protected by the database, and any
+future work on districts or governorates must assume the application is the only
+thing standing between tenants.**
+
+`Region` carries a `tenantId` column and is RLS-protected. `Governorate` and
+`District` carry **no `tenantId` column and no policy at all** — they reach
+tenancy only through their parents (`Governorate.regionId → Region.tenantId`,
+`District.governorateId → Governorate.regionId → Region.tenantId`).
+
+Measured against the live catalog as `fgmp_app`, the real application role:
+
+```
+SELECT count(*) FROM "Region";    -- no tenant context  ->  0
+SELECT count(*) FROM "District";  -- no tenant context  ->  36
+withTenant("t-platform")          -> District  ->  36   (belonging to t-default)
+withTenant("t-default")           -> District  ->  36
+```
+
+`District` and `Governorate` are readable by `fgmp_app` with **no tenant context
+at all**, and a superadmin-scoped transaction sees every tenant's rows. So the
+isolation is inconsistent *within one hierarchy*: Region rows are hidden while
+its own children are not.
+
+Consequences a future maintainer must respect:
+
+- Every query against `governorate` or `district` MUST carry the full parent
+  path: `{ region: { tenantId } }` for a governorate, and
+  `{ governorate: { region: { tenantId } } }` for a district. A `where: {
+  tenantId }` on either matches nothing — the column does not exist.
+- `findUnique({ where: { id } })` on these tables has **no tenant filter at all**
+  and silently returns another tenant's row.
+- There is no backstop. The moment any query, report, export, search, nested
+  `include`, or background job touches these tables without the parent filter,
+  nothing in the database stops it. This is precisely the failure mode that
+  Phase 2 demonstrated for the Phase 0 application-level checks, which is why
+  `assertTenantOwned` was inert for every `[id]` route until Phase 3 scoped the
+  lookup in the query.
+- The open fix is a schema decision: either denormalise `tenantId` onto both
+  tables, or expose them through a `security_barrier` view joining to `Region`.
+  Neither is done.
+
 ### RLS is a backstop, not the primary control
 
 `assertTenantOwned()` in `src/lib/fgmp/auth-helpers.ts` runs first and is what
