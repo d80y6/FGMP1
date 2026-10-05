@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, bootstrap } from "@/lib/fgmp";
+import { bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import {
   rateLimitByUser,
   applyRateLimitHeaders,
@@ -47,23 +48,35 @@ export async function GET(req: NextRequest) {
       return res;
     }
 
-    const regions = await db.region.findMany({
-      where: tenantWhereOrAll(user),
-      orderBy: { name: "asc" },
-      include: {
-        governorates: {
-          orderBy: { name: "asc" },
-          include: {
-            districts: {
-              orderBy: { name: "asc" },
-              include: { _count: { select: { sites: true } } },
+    // ── Tenant scoping ────────────────────────────────────────────────────
+    // `tenantWhereOrAll` builds a WHERE object, but a WHERE alone does NOT
+    // satisfy RLS: the policy's USING clause is ANDed with it and
+    // current_setting('app.tenant_id') is NULL, so this returned zero rows for
+    // every caller. The filter is kept — it still denies an unfiltered
+    // non-superadmin view — but the transaction context is what makes the rows
+    // exist at all.
+    //
+    // The nested `governorates.districts._count.sites` also resolve on this
+    // client, so they were reporting 0 sites for a fully populated region.
+    const regions = await asTenant(user.tenantId, (tx) =>
+      tx.region.findMany({
+        where: tenantWhereOrAll(user),
+        orderBy: { name: "asc" },
+        include: {
+          governorates: {
+            orderBy: { name: "asc" },
+            include: {
+              districts: {
+                orderBy: { name: "asc" },
+                include: { _count: { select: { sites: true } } },
+              },
+              _count: { select: { sites: true } },
             },
-            _count: { select: { sites: true } },
           },
+          _count: { select: { sites: true, governorates: true } },
         },
-        _count: { select: { sites: true, governorates: true } },
-      },
-    });
+      }),
+    );
 
     const res = NextResponse.json(regions);
     applyRateLimitHeaders(res.headers, rl);
