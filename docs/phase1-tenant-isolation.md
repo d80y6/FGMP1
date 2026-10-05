@@ -14,8 +14,8 @@ it.
 **Verified:** the FGMP deployment has demo/seed data only (52 sites, 168
 transactions, all regenerable by `seedIfNeeded()`). `scripts/smoke-postgres.ts`
 and a full `seedIfNeeded()` run both pass against PostgreSQL 17. So steps 2, 3
-and 4 are **collapsed into a single migration** that adds `tenant_id` as
-`NOT NULL` with an FK, and the `NULL tenant_id` exposure window never opens.
+and 4 are **collapsed into a single migration** that adds `tenantId` as
+`NOT NULL` with an FK, and the `NULL tenantId` exposure window never opens.
 
 The collapsed migration is applied to a database that is recreated, never to
 one holding rows that need preserving.
@@ -27,7 +27,7 @@ Ten models already have `tenantId`: `User`, `Region`, `Site`, `Alarm`,
 `BackupRecord`.
 
 Of the remaining nineteen, two are **deliberately global and get no
-`tenant_id`**:
+`tenantId`**:
 
 | Model | Why it stays global |
 |---|---|
@@ -35,9 +35,9 @@ Of the remaining nineteen, two are **deliberately global and get no
 | `SystemSetting` | Platform-wide configuration (escalation thresholds, platform toggles). Tenant-scoped settings would let one tenant change another's alarm timing. |
 | `EspFirmwareRelease` | A firmware artifact is a platform resource. `EspFirmwareDeployment` is the tenant-scoped instance of it. |
 
-That leaves **sixteen** models that receive `tenant_id`.
+That leaves **sixteen** models that receive `tenantId`.
 
-### Tier A — add a direct `tenant_id` column + FK
+### Tier A — add a direct `tenantId` column + FK
 
 Reached directly, not through a parent:
 
@@ -45,11 +45,11 @@ Reached directly, not through a parent:
 
 ### Tier B — inherit tenancy through the parent `Site`
 
-These already have a `siteId` FK, so `tenant_id` is **denormalised** onto them
+These already have a `siteId` FK, so `tenantId` is **denormalised** onto them
 to make the RLS policy in step 6 directly enforceable on each table. Without a
 local column, a policy on e.g. `FuelTank` would have to reach through a join to
 `Site`, which is both slower and impossible to express as the simple
-`tenant_id = current_setting('app.tenant_id')` predicate the architecture
+`tenantId = current_setting('app.tenant_id')` predicate the architecture
 decision specifies.
 
 `FuelTank`, `Generator`, `BatteryBank`, `IotDevice`, `FuelDispenser`,
@@ -59,7 +59,7 @@ decision specifies.
 Denormalisation is safe here only because `Site.tenantId` is itself
 enforced, and because `ON DELETE CASCADE` from `Site` removes children with
 their parent. Step 11's regression suite asserts a row cannot exist whose
-`tenant_id` disagrees with its site's.
+`tenantId` disagrees with its site's.
 
 ### `ControlCommand` is the exception — it has no `siteId`
 
@@ -70,10 +70,10 @@ Eleven of the twelve Tier B models reach `Site` directly through `siteId`.
     ControlCommand(id, generatorId, command, status, reason, issuedById, …)
 
 It therefore takes a **two-hop** backfill rather than the one-hop
-`SET tenant_id = s.tenantId FROM Site` the others use:
+`SET tenantId = s.tenantId FROM Site` the others use:
 
     UPDATE "ControlCommand" c
-       SET tenant_id = g."tenantId"
+       SET tenantId = g."tenantId"
       FROM "Generator" g
      WHERE c."generatorId" = g.id;
 
@@ -81,11 +81,11 @@ A direct `siteId` column was considered and rejected. `ControlCommand` has
 zero rows, so there is no data-preservation argument either way, but adding a
 column would duplicate a relationship the schema already expresses through the
 generator FK. A two-hop path costs one migration; a redundant column costs
-forever. If step 11 later demonstrates that `ControlCommand.tenant_id` can
+forever. If step 11 later demonstrates that `ControlCommand.tenantId` can
 diverge from its generator's site tenant, revisit — though the FK chain makes
 divergence unreachable in practice.
 
-Because this depends on `Generator.tenant_id` existing first, the backfill
+Because this depends on `Generator.tenantId` existing first, the backfill
 must run in topological order within the migration: assets (`FuelTank`,
 `Generator`, `BatteryBank`, `IotDevice`, `FuelDispenser`) → their children
 (`FuelTransaction`, `FuelDelivery`, `SiteEvent`, `SensorReading`) →
@@ -95,7 +95,7 @@ must run in topological order within the migration: assets (`FuelTank`,
 
 Every existing row is assigned the tenant of its parent `Site`:
 
-    UPDATE "FuelTank" t SET tenant_id = s.tenant_id FROM "Site" s WHERE t.siteId = s.id;
+    UPDATE "FuelTank" t SET tenantId = s.tenantId FROM "Site" s WHERE t.siteId = s.id;
 
 `NotificationPreference` and `EspFirmwareDeployment` are resolved via
 `User.tenantId` and `FuelDispenser.siteId` respectively.
@@ -110,15 +110,15 @@ tenant, and RLS would then protect it there forever.
 |---|---|---|
 | `NOT NULL` | yes | Required for RLS; `NULL = <tenant>` is never true, so a NULL row would be invisible to every tenant — a silent data-loss mode. |
 | FK | `REFERENCES "Tenant"(id) ON DELETE RESTRICT` | The spec says RESTRICT. Note this differs from `Site`'s existing `ON DELETE CASCADE`; RESTRICT is correct for the tenant boundary — a tenant with assets must not be deletable. |
-| Index | leading with `tenant_id` | The policy adds a predicate per query; the index makes it cheap. Benchmarked for `SensorReading` in step 10. |
+| Index | leading with `tenantId` | The policy adds a predicate per query; the index makes it cheap. Benchmarked for `SensorReading` in step 10. |
 
 ## RLS mechanics (step 6, recorded here for reference)
 
     ALTER TABLE <t> ENABLE ROW LEVEL SECURITY;
     ALTER TABLE <t> FORCE  ROW LEVEL SECURITY;
     CREATE POLICY tenant_isolation ON <t>
-      USING      (tenant_id = current_setting('app.tenant_id', true))
-      WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
+      USING      ("tenantId" = current_setting('app.tenant_id', true))
+      WITH CHECK ("tenantId" = current_setting('app.tenant_id', true));
 
 `FORCE` is mandatory. RLS is skipped by the table owner, and the app role is
 deliberately not the owner — but `FORCE` means the policy holds even if that
@@ -140,7 +140,7 @@ Converting the tenant PK to a native `UUID` was rejected: all 29 primary keys
 in this schema are cuid-style `String`, so a UUID tenant PK would be
 inconsistent with every other table and would cascade a PK-type change through
 every foreign key — for no security benefit, since RLS compares values rather
-than types. `tenant_id` is therefore `TEXT` and the cast is dropped.
+than types. `tenantId` is therefore `TEXT` and the cast is dropped.
 
 The fail-closed property is unaffected by removing the cast:
 `current_setting(..., true)` returns NULL when the setting is absent,
@@ -155,18 +155,199 @@ context still returns zero rows rather than everything. Verified in step 11.
 | `fgmp_ops` | `BYPASSRLS` | Internal ops: `pg_dump`, cross-tenant support. **Never in the web app env.** |
 | `fgmp_migrate` | Owns the schema | Migrations, CI only. |
 
+## Steps 8 and 9 as applied
+
+27 native enum types replaced the free-text columns. Several enum labels were
+not present in the model's own documentation and were reconciled against the
+real write sites in the application rather than guessed:
+
+| Enum | Value added | Why |
+|---|---|---|
+| `Role` | `SUPERADMIN` | The platform-level role existed in `rbac.ts` and in the seeded super-admin account, but the model comment listed only six roles. |
+| `NotificationChannel` | `EMAIL`, `WHATSAPP` | The escalation path writes `EMAIL` below L3 and `WHATSAPP` at L3; neither was in the documented label set. |
+| `TicketStatus` | `DONE` | The maintenance workflow completes tickets into `DONE`, which the documented set (`OPEN`/`CANCELLED`) omitted. |
+| `OtaStatus` | `QUEUED` | Firmware deployments are created in `QUEUED` before moving through the OTA lifecycle. |
+
+Getting these wrong fails loudly at the first write rather than silently, but
+each one cost a failed migration or a failed seed before it was reconciled.
+
+Money is `numeric(65,30)` rather than `Float`, so litre and rial accounting is
+exact binary-independent decimal arithmetic:
+
+- `FuelTransaction.amountYer`
+- `FuelTransaction.unitPriceYer`
+- `FuelDelivery.unitPrice`
+
+The theft/discrepancy logic compares delivered against ordered volume, so
+float error there would have been indistinguishable from a real discrepancy.
+
 ## Step ledger
 
-| Step | Status | Migration |
+Status reflects what is actually applied to the database, verified against the
+live instance — not what is planned.
+
+| Step | Status | Evidence |
 |---|---|---|
 | 1. SQLite → PostgreSQL | done | `20261004203148_init_postgres_baseline`, `20261004203149_grant_role_privileges` |
-| 2. Add nullable `tenant_id` | done | `20261005000000_add_tenant_id_not_null_fk` |
-| 3. Backfill | done | `20261005000000_add_tenant_id_not_null_fk` |
+| 2. Add nullable `tenantId` | done | `20261005000000_add_tenant_id_not_null_fk` |
+| 3. Backfill from parent `Site` | done | `20261005000000_add_tenant_id_not_null_fk` |
 | 4. `NOT NULL` + FK RESTRICT | done | `20261005000000_add_tenant_id_not_null_fk` |
-| 5. `tenant_id`-leading indexes | done | `20261005000000_add_tenant_id_not_null_fk` |
-| 6. RLS enable + FORCE + policy | done | `20261005000300_enable_rls` (24 tables) |
-| 7. Per-request `SET LOCAL` context | done | `src/lib/fgmp/tenant-context.ts`, `src/lib/db.ts` (no migration needed) |
-| 8. Native enums | pending (roles already done) | |
-| 9. `Float` → `Decimal` | pending | |
-| 10. TimescaleDB hypertables | pending | |
+| 5. `tenantId`-leading indexes | done | `20261005000000_add_tenant_id_not_null_fk` |
+| 6. RLS ENABLE + FORCE + policy | done — 24/24 tables | `20261005000300_enable_rls` |
+| 7. Per-request tenant context | done | `src/lib/fgmp/tenant-context.ts`, `src/lib/db.ts` |
+| 8. Native enums | done — 27 enum types | `20261005000100_enums_and_decimal` |
+| 9. Money columns → `numeric(65,30)` | done | `20261005000100_enums_and_decimal` |
+| 10. TimescaleDB hypertables | **NOT DONE** | see below |
 | 11. RLS regression suite | done — 153 assertions, 24/24 tables, exit 0 | `scripts/rls-regression.ts`, `src/lib/fgmp/__tests__/` |
+
+### Step 10 is outstanding
+
+`SensorReading` is still an ordinary unpartitioned table. The TimescaleDB
+extension is not installed in the database at all — `timescaledb_information`
+does not exist — so there is nothing to convert. What remains:
+
+- `CREATE EXTENSION IF NOT EXISTS timescaledb;`
+- `SELECT create_hypertable('"SensorReading"', 'ts', ...)`
+- A retention policy. `SiteEvent` and `AuditLog` grow without bound and need
+  the same treatment.
+- Decide chunk interval against real telemetry volume; 288 points/site/day in
+  the seeded data is not representative of production cadence.
+
+Until then, telemetry history is bounded only by disk, and every query over it
+is a full scan of the table.
+
+## Step 6 as applied
+
+All 24 tables that carry a `tenantId` column, enumerated from
+`information_schema` at migration time so the migration cannot drift from the
+schema:
+
+    ALTER TABLE <t> ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE <t> FORCE  ROW LEVEL SECURITY;
+    CREATE POLICY tenant_isolation ON <t>
+      USING      ("tenantId" = current_setting('app.tenant_id', true))
+      WITH CHECK ("tenantId" = current_setting('app.tenant_id', true));
+
+The six tables without the column are deliberately excluded: `Tenant` (the
+tenant table itself), `SystemSetting` and `EspFirmwareRelease` (global
+configuration/catalogue), `Governorate` and `District` (reach tenancy through
+`Region`), and `_prisma_migrations` (Prisma bookkeeping).
+
+`FORCE` is what makes the policy bind. PostgreSQL skips RLS for the table
+owner, and `fgmp_migrate` owns these tables — without `FORCE` the policy would
+constrain nobody. Verified: a non-superuser owner sees 0 rows with no context
+and its own rows once the context is set.
+
+`WITH CHECK` is not optional. `USING` alone governs reads and updates to
+existing rows; only `WITH CHECK` rejects an INSERT, which is the cross-tenant
+write path.
+
+## Decisions a future maintainer will want to second-guess
+
+### Migration ordering is lexicographic, and that is load-bearing
+
+Prisma orders migrations by DIRECTORY NAME, not by any declared dependency. The
+timestamp prefix is therefore the only thing expressing order, and three
+mistakes came out of it during this phase:
+
+- enums were added in a migration sorted BEFORE the one that used them;
+- `FuelType` gained `BIOFUEL` in a directory sorting BEFORE the migration that
+  created the enum;
+- RLS was initially written against `tenant_id` while the schema actually used
+  `"tenantId"`.
+
+Rule: read the whole migration directory listing before adding a migration, and
+encode dependencies in the timestamp.
+
+### `FGMP_REQUIRE_RLS=1` refuses to boot on a misconfigured connection
+
+`src/lib/db.ts` exposes `assertRlsEnforced()`, called at module load on the
+server runtime. With the flag set, a `DATABASE_URL` that does not use
+`fgmp_app` makes the process throw at import rather than serve traffic with
+isolation silently disabled. It reuses the existing `rlsEnforced` role
+detection rather than re-parsing the URL.
+
+Default is OFF, so local development without PostgreSQL still boots. The guard
+is skipped during `next build`, which imports every route module without
+runtime secrets — the same constraint `auth.ts` documents for its placeholder
+secret. A build is not a serving process.
+
+### The web app never holds the owner credential
+
+Seeding spans tenants and creates the tenants themselves, so it cannot run
+inside `withTenant()` and needs the owner role. It used to run inside
+`bootstrap()`, which is called by 86 files — so the web container had to be
+given a superuser connection purely to serve a request. That contradicted the
+premise of the backstop.
+
+Seeding is now deploy-time only:
+
+    bun run db:seed                          # idempotent, exits non-zero if 0 sites
+    docker compose --profile seed run --rm fgmp-seed
+    POST /api/fgmp/seed                      # ADMIN-only, rate-limited, audited
+
+`FGMP_MIGRATE_DATABASE_URL` exists solely in the one-shot `fgmp-seed` service,
+behind `profiles: ["seed"]` so it never starts with a normal `docker compose up`.
+
+## Limitations
+
+This phase added a backstop. It did not make the application correct, and the
+following are real and outstanding.
+
+### RLS is a backstop, not the primary control
+
+`assertTenantOwned()` in `src/lib/fgmp/auth-helpers.ts` runs first and is what
+actually scopes a request. RLS catches a MISSING tenant context and a missing
+`WHERE` clause. It does not catch a WRONG one: a request that sets
+`app.tenant_id` to another tenant's id is served that tenant's data, and RLS
+will agree.
+
+### `app.tenant_id` is an ordinary session GUC
+
+Any process holding the `fgmp_app` credential can `set` it to any tenant and
+read or write that tenant's rows. RLS therefore protects against forgetting the
+context and against unguarded queries — it does **not** protect against a
+compromised or malicious application process. Treat the app role's credential
+as tenant-wide read/write for the whole platform; the per-request scoping is a
+property of the code, not of the database.
+
+### The in-memory engine is not tenant-aware (most important open item)
+
+`engine.ensureInit()` reads tenant-scoped rows with NO tenant context. Under
+RLS that correctly returns nothing, so the engine loads 0 sites and the app
+reports an empty fleet. This is pre-existing and was **not** fixed by this
+phase — the phase made it visible rather than causing it. Until the engine is
+made tenant-aware, it cannot serve tenant data at all.
+
+### Rate limiting is per-process
+
+`src/lib/fgmp/rate-limit.ts` keeps buckets in a module-level `Map`. It is
+correct for a single instance and silently ineffective across replicas: the
+effective limit is `limit × replicas`. Correct for the single-container
+deployment this phase targets; it must move to shared storage before scaling.
+
+### `getClientIp()` collapses to `"anon"` without `TRUSTED_PROXY`
+
+Without that variable every direct client shares one bucket, so the login rate
+limiter groups all operators together. The default is the safe one — it refuses
+to trust a client-supplied header — but it makes the per-IP limit a global one.
+
+### Non-constant-time secret comparison
+
+`src/app/api/fgmp/iot/ingest/route.ts:107,341` and
+`src/app/api/fgmp/realtime/snapshot/route.ts:71` compare secrets with `!==`.
+`timingSafeEqual` is used correctly elsewhere (`realtime-token.ts`), so the
+standard exists and was simply not applied at these three sites. Remote timing
+attack is impractical in practice; the inconsistency is the real finding.
+
+### CSP permits `unsafe-eval` and frames any HTTPS origin
+
+`next.config.ts` sets `script-src 'self' 'unsafe-inline' 'unsafe-eval'` and
+`frame-ancestors 'self' https:`. The latter was for a preview platform; in
+production it permits clickjacking of an authenticated NOC dashboard.
+
+### Secrets on disk
+
+`.env` holds real credentials and is untracked (`.gitignore` `.env*`). The
+template `.env.example` is committed. Rotate anything that has touched a shared
+machine.
