@@ -1,6 +1,7 @@
 import { Prisma, type FuelType } from "@prisma/client";
 import { db } from "@/lib/db";
 import { withTenant } from "./tenant-context";
+import { assertControlScope, assertGeneratorControlScope } from "./control-scope";
 import { toJsonNumber } from "./decimal";
 import type {
   TankState, GenState, BattState, SiteState, IoTDeviceState,
@@ -1306,6 +1307,7 @@ async controlDispenser(
     dispenserId: string,
     command: "AUTHORIZE" | "STOP" | "RESET" | "LOCK" | "UNLOCK",
     preset?: number,
+    expectedTenantId?: string | null,
   ): Promise<{ ok: boolean; message: string }> {
     await this.ensureInit();
     const d = this.dispensers.find((x) => x.id === dispenserId);
@@ -1314,6 +1316,20 @@ async controlDispenser(
       // which was correct — but it did not distinguish "no such asset" from
       // "wrong tenant loaded", which is the ambiguity this helper removes.
       return { ok: false, message: this.absentAssetMessage("Dispenser", dispenserId) };
+    }
+    // ── PHASE 3 CONTROL SCOPE ─────────────────────────────────────────────
+    // resolveControlSite below checks the site is RESIDENT; this checks the
+    // site's tenant equals the tenant the caller was authorised for. Residency
+    // is a loading fact, ownership is the authorisation question, and only the
+    // second one prevents a cross-tenant command.
+    if (expectedTenantId !== null) {
+      const scope = assertControlScope({
+        expectedTenantId,
+        assetTenantId: this.tenantIdForSite(d.siteId),
+        assetLabel: `Dispenser ${dispenserId}`,
+        action: command,
+      });
+      if (!scope.allowed) return { ok: false, message: scope.message };
     }
     const resolved = this.resolveControlSite(d.siteId, `Dispenser ${dispenserId}`);
     if (resolved.denied || !resolved.site) return { ok: false, message: resolved.denied ?? "Site unavailable" };
@@ -1717,18 +1733,79 @@ async controlDispenser(
   }
 
   // ── Control commands ────────────────────────────────────────────────────
-  async applyCommand(genId: string, command: GenCommand, userId: string, reason?: string): Promise<{ ok: boolean; message: string }> {
+  /**
+   * Issue a control command to a generator.
+   *
+   * ── PHASE 3 CONTROL SCOPE ──────────────────────────────────────────────
+   * `expectedTenantId` is the tenant of the AUTHENTICATED caller. It is
+   * REQUIRED and deliberately not optional: without it the asset's tenant is
+   * the only thing being compared, which proves nothing. A caller that cannot
+   * supply it has no authorisation to assert.
+   *
+   * Passing `null` reproduces the previous, unsafe behaviour — the assertion
+   * is skipped entirely — and exists only so the change is explicit rather
+   * than silent. No route passes null.
+   */
+  async applyCommand(
+    genId: string,
+    command: GenCommand,
+    userId: string,
+    reason?: string,
+    expectedTenantId?: string | null,
+  ): Promise<{ ok: boolean; message: string }> {
     await this.ensureInit();
     const g = this.generators.find((x) => x.id === genId);
-    if (!g) return { ok: false, message: "Generator not found" };
+    if (!g) return { ok: false, message: this.absentAssetMessage("Generator", genId) };
     const site = this.sites.find((s) => s.id === g.siteId)!;
+    // Site lookup must not be asserted with `!` and then trusted: if the site
+    // is absent the old code would throw a TypeError on `site.commLossUntil`,
+    // which surfaced as a 500 rather than a refusal.
+    if (!site) {
+      return {
+        ok: false,
+        message: this.absentAssetMessage(`Site ${g.siteId} for generator`, genId),
+      };
+    }
+
+    // ── CONTROL SCOPE: refuse before ANY state mutation ───────────────────
+    if (expectedTenantId !== null) {
+      const scope = assertGeneratorControlScope({
+        expectedTenantId,
+        generatorId: genId,
+        // GenState carries no tenantId; ownership for a controlled asset is its
+        // Site's, which is what assertGeneratorControlScope compares.
+        generatorTenantId: undefined,
+        siteTenantId: site.tenantId,
+        action: command,
+      });
+      if (!scope.allowed) return { ok: false, message: scope.message };
+    }
+
     if (site.commLossUntil && this.now <= site.commLossUntil) {
       return { ok: false, message: "Site communication down — command queued but cannot execute" };
     }
 
-    const cmd = await db.controlCommand.create({
-      data: { tenantId: site.tenantId, generatorId: genId, command, status: "SENT", reason: reason ?? null, issuedById: userId, executedAt: new Date(this.now), result: "OK" },
-    });
+    // ── PHASE 3: this write is RLS-protected, so it MUST run inside withTenant(). ──
+    // It previously ran on the bare `db` client with no tenant context, which
+    // under FORCE RLS is rejected by WITH CHECK — so the create THREW and the
+    // whole control path surfaced as a 500 carrying a raw PostgreSQL policy
+    // message. It also attributed the row to the ENGINE's tenant rather than
+    // the caller's, which would misfile a command if the engine ever held the
+    // wrong tenant.
+    const cmd = await withTenant(site.tenantId, (tx) =>
+      tx.controlCommand.create({
+        data: {
+          tenantId: site.tenantId,
+          generatorId: genId,
+          command,
+          status: "SENT",
+          reason: reason ?? null,
+          issuedById: userId,
+          executedAt: new Date(this.now),
+          result: "OK",
+        },
+      }),
+    );
 
     if (command === "START") {
       g.status = "RUNNING";
@@ -1802,11 +1879,22 @@ async controlDispenser(
   async applyEspReboot(
     dispenserId: string,
     _userId: string,
+    expectedTenantId?: string | null,
   ): Promise<{ ok: boolean; status?: string; message: string }> {
     await this.ensureInit();
     const d = this.dispensers.find((x) => x.id === dispenserId);
     if (!d) {
-      return { ok: false, message: "Dispenser not found in engine state" };
+      return { ok: false, message: this.absentAssetMessage("Dispenser", dispenserId) };
+    }
+    // ── PHASE 3 CONTROL SCOPE ─────────────────────────────────────────────
+    if (expectedTenantId !== null) {
+      const scope = assertControlScope({
+        expectedTenantId,
+        assetTenantId: this.tenantIdForSite(d.siteId),
+        assetLabel: `Dispenser ${dispenserId}`,
+        action: "ESP_REBOOT",
+      });
+      if (!scope.allowed) return { ok: false, message: scope.message };
     }
     const ESP_REBOOT_MS = 30_000;
     d.rebootingUntil = this.now + ESP_REBOOT_MS;
@@ -1819,11 +1907,35 @@ async controlDispenser(
       `ESP controller reboot initiated on ${d.label} (${ESP_REBOOT_MS / 1000}s)`,
       { dispenserId: d.id, userId: _userId },
     );
-    // Persist OFFLINE immediately so a fresh page load sees the right state.
-    db.fuelDispenser.update({
-      where: { id: dispenserId },
-      data: { status: "OFFLINE", lastCommAt: new Date(this.now - ESP_REBOOT_MS) },
-    }).catch(() => {});
+    // ── PHASE 3: this write previously used the bare `db` client with NO
+    // tenant context, so under FORCE RLS it ALWAYS failed — and `.catch(() => {})`
+    // discarded the failure. The function still returned ok:true, so the
+    // operator was told the reboot happened while only in-memory state had
+    // changed and the database kept the old status. A command that reports
+    // success without persisting is the silent-success defect: it survives a
+    // restart as though it never ran.
+    //
+    // Now the write is scoped, awaited, and a failure is REFUSED rather than
+    // swallowed. The in-memory mutation is rolled back on failure so the two
+    // representations cannot disagree.
+    try {
+      await withTenant(this.tenantIdForSite(d.siteId), (tx) =>
+        tx.fuelDispenser.update({
+          where: { id: dispenserId },
+          data: { status: "OFFLINE", lastCommAt: new Date(this.now - ESP_REBOOT_MS) },
+        }),
+      );
+    } catch (err) {
+      // Undo the optimistic in-memory change so state does not claim a reboot
+      // that was never recorded.
+      d.rebootingUntil = undefined;
+      return {
+        ok: false,
+        message:
+          `Reboot of ${d.label} could not be recorded, so it was NOT performed: ` +
+          `${(err as Error).message}`,
+      };
+    }
     return { ok: true, status: "OFFLINE", message: `Reboot initiated on ${d.label}` };
   }
 
@@ -1844,11 +1956,22 @@ async controlDispenser(
     dispenserId: string,
     releaseId: string,
     _userId: string,
+    expectedTenantId?: string | null,
   ): Promise<{ ok: boolean; deploymentId?: string; status?: string; message: string }> {
     await this.ensureInit();
     const d = this.dispensers.find((x) => x.id === dispenserId);
     if (!d) {
-      return { ok: false, message: "Dispenser not found in engine state" };
+      return { ok: false, message: this.absentAssetMessage("Dispenser", dispenserId) };
+    }
+    // ── PHASE 3 CONTROL SCOPE: resolved BEFORE any write ──────────────────
+    if (expectedTenantId !== null) {
+      const scope = assertControlScope({
+        expectedTenantId,
+        assetTenantId: this.tenantIdForSite(d.siteId),
+        assetLabel: `Dispenser ${dispenserId}`,
+        action: "FIRMWARE_DEPLOY",
+      });
+      if (!scope.allowed) return { ok: false, message: scope.message };
     }
     const release = await db.espFirmwareRelease.findUnique({
       where: { id: releaseId },
@@ -1864,16 +1987,32 @@ async controlDispenser(
     if (!dispenserSite) {
       return { ok: false, message: "Dispenser site not found in engine state" };
     }
-    const deployment = await db.espFirmwareDeployment.create({
-      data: {
-        tenantId: dispenserSite.tenantId,
-        dispenserId,
-        releaseId,
-        status: "QUEUED",
-        startedAt: new Date(this.now),
-        initiatedById: _userId || null,
-      },
-    });
+    // ── PHASE 3: tenantId comes from the RESOLVED site's tenant, and the write
+    // runs inside withTenant(). It previously used the bare `db` client with no
+    // context, so under FORCE RLS the create THREW — the caller saw a 500 with a
+    // raw PostgreSQL policy message instead of a clean refusal.
+    let deployment;
+    try {
+      deployment = await withTenant(dispenserSite.tenantId, (tx) =>
+        tx.espFirmwareDeployment.create({
+          data: {
+            tenantId: dispenserSite.tenantId,
+            dispenserId,
+            releaseId,
+            status: "QUEUED",
+            startedAt: new Date(this.now),
+            initiatedById: _userId || null,
+          },
+        }),
+      );
+    } catch (err) {
+      return {
+        ok: false,
+        message:
+          `Firmware deployment was NOT queued for ${d.label}: ` +
+          `${(err as Error).message}`,
+      };
+    }
     this.pushEvent(
       d.siteId,
       "CONTROL",
@@ -1901,11 +2040,22 @@ async controlDispenser(
   async applyGatewayReboot(
     gatewayId: string,
     _userId: string,
+    expectedTenantId?: string | null,
   ): Promise<{ ok: boolean; status?: string; message: string }> {
     await this.ensureInit();
     const gw = this.gateways.find((g) => g.id === gatewayId);
     if (!gw) {
-      return { ok: false, message: "Gateway not found in engine state" };
+      return { ok: false, message: this.absentAssetMessage("Gateway", gatewayId) };
+    }
+    // ── PHASE 3 CONTROL SCOPE ─────────────────────────────────────────────
+    if (expectedTenantId !== null) {
+      const scope = assertControlScope({
+        expectedTenantId,
+        assetTenantId: this.tenantIdForSite(gw.siteId),
+        assetLabel: `Gateway ${gw.hostname}`,
+        action: "GATEWAY_REBOOT",
+      });
+      if (!scope.allowed) return { ok: false, message: scope.message };
     }
     gw.status = "DEGRADED";
     gw.rebootingUntil = this.now + 20_000; // 20s simulated reboot window
@@ -1916,11 +2066,27 @@ async controlDispenser(
       `Gateway ${gw.hostname} reboot initiated (20s)`,
       { gatewayId: gw.id, userId: _userId },
     );
-    // Persist DEGRADED immediately so a fresh page load sees the right state.
-    db.siteGateway.update({
-      where: { id: gatewayId },
-      data: { status: "DEGRADED", lastSeenAt: new Date(this.now) },
-    }).catch(() => {});
+    // ── PHASE 3: this was an unscoped `db` write swallowed by `.catch(() => {})`.
+    // Under FORCE RLS that update ALWAYS failed, so this returned ok:true with
+    // nothing persisted — the silent-success defect. Now scoped, awaited, and a
+    // failure REFUSES rather than being discarded.
+    try {
+      await withTenant(this.tenantIdForSite(gw.siteId), (tx) =>
+        tx.siteGateway.update({
+          where: { id: gatewayId },
+          data: { status: "DEGRADED", lastSeenAt: new Date(this.now) },
+        }),
+      );
+    } catch (err) {
+      gw.status = "ONLINE";
+      gw.rebootingUntil = undefined;
+      return {
+        ok: false,
+        message:
+          `Reboot of ${gw.hostname} could not be recorded, so it was NOT performed: ` +
+          `${(err as Error).message}`,
+      };
+    }
     return { ok: true, status: "DEGRADED", message: `Reboot initiated on ${gw.hostname}` };
   }
 

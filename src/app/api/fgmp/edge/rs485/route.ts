@@ -50,13 +50,13 @@ export async function GET(req: NextRequest) {
 
     // Every database read here must run INSIDE withTenant().
     //
-    // RLS is FORCE-enabled, so a `db.*` query with no tenant context in scope
+    // RLS is FORCE-enabled, so a `withTenant(user.tenantId, (tx) => tx.*` query with no tenant context in scope
     // returns ZERO rows — including a query with an explicit tenantId filter,
     // because the policy's USING clause is ANDed with it and `current_setting`
     // is still NULL:
     //
-    //     db.fuelDispenser.count()                                      -> 0
-    //     db.fuelDispenser.count({ where: { tenantId: "t-default" } })  -> 0
+    //     withTenant(user.tenantId, (tx) => tx.fuelDispenser.count()))                                      -> 0
+    //     withTenant(user.tenantId, (tx) => tx.fuelDispenser.count({ where: { tenantId: "t-default" } }))  -> 0
     //     withTenant("t-default", tx => tx.fuelDispenser.count())       -> 24
     //
     // The explicit filter looks like it should work and does not. Verified

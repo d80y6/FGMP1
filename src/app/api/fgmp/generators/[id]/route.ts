@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { db, engine, bootstrap } from "@/lib/fgmp";
+import { engine, bootstrap } from "@/lib/fgmp";
 import { audit } from "@/lib/fgmp/audit";
 import {
   rateLimitByUser,
@@ -8,6 +8,7 @@ import {
   MUTATION_LIMIT,
   READ_LIMIT,
 } from "@/lib/fgmp/rate-limit";
+import { withTenant } from "@/lib/fgmp/tenant-context";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireAuth, requireRole, ROLES, assertSiteTenantOwned } from "@/lib/fgmp/auth-helpers";
 
@@ -56,10 +57,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
       return res;
     }
     const { id } = await ctx.params;
-    const g = await db.generator.findUnique({
+    const g = await withTenant(user.tenantId, (tx) => tx.generator.findUnique({
       where: { id },
       include: { site: { select: { id: true, name: true, code: true, tenantId: true } } },
-    });
+    }));
     const denied = assertSiteTenantOwned(g?.site ?? null, user);
     if (denied) {
       applyRateLimitHeaders(denied.headers, rl);
@@ -120,10 +121,10 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     const data = r.data;
 
     // Verify existence + tenant scope.
-    const existing = await db.generator.findUnique({
+    const existing = await withTenant(user.tenantId, (tx) => tx.generator.findUnique({
       where: { id },
       include: { site: { select: { tenantId: true } } },
-    });
+    }));
     const denied = assertSiteTenantOwned(existing?.site ?? null, user);
     if (denied) {
       applyRateLimitHeaders(denied.headers, rl);
@@ -139,11 +140,11 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       if (k === "maintenanceDueHours") updateData.nextMaintenanceHrs = v;
       else updateData[k] = v;
     }
-    const row = await db.generator.update({
+    const row = await withTenant(user.tenantId, (tx) => tx.generator.update({
       where: { id },
       data: updateData,
       include: { site: { select: { id: true, name: true, code: true } } },
-    });
+    }));
 
     // Update engine's in-memory state.
     const live = engine.generators.find((x) => x.id === id);
@@ -198,10 +199,10 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     }
     const { id } = await ctx.params;
 
-    const existing = await db.generator.findUnique({
+    const existing = await withTenant(user.tenantId, (tx) => tx.generator.findUnique({
       where: { id },
       include: { site: { select: { tenantId: true, name: true } } },
-    });
+    }));
     const denied = assertSiteTenantOwned(existing?.site ?? null, user);
     if (denied) {
       applyRateLimitHeaders(denied.headers, rl);
@@ -213,7 +214,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
       return res;
     }
 
-    await db.generator.delete({ where: { id } });
+    await withTenant(user.tenantId, (tx) => tx.generator.delete({ where: { id } }));
 
     // Remove from the engine's in-memory array.
     const idx = engine.generators.findIndex((g) => g.id === id);

@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, engine, bootstrap } from "@/lib/fgmp";
+import { engine, bootstrap } from "@/lib/fgmp";
 import { audit } from "@/lib/fgmp/audit";
 import {
   rateLimitByUser,
   applyRateLimitHeaders,
   MUTATION_LIMIT,
 } from "@/lib/fgmp/rate-limit";
+import { withTenant } from "@/lib/fgmp/tenant-context";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireRole, ROLES } from "@/lib/fgmp/auth-helpers";
 
@@ -49,10 +50,10 @@ export async function DELETE(
     }
 
     const { id } = await params;
-    const existing = await db.espFirmwareRelease.findUnique({
+    const existing = await withTenant(user.tenantId, (tx) => tx.espFirmwareRelease.findUnique({
       where: { id },
       select: { id: true, version: true, _count: { select: { deployments: true } } },
-    });
+    }));
     if (!existing) {
       const res = NextResponse.json({ error: "Release not found" }, { status: 404 });
       applyRateLimitHeaders(res.headers, rl);
@@ -67,7 +68,7 @@ export async function DELETE(
       return res;
     }
 
-    await db.espFirmwareRelease.delete({ where: { id } });
+    await withTenant(user.tenantId, (tx) => tx.espFirmwareRelease.delete({ where: { id } }));
 
     await audit({
       userId: user.id,

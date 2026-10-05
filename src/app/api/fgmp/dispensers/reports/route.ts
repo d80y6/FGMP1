@@ -1,11 +1,12 @@
 import { toJsonNumber } from "@/lib/fgmp/decimal";
 import { NextRequest, NextResponse } from "next/server";
-import { db, bootstrap } from "@/lib/fgmp";
+import { bootstrap } from "@/lib/fgmp";
 import {
   rateLimitByUser,
   applyRateLimitHeaders,
   READ_LIMIT,
 } from "@/lib/fgmp/rate-limit";
+import { withTenant } from "@/lib/fgmp/tenant-context";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireAuth, siteTenantWhere } from "@/lib/fgmp/auth-helpers";
 
@@ -31,9 +32,9 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const auth = await requireAuth();
   if ("error" in auth) return auth.error;
+  const me = auth.user;
   try {
-    const { user } = await bootstrap();
-    const rl = rateLimitByUser(req, user.id, READ_LIMIT.limit, READ_LIMIT.windowMs);
+    const rl = rateLimitByUser(req, me.id, READ_LIMIT.limit, READ_LIMIT.windowMs);
     if (!rl.success) {
       const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
       applyRateLimitHeaders(res.headers, rl);
@@ -49,12 +50,12 @@ export async function GET(req: NextRequest) {
     else if (period === "30d") since = new Date(now.getTime() - 30 * 24 * 3600 * 1000);
     else since = new Date(now.getTime() - 24 * 3600 * 1000); // "today" = last 24h
 
-    const where: Record<string, unknown> = { startedAt: { gte: since }, ...siteTenantWhere(user) };
+    const where: Record<string, unknown> = { startedAt: { gte: since }, ...siteTenantWhere(me) };
     if (siteId) where.siteId = siteId;
 
     // Run all queries in parallel
     const [txns, totalAgg, faultCount, bySiteRaw, byDispenserRaw, byVehicleRaw, byStatusRaw, hourlyRaw, dailyRaw] = await Promise.all([
-      db.fuelTransaction.findMany({
+            withTenant(me.tenantId, (tx) => tx.fuelTransaction.findMany({
         where,
         orderBy: { startedAt: "desc" },
         take: 5000, // cap for safety
@@ -70,60 +71,60 @@ export async function GET(req: NextRequest) {
           status: true,
           vehiclePlate: true,
         },
-      }),
-      db.fuelTransaction.aggregate({
+      })),
+            withTenant(me.tenantId, (tx) => tx.fuelTransaction.aggregate({
         where,
         _sum: { volumeLitres: true, amountYer: true },
         _avg: { volumeLitres: true, durationSec: true },
         _count: true,
-      }),
-      db.fuelTransaction.count({ where: { ...where, status: "FAILED" } }),
-      db.fuelTransaction.groupBy({
+      })),
+            withTenant(me.tenantId, (tx) => tx.fuelTransaction.count({ where: { ...where, status: "FAILED" } })),
+            withTenant(me.tenantId, (tx) => tx.fuelTransaction.groupBy({
         by: ["siteId"],
         where,
         _count: true,
         _sum: { volumeLitres: true, amountYer: true },
-      }),
-      db.fuelTransaction.groupBy({
+      })),
+            withTenant(me.tenantId, (tx) => tx.fuelTransaction.groupBy({
         by: ["dispenserId"],
         where,
         _count: true,
         _sum: { volumeLitres: true, amountYer: true },
-      }),
-      db.fuelTransaction.groupBy({
+      })),
+            withTenant(me.tenantId, (tx) => tx.fuelTransaction.groupBy({
         by: ["vehiclePlate"],
         where,
         _count: true,
         _sum: { volumeLitres: true, amountYer: true },
-      }),
-      db.fuelTransaction.groupBy({
+      })),
+            withTenant(me.tenantId, (tx) => tx.fuelTransaction.groupBy({
         by: ["status"],
         where,
         _count: true,
         _sum: { volumeLitres: true },
-      }),
+      })),
       // hourly: group by hour-of-day. SQLite has no EXTRACT; we do it in JS.
-      db.fuelTransaction.findMany({
+            withTenant(me.tenantId, (tx) => tx.fuelTransaction.findMany({
         where,
         select: { startedAt: true, volumeLitres: true },
         take: 5000,
-      }),
-      db.fuelTransaction.findMany({
+      })),
+            withTenant(me.tenantId, (tx) => tx.fuelTransaction.findMany({
         where,
         select: { startedAt: true, volumeLitres: true, amountYer: true },
         take: 5000,
-      }),
+      })),
     ]);
 
     // Resolve site + dispenser names
     const siteIds = [...new Set(bySiteRaw.map((s) => s.siteId))];
     const dispenserIds = [...new Set(byDispenserRaw.map((d) => d.dispenserId))];
     const [sites, dispensers] = await Promise.all([
-      db.site.findMany({ where: { id: { in: siteIds } }, select: { id: true, name: true, code: true } }),
-      db.fuelDispenser.findMany({
+            withTenant(me.tenantId, (tx) => tx.site.findMany({ where: { id: { in: siteIds } }, select: { id: true, name: true, code: true } })),
+            withTenant(me.tenantId, (tx) => tx.fuelDispenser.findMany({
         where: { id: { in: dispenserIds } },
         select: { id: true, label: true, pumpNumber: true, siteId: true, site: { select: { name: true } } },
-      }),
+      })),
     ]);
     const siteMap = new Map(sites.map((s) => [s.id, s]));
     const dispenserMap = new Map(dispensers.map((d) => [d.id, d]));

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { db, bootstrap } from "@/lib/fgmp";
+import { bootstrap } from "@/lib/fgmp";
 import { validateBody } from "@/lib/fgmp/schemas";
 import {
   rateLimitByUser,
@@ -9,6 +9,7 @@ import {
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse, ApiError } from "@/lib/fgmp/api-error";
 import { requireRole, ROLES, assertSiteTenantOwned } from "@/lib/fgmp/auth-helpers";
+import { withTenant } from "@/lib/fgmp/tenant-context";
 import { emitToRealtime } from "@/lib/fgmp/realtime-emitter";
 
 export const dynamic = "force-dynamic";
@@ -107,10 +108,10 @@ export async function POST(
     }
     const data = r.data;
 
-    const ticket = await db.maintenanceTicket.findUnique({
+    const ticket = await withTenant(me.tenantId, (tx) => tx.maintenanceTicket.findUnique({
       where: { id },
       select: { id: true, status: true, siteId: true, assignedToId: true, site: { select: { tenantId: true } } },
-    });
+    }));
     if (!ticket) throw new ApiError(404, "ticket not found");
     const tenantDenied = assertSiteTenantOwned(ticket.site, me);
     if (tenantDenied) return tenantDenied;
@@ -124,10 +125,10 @@ export async function POST(
 
     // Validate assignee exists + is active + same tenant + has an assignable
     // role. `tenantId` MUST be selected for the cross-tenant check below.
-    const assignee = await db.user.findUnique({
+    const assignee = await withTenant(me.tenantId, (tx) => tx.user.findUnique({
       where: { id: data.assigneeId },
       select: { id: true, role: true, active: true, name: true, tenantId: true },
-    });
+    }));
     // 404 (not 403) for missing OR cross-tenant — a 403 would confirm the id
     // exists in some other tenant.
     if (!assignee || assignee.tenantId !== me.tenantId) {
@@ -154,7 +155,7 @@ export async function POST(
     // predicate would still match a ticket a concurrent `/progress` had just
     // moved OPEN → IN_PROGRESS and would regress it back to SCHEDULED. A count
     // of 0 means somebody else moved it first → 409, client retries.
-    const updated = await db.$transaction(async (tx) => {
+    const updated = await withTenant(me.tenantId, async (tx) => {
       const { count } = await tx.maintenanceTicket.updateMany({
         where: { id, status: ticket.status },
         data: { assignedToId: data.assigneeId, status: newStatus },

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, engine, bootstrap } from "@/lib/fgmp";
+import { engine } from "@/lib/fgmp";
+import { withTenant } from "@/lib/fgmp/tenant-context";
 import {
   rateLimitByUser,
   applyRateLimitHeaders,
@@ -22,9 +23,9 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   const auth = await requireRole(req, ROLES.DISPENSER_CONTROL);
   if ("error" in auth) return auth.error;
+  const me = auth.user;
   try {
-    const { user } = await bootstrap();
-    const rl = rateLimitByUser(req, user.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
+    const rl = rateLimitByUser(req, me.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
     if (!rl.success) {
       const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
       applyRateLimitHeaders(res.headers, rl);
@@ -43,19 +44,28 @@ export async function POST(req: NextRequest) {
       return res;
     }
 
-    // Tenant isolation: verify the target dispenser's site belongs to the
-    // caller's tenant before queueing the OTA deployment.
-    const dispenser = await db.fuelDispenser.findUnique({
-      where: { id: dispenserId },
-      select: { id: true, site: { select: { tenantId: true } } },
-    });
-    const denied = assertSiteTenantOwned(dispenser?.site ?? null, user);
+    // PHASE 3: scoped to the caller's tenant. Unscoped this returned null under
+    // FORCE RLS for every id, making a firmware deploy impossible to launch.
+    const dispenser = await withTenant(me.tenantId, (tx) =>
+      tx.fuelDispenser.findUnique({
+        where: { id: dispenserId },
+        select: { id: true, site: { select: { tenantId: true } } },
+      }),
+    );
+    const denied = assertSiteTenantOwned(dispenser?.site ?? null, me);
     if (denied) {
       applyRateLimitHeaders(denied.headers, rl);
       return denied;
     }
 
-    const result = await engine.applyFirmwareDeployment(dispenserId, releaseId, user.id);
+    // PHASE 3: pass the authenticated tenant so the engine asserts the
+    // dispenser's tenant matches before queueing anything.
+    const result = await engine.applyFirmwareDeployment(
+      dispenserId,
+      releaseId,
+      me.id,
+      me.tenantId,
+    );
     const res = NextResponse.json(
       result,
       { status: result.ok ? 202 : 409 },

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, engine, bootstrap } from "@/lib/fgmp";
+import { engine } from "@/lib/fgmp";
+import { withTenant } from "@/lib/fgmp/tenant-context";
 import { audit } from "@/lib/fgmp/audit";
 import { generatorCommandSchema, validateBody } from "@/lib/fgmp/schemas";
 import {
@@ -17,9 +18,9 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireRole(req, ROLES.CONTROL);
   if ("error" in auth) return auth.error;
+  const me = auth.user;
   try {
-    const { user } = await bootstrap();
-    const rl = rateLimitByUser(req, user.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
+    const rl = rateLimitByUser(req, me.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
     if (!rl.success) {
       const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
       applyRateLimitHeaders(res.headers, rl);
@@ -27,13 +28,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
     const { id } = await params;
 
-    // Tenant isolation: verify the generator's site belongs to the caller's
-    // tenant before dispatching the control command through the engine.
-    const gen = await db.generator.findUnique({
-      where: { id },
-      select: { id: true, site: { select: { tenantId: true } } },
-    });
-    const denied = assertSiteTenantOwned(gen?.site ?? null, user);
+    // ── PHASE 3: scoped lookup ────────────────────────────────────────────
+    // Previously an unscoped `db` read. Under FORCE RLS that returns null for
+    // every id, so assertSiteTenantOwned(null) answered 404 and the control
+    // endpoint was unreachable for legitimate operators. With the caller's own
+    // tenant in scope the row resolves, and a cross-tenant id still yields
+    // null -> 404, which is the intended 404-not-403 behaviour.
+    const gen = await withTenant(me.tenantId, (tx) =>
+      tx.generator.findUnique({
+        where: { id },
+        select: { id: true, site: { select: { tenantId: true } } },
+      }),
+    );
+    const denied = assertSiteTenantOwned(gen?.site ?? null, me);
     if (denied) {
       applyRateLimitHeaders(denied.headers, rl);
       return denied;
@@ -60,15 +67,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // sees nothing will simply retry, and retrying blindly against a hard
     // interlock is how a transient reading becomes a repeated unsafe action.
     const enforced = await enforceInterlock({
-      tenantId: user.tenantId,
+      tenantId: me.tenantId,
       generatorId: id,
       command: command as GenCommand,
-      userId: user.id,
+      userId: me.id,
       override: null,
     });
     if (!enforced.ok) {
       await audit({
-        userId: user.id,
+        userId: me.id,
         action: "CONTROL_DENIED",
         entity: "generator",
         entityId: id,
@@ -82,8 +89,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return res;
     }
 
-    const result = await engine.applyCommand(id, command as GenCommand, user.id, reason);
-    await audit({ userId: user.id, action: "CONTROL", entity: "generator", entityId: id, details: { command, reason, result } });
+    // ── PHASE 3: the AUTHENTICATED tenant is passed down so the engine can
+    // assert the generator's tenant matches it, before any state mutation.
+    const result = await engine.applyCommand(
+      id,
+      command as GenCommand,
+      me.id,
+      reason,
+      me.tenantId,
+    );
+    await audit({ userId: me.id, action: "CONTROL", entity: "generator", entityId: id, details: { command, reason, result } });
     const res = NextResponse.json(
       {
         ...result,

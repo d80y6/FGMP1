@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, bootstrap } from "@/lib/fgmp";
+import { bootstrap } from "@/lib/fgmp";
 import { audit } from "@/lib/fgmp/audit";
 import {
   maintenanceActionSchema,
@@ -11,6 +11,7 @@ import {
   MUTATION_LIMIT,
   READ_LIMIT,
 } from "@/lib/fgmp/rate-limit";
+import { withTenant } from "@/lib/fgmp/tenant-context";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireAuth, requireRole, ROLES, assertSiteTenantOwned, siteTenantWhereOrAll } from "@/lib/fgmp/auth-helpers";
 
@@ -21,8 +22,7 @@ export async function GET(req: NextRequest) {
   if ("error" in auth) return auth.error;
   const me = auth.user;
   try {
-    const { user } = await bootstrap();
-    const rl = rateLimitByUser(req, user.id, READ_LIMIT.limit, READ_LIMIT.windowMs);
+    const rl = rateLimitByUser(req, me.id, READ_LIMIT.limit, READ_LIMIT.windowMs);
     if (!rl.success) {
       const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
       applyRateLimitHeaders(res.headers, rl);
@@ -32,12 +32,12 @@ export async function GET(req: NextRequest) {
     const status = searchParams.get("status");
     const where: Record<string, unknown> = { ...siteTenantWhereOrAll(me) };
     if (status) where.status = { in: status.split(",") };
-    const tickets = await db.maintenanceTicket.findMany({
+    const tickets = await withTenant(me.tenantId, (tx) => tx.maintenanceTicket.findMany({
       where,
       orderBy: [{ priority: "asc" }, { scheduledFor: "asc" }],
       take: 200,
       include: { site: { select: { name: true, code: true } }, assignedTo: { select: { name: true } } },
-    });
+    }));
     const res = NextResponse.json(tickets);
     applyRateLimitHeaders(res.headers, rl);
     return res;
@@ -51,8 +51,7 @@ export async function POST(req: NextRequest) {
   if ("error" in auth) return auth.error;
   const me = auth.user;
   try {
-    const { user } = await bootstrap();
-    const rl = rateLimitByUser(req, user.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
+    const rl = rateLimitByUser(req, me.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
     if (!rl.success) {
       const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
       applyRateLimitHeaders(res.headers, rl);
@@ -72,26 +71,26 @@ export async function POST(req: NextRequest) {
     const data = r.data;
 
     if (data.action === "complete") {
-      const existing = await db.maintenanceTicket.findUnique({
+      const existing = await withTenant(me.tenantId, (tx) => tx.maintenanceTicket.findUnique({
         where: { id: data.ticketId },
         select: { site: { select: { tenantId: true } } },
-      });
+      }));
       const denied = assertSiteTenantOwned(existing?.site ?? null, me);
       if (denied) return denied;
-      const updated = await db.maintenanceTicket.update({
+      const updated = await withTenant(me.tenantId, (tx) => tx.maintenanceTicket.update({
         where: { id: data.ticketId },
         data: { status: "DONE", completedAt: new Date() },
-      });
-      await audit({ userId: user.id, action: "TICKET_COMPLETE", entity: "ticket", entityId: data.ticketId });
+      }));
+      await audit({ userId: me.id, action: "TICKET_COMPLETE", entity: "ticket", entityId: data.ticketId });
       const res = NextResponse.json(updated);
       applyRateLimitHeaders(res.headers, rl);
       return res;
     }
     // create — verify the referenced site belongs to the caller's tenant
-    const site = await db.site.findUnique({
+    const site = await withTenant(me.tenantId, (tx) => tx.site.findUnique({
       where: { id: data.siteId },
       select: { tenantId: true },
-    });
+    }));
     const siteDenied = assertSiteTenantOwned(site, me);
     if (siteDenied) return siteDenied;
     // `site` is null when it does not exist; assertSiteTenantOwned returns
@@ -100,7 +99,7 @@ export async function POST(req: NextRequest) {
     if (!site) {
       return NextResponse.json({ error: "Site not found" }, { status: 404 });
     }
-    const created = await db.maintenanceTicket.create({
+    const created = await withTenant(me.tenantId, (tx) => tx.maintenanceTicket.create({
       data: {
         siteId: data.siteId,
         tenantId: site.tenantId,
@@ -110,12 +109,12 @@ export async function POST(req: NextRequest) {
         priority: data.priority,
         title: data.title,
         description: data.description,
-        assignedToId: user.id,
+        assignedToId: me.id,
         scheduledFor: data.scheduledFor ? new Date(data.scheduledFor) : null,
         status: "OPEN",
       },
-    });
-    await audit({ userId: user.id, action: "TICKET_CREATE", entity: "ticket", entityId: created.id, details: { title: data.title } });
+    }));
+    await audit({ userId: me.id, action: "TICKET_CREATE", entity: "ticket", entityId: created.id, details: { title: data.title } });
     const res = NextResponse.json(created);
     applyRateLimitHeaders(res.headers, rl);
     return res;

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, engine, bootstrap } from "@/lib/fgmp";
+import { engine } from "@/lib/fgmp";
+import { withTenant } from "@/lib/fgmp/tenant-context";
 import {
   rateLimitByUser,
   applyRateLimitHeaders,
@@ -23,19 +24,25 @@ export async function GET(req: NextRequest) {
   const auth = await requireAuth();
   if ("error" in auth) return auth.error;
   try {
-    const { user } = await bootstrap();
-    const rl = rateLimitByUser(req, user.id, READ_LIMIT.limit, READ_LIMIT.windowMs);
+    const me = auth.user;
+    const rl = rateLimitByUser(req, me.id, READ_LIMIT.limit, READ_LIMIT.windowMs);
     if (!rl.success) {
       const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
       applyRateLimitHeaders(res.headers, rl);
       return res;
     }
 
-    const gateways = await db.siteGateway.findMany({
-      where: siteTenantWhereOrAll(auth.user),
-      orderBy: { hostname: "asc" },
-      include: { site: { select: { id: true, name: true, code: true } } },
-    });
+    // PHASE 3: RLS makes `where: { tenantId }` useless on its own — the policy
+    // USING clause is ANDed with it and current_setting is NULL, so the row is
+    // dropped regardless. The tenant context IS the filter; the explicit where
+    // is kept only for the superadmin case where no single tenant applies.
+    const gateways = await withTenant(me.tenantId, (tx) =>
+      tx.siteGateway.findMany({
+        where: siteTenantWhereOrAll(auth.user),
+        orderBy: { hostname: "asc" },
+        include: { site: { select: { id: true, name: true, code: true } } },
+      }),
+    );
 
     // Merge live state from the engine so the UI sees fresh CPU/heap/RSSI
     // without waiting for the periodic persistence.

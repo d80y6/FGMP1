@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, bootstrap } from "@/lib/fgmp";
+import { bootstrap } from "@/lib/fgmp";
 import {
   rateLimitByUser,
   applyRateLimitHeaders,
   READ_LIMIT,
 } from "@/lib/fgmp/rate-limit";
+import { withTenant } from "@/lib/fgmp/tenant-context";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireAuth, assertSiteTenantOwned } from "@/lib/fgmp/auth-helpers";
 
@@ -25,9 +26,9 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireAuth();
   if ("error" in auth) return auth.error;
+  const me = auth.user;
   try {
-    const { user } = await bootstrap();
-    const rl = rateLimitByUser(req, user.id, READ_LIMIT.limit, READ_LIMIT.windowMs);
+    const rl = rateLimitByUser(req, me.id, READ_LIMIT.limit, READ_LIMIT.windowMs);
     if (!rl.success) {
       const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
       applyRateLimitHeaders(res.headers, rl);
@@ -39,24 +40,24 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     // Verify the dispenser's site belongs to the caller's tenant before
     // returning its command history.
-    const existing = await db.fuelDispenser.findUnique({
+    const existing = await withTenant(me.tenantId, (tx) => tx.fuelDispenser.findUnique({
       where: { id },
       select: { site: { select: { tenantId: true } } },
-    });
-    const tenantDenied = assertSiteTenantOwned(existing?.site ?? null, user);
+    }));
+    const tenantDenied = assertSiteTenantOwned(existing?.site ?? null, me);
     if (tenantDenied) {
       applyRateLimitHeaders(tenantDenied.headers, rl);
       return tenantDenied;
     }
 
-    const logs = await db.auditLog.findMany({
+    const logs = await withTenant(me.tenantId, (tx) => tx.auditLog.findMany({
       where: { action: "CONTROL", entity: "dispenser", entityId: id },
       orderBy: { createdAt: "desc" },
       take: limit,
       include: {
         user: { select: { id: true, name: true, email: true } },
       },
-    });
+    }));
 
     const commands = logs.map((log) => {
       // `details` is a JSON string written by audit(); anything unparseable

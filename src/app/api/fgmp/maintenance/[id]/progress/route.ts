@@ -1,7 +1,7 @@
 import type { TicketStatus } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { db, bootstrap } from "@/lib/fgmp";
+import { bootstrap } from "@/lib/fgmp";
 import { validateBody } from "@/lib/fgmp/schemas";
 import {
   rateLimitByUser,
@@ -10,6 +10,7 @@ import {
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse, ApiError } from "@/lib/fgmp/api-error";
 import { requireRole, ROLES, assertSiteTenantOwned } from "@/lib/fgmp/auth-helpers";
+import { withTenant } from "@/lib/fgmp/tenant-context";
 import { emitToRealtime } from "@/lib/fgmp/realtime-emitter";
 
 export const dynamic = "force-dynamic";
@@ -38,10 +39,10 @@ export const dynamic = "force-dynamic";
  * IN_PROGRESS — resurrecting a DONE / CANCELLED ticket. The guard is now the
  * WHERE clause of a conditional `updateMany`, so the check and the write are
  * one atomic statement; `count === 0` means the race was lost → 409.
- * The ticket update and its audit row are written in one `db.$transaction`.
+ * The ticket update and its audit row are written in one `withTenant(me.tenantId, (tx) => tx.$transaction`.
  *
  * This endpoint is ADDITIVE — the existing POST /api/fgmp/maintenance
- * (action: "create" | "complete") and the generic PUT on
+ * (action: "create" | "complete")) and the generic PUT on
  * /api/fgmp/maintenance/[id] are untouched.
  */
 const progressSchema = z
@@ -66,10 +67,9 @@ export async function POST(
   if ("error" in auth) return auth.error;
   const me = auth.user;
   try {
-    const { user } = await bootstrap();
     const rl = rateLimitByUser(
       req,
-      user.id,
+      me.id,
       MUTATION_LIMIT.limit,
       MUTATION_LIMIT.windowMs,
     );
@@ -96,10 +96,10 @@ export async function POST(
     }
     const data = r.data;
 
-    const ticket = await db.maintenanceTicket.findUnique({
+    const ticket = await withTenant(me.tenantId, (tx) => tx.maintenanceTicket.findUnique({
       where: { id },
       select: { id: true, status: true, siteId: true, site: { select: { tenantId: true } } },
-    });
+    }));
     if (!ticket) throw new ApiError(404, "ticket not found");
     const tenantDenied = assertSiteTenantOwned(ticket.site, me);
     if (tenantDenied) return tenantDenied;
@@ -118,7 +118,7 @@ export async function POST(
 
     // Conditional write — the allowed source statuses live in the WHERE clause
     // so the guard and the mutation cannot interleave with another transition.
-    const updated = await db.$transaction(async (tx) => {
+    const updated = await withTenant(me.tenantId, async (tx) => {
       const { count } = await tx.maintenanceTicket.updateMany({
         where: { id, status: { in: PROGRESS_FROM } },
         data: update,
@@ -133,7 +133,7 @@ export async function POST(
       await tx.auditLog.create({
         data: {
           tenantId: ticket.site.tenantId,
-          userId: user.id,
+          userId: me.id,
           action: "TICKET_STATUS_CHANGE",
           entity: "ticket",
           entityId: id,

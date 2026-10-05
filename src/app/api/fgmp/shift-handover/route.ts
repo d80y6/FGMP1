@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, engine, bootstrap } from "@/lib/fgmp";
+import { engine, bootstrap } from "@/lib/fgmp";
 import { audit } from "@/lib/fgmp/audit";
 import {
   createShiftHandoverSchema,
@@ -11,6 +11,7 @@ import {
   MUTATION_LIMIT,
   READ_LIMIT,
 } from "@/lib/fgmp/rate-limit";
+import { withTenant } from "@/lib/fgmp/tenant-context";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireAuth, requireRole, ROLES, tenantWhereOrAll } from "@/lib/fgmp/auth-helpers";
 
@@ -57,14 +58,14 @@ export async function GET(req: NextRequest) {
     }
 
     const [notes, openCount] = await Promise.all([
-      db.shiftHandover.findMany({
+            withTenant(user.tenantId, (tx) => tx.shiftHandover.findMany({
         where,
         orderBy: { createdAt: "desc" },
         take: limit,
-      }),
-      db.shiftHandover.count({
+      })),
+            withTenant(user.tenantId, (tx) => tx.shiftHandover.count({
         where: { ...tenantWhereOrAll(user), status: "OPEN" },
-      }),
+      })),
     ]);
 
     const res = NextResponse.json({ notes, openCount });
@@ -134,16 +135,16 @@ export async function POST(req: NextRequest) {
     // Validate flagged site ids belong to the caller's tenant (cheap bulk check).
     let flaggedSiteIds: string | null = null;
     if (data.flaggedSiteIds && data.flaggedSiteIds.length > 0) {
-      const owned = await db.site.findMany({
+      const owned = await withTenant(user.tenantId, (tx) => tx.site.findMany({
         where: { id: { in: data.flaggedSiteIds }, ...tenantWhereOrAll(user) },
         select: { id: true },
-      });
+      }));
       const ownedSet = new Set(owned.map((s) => s.id));
       const valid = data.flaggedSiteIds.filter((id) => ownedSet.has(id));
       if (valid.length > 0) flaggedSiteIds = valid.join(",");
     }
 
-    const created = await db.shiftHandover.create({
+    const created = await withTenant(user.tenantId, (tx) => tx.shiftHandover.create({
       data: {
         tenantId: user.tenantId,
         authorId: user.id,
@@ -159,7 +160,7 @@ export async function POST(req: NextRequest) {
         avgFuelPct,
         status: "OPEN",
       },
-    });
+    }));
 
     await audit({
       userId: user.id,

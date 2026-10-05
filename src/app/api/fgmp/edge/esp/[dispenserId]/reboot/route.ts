@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, engine, bootstrap } from "@/lib/fgmp";
+import { engine } from "@/lib/fgmp";
+import { withTenant } from "@/lib/fgmp/tenant-context";
 import { audit } from "@/lib/fgmp/audit";
 import {
   rateLimitByUser,
@@ -26,9 +27,9 @@ export const dynamic = "force-dynamic";
 ) {
   const auth = await requireRole(req, ROLES.DISPENSER_CONTROL);
   if ("error" in auth) return auth.error;
+  const me = auth.user;
   try {
-    const { user } = await bootstrap();
-    const rl = rateLimitByUser(req, user.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
+    const rl = rateLimitByUser(req, me.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
     if (!rl.success) {
       const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
       applyRateLimitHeaders(res.headers, rl);
@@ -37,26 +38,31 @@ export const dynamic = "force-dynamic";
 
     const { dispenserId } = await params;
 
-    // Tenant isolation: verify the dispenser's site belongs to the caller's
-    // tenant before issuing the ESP reboot.
-    const dispenser = await db.fuelDispenser.findUnique({
-      where: { id: dispenserId },
-      select: { id: true, site: { select: { tenantId: true } } },
-    });
-    const denied = assertSiteTenantOwned(dispenser?.site ?? null, user);
+    // PHASE 3: scoped to the caller's tenant. Unscoped this returned null under
+    // FORCE RLS for every id, so the 404 was unreachable-but-safe; now the
+    // row resolves and only a genuinely foreign id 404s.
+    const dispenser = await withTenant(me.tenantId, (tx) =>
+      tx.fuelDispenser.findUnique({
+        where: { id: dispenserId },
+        select: { id: true, site: { select: { tenantId: true } } },
+      }),
+    );
+    const denied = assertSiteTenantOwned(dispenser?.site ?? null, me);
     if (denied) {
       applyRateLimitHeaders(denied.headers, rl);
       return denied;
     }
 
-    const result = await engine.applyEspReboot(dispenserId, user.id);
+    // PHASE 3: pass the authenticated tenant so the engine asserts the
+    // dispenser's tenant matches before touching state or the database.
+    const result = await engine.applyEspReboot(dispenserId, me.id, me.tenantId);
 
     // Audit at the API layer too (in addition to the engine's own audit) so
     // the action is searchable by the audit-view's dispenser-control filter.
     if (result.ok) {
       await audit({
-        userId: user.id,
-        tenantId: user.tenantId,
+        userId: me.id,
+        tenantId: me.tenantId,
         action: "DISPENSER_CONTROL",
         entity: "FuelDispenser",
         entityId: dispenserId,

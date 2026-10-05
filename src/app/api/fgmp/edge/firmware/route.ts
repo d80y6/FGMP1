@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, bootstrap } from "@/lib/fgmp";
+import { bootstrap } from "@/lib/fgmp";
 import { audit } from "@/lib/fgmp/audit";
 import {
   rateLimitByUser,
@@ -7,6 +7,7 @@ import {
   READ_LIMIT,
   MUTATION_LIMIT,
 } from "@/lib/fgmp/rate-limit";
+import { withTenant } from "@/lib/fgmp/tenant-context";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireAuth, requireRole, ROLES } from "@/lib/fgmp/auth-helpers";
 
@@ -34,7 +35,7 @@ export async function GET(req: NextRequest) {
     // binary). So no tenant filter is applied here and SUPERADMIN/ADMIN/all
     // authenticated users see the same list. Cross-tenant isolation is
     // enforced at the *deployment* level (see /edge/firmware/deployments).
-    const releases = await db.espFirmwareRelease.findMany({
+    const releases = await withTenant(user.tenantId, (tx) => tx.espFirmwareRelease.findMany({
       orderBy: { releasedAt: "desc" },
       include: {
         _count: { select: { deployments: true } },
@@ -44,7 +45,7 @@ export async function GET(req: NextRequest) {
           select: { id: true, status: true, startedAt: true },
         },
       },
-    });
+    }));
 
     const res = NextResponse.json(releases);
     applyRateLimitHeaders(res.headers, rl);
@@ -103,7 +104,7 @@ export async function POST(req: NextRequest) {
       return res;
     }
 
-    const release = await db.espFirmwareRelease.create({
+    const release = await withTenant(user.tenantId, (tx) => tx.espFirmwareRelease.create({
       data: {
         version,
         channel,
@@ -112,7 +113,7 @@ export async function POST(req: NextRequest) {
         releaseNotes,
         releasedAt,
       },
-    });
+    }));
 
     await audit({
       userId: user.id,

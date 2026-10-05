@@ -1,12 +1,13 @@
 import type { Prisma, OtaStatus } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
-import { db, bootstrap } from "@/lib/fgmp";
+import { bootstrap } from "@/lib/fgmp";
 import {
   rateLimitByUser,
   applyRateLimitHeaders,
   READ_LIMIT,
   parseIntParam,
 } from "@/lib/fgmp/rate-limit";
+import { withTenant } from "@/lib/fgmp/tenant-context";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireAuth, isSuperAdminUser } from "@/lib/fgmp/auth-helpers";
 
@@ -69,7 +70,7 @@ export async function GET(req: NextRequest) {
     }
 
     const [deployments, total] = await Promise.all([
-      db.espFirmwareDeployment.findMany({
+            withTenant(user.tenantId, (tx) => tx.espFirmwareDeployment.findMany({
         where,
         orderBy: { startedAt: "desc" },
         take: limit,
@@ -90,8 +91,8 @@ export async function GET(req: NextRequest) {
             select: { id: true, name: true, email: true },
           },
         },
-      }),
-      db.espFirmwareDeployment.count({ where }),
+      })),
+            withTenant(user.tenantId, (tx) => tx.espFirmwareDeployment.count({ where })),
     ]);
 
     const res = NextResponse.json({ deployments, total, limit, offset });

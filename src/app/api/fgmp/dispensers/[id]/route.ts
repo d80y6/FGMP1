@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, engine, bootstrap } from "@/lib/fgmp";
+import { engine, bootstrap } from "@/lib/fgmp";
 import { audit } from "@/lib/fgmp/audit";
 import { updateDispenserSchema, validateBody } from "@/lib/fgmp/schemas";
 import {
@@ -8,6 +8,7 @@ import {
   MUTATION_LIMIT,
   READ_LIMIT,
 } from "@/lib/fgmp/rate-limit";
+import { withTenant } from "@/lib/fgmp/tenant-context";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireAuth, requireRole, ROLES, assertSiteTenantOwned } from "@/lib/fgmp/auth-helpers";
 
@@ -30,10 +31,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
       return res;
     }
     const { id } = await ctx.params;
-    const d = await db.fuelDispenser.findUnique({
+    const d = await withTenant(user.tenantId, (tx) => tx.fuelDispenser.findUnique({
       where: { id },
       include: { site: { select: { id: true, name: true, code: true, tenantId: true } } },
-    });
+    }));
     const tenantDenied = assertSiteTenantOwned(d?.site ?? null, user);
     if (tenantDenied) {
       applyRateLimitHeaders(tenantDenied.headers, rl);
@@ -96,10 +97,10 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     const data = r.data;
 
     // Verify existence + tenant scope
-    const existing = await db.fuelDispenser.findUnique({
+    const existing = await withTenant(user.tenantId, (tx) => tx.fuelDispenser.findUnique({
       where: { id },
       include: { site: { select: { tenantId: true } } },
-    });
+    }));
     const denied = assertSiteTenantOwned(existing?.site ?? null, user);
     if (denied) {
       applyRateLimitHeaders(denied.headers, rl);
@@ -142,10 +143,10 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     }
     const { id } = await ctx.params;
 
-    const existing = await db.fuelDispenser.findUnique({
+    const existing = await withTenant(user.tenantId, (tx) => tx.fuelDispenser.findUnique({
       where: { id },
       include: { site: { select: { tenantId: true, name: true } } },
-    });
+    }));
     const denied = assertSiteTenantOwned(existing?.site ?? null, user);
     if (denied) {
       applyRateLimitHeaders(denied.headers, rl);
