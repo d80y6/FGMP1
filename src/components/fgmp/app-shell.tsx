@@ -242,31 +242,31 @@ export function AppShell() {
     }
   }, [storeRole, sessionRole, update]);
 
-  // live polling — fallback when realtime is disconnected.
-  // When realtime is live, the socket pushes state:tick every 5s, so we
-  // skip polling to avoid duplicate work. When the socket is down (or
-  // paused), this keeps the UI fresh.
+  // Data refresh — READ ONLY.
   //
-  // `POST /api/fgmp/tick` is operator-only (ROLES.TICK server-side) because
-  // it advances the shared telemetry simulation for EVERY tenant. Roles
-  // without `simul:tick` (EXECUTIVE, READONLY, FIELD_ENGINEER) must not call
-  // it — they fall back to `refresh()`, which is a tenant-scoped GET of
-  // /api/fgmp/state and keeps their own dashboard current without advancing
-  // global state.
-  const canTick = useMemo(
-    () => (me?.role ? hasCapability(me.role, "simul:tick") : false),
-    [me?.role],
-  );
+  // Phase 2 removed the request-driven `POST /api/fgmp/tick` from this loop.
+  // It used to fire every 5s for every operator whose socket was down, which
+  // meant the BROWSER was driving the telemetry clock: open the dashboard and
+  // the platform advanced, close it and time stopped. That is request-driven
+  // state mutation — two operators watching the same site advanced it twice as
+  // fast, and an idle platform stopped generating data entirely.
+  //
+  // The clock is now the server's alone (`ensureScheduler()`, wired at startup).
+  // What remains here is a plain read of current state, so a disconnected or
+  // read-only session still refreshes its own dashboard. It cannot advance
+  // anything, and it is the same `refresh()` for every role.
+  //
+  // When realtime is live the socket pushes state:tick, so polling is skipped
+  // to avoid duplicate work.
   useEffect(() => {
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = setInterval(() => {
       if (livePaused) return;
       if (rtConnected) return; // realtime push covers this
-      if (canTick) tick(60);
-      else void refresh();
+      void refresh();
     }, 5000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [tick, refresh, canTick, livePaused, rtConnected]);
+  }, [refresh, livePaused, rtConnected]);
 
   // clock lives in <HeaderClock/> (own state) so the 1Hz tick does not
   // re-render AppShell — and therefore the whole view tree — every second.

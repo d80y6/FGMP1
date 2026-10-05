@@ -47,12 +47,14 @@ import {
   useCorrelationRules,
   useCorrelationRulesList,
   useCorrelationRulesHydration,
-  DEFAULT_RULES,
+  useCorrelationRulesError,
   type CorrelationRule,
-  type AlarmType,
-  type Severity,
-  type RuleScope,
-} from "@/lib/fgmp/use-correlation-rules";
+} from "@/lib/fgmp/use-correlation-rules-server";
+import type {
+  RuleAlarmTypeValue as AlarmType,
+  CorrelationSeverity as Severity,
+  CorrelationRuleScope as RuleScope,
+} from "@/lib/fgmp/correlation-types";
 import { formatRuleCondition, type AlarmState } from "@/lib/fgmp/rule-engine";
 import {
   useCorrelationMatches,
@@ -516,7 +518,7 @@ function EditorTab({ rules }: { rules: CorrelationRule[] }) {
   const t = useT();
   const { canEdit } = useRulePermissions();
   const addRule = useCorrelationRules((s) => s.addRule);
-  const replaceAll = useCorrelationRules((s) => s.replaceAll);
+  const hydrate = useCorrelationRules((s) => s.hydrate);
 
   const sorted = useMemo(() => {
     return [...rules].sort((a, b) => {
@@ -539,13 +541,16 @@ function EditorTab({ rules }: { rules: CorrelationRule[] }) {
     toast.success(t("rules.ruleCreated"), { description: t("rules.ruleCreatedDesc") });
   };
 
+  // Phase 2: this used to call `replaceAll(DEFAULT_RULES…)`, writing demo rules
+  // into localStorage. With server-backed storage there is nothing to bulk
+  // replace, and DEFAULT_RULES was a browser-only concept the evaluator never
+  // saw — so "reset" planted rules that could never fire. It now re-reads the
+  // tenant's real rules from the API.
   const handleReset = () => {
-    if (
-      !window.confirm(t("rules.resetConfirm"))
-    ) {
+    if (!window.confirm(t("rules.resetConfirm"))) {
       return;
     }
-    replaceAll(DEFAULT_RULES.map((r) => ({ ...r })));
+    void hydrate();
     toast.success(t("rules.resetToast"), {
       description: t("rules.resetToastDesc"),
     });

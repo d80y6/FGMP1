@@ -9,8 +9,8 @@ import { z } from "zod";
  * files stay in step with every other resource.
  */
 
-/** Scope of a rule: one site, a whole region, a governorate, or everything. */
-export const ruleScopeSchema = z.enum(["SITE", "REGION", "GOVERNORATE", "ALL"]);
+/** Scope of a rule: one site, a region, a governorate, or the whole tenant. */
+export const ruleScopeSchema = z.enum(["SITE", "REGION", "GOVERNORATE", "NATIONAL"]);
 
 /** Severity a firing rule escalates to. */
 export const escalateToSchema = z.enum(["L1", "L2", "L3"]);

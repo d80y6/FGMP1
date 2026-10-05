@@ -26,7 +26,7 @@ import { cn } from "@/lib/utils";
 import { timeAgo, fmtDateTime } from "@/lib/fgmp/format";
 import { csvFilename, type CsvColumn } from "@/lib/fgmp/csv-export";
 import { ExportButton } from "@/components/fgmp/export-button";
-import { useCorrelationRulesHydration, useCorrelationRulesList } from "@/lib/fgmp/use-correlation-rules";
+import { useCorrelationRulesHydration, useCorrelationRulesList } from "@/lib/fgmp/use-correlation-rules-server";
 import { useCorrelationMatches } from "@/lib/fgmp/use-correlation-matches";
 import { useT, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";

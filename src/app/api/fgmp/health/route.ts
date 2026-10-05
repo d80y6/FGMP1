@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/lib/db";
+import { auditFailureCount } from "@/lib/fgmp/audit";
 import { requireRole, ROLES, isSuperAdminUser } from "@/lib/fgmp/auth-helpers";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import {
@@ -97,6 +98,19 @@ export interface HealthResponse {
       users: number;
       auditLogs: number;
     };
+    /**
+     * Audit writes that could NOT be persisted by either the tenant-scoped or
+     * the owner connection.
+     *
+     * Surfaced because an operator who cannot see this will believe they have a
+     * compliance trail when they do not. A non-zero value means real actions are
+     * unrecorded — a compliance gap, and the same class of problem as a platform
+     * reporting itself healthy while serving empty data.
+     *
+     * Counted in-process, so it resets on restart; the durable signal is the
+     * error-level log emitted with each failure.
+     */
+    auditWriteFailures: number;
   };
   realtime: {
     connected: boolean;
@@ -365,6 +379,7 @@ export async function GET(req: NextRequest) {
           users,
           auditLogs,
         },
+        auditWriteFailures: auditFailureCount(),
       },
       realtime: {
         connected: rtConnected,

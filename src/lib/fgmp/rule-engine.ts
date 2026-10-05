@@ -15,7 +15,7 @@
  */
 
 import type { SiteState } from "@/lib/fgmp/types";
-import type { CorrelationRule, RuleScope } from "@/lib/fgmp/use-correlation-rules";
+import type { CorrelationRule, CorrelationRuleScope as RuleScope } from "@/lib/fgmp/correlation-types";
 
 /**
  * Minimal alarm shape required by the engine. The FGMP alarms API returns
