@@ -62,6 +62,7 @@
 import { PrismaClient } from "@prisma/client";
 import { db } from "@/lib/db";
 import { engine } from "./engine";
+import { evaluateAndPersist } from "./correlation/service";
 
 /**
  * Advisory-lock key.
@@ -134,8 +135,29 @@ function schedulerDb(): PrismaClient | null {
 async function tickAllTenants(
   client: PrismaClient,
   seconds: number,
-): Promise<{ tickCount: number; eventsCreated: number; alarmsCreated: number }> {
-  const totals = { tickCount: 0, eventsCreated: 0, alarmsCreated: 0 };
+): Promise<{
+  tickCount: number;
+  eventsCreated: number;
+  alarmsCreated: number;
+  correlationEvaluated: number;
+  correlationMatches: number;
+  correlationErrors: Array<{ tenantId: string; error: string }>;
+}> {
+  const totals = {
+    tickCount: 0,
+    eventsCreated: 0,
+    alarmsCreated: 0,
+    correlationEvaluated: 0,
+    correlationMatches: 0,
+    correlationErrors: [] as Array<{ tenantId: string; error: string }>,
+  };
+
+  // One instant for the whole sweep, captured BEFORE the first tick and reused
+  // for both the tick accounting and every correlation evaluation. A single
+  // shared clock is what keeps the evaluation window aligned with the alarms the
+  // tick produced; taking Date.now() per tenant would drift the window forward
+  // as the sweep takes longer.
+  const tickInstant = Date.now();
 
   // enumerate on the owner connection: a scheduler that could only see the
   // tenants its own credentials expose would silently skip the others.
@@ -144,22 +166,44 @@ async function tickAllTenants(
     orderBy: { id: "asc" },
   });
 
-  for (const _tenant of tenants) {
+  for (const tenant of tenants) {
     // reload() clears the initialised flag and re-reads from the database.
     // Called once per tenant so the single-tenant engine holds the right fleet.
-    //
-    // The engine resolves its own tenant from the first site row it reads
-    // (init() sets this.tenantId from sites[0].tenantId), so the loop body does
-    // not need the id. A tenant with no sites leaves the engine on the previous
-    // tenant's data; ticking then is idempotent for an empty fleet, and
-    // skipping it would mean that tenant's clock never advances at all.
     await engine.reload();
     const r = await engine.tick(seconds);
     totals.tickCount += r.tickCount;
     totals.eventsCreated += r.eventsCreated;
     totals.alarmsCreated += r.alarmsCreated;
+
+    // ── Correlation, immediately after this tenant's tick ───────────────────
+    // `now` is the SAME instant the tick advanced to, not a fresh Date.now().
+    // Using a later clock would slide the evaluation window forward of the
+    // alarms the tick just produced, so freshly-raised alarms could fall
+    // outside the rule's window and never correlate.
+    //
+    // Failures are isolated deliberately. Correlation reads and writes are
+    // tenant-scoped on the APP role inside withTenant(), while this loop runs on
+    // the ops connection — so an evaluator error must never propagate into the
+    // tick. A bug in rule evaluation cannot be allowed to stop the clock or
+    // corrupt a completed advance; it is recorded and reported instead.
+    try {
+      const outcome = await evaluateAndPersist({
+        tenantId: tenant.id,
+        now: tickInstant,
+      });
+      totals.correlationEvaluated += outcome.rulesConsidered;
+      totals.correlationMatches += outcome.triggered.length;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      correlationErrors.push({ tenantId: tenant.id, error: message });
+      console.error(
+        `[scheduler] correlation failed for tenant ${tenant.id} ` +
+          `(tick still committed): ${message}`,
+      );
+    }
   }
 
+  totals.correlationErrors = correlationErrors;
   return totals;
 }
 
@@ -173,6 +217,15 @@ export interface AdvanceResult {
   eventsCreated: number;
   alarmsCreated: number;
   durationMs: number;
+  /** Rules evaluated across all tenants during this advance. */
+  correlationEvaluated?: number;
+  /** Correlation matches fired during this advance. */
+  correlationMatches?: number;
+  /**
+   * Tenants whose correlation evaluation failed. Non-empty means the clock
+   * advanced but those tenants were not correlated — reported, never swallowed.
+   */
+  correlationErrors?: Array<{ tenantId: string; error: string }>;
   error?: string;
 }
 
@@ -275,15 +328,32 @@ export async function advanceOnce(
     tickCount: number;
     eventsCreated: number;
     alarmsCreated: number;
+    correlationEvaluated: number;
+    correlationMatches: number;
+    correlationErrors: Array<{ tenantId: string; error: string }>;
   };
   return {
-    ok: true,
+    ok: r.correlationErrors.length === 0,
     acquired: true,
     seconds,
     tickCount: r.tickCount,
     eventsCreated: r.eventsCreated,
     alarmsCreated: r.alarmsCreated,
     durationMs: Date.now() - started,
+    correlationEvaluated: r.correlationEvaluated,
+    correlationMatches: r.correlationMatches,
+    correlationErrors: r.correlationErrors,
+    // A correlation failure is reported through ok/error but never rolls back
+    // the tick: the clock moved and the alarms were raised, and discarding that
+    // because a rule could not be evaluated would be strictly worse.
+    ...(r.correlationErrors.length > 0
+      ? {
+          error:
+            `tick completed but correlation failed for ` +
+            `${r.correlationErrors.length} tenant(s): ` +
+            r.correlationErrors.map((e) => `${e.tenantId}: ${e.error}`).join("; "),
+        }
+      : {}),
   };
 }
 
