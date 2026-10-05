@@ -136,6 +136,8 @@ const RELEASE_ID = `rls-rel-${RUN}`
 const DISPENSER_ID = `rls-disp-${RUN}`
 const GENERATOR_ID = `rls-gen-${RUN}`
 const TANK_ID = `rls-tank-${RUN}`
+const RS485_BUS_ID = `rls-bus-${RUN}`
+const RS485_DIAG_ID = `rls-diag-${RUN}`
 const REGION_ID = `rls-reg-${RUN}`
 const GOV_ID = `rls-gov-${RUN}`
 const DIST_ID = `rls-dist-${RUN}`
@@ -157,6 +159,10 @@ const releaseRef = (): string => `'\${RELEASE_ID}'`
 const dispenserRef = (): string => `'\${DISPENSER_ID}'`
 const generatorRef = (): string => `'\${GENERATOR_ID}'`
 const tankRef = (): string => `'\${TANK_ID}'`
+// Phase 2 RS485 fixtures reference each other: a diagnostic belongs to a bus,
+// and a latency sample belongs to a diagnostic.
+const busRef = (): string => `'\${RS485_BUS_ID}'`
+const diagnosticRef = (): string => `'\${RS485_DIAG_ID}'`
 
 const siteIdFor = (tag: string): string =>
   tag === SUFFIX ? SITE_ID : `${SITE_ID}-${tag}`
@@ -474,6 +480,43 @@ const TABLES: TableSpec[] = [
     },
   },
   {
+    // Phase 2 vertical 4 — server-side alarm correlation. Both are tenant-owned
+    // and FORCE-RLS protected; the suite refuses to pass while they are
+    // unexercised, because a policy nobody queries is not a proven control.
+    table: 'CorrelationRule',
+    label: 'CorrelationRule (Phase 2 correlation)',
+    tenantColumn: 'tenantId',
+    siteScoped: false,
+    columns: {
+      id: idFor('rule'),
+      name: `'RLS rule ${SUFFIX}'`,
+      description: `'RLS correlation rule ${SUFFIX}'`,
+      enabled: 'true',
+      "alarmType": `'GEN_FAILURE'::"RuleAlarmType"`,
+      "threshold": '2',
+      "windowMinutes": '15',
+      "scope": `'SITE'::"RuleScope"`,
+      "escalateTo": `'L3'::"AlarmSeverity"`,
+    },
+  },
+  {
+    table: 'CorrelationMatch',
+    label: 'CorrelationMatch (Phase 2 correlation result)',
+    tenantColumn: 'tenantId',
+    siteScoped: false,
+    columns: {
+      id: idFor('match'),
+      "ruleId": `'\\${RULE_ID}'`,
+      "scopeKey": `'s1'`,
+      "scope": `'SITE'::"RuleScope"`,
+      "scopeLabel": `'Site: S1'`,
+      "outcome": `'SUPPRESSED'::"RuleEvaluationOutcome"`,
+      "escalateTo": `'L3'::"AlarmSeverity"`,
+      "matchCount": '2',
+      "alarmIds": `'a1,a2'`,
+    },
+  },
+  {
     table: 'ApiKey',
     label: 'ApiKey (credential store)',
     tenantColumn: 'tenantId',
@@ -559,6 +602,60 @@ const TABLES: TableSpec[] = [
       "ruleId": `'CRITICAL_LOAD_SHED'`,
       "requestedById": userRef(),
       "justification": `'RLS regression fixture ${SUFFIX}'`,
+    },
+  },
+  // ── Phase 2: RS485 bus diagnostics (added by p2-protocol) ────────────────
+  // Declared here so the coverage assertion counts them as EXERCISED. The rows
+  // themselves are inserted explicitly in seedFixtures() rather than by the
+  // generic loop, because they form a parent chain (bus -> diagnostic -> sample)
+  // that needs per-tenant ids; the generic path would attach tenant B's
+  // diagnostic to tenant A's bus and fail on the FK before RLS was reached.
+  {
+    table: 'Rs485Bus', label: 'Rs485Bus (physical RS485 segment)',
+    tenantColumn: 'tenantId', siteScoped: false,
+    columns: {
+      id: 'bus-${SUFFIX}',
+      label: 'bus-${SUFFIX}',
+      "siteId": siteRef(),
+      "baudrate": '9600',
+      "unitAddress": '1',
+      parity: `'8N1'`,
+      "stopBits": '1',
+      "dataBits": '8',
+      online: 'true',
+    },
+  },
+  {
+    table: 'Rs485BusDiagnostic', label: 'Rs485BusDiagnostic (per-device bus counters)',
+    tenantColumn: 'tenantId', siteScoped: false,
+    columns: {
+      id: 'diag-${SUFFIX}',
+      "busId": busRef(),
+      "unitAddress": '1',
+      "deviceKind": `'FuelDispenser'`,
+      "deviceId": dispenserRef(),
+      "crcErrors": '3',
+      "timeouts": '2',
+      retries: '1',
+      "retriesExhausted": '0',
+      "exceptionResponses": '0',
+      "successfulReads": '10',
+      "failedReads": '2',
+      "lastLatencyMs": '42.5',
+      "averageLatencyMs": '40.25',
+      "lastError": `'transient line noise'`,
+      "lastErrorKind": `'crc-mismatch'`,
+    },
+  },
+  {
+    table: 'Rs485LatencySample', label: 'Rs485LatencySample (rolling per-poll latency)',
+    tenantColumn: 'tenantId', siteScoped: false,
+    columns: {
+      id: 'lat-${SUFFIX}',
+      "diagnosticId": diagnosticRef(),
+      "unitAddress": '1',
+      "latencyMs": '38.25',
+      ok: 'true',
     },
   },
 ]
@@ -674,6 +771,9 @@ interface ParentIds {
   dispenserId?: string
   generatorId?: string
   tankId?: string
+  /** Phase 2: Rs485BusDiagnostic belongs to a bus; a sample to a diagnostic. */
+  rs485BusId?: string
+  rs485DiagnosticId?: string
 }
 
 function subst(sql: string, suffix: string = SUFFIX, parents: ParentIds = {}): string {
@@ -685,6 +785,8 @@ function subst(sql: string, suffix: string = SUFFIX, parents: ParentIds = {}): s
     .replaceAll('${DISPENSER_ID}', parents.dispenserId ?? DISPENSER_ID)
     .replaceAll('${GENERATOR_ID}', parents.generatorId ?? GENERATOR_ID)
     .replaceAll('${TANK_ID}', parents.tankId ?? TANK_ID)
+    .replaceAll('${RS485_BUS_ID}', parents.rs485BusId ?? RS485_BUS_ID)
+    .replaceAll('${RS485_DIAG_ID}', parents.rs485DiagnosticId ?? RS485_DIAG_ID)
 }
 
 /**
@@ -762,6 +864,13 @@ async function purgeStaleFixtures(): Promise<void> {
     'AlarmSuppression', 'BatteryBank', 'Generator', 'IotDevice', 'FuelTank',
     'FuelDispenser', 'EspFirmwareDeployment', 'ApiKey', 'BackupRecord',
     'Notification', 'NotificationPreference', 'ShiftHandover', 'AuditLog',
+    // InterlockOverride before Generator/User: it holds FKs to both, so a
+    // parent-first delete would be rejected. Omitting a table here does not
+    // fail loudly — the stale row survives, and the NEXT run's tenant-A fixture
+    // collides or is skipped, so the failure surfaces one run late as a
+    // confusing "RLS may be over-strict" message. Every table in `order` needs
+    // an entry in `patterns` too.
+    'InterlockOverride',
     'Site', 'User', 'EspFirmwareRelease', 'District', 'Governorate', 'Region',
     'Tenant',
   ]
@@ -776,6 +885,7 @@ async function purgeStaleFixtures(): Promise<void> {
     ShiftHandover: 'shf-%', AuditLog: 'aud-%', Site: 'rls-site%',
     User: 'rls-user-%', EspFirmwareRelease: 'rls-rel%', District: 'rls-dist%',
     Governorate: 'rls-gov%', Region: 'rls-reg%',
+    InterlockOverride: 'ovr-%',
   }
   for (const table of order) {
     const pattern = patterns[table]
@@ -907,9 +1017,41 @@ async function seedFixtures(): Promise<void> {
       [`efd-${suffix}`, RELEASE_ID, dispId, 'QUEUED', tenant],
     )
 
+    // Phase 2: the RS485 bus this tenant's diagnostics attach to. Created per
+    // tenant (not shared) because Rs485BusDiagnostic carries its own tenantId
+    // and must reference a parent owned by the SAME tenant — otherwise the
+    // fixture would be testing an FK violation rather than RLS.
+    const rs485BusId = `bus-${suffix}`
+    const rs485DiagId = `diag-${suffix}`
+    await oe(
+      `INSERT INTO "Rs485Bus" (id,label,"siteId",baudrate,"unitAddress",parity,
+        "stopBits","dataBits",online,"updatedAt","tenantId")
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, now(),$10)`,
+      [rs485BusId, `bus-${suffix}`, siteId, 9600, 1, '8N1', 1, 8, true, tenant],
+    )
+    await oe(
+      `INSERT INTO "Rs485BusDiagnostic" (id,"busId","unitAddress","deviceKind","deviceId",
+        "crcErrors","timeouts",retries,"retriesExhausted","exceptionResponses",
+        "successfulReads","failedReads","lastLatencyMs","averageLatencyMs",
+        "lastError","lastErrorKind","updatedAt","tenantId")
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16, now(),$17)`,
+      [rs485DiagId, rs485BusId, 1, 'FuelDispenser', dispId, 3, 2, 1, 0, 0, 10, 2,
+       42.5, 40.25, 'transient line noise', 'crc-mismatch', tenant],
+    )
+    await oe(
+      `INSERT INTO "Rs485LatencySample" (id,"diagnosticId","unitAddress","latencyMs",ok,"recordedAt","tenantId")
+       VALUES ($1,$2,$3,$4,$5, now(),$6)`,
+      [`lat-${suffix}`, rs485DiagId, 1, 38.25, true, tenant],
+    )
+
     for (const spec of TABLES) {
       if (spec.table === 'EspFirmwareDeployment') continue // created above
       if (spec.table === 'FuelDispenser' || spec.table === 'Generator') continue // created above
+      // Phase 2: created above with per-tenant parent ids (bus -> diagnostic ->
+      // latency sample). The generic path would reference tenant A's bus from
+      // tenant B's diagnostic and fail on the FK before RLS was ever reached.
+      if (spec.table === 'Rs485Bus' || spec.table === 'Rs485BusDiagnostic' ||
+          spec.table === 'Rs485LatencySample') continue
       // Tenant-owned roots are created once per tenant ABOVE, with the exact
       // per-tenant ids (siteIdFor(tag), USER_A/USER_B, chains[tag]). Re-inserting
       // them here with the shared ${SITE_ID} placeholder collides on the primary
