@@ -562,8 +562,15 @@ function q<T = Record<string, unknown>>(sql: string, params: unknown[] = []): Pr
  *
  * Falls back to the app client when no owner URL is supplied — in which case
  * seeding a second tenant legitimately fails and the suite says so.
+ *
+ * ENV VAR — one name for the owner connection, shared with
+ * src/lib/fgmp/seed.ts. `FGMP_MIGRATE_DATABASE_URL` names the ROLE (the
+ * migration/owner principal) rather than the task, so it reads correctly in
+ * seed.ts, in this suite and in the smoke test alike. The suite previously used
+ * `RLS_OWNER_DATABASE_URL`, which duplicated the same meaning under a second
+ * name; that name has been removed so there is exactly one.
  */
-const ownerUrl = process.env.RLS_OWNER_DATABASE_URL
+const ownerUrl = process.env.FGMP_MIGRATE_DATABASE_URL
 let owner: PrismaClient | null = null
 
 function ownerDb(): PrismaClient {

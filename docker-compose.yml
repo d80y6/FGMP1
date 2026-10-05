@@ -65,6 +65,21 @@ services:
       # owner). DATABASE_URL must never carry fgmp_ops — see note above.
       - DATABASE_URL=postgresql://fgmp_app:${PGAPP_PASSWORD}@fgmp-db:5432/fgmp?schema=public&connection_limit=10
       - FGMP_OPS_DATABASE_URL=postgresql://fgmp_ops:${PGOPS_PASSWORD}@fgmp-db:5432/fgmp?schema=public
+      # Phase 1 step 6: RLS is FORCE-enabled on every tenant-carrying table, so
+      # seedIfNeeded() (called from bootstrap() on the request path) can no
+      # longer write on the app role:
+      #     ERROR: new row violates row-level security policy for table "User"
+      # Seeding spans tenants and creates the tenants themselves, so it cannot
+      # run inside withTenant() and needs the owner role.
+      #
+      # TRADEOFF — this deliberately gives the web container a SUPERUSER
+      # credential (fgmp_migrate is superuser, so it bypasses RLS entirely).
+      # That contradicts the "MUST NOT hold a BYPASSRLS role" rule above, so it
+      # is opt-in and unset by default: export FGMP_MIGRATE_DATABASE_URL before
+      # `docker compose up`, or seeding fails closed with a clear error.
+      # The proper fix is to move seeding out of the request path into a
+      # deploy-time step, at which point this variable can be deleted.
+      - FGMP_MIGRATE_DATABASE_URL=${FGMP_MIGRATE_DATABASE_URL:-}
       # Set to "0" ONLY for local development where no RLS policy exists yet.
       # Any non-zero environment MUST be "1" or the app refuses to start.
       - FGMP_REQUIRE_RLS=${FGMP_REQUIRE_RLS:-1}

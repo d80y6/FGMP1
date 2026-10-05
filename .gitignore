@@ -31,7 +31,11 @@ yarn-error.log*
 .pnpm-debug.log*
 
 # env files (can opt-in for committing if needed)
+# `.env*` also matched `.env.example`, so the documented template could never be
+# committed and a fresh checkout had no reference for the required variables.
+# Secrets stay ignored; the template is tracked deliberately.
 .env*
+!.env.example
 
 # vercel
 .vercel

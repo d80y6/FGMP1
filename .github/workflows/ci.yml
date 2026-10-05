@@ -33,7 +33,7 @@ jobs:
       - name: Generate Prisma client
         run: bun run db:generate
         env:
-          DATABASE_URL: file:/tmp/ci.db
+          DATABASE_URL: postgresql://fgmp_app:ciapp@127.0.0.1:5432/fgmp?schema=public
 
       # ── The type gate ────────────────────────────────────────────────────
       # Zero errors required. This is what catches a route reading a column
@@ -53,7 +53,7 @@ jobs:
       - name: Validate Prisma schema
         run: bunx prisma validate
         env:
-          DATABASE_URL: file:/tmp/ci.db
+          DATABASE_URL: postgresql://fgmp_app:ciapp@127.0.0.1:5432/fgmp?schema=public
 
       # ── The production build ─────────────────────────────────────────────
       # Runs with `typescript.ignoreBuildErrors: false`, so a type error fails
@@ -62,7 +62,7 @@ jobs:
       - name: Build
         run: bun run build
         env:
-          DATABASE_URL: file:/tmp/ci.db
+          DATABASE_URL: postgresql://fgmp_app:ciapp@127.0.0.1:5432/fgmp?schema=public
           NEXT_TELEMETRY_DISABLED: "1"
 
   # The realtime service and the IoT bridge are separate Bun projects with their
@@ -87,31 +87,122 @@ jobs:
         working-directory: mini-services/${{ matrix.service }}
         run: bun install --frozen-lockfile
 
+      # Both services now ship a tsconfig.json, so this gate actually runs.
+      # It previously ended in `|| echo "no tsconfig — skipped"`, which meant a
+      # green checkmark over 775 lines of socket.io and device-ingest code that
+      # had never been type-checked: a missing tsconfig and a clean build were
+      # indistinguishable in CI. There is no fallback branch now, so a missing
+      # tsconfig or a real type error both fail the job.
       - name: Typecheck
         working-directory: mini-services/${{ matrix.service }}
-        run: bunx tsc --noEmit --skipLibCheck 2>/dev/null || echo "no tsconfig in ${{ matrix.service }} — skipped"
+        run: bunx tsc --noEmit --skipLibCheck
+
+  # ── RLS backstop ──────────────────────────────────────────────────────────
+  # The isolation guarantee is enforced by the DATABASE, so it can only be
+  # proven against a real PostgreSQL instance with the policies applied. This
+  # job boots Postgres, applies every migration, then runs the smoke test and
+  # the RLS regression suite as the non-owner app role.
+  rls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: [verify]
+
+    services:
+      postgres:
+        image: timescale/timescaledb:latest-pg17
+        env:
+          POSTGRES_USER: fgmp_migrate
+          POSTGRES_PASSWORD: cimigrate
+          POSTGRES_DB: fgmp
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fgmp_migrate -d fgmp"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://fgmp_app:ciapp@127.0.0.1:5432/fgmp?schema=public
+      FGMP_MIGRATE_DATABASE_URL: postgresql://fgmp_migrate:cimigrate@127.0.0.1:5432/fgmp?schema=public
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Create the app role (non-owner, RLS enforced)
+        run: |
+          PGPASSWORD=cimigrate psql -h 127.0.0.1 -U fgmp_migrate -d fgmp -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'fgmp_app') THEN
+              CREATE ROLE fgmp_app LOGIN PASSWORD 'ciapp' NOSUPERUSER NOBYPASSRLS;
+            END IF;
+          END $$;
+          GRANT USAGE ON SCHEMA public TO fgmp_app;
+          SQL
+
+      - name: Apply migrations
+        run: bunx prisma migrate deploy
+
+      - name: Grant DML to the app role
+        run: |
+          PGPASSWORD=cimigrate psql -h 127.0.0.1 -U fgmp_migrate -d fgmp -v ON_ERROR_STOP=1 <<'SQL'
+          GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO fgmp_app;
+          GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO fgmp_app;
+          SQL
+
+      # Proves the schema works at runtime AND that the policies are live: the
+      # smoke test asserts an unscoped app-role read returns zero rows.
+      - name: PostgreSQL smoke test (non-destructive, asserts RLS is enforcing)
+        run: bun run scripts/smoke-postgres.ts
+
+      # The isolation proof: 24 tables, deliberately unguarded queries that must
+      # not leak. Exits non-zero on any failure.
+      - name: RLS regression suite
+        run: bun run scripts/rls-regression.ts
 
   docker:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     needs: [verify]
 
+    services:
+      postgres:
+        image: timescale/timescaledb:latest-pg17
+        env:
+          POSTGRES_USER: fgmp_migrate
+          POSTGRES_PASSWORD: cimigrate
+          POSTGRES_DB: fgmp
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fgmp_migrate -d fgmp"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - uses: actions/checkout@v4
 
-      # Proves the image actually builds and boots on an empty volume. The
-      # Dockerfile previously failed at `addgroup --system` (missing in
-      # oven/bun:1-slim) and then again because no schema was applied on a
-      # fresh volume — neither was caught by any CI.
+      # Proves the image actually builds and boots. Phase 1 migrated the app
+      # from SQLite to PostgreSQL, so this now runs the container against the
+      # Postgres service and applies migrations on a fresh volume — there is no
+      # longer a local db file to mount.
       - name: Build image
         run: docker build -t fgmp:ci .
 
-      - name: Boot on a fresh volume and apply the schema
+      - name: Boot against PostgreSQL and apply migrations
         run: |
-          docker volume create fgmp-ci-db
           docker run -d --name fgmp-ci -p 3000:3000 \
-            -v fgmp-ci-db:/app/db \
-            -e DATABASE_URL=file:/app/db/fgmp.db \
+            --network host \
+            -e DATABASE_URL=postgresql://fgmp_app:ciapp@127.0.0.1:5432/fgmp?schema=public \
+            -e FGMP_MIGRATE_DATABASE_URL=postgresql://fgmp_migrate:cimigrate@127.0.0.1:5432/fgmp?schema=public \
             -e NEXTAUTH_SECRET=ci-secret-abcdefghijklmnopqrstuvwxyz0123456789 \
             -e IOT_API_KEY=ci-iot-key-abcdefghijklmnop \
             -e REALTIME_SERVER_SECRET=ci-srv-secret-abcdefghij \
@@ -128,9 +219,19 @@ jobs:
             sleep 2
           done
 
-          # The schema must have been applied to the empty volume.
-          docker logs fgmp-ci | grep -q "applied prisma/schema.sql" \
-            || { echo "FAIL: schema was not applied on the fresh volume"; exit 1; }
+          # The app must actually be talking to PostgreSQL, not a local file.
+          docker exec fgmp-ci sh -c "wget -qO- http://127.0.0.1:3000/api/fgmp/health >/dev/null || true"
+          PGPASSWORD=cimigrate psql -h 127.0.0.1 -U fgmp_migrate -d fgmp -tAc \
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'" \
+            | grep -Eq '^[1-9][0-9]*$' \
+            || { echo "FAIL: schema was not applied"; exit 1; }
+
+          # RLS must be live on every tenant-carrying table in the container's DB.
+          enabled=$(PGPASSWORD=cimigrate psql -h 127.0.0.1 -U fgmp_migrate -d fgmp -tAc \
+            "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+             WHERE n.nspname='public' AND c.relkind='r' AND c.relrowsecurity AND c.relforcerowsecurity")
+          [ "$enabled" -eq 24 ] \
+            || { echo "FAIL: expected 24 FORCE-RLS tables, found $enabled"; exit 1; }
 
           # Must not have baked .env into the image.
           docker exec fgmp-ci sh -c "test ! -f /app/.env" \
@@ -142,4 +243,4 @@ jobs:
 
       - name: Cleanup
         if: always()
-        run: docker rm -f fgmp-ci || true; docker volume rm -f fgmp-ci-db || true
+        run: docker rm -f fgmp-ci || true

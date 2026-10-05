@@ -4,7 +4,37 @@
 // This is idempotent: if dispensers already exist, it exits without changes.
 import { PrismaClient } from "@prisma/client";
 
-const db = new PrismaClient();
+/**
+ * Owner-role client for system-level seeding (Phase 1 step 6).
+ *
+ * RLS is FORCE-enabled on every tenant-carrying table, so a write with no
+ * `app.tenant_id` in scope fails its WITH CHECK:
+ *
+ *   ERROR: new row violates row-level security policy for table "User"
+ *
+ * These scripts seed across tenants (and seed the tenants themselves), so a
+ * single per-tenant context cannot cover the work. They run on the owner role
+ * instead — the same pattern as src/lib/fgmp/seed.ts. This is a ROLE SPLIT,
+ * not a bypass of a tenant boundary: the script picks which tenant each row
+ * belongs to.
+ */
+function systemDb(): PrismaClient {
+  const url = process.env.FGMP_MIGRATE_DATABASE_URL;
+  if (!url) {
+    throw new Error(
+      "FGMP_MIGRATE_DATABASE_URL is required: RLS blocks writes on the app role.",
+    );
+  }
+  return new PrismaClient({
+    datasources: { db: { url } },
+    log: [
+      { level: "warn", emit: "stdout" as const },
+      { level: "error", emit: "stdout" as const },
+    ],
+  });
+}
+
+const db = systemDb();
 
 function mulberry32(seed: number) {
   return function () {

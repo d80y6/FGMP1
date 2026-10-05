@@ -17,7 +17,35 @@
  * data.
  */
 import bcrypt from "bcryptjs";
-import { db } from "../src/lib/db";
+/**
+ * Owner-role client for system-level work (Phase 1 step 6).
+ *
+ * RLS is FORCE-enabled on every tenant-carrying table, so a write with no
+ * `app.tenant_id` in scope fails its WITH CHECK:
+ *
+ *   ERROR: new row violates row-level security policy for table "User"
+ *
+ * This script creates the tenants themselves, so it cannot wrap itself in
+ * withTenant() — there is no tenant to scope to yet. It runs on the owner role,
+ * the same pattern as src/lib/fgmp/seed.ts.
+ */
+function systemDb(): PrismaClient {
+  const url = process.env.FGMP_MIGRATE_DATABASE_URL;
+  if (!url) {
+    throw new Error(
+      "FGMP_MIGRATE_DATABASE_URL is required: RLS blocks writes on the app role.",
+    );
+  }
+  return new PrismaClient({
+    datasources: { db: { url } },
+    log: [
+      { level: "warn", emit: "stdout" as const },
+      { level: "error", emit: "stdout" as const },
+    ],
+  });
+}
+
+const db = systemDb();
 import { PrismaClient } from "@prisma/client";
 
 const DEFAULT_EMAIL = "admin@fgmp.ye";
