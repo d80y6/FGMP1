@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, bootstrap } from "@/lib/fgmp";
+import { bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import { notificationPreferenceSchema, validateBody } from "@/lib/fgmp/schemas";
 import {
@@ -52,11 +53,13 @@ export async function GET(req: NextRequest) {
 
     let pref;
     try {
-      pref = await db.notificationPreference.upsert({
-        where: { userId: user.id },
-        update: {},
-        create: { userId: user.id, tenantId: user.tenantId, ...DEFAULT_PREFS },
-      });
+      pref = await asTenant(user.tenantId, (tx) =>
+        tx.notificationPreference.upsert({
+          where: { userId: user.id },
+          update: {},
+          create: { userId: user.id, tenantId: user.tenantId, ...DEFAULT_PREFS },
+        }),
+      );
     } catch (upsertErr) {
       // P2003 = foreign key constraint violation — the session user.id doesn't
       // exist in the User table (e.g. a stale session after user deletion, or
@@ -138,7 +141,7 @@ export async function PUT(req: NextRequest) {
       return res;
     }
 
-    const updated = await db.notificationPreference.upsert({
+    const updated = await asTenant(user.tenantId, (tx) => tx.notificationPreference.upsert({
       where: { userId: user.id },
       update: {
         inAppEnabled: data.inAppEnabled,
@@ -165,8 +168,9 @@ export async function PUT(req: NextRequest) {
         quietHoursEnd: data.quietHoursEnd,
         emailOverride,
         phoneOverride,
-      },
-    });
+        },
+      }),
+    );
 
     await audit({
       userId: user.id,

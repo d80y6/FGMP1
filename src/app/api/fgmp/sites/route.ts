@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { db, engine, bootstrap } from "@/lib/fgmp";
+import { engine, bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import { requireAuth, requireRole, ROLES, tenantWhere } from "@/lib/fgmp/auth-helpers";
 import { audit } from "@/lib/fgmp/audit";
 import {
@@ -71,11 +72,20 @@ export async function GET(req: NextRequest) {
       return res;
     }
 
-    const sites = await db.site.findMany({
-      where: tenantWhere(me),
-      include: siteInclude,
-      orderBy: { code: "asc" },
-    });
+    // ── Tenant scoping ────────────────────────────────────────────────────
+    // `tenantWhere(me)` builds a WHERE object, but a WHERE alone does NOT
+    // satisfy RLS: the policy's USING clause is ANDed with it and
+    // current_setting('app.tenant_id') is NULL, so the query returned zero rows
+    // regardless of the filter. The filter is kept — it is still correct and
+    // still denies a superadmin's unfiltered view — but the query must also run
+    // inside a tenant context for the rows to exist at all.
+    const sites = await asTenant(me.tenantId, (tx) =>
+      tx.site.findMany({
+        where: tenantWhere(me),
+        include: siteInclude,
+        orderBy: { code: "asc" },
+      }),
+    );
     const res = NextResponse.json(sites);
     applyRateLimitHeaders(res.headers, rl);
     return res;
@@ -128,10 +138,47 @@ export async function POST(req: NextRequest) {
     }
     const data = parsed.data;
 
-    // Unique code check (the DB enforces this too, but a 409 here gives a
-    // cleaner error than the generic P2002 from api-error.)
-    const existing = await db.site.findUnique({ where: { code: data.code } });
-    if (existing) {
+    const tenantId = me.tenantId;
+
+    // ── Tenant scoping ────────────────────────────────────────────────────
+    // Site, Region, Governorate and District are all FORCE-RLS protected, so
+    // these reads returned null and the create was rejected by WITH CHECK. The
+    // code-uniqueness probe and the hierarchy validation are done in ONE
+    // transaction so the validation and the insert cannot observe different
+    // snapshots. Without a context, `region` came back null and every create
+    // failed with INVALID_HIERARCHY — a wrong answer, not an error.
+    const { codeClash, region, governorate, district } = await asTenant(
+      tenantId,
+      async (tx) => {
+        // Unique code check (the DB enforces this too, but a 409 here gives a
+        // cleaner error than the generic P2002 from api-error.)
+        const existing = await tx.site.findUnique({ where: { code: data.code } });
+        if (existing) {
+          return { codeClash: true, region: null, governorate: null, district: null };
+        }
+
+        // Validate hierarchical consistency: governorate.regionId === regionId
+        // AND district.governorateId === governorateId.
+        //
+        // `Governorate` and `District` carry no tenantId of their own — tenancy
+        // flows Region -> Governorate -> District, and only Region is directly
+        // RLS-filtered. They are therefore read INSIDE the region they are being
+        // validated against: if the region is not this tenant's, the nested
+        // read cannot run at all, because the enclosing Region row is already
+        // filtered by the policy. This is the hierarchy the Phase 1 doc records
+        // as "Tier B — reaches Site via Region".
+        const r = await tx.region.findFirst({ where: { id: data.regionId, tenantId } });
+        if (!r) return { codeClash: false, region: null, governorate: null, district: null };
+
+        const [g, d] = await Promise.all([
+          tx.governorate.findUnique({ where: { id: data.governorateId } }),
+          tx.district.findUnique({ where: { id: data.districtId } }),
+        ]);
+        return { codeClash: false, region: r, governorate: g, district: d };
+      },
+    );
+
+    if (codeClash) {
       const res = NextResponse.json(
         { error: "Site code already exists", code: "CODE_EXISTS" },
         { status: 409 },
@@ -140,13 +187,6 @@ export async function POST(req: NextRequest) {
       return res;
     }
 
-    // Validate hierarchical consistency: governorate.regionId === regionId
-    // AND district.governorateId === governorateId. Parallel fetch.
-    const [region, governorate, district] = await Promise.all([
-      db.region.findUnique({ where: { id: data.regionId } }),
-      db.governorate.findUnique({ where: { id: data.governorateId } }),
-      db.district.findUnique({ where: { id: data.districtId } }),
-    ]);
     if (!region || !governorate || !district) {
       const res = NextResponse.json(
         { error: "Region/Governorate/District hierarchy is invalid", code: "INVALID_HIERARCHY" },
@@ -164,8 +204,7 @@ export async function POST(req: NextRequest) {
       return res;
     }
 
-    const tenantId = me.tenantId;
-    const site = await db.site.create({
+    const site = await asTenant(tenantId, (tx) => tx.site.create({
       data: {
         tenantId,
         code: data.code,
@@ -183,7 +222,8 @@ export async function POST(req: NextRequest) {
         status: data.status,
       },
       include: siteInclude,
-    });
+      }),
+    );
 
     // Force the engine to pick up the new site on the next snapshot read.
     await engine.reload();

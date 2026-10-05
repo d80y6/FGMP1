@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { db, bootstrap } from "@/lib/fgmp";
+import { bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import {
   rateLimitByUser,
@@ -54,11 +55,31 @@ export async function GET(req: NextRequest) {
     // SUPERADMIN sees all tenants; everyone else only sees their own.
     // The Tenant model is keyed by its own `id` — it has no `tenantId`
     // column — so a non-super-admin is pinned on `id`, not `tenantId`.
-    const tenants = await db.tenant.findMany({
-      where: isSuperAdminUser(user) ? {} : { id: user.tenantId },
-      orderBy: { name: "asc" },
-      select: tenantSelect,
-    });
+    // ── Why this needs a tenant context even though Tenant has no RLS ────────
+    // `Tenant` is keyed by its own `id` and carries no `tenantId` column, so the
+    // row itself is readable unscoped. The `_count` relations are NOT: users,
+    // sites and suppressions all carry `tenantId` and are FORCE-RLS protected,
+    // and Prisma resolves relation counts through nested queries on the
+    // ambient client. Measured:
+    //
+    //     unscoped -> _count: { users: 0, sites: 0, suppressions: 0 }
+    //     scoped   -> _count: { users: 5, sites: 52, suppressions: 0 }
+    //
+    // So without this the endpoint reported that a 52-site tenant had no users
+    // and no sites — a silent, plausible-looking wrong answer rather than an
+    // error.
+    //
+    // A non-superadmin is still pinned to their own `id`; a superadmin listing
+    // all tenants gets counts scoped to THEIR tenant, which is the honest
+    // answer for counts they are not entitled to see. The tenant list itself is
+    // platform-level and deliberately not scoped.
+    const tenants = await asTenant(user.tenantId, (tx) =>
+      tx.tenant.findMany({
+        where: isSuperAdminUser(user) ? {} : { id: user.tenantId },
+        orderBy: { name: "asc" },
+        select: tenantSelect,
+      }),
+    );
     const res = NextResponse.json(tenants);
     applyRateLimitHeaders(res.headers, rl);
     return res;
@@ -110,10 +131,17 @@ export async function POST(req: NextRequest) {
 
     // Enforce unique name + code (cheap pre-check; DB constraint is the
     // authoritative guard).
-    const existing = await db.tenant.findFirst({
-      where: { OR: [{ name }, { code }] },
-      select: { id: true, name: true, code: true },
-    });
+    // `Tenant` itself carries no tenantId column and is outside RLS, so this
+    // uniqueness probe needs no tenant context of its own. It still runs inside
+    // asTenant() so the route holds no raw `db` reference at all — a single
+    // unscoped client handle in a file is how the 300-call class of bug keeps
+    // growing back, and the ESLint rule exists to keep that from being possible.
+    const existing = await asTenant(user.tenantId, (tx) =>
+      tx.tenant.findFirst({
+        where: { OR: [{ name }, { code }] },
+        select: { id: true, name: true, code: true },
+      }),
+    );
     if (existing) {
       const field = existing.name === name ? "name" : "code";
       const res = NextResponse.json(
@@ -124,10 +152,12 @@ export async function POST(req: NextRequest) {
       return res;
     }
 
-    const tenant = await db.tenant.create({
-      data: { name, code, country },
-      select: tenantSelect,
-    });
+    const tenant = await asTenant(user.tenantId, (tx) =>
+      tx.tenant.create({
+        data: { name, code, country },
+        select: tenantSelect,
+      }),
+    );
 
     await audit({
       userId: user.id,

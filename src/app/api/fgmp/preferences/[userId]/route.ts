@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, bootstrap } from "@/lib/fgmp";
+import { bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import { notificationPreferenceSchema, validateBody } from "@/lib/fgmp/schemas";
 import {
@@ -49,28 +50,43 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ userId: str
 
     const { userId } = await ctx.params;
 
-    // Tenant scoping — admin can only manage users in their own tenant
-    // (SUPERADMIN bypasses for cross-tenant management).
-    const target = await db.user.findUnique({
-      where: { id: userId },
-      select: { id: true, tenantId: true, name: true, email: true, role: true },
+    // ── IDOR: the `:userId` path parameter is attacker-controlled ───────────
+    // Scoped in the QUERY, not filtered afterwards. `assertTenantOwned` compares
+    // `record.tenantId` after the row is fetched, which under FORCE RLS never
+    // happens — the fetch returns null and every lookup 404s. That made the
+    // check inert rather than merely weak, so the scoping has to live in the
+    // `where` clause for the check to function at all.
+    //
+    // The tenant comes from the AUTHENTICATED SESSION, never from the path, so
+    // an admin cannot read another tenant's preferences by editing the URL.
+    const { target, pref } = await asTenant(user.tenantId, async (tx) => {
+      const found = await tx.user.findFirst({
+        where: { id: userId, tenantId: user.tenantId },
+        select: { id: true, tenantId: true, name: true, email: true, role: true },
+      });
+      // Cross-tenant targets are indistinguishable from non-existent ones: both
+      // yield 404, so this cannot be used to probe for valid user ids.
+      if (!found) return { target: null, pref: null };
+
+      // Kept as defence in depth. The query already scopes by tenantId; this
+      // guarantees a future change to the where clause cannot become a read
+      // of another tenant's preferences.
+      const denied = assertTenantOwned(found, user);
+      if (denied) return { target: null, pref: null };
+
+      const prefs = await tx.notificationPreference.upsert({
+        where: { userId: found.id },
+        update: {},
+        create: { userId: found.id, tenantId: found.tenantId, ...DEFAULT_PREFS },
+      });
+      return { target: found, pref: prefs };
     });
-    const denied = assertTenantOwned(target, user);
-    if (denied) {
-      applyRateLimitHeaders(denied.headers, rl);
-      return denied;
-    }
-    if (!target) {
+
+    if (!target || !pref) {
       const res = NextResponse.json({ error: "User not found" }, { status: 404 });
       applyRateLimitHeaders(res.headers, rl);
       return res;
     }
-
-    const pref = await db.notificationPreference.upsert({
-      where: { userId: target.id },
-      update: {},
-      create: { userId: target.id, tenantId: target.tenantId, ...DEFAULT_PREFS },
-    });
 
     // Return the prefs alongside the target user's profile so the admin UI
     // can render "Editing preferences for: <name> (<email>)" without a
@@ -104,15 +120,19 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ userId: str
     }
 
     const { userId } = await ctx.params;
-    const target = await db.user.findUnique({
-      where: { id: userId },
-      select: { id: true, tenantId: true, name: true, email: true, role: true },
+
+    // Same IDOR guard as GET: scope the lookup by the CALLER's tenant in the
+    // query, so a cross-tenant userId is invisible rather than filtered out
+    // after the fact. Writing another operator's notification preferences is a
+    // privilege escalation, so this must not depend on a post-fetch check.
+    const target = await asTenant(user.tenantId, async (tx) => {
+      const found = await tx.user.findFirst({
+        where: { id: userId, tenantId: user.tenantId },
+        select: { id: true, tenantId: true, name: true, email: true, role: true },
+      });
+      if (!found) return null;
+      return assertTenantOwned(found, user) ? null : found;
     });
-    const denied = assertTenantOwned(target, user);
-    if (denied) {
-      applyRateLimitHeaders(denied.headers, rl);
-      return denied;
-    }
     if (!target) {
       const res = NextResponse.json({ error: "User not found" }, { status: 404 });
       applyRateLimitHeaders(res.headers, rl);
@@ -143,7 +163,8 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ userId: str
       return res;
     }
 
-    const updated = await db.notificationPreference.upsert({
+    const updated = await asTenant(user.tenantId, (tx) =>
+      tx.notificationPreference.upsert({
       where: { userId: target.id },
       update: {
         inAppEnabled: data.inAppEnabled,
@@ -170,8 +191,9 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ userId: str
         quietHoursEnd: data.quietHoursEnd,
         emailOverride,
         phoneOverride,
-      },
-    });
+        },
+      }),
+    );
 
     await audit({
       userId: user.id,

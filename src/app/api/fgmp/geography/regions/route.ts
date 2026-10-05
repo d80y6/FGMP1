@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { db, bootstrap } from "@/lib/fgmp";
+import { bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import {
   rateLimitByUser,
@@ -71,29 +72,32 @@ export async function POST(req: NextRequest) {
     const tenantId = parsed.data.tenantId || user.tenantId;
     const name = parsed.data.name;
 
-    // Verify the target tenant exists (defensive — admin's tenant always does).
-    const tenant = await db.tenant.findUnique({ where: { id: tenantId }, select: { id: true } });
-    if (!tenant) {
-      const res = NextResponse.json({ error: "Tenant not found" }, { status: 404 });
-      applyRateLimitHeaders(res.headers, rl);
-      return res;
-    }
+    // ── Tenant scoping ──────────────────────────────────────────────────────
+    // Region is RLS-protected with FORCE, so these reads on the ambient `db`
+    // returned zero rows and the create was rejected by WITH CHECK. All three
+    // now run inside asTenant(tenantId, …) on the transaction client.
+    //
+    // `tenantId` was resolved above from the acting user's session (or an
+    // explicitly-authorised superadmin), never from the body alone — a tenant
+    // admin passing someone else's tenantId is rejected with 403 before here.
+    const { tenant, clash, region } = await asTenant(tenantId, async (tx) => {
+      // Verify the target tenant exists (defensive — admin's tenant always does).
+      // Tenant itself carries no tenantId column, so it is outside RLS; the read
+      // is scoped to the one id the caller is already authorised for.
+      const t = await tx.tenant.findUnique({
+        where: { id: tenantId },
+        select: { id: true },
+      });
+      if (!t) return { tenant: null, clash: null, region: null };
 
-    // Enforce unique (tenantId, name)
-    const clash = await db.region.findUnique({
-      where: { tenantId_name: { tenantId, name } },
-      select: { id: true },
-    });
-    if (clash) {
-      const res = NextResponse.json(
-        { error: "Region name already exists in this tenant", field: "name" },
-        { status: 409 },
-      );
-      applyRateLimitHeaders(res.headers, rl);
-      return res;
-    }
+      // Enforce unique (tenantId, name)
+      const existing = await tx.region.findUnique({
+        where: { tenantId_name: { tenantId, name } },
+        select: { id: true },
+      });
+      if (existing) return { tenant: t, clash: existing, region: null };
 
-    const region = await db.region.create({
+      const created = await tx.region.create({
       data: { tenantId, name },
       include: {
         governorates: {
@@ -104,8 +108,29 @@ export async function POST(req: NextRequest) {
           },
         },
         _count: { select: { sites: true, governorates: true } },
-      },
+        },
+      });
+      return { tenant: t, clash: null, region: created };
     });
+
+    if (!tenant) {
+      const res = NextResponse.json({ error: "Tenant not found" }, { status: 404 });
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
+    if (clash) {
+      const res = NextResponse.json(
+        { error: "Region name already exists in this tenant", field: "name" },
+        { status: 409 },
+      );
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
+    if (!region) {
+      const res = NextResponse.json({ error: "Region not created" }, { status: 500 });
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
 
     await audit({
       userId: user.id,
