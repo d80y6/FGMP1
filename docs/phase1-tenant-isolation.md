@@ -311,6 +311,18 @@ compromised or malicious application process. Treat the app role's credential
 as tenant-wide read/write for the whole platform; the per-request scoping is a
 property of the code, not of the database.
 
+### `FORCE` is not covered by the regression suite
+
+The suite runs as `fgmp_app`, a non-owner. That is correct — it is the role the
+application uses — but it means the suite cannot detect a missing `FORCE`, because
+without `FORCE` the policy still binds the non-owner. Verified by mutation:
+dropping `FORCE` from `FuelTank` left the suite at 153 PASS.
+
+The owner-side consequence is caught elsewhere: the `docker` CI job asserts
+`count(*) = 24` for tables with both `relrowsecurity` and `relforcerowsecurity`,
+and a non-superuser owner was shown to read 0 rows with no context. Nothing in
+the Bun suite covers it, so a regression there depends on CI's docker job running.
+
 ### The in-memory engine is not tenant-aware (most important open item)
 
 `engine.ensureInit()` reads tenant-scoped rows with NO tenant context. Under
