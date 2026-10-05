@@ -9,6 +9,7 @@ import {
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireRole, ROLES } from "@/lib/fgmp/auth-helpers";
+import { simulationDecision } from "@/lib/fgmp/simulation";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +39,33 @@ export const dynamic = "force-dynamic";
  * those roles, so the dashboard stays fresh. If a role-specific poll is
  * wanted, gate the `useEffect` in app-shell.tsx on the same ROLES.TICK set.
  */
+/**
+ * Refuse to fabricate telemetry when simulation is not permitted (Phase 2).
+ *
+ * This endpoint's entire purpose is to invent data, so it is the one place
+ * where a production deployment must say no outright. `engine.tick()` enforces
+ * the same rule independently; this is the HTTP-surface guard that returns a
+ * clear explanation instead of a generic 500.
+ *
+ * 503 rather than 403: nothing is wrong with the caller's credentials — the
+ * capability is not offered in this environment.
+ */
+function simulationRefusal() {
+  const d = simulationDecision();
+  if (d.allowed) return null;
+  return NextResponse.json(
+    {
+      error: "Simulated telemetry is disabled",
+      code: d.code,
+      reason: d.reason,
+    },
+    { status: 503 },
+  );
+}
+
 export async function POST(req: NextRequest) {
+  const refusal = simulationRefusal();
+  if (refusal) return refusal;
   const auth = await requireRole(req, ROLES.TICK);
   if ("error" in auth) return auth.error;
   try {
@@ -71,7 +98,9 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   // GET is not a read — it advances the clock by 60s, so it carries the same
-  // operator guard as POST.
+  // operator guard as POST and the same simulation guard.
+  const refusal = simulationRefusal();
+  if (refusal) return refusal;
   const auth = await requireRole(req, ROLES.TICK);
   if ("error" in auth) return auth.error;
   try {

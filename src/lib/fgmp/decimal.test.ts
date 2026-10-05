@@ -16,10 +16,6 @@
  * deliberately left alone here and flagged to the integrator instead.
  */
 
-// @ts-expect-error -- bun:test types come from the bun-types devDependency,
-// which tsconfig does not reference yet (see note above). Bun itself resolves
-// this import at runtime; only `tsc` is unaware of it.
-//
 // These tests deliberately exercise the REAL Prisma.Decimal, because the whole
 // point of the module is to convert that specific type. A hand-rolled stand-in
 // would not catch the `JSON.stringify(Decimal) === "1234.56"` string leak.

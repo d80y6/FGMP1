@@ -13,6 +13,8 @@ import {
   startOfZonedDay,
   resolvePlatformTimezone,
 } from "./thresholds-time";
+import { Rng, streamsFor, DEFAULT_SIM_SEED } from "./prng";
+import { assertSimulationAllowed } from "./simulation";
 
 // ── Deterministic PRNG for stable backfill ─────────────────────────────────
 function mulberry32(seed: number) {
@@ -69,8 +71,17 @@ function splitAlarmKey(key: string): [AlarmType, Severity | "", string] {
 const DISPENSER_COMM_STALE_MS = 90 * 1000; // > 90s since lastCommAt → OFFLINE
 const UNIT_PRICE_YER_PER_L = 520;        // Yemeni Rial per litre (diesel, ~2024)
 
+/**
+ * Module-level stream for `uid()`.
+ *
+ * Seeded from the same default as the engine's streams so ids are stable
+ * across a dev restart for a given seed, instead of changing every reload the
+ * way Math.random() did.
+ */
+const uidStream = new Rng(DEFAULT_SIM_SEED ^ 0x9999);
+
 function uid(prefix: string) {
-  return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
+  return `${prefix}-${uidStream.suffix()}`;
 }
 
 /**
@@ -97,6 +108,21 @@ class FgmpEngine {
   private now = Date.now();
   private tickCount = 0;
   private startedAt = Date.now();
+
+  /**
+   * Seeded random streams for the simulation (Phase 2).
+   *
+   * One stream per subsystem, not a single shared sequence: if generators and
+   * tanks shared one, changing how often a generator event fires would shift
+   * every later tank value, and a change to one subsystem would silently
+   * rewrite another subsystem's behaviour.
+   *
+   * Re-seeded from the configured seed on construction and by
+   * `resetSimulation()`, so a demo replays identically. Never `Math.random()`.
+   */
+  private rng: Record<string, Rng> = streamsFor(DEFAULT_SIM_SEED);
+  /** Seed the current streams were built from, to detect a config change. */
+  private rngSeedApplied: number | null = null;
 
   sites: SiteState[] = [];
   tanks: TankState[] = [];
@@ -334,7 +360,23 @@ class FgmpEngine {
   }
 
   // ── Advance simulation ───────────────────────────────────────────────────
+  //
+  // FABRICATES STATE. Every value below is invented, not measured. Real
+  // telemetry arrives via POST /api/fgmp/iot/ingest and is persisted; this
+  // method only ever adds plausible-looking data on top.
+  //
+  // Guarded at the ENGINE, not just at the route (Phase 2). A route guard
+  // protects the HTTP surface; this guard protects every caller — including
+  // the ones that are not HTTP, and the ones added later. Two independent
+  // conditions must both hold: not production, and explicitly opted in.
   async tick(seconds: number): Promise<{ tickCount: number; eventsCreated: number; alarmsCreated: number }> {
+    const { seed } = assertSimulationAllowed("engine.tick()");
+    // Honour the configured seed on first use so a demo is reproducible from
+    // the very first tick, not only after a manual reset.
+    if (this.rngSeedApplied !== seed) {
+      this.rng = streamsFor(seed);
+      this.rngSeedApplied = seed;
+    }
     await this.ensureInit();
     const tickHours = seconds / 3600;
     const prevNow = this.now;
@@ -346,7 +388,7 @@ class FgmpEngine {
 
     // ── IoT devices: occasional offline flutter ───────────────────────────
     for (const d of this.iotDevices) {
-      if (Math.random() < 0.004) {
+      if (this.rng.site.float() < 0.004) {
         d.status = d.status === "ONLINE" ? "OFFLINE" : "ONLINE";
         d.lastSeenAt = d.status === "ONLINE" ? this.now : d.lastSeenAt;
         if (d.status === "OFFLINE") {
@@ -364,8 +406,8 @@ class FgmpEngine {
         s.status = "ONLINE";
         this.pushEvent(s.id, "INFO", `Communication restored at ${s.name}`, {});
       }
-      if (!s.commLossUntil && Math.random() < 0.003) {
-        const lossMs = (2 + Math.random() * 8) * 60 * 1000;
+      if (!s.commLossUntil && this.rng.iot.float() < 0.003) {
+        const lossMs = (2 + this.rng.site.float() * 8) * 60 * 1000;
         s.commLossUntil = this.now + lossMs;
         s.status = "DEGRADED";
         this.pushEvent(s.id, "WARN", `Communication loss detected at ${s.name}`, { durationMs: lossMs });
@@ -407,9 +449,9 @@ class FgmpEngine {
         }
 
         // random fault
-        if (g.status === "RUNNING" && Math.random() < 0.0015) {
+        if (g.status === "RUNNING" && this.rng.generator.float() < 0.0015) {
           g.status = "FAULT";
-          g.faultUntil = this.now + (5 + Math.random() * 15) * 60 * 1000;
+          g.faultUntil = this.now + (5 + this.rng.generator.float() * 15) * 60 * 1000;
           this.pushEvent(g.siteId, "CRITICAL", `${g.label} FAULT detected`, { genId: g.id });
           alarmsCreated += await this.raiseAlarm({
             siteId: g.siteId, type: "GEN_FAILURE", severity: "L3",
@@ -421,10 +463,10 @@ class FgmpEngine {
 
       // Telemetry update
       if (g.status === "RUNNING") {
-        const targetTemp = 78 + Math.sin(this.now / 900000) * 6 + (Math.random() - 0.5) * 4;
+        const targetTemp = 78 + Math.sin(this.now / 900000) * 6 + (this.rng.site.float() - 0.5) * 4;
         g.temperatureC = Math.round((g.temperatureC + (targetTemp - g.temperatureC) * 0.3) * 10) / 10;
         // overheat fault path
-        if (g.temperatureC > 104 && Math.random() < 0.4) {
+        if (g.temperatureC > 104 && this.rng.generator.float() < 0.4) {
           alarmsCreated += await this.raiseAlarm({
             siteId: g.siteId, type: "GEN_OVERHEAT", severity: "L3",
             entityKind: "GENERATOR", entityId: g.id,
@@ -440,10 +482,10 @@ class FgmpEngine {
           });
         }
         g.runtimeHours = Math.round((g.runtimeHours + tickHours) * 100) / 100;
-        g.oilPressureKpa = Math.round(300 + Math.random() * 80);
-        g.loadKw = Math.round(Math.min(g.ratedPowerKw, site.loadKw * (0.8 + Math.random() * 0.4)) * 10) / 10;
+        g.oilPressureKpa = Math.round(300 + this.rng.generator.float() * 80);
+        g.loadKw = Math.round(Math.min(g.ratedPowerKw, site.loadKw * (0.8 + this.rng.generator.float() * 0.4)) * 10) / 10;
         g.fuelRateLph = Math.round((2.5 + (g.loadKw / g.ratedPowerKw) * 16) * 10) / 10;
-        g.batteryVoltage = Math.round((24.5 + Math.random() * 1.5) * 10) / 10;
+        g.batteryVoltage = Math.round((24.5 + this.rng.generator.float() * 1.5) * 10) / 10;
 
         // consume fuel from a tank at this site
         const siteTanks = this.tanks.filter((t) => t.siteId === g.siteId);
@@ -483,8 +525,8 @@ class FgmpEngine {
     for (const tk of this.tanks) {
       const site = this.sites.find((s) => s.id === tk.siteId)!;
       // Random theft event (rare)
-      if (Math.random() < 0.0012 && tk.current > tk.critical * 1.5) {
-        const stolen = Math.min(tk.current * (0.1 + Math.random() * 0.25), 400);
+      if (this.rng.tank.float() < 0.0012 && tk.current > tk.critical * 1.5) {
+        const stolen = Math.min(tk.current * (0.1 + this.rng.tank.float() * 0.25), 400);
         tk.prevLevel = tk.current;
         tk.current = Math.max(0, tk.current - stolen);
         this.pushEvent(tk.siteId, "CRITICAL", `Fuel theft detected: -${Math.round(stolen)}L from ${tk.label} at ${site.name}`, { tankId: tk.id, stolen });
@@ -496,8 +538,8 @@ class FgmpEngine {
         });
       }
       // Random unexpected refill (rare) — unauthorized top-up
-      if (Math.random() < 0.0008) {
-        const added = 80 + Math.random() * 300;
+      if (this.rng.site.float() < 0.0008) {
+        const added = 80 + this.rng.site.float() * 300;
         tk.prevLevel = tk.current;
         tk.current = Math.min(tk.capacity, tk.current + added);
         this.pushEvent(tk.siteId, "WARN", `Unexpected fuel increase: +${Math.round(added)}L in ${tk.label} at ${site.name}`, { tankId: tk.id, added });
@@ -550,15 +592,15 @@ class FgmpEngine {
       const charging = genRunning || site.gridAvailable;
       b.charging = charging;
       if (charging) {
-        b.voltage = Math.round(Math.min(b.nominalVoltage * 1.06, b.voltage + 0.02 + Math.random() * 0.03) * 100) / 100;
-        b.stateOfCharge = Math.min(100, b.stateOfCharge + 0.4 + Math.random() * 0.6);
-        b.currentA = Math.round((2 + Math.random() * 8) * 10) / 10;
+        b.voltage = Math.round(Math.min(b.nominalVoltage * 1.06, b.voltage + 0.02 + this.rng.battery.float() * 0.03) * 100) / 100;
+        b.stateOfCharge = Math.min(100, b.stateOfCharge + 0.4 + this.rng.battery.float() * 0.6);
+        b.currentA = Math.round((2 + this.rng.battery.float() * 8) * 10) / 10;
       } else {
-        b.voltage = Math.round(Math.max(b.nominalVoltage * 0.8, b.voltage - 0.04 - Math.random() * 0.06) * 100) / 100;
-        b.stateOfCharge = Math.max(5, b.stateOfCharge - 0.6 - Math.random() * 0.8);
-        b.currentA = Math.round(-(4 + Math.random() * 12) * 10) / 10;
+        b.voltage = Math.round(Math.max(b.nominalVoltage * 0.8, b.voltage - 0.04 - this.rng.battery.float() * 0.06) * 100) / 100;
+        b.stateOfCharge = Math.max(5, b.stateOfCharge - 0.6 - this.rng.battery.float() * 0.8);
+        b.currentA = Math.round(-(4 + this.rng.battery.float() * 12) * 10) / 10;
       }
-      b.temperatureC = Math.round((b.temperatureC + (24 + Math.random() * 6 - b.temperatureC) * 0.1) * 10) / 10;
+      b.temperatureC = Math.round((b.temperatureC + (24 + this.rng.generator.float() * 6 - b.temperatureC) * 0.1) * 10) / 10;
       b.lastReadingAt = this.now;
 
       if (isBatteryLowVoltage(b.voltage, b.nominalVoltage)) {
@@ -614,8 +656,8 @@ class FgmpEngine {
       }
       // ── ESP heartbeat ──────────────────────────────────────────────────
       d.lastCommAt = this.now;
-      d.wifiRssi = Math.max(-95, Math.min(-45, d.wifiRssi + Math.round((Math.random() - 0.5) * 4)));
-      d.tempC = Math.round((d.tempC + (32 + Math.random() * 6 - d.tempC) * 0.1) * 10) / 10;
+      d.wifiRssi = Math.max(-95, Math.min(-45, d.wifiRssi + Math.round((this.rng.dispenser.float() - 0.5) * 4)));
+      d.tempC = Math.round((d.tempC + (32 + this.rng.dispenser.float() * 6 - d.tempC) * 0.1) * 10) / 10;
 
       // Skip simulation for OFFLINE / MAINTENANCE / LOCKED dispensers
       if (d.status === "OFFLINE" || d.status === "MAINTENANCE" || d.mode === "LOCKED") {
@@ -629,7 +671,7 @@ class FgmpEngine {
         continue;
       }
       // ── Random FAULT ───────────────────────────────────────────────────
-      if (d.status !== "FAULT" && Math.random() < DISPENSER_FAULT_PROB) {
+      if (d.status !== "FAULT" && this.rng.dispenser.float() < DISPENSER_FAULT_PROB) {
         d.status = "FAULT";
         d.flowRateLpm = 0;
         this.pushEvent(d.siteId, "CRITICAL", `Dispenser ${d.label} FAULT detected`, { dispenserId: d.id });
@@ -646,16 +688,16 @@ class FgmpEngine {
       // ── State machine ──────────────────────────────────────────────────
       if (d.status === "IDLE") {
         // small chance per tick to enter AUTHORIZED → DISPENSING
-        if (Math.random() < 0.08) {
+        if (this.rng.site.float() < 0.08) {
           d.status = "AUTHORIZED";
           // most authorized dispensers begin dispensing within the same tick
-          if (Math.random() < 0.7) {
+          if (this.rng.site.float() < 0.7) {
             this.startDispense(d);
           }
         }
       } else if (d.status === "AUTHORIZED") {
         // wait a tick then begin dispensing
-        if (Math.random() < 0.5) this.startDispense(d);
+        if (this.rng.site.float() < 0.5) this.startDispense(d);
       } else if (d.status === "DISPENSING") {
         // advance the in-progress transaction
         const flow = d.flowRateLpm;
@@ -664,7 +706,7 @@ class FgmpEngine {
         const target = d.targetVolumeLitres ?? d.presetVolumeLitres ?? 50;
         if (d.currentVolumeLitres >= target) {
           await this.completeDispense(d);
-        } else if (Math.random() < 0.002) {
+        } else if (this.rng.site.float() < 0.002) {
           // rare premature stop (customer cancelled)
           await this.completeDispense(d, true);
         }
@@ -695,7 +737,7 @@ class FgmpEngine {
 
       if (gw.status === "OFFLINE") {
         // 5% chance per tick to come back online by itself.
-        if (Math.random() < 0.05) {
+        if (this.rng.site.float() < 0.05) {
           gw.status = "ONLINE";
           gw.lastSeenAt = this.now;
           this.pushEvent(gw.siteId, "INFO", `Gateway ${gw.hostname} reconnected`, { gatewayId: gw.id });
@@ -706,13 +748,13 @@ class FgmpEngine {
 
       if (gw.status === "ONLINE") {
         // Random transient DEGRADED (rare) — e.g. WiFi dropout.
-        if (!gw.rebootingUntil && Math.random() < 0.002) {
+        if (!gw.rebootingUntil && this.rng.gateway.float() < 0.002) {
           gw.status = "DEGRADED";
           this.pushEvent(gw.siteId, "WARN", `Gateway ${gw.hostname} degraded (WiFi jitter)`, { gatewayId: gw.id });
         }
       } else if (gw.status === "DEGRADED" && !gw.rebootingUntil) {
         // Auto-recover from transient DEGRADED after a few ticks.
-        if (Math.random() < 0.3) {
+        if (this.rng.site.float() < 0.3) {
           gw.status = "ONLINE";
         }
       }
@@ -720,9 +762,9 @@ class FgmpEngine {
       // Telemetry jitter (only when not actively rebooting).
       if (!gw.rebootingUntil) {
         gw.uptimeSec += seconds;
-        gw.cpuTempC = Math.round(Math.max(35, Math.min(85, gw.cpuTempC + (Math.random() - 0.5) * 1.2)) * 10) / 10;
-        gw.heapKb = Math.max(8, Math.min(60, gw.heapKb + Math.round((Math.random() - 0.5) * 4)));
-        gw.wifiRssi = Math.max(-95, Math.min(-45, gw.wifiRssi + Math.round((Math.random() - 0.5) * 3)));
+        gw.cpuTempC = Math.round(Math.max(35, Math.min(85, gw.cpuTempC + (this.rng.gateway.float() - 0.5) * 1.2)) * 10) / 10;
+        gw.heapKb = Math.max(8, Math.min(60, gw.heapKb + Math.round((this.rng.gateway.float() - 0.5) * 4)));
+        gw.wifiRssi = Math.max(-95, Math.min(-45, gw.wifiRssi + Math.round((this.rng.gateway.float() - 0.5) * 3)));
         gw.lastSeenAt = this.now;
       }
 
@@ -855,8 +897,8 @@ class FgmpEngine {
   private startDispense(d: DispenserState) {
     d.status = "DISPENSING";
     d.startedAt = this.now;
-    d.targetVolumeLitres = d.presetVolumeLitres ?? Math.round((20 + Math.random() * 60) * 10) / 10;
-    d.flowRateLpm = Math.round(d.maxFlowLpm * (0.8 + Math.random() * 0.2) * 10) / 10;
+    d.targetVolumeLitres = d.presetVolumeLitres ?? Math.round((20 + this.rng.dispenser.float() * 60) * 10) / 10;
+    d.flowRateLpm = Math.round(d.maxFlowLpm * (0.8 + this.rng.dispenser.float() * 0.2) * 10) / 10;
     d.currentTransactionId = uid("tx");
     d.currentVolumeLitres = 0;
   }
@@ -889,11 +931,11 @@ class FgmpEngine {
           tenantId: site.tenantId,
           dispenserId: d.id,
           siteId: d.siteId,
-          nozzle: 1 + Math.floor(Math.random() * d.nozzleCount),
+          nozzle: 1 + this.rng.dispenser.int(0, d.nozzleCount - 1),
           volumeLitres: volume,
           amountYer: amount,
           unitPriceYer: unitPrice,
-          vehiclePlate: Math.random() < 0.6 ? this.randomPlate() : null,
+          vehiclePlate: this.rng.dispenser.chance(0.6) ? this.randomPlate() : null,
           operatorName: null,
           status,
           startedAt: new Date(startedAt),
@@ -935,7 +977,7 @@ class FgmpEngine {
     d.lastTransactionAt = this.now;
 
     // Persist totalizer + reset state to DB occasionally (every ~5 txns)
-    if (txRow && Math.random() < 0.2) {
+    if (txRow && this.rng.dispenser.chance(0.2)) {
       db.fuelDispenser.update({
         where: { id: d.id },
         data: {
@@ -977,9 +1019,9 @@ class FgmpEngine {
 
   private randomPlate(): string {
     const letters = "ABCDEFGHJKLMNPRSTUVWXYZ";
-    const n = 1000 + Math.floor(Math.random() * 8999);
-    const l1 = letters[Math.floor(Math.random() * letters.length)];
-    const l2 = letters[Math.floor(Math.random() * letters.length)];
+    const n = 1000 + this.rng.dispenser.int(0, 8998);
+    const l1 = letters[this.rng.dispenser.int(0, letters.length - 1)];
+    const l2 = letters[this.rng.dispenser.int(0, letters.length - 1)];
     return `${l1}${l2}-${n}`;
   }
 
@@ -1166,7 +1208,7 @@ class FgmpEngine {
     });
     for (const d of due) {
       // probabilistic arrival
-      if (Math.random() < 0.05) {
+      if (this.rng.tank.chance(0.05)) {
         const delivered = d.volumeOrderedLitres;
         tk.prevLevel = tk.current;
         tk.current = Math.min(tk.capacity, tk.current + delivered);

@@ -7,6 +7,12 @@ import {
   applyRateLimitHeaders,
   IOT_LIMIT,
 } from "@/lib/fgmp/rate-limit";
+import {
+  DeviceWatermarkStore,
+  parseReadingTs,
+  checkDeclaredBodySize,
+  MAX_INGEST_BODY_BYTES,
+} from "@/lib/fgmp/ingest-buffer";
 
 export const dynamic = "force-dynamic";
 
@@ -31,8 +37,27 @@ export const dynamic = "force-dynamic";
  *       "battVoltage"?: number (V),
  *       "battSoc"?:     number (0–100 %),
  *       "temp"?:        number (°C)
+ *       "ts"?:          number|string — DEVICE timestamp, epoch millis or ISO-8601
  *     }
  *   }
+ *
+ * ── BUFFERING (Phase 2) ────────────────────────────────────────────────────
+ * Field devices sit on unstable links, so the same reading is retried, packets
+ * arrive out of order, and a reconnecting gateway dumps its backlog. Readings
+ * are judged against a per-site watermark of the newest reading already
+ * accepted, BEFORE any in-memory or database state is touched:
+ *
+ *   200 accepted         — applied and persisted at the device's own timestamp
+ *   409 REJECT_STALE     — older than the newest accepted; never overwrites it
+ *   409 REJECT_DUPLICATE — a retry of something already stored
+ *   409 REJECT_FUTURE    — timestamp implausibly ahead of server time
+ *   409 REJECT_TOO_OLD   — beyond the absolute staleness limit
+ *   413                  — body over the size limit
+ *
+ * A reading with no usable `ts` is still accepted, but is reported as
+ * "undated" and does not move the watermark — field firmware often has no
+ * real-time clock, and rejecting those would push operators toward disabling
+ * the check entirely.
  *
  * Side effects:
  *   1. Updates the in-memory engine state for the matching tank/generator/
@@ -56,12 +81,33 @@ const ReadingSchema = z.object({
   battVoltage: z.number().min(0).max(1000).optional(),
   battSoc: z.number().min(0).max(100).optional(),
   temp: z.number().min(-50).max(150).optional(),
+  /**
+   * Device-measured timestamp, epoch millis or ISO-8601 (Phase 2).
+   *
+   * Optional because field firmware often has no real-time clock. When present
+   * it is what staleness is judged against; when absent the reading is still
+   * accepted, but it is recorded as undated rather than being silently stamped
+   * with server time and made to look fresh.
+   */
+  ts: z.union([z.number(), z.string()]).optional(),
 });
 
 const IngestBodySchema = z.object({
   siteId: z.string().min(1).max(64),
   readings: ReadingSchema,
 });
+
+/**
+ * Per-process ingest watermark store (Phase 2).
+ *
+ * Process-local by construction: it is a module-level singleton, so it protects
+ * the replica that served the request. With more than one app instance a
+ * device retry routed to a different replica would not see the watermark. The
+ * durable answer is a unique index on (entityId, metric, ts) plus a Redis
+ * watermark — Redis is already a dependency. Recorded as a known limit rather
+ * than left to be discovered as a phantom duplicate bug in production.
+ */
+const watermarks = new DeviceWatermarkStore();
 
 /**
  * Shared secret for edge devices. There is deliberately no committed default.
@@ -127,10 +173,33 @@ export async function POST(req: NextRequest) {
     return res;
   }
 
+  // ── Bound the body BEFORE parsing (Phase 2) ────────────────────────────
+  // An unbounded `req.json()` lets a device holding the key send a very large
+  // payload and exhaust memory before any validation runs. The declared length
+  // is the cheap check; the byte cap below is the actual limit.
+  const size = checkDeclaredBodySize(req);
+  if (!size.ok) {
+    const res = NextResponse.json(
+      { error: "payload too large", detail: size.reason },
+      { status: 413 },
+    );
+    applyRateLimitHeaders(res.headers, rl);
+    return res;
+  }
+  const raw = await req.text();
+  if (Buffer.byteLength(raw, "utf8") > MAX_INGEST_BODY_BYTES) {
+    const res = NextResponse.json(
+      { error: "payload too large", detail: `body exceeds ${MAX_INGEST_BODY_BYTES} bytes` },
+      { status: 413 },
+    );
+    applyRateLimitHeaders(res.headers, rl);
+    return res;
+  }
+
   // ── Parse + validate body ──────────────────────────────────────────────
   let body: unknown;
   try {
-    body = await req.json();
+    body = JSON.parse(raw);
   } catch {
     return NextResponse.json(
       { error: "invalid JSON body" },
@@ -175,6 +244,48 @@ export async function POST(req: NextRequest) {
   } = {};
   const writes: Promise<unknown>[] = [];
 
+  // ── Buffering: judge freshness BEFORE any state is mutated (Phase 2) ──
+  //
+  // Every metric in a payload shares one device timestamp, so they share one
+  // verdict. Judged per SITE rather than per metric: the watermark is the
+  // newest reading accepted from that site, and a tank report must not be
+  // judged against a temperature report taken at a different moment.
+  //
+  // This runs BEFORE the in-memory mutation below on purpose. Once
+  // `tank.current` has been overwritten by a stale level, the damage is done —
+  // refusing the database write afterwards would still leave the dashboard and
+  // the theft figures reflecting a reading from an hour ago.
+  const deviceTs = parseReadingTs((readings as { ts?: unknown }).ts);
+  const verdict = watermarks.evaluate(siteId, deviceTs, nowMs);
+
+  if (verdict.status !== "ACCEPT") {
+    // 409: the request was well-formed and authenticated, but it conflicts
+    // with state already stored. Not a 400 — the payload was valid.
+    const res = NextResponse.json(
+      {
+        ok: false,
+        applied: {},
+        buffered: {
+          status: verdict.status,
+          readingTs: verdict.status === "REJECT_FUTURE" ? verdict.readingTs : verdict.readingTs,
+          ...("newestTs" in verdict ? { newestTs: verdict.newestTs } : {}),
+        },
+      },
+      { status: 409 },
+    );
+    applyRateLimitHeaders(res.headers, rl);
+    return res;
+  }
+
+  // The reading's own timestamp is what is persisted, so the stored history
+  // reflects when the measurement was taken rather than when it happened to
+  // arrive. SensorReading has no separate receivedAt column and adding one
+  // needs a schema migration that is out of this change's scope, so uplink
+  // delay is reported in the response instead — an operator debugging a
+  // delayed link needs it, and it does not require a column to observe.
+  const readingDate = new Date(deviceTs ?? nowMs);
+  const receivedDate = new Date(nowMs);
+
   // ── Apply to in-memory engine + persist SensorReading rows ────────────
 
   // Fuel tank
@@ -197,7 +308,7 @@ export async function POST(req: NextRequest) {
             entityId: tank.id,
             metric: "FUEL_LEVEL",
             value: tank.current,
-            ts: now,
+            ts: readingDate,
           },
         }),
       );
@@ -238,7 +349,7 @@ export async function POST(req: NextRequest) {
             entityId: gen.id,
             metric: "LOAD_KW",
             value: gen.loadKw,
-            ts: now,
+            ts: readingDate,
           },
         }),
       );
@@ -268,7 +379,7 @@ export async function POST(req: NextRequest) {
             entityId: batt.id,
             metric: "BATT_VOLTAGE",
             value: batt.voltage,
-            ts: now,
+            ts: readingDate,
           },
         }),
       );
@@ -281,7 +392,7 @@ export async function POST(req: NextRequest) {
             entityId: batt.id,
             metric: "BATT_SOC",
             value: batt.stateOfCharge,
-            ts: now,
+            ts: readingDate,
           },
         }),
       );
@@ -299,7 +410,7 @@ export async function POST(req: NextRequest) {
           entityId: siteId,
           metric: "TEMPERATURE",
           value: readings.temp,
-          ts: now,
+          ts: readingDate,
         },
       }),
     );
@@ -311,13 +422,32 @@ export async function POST(req: NextRequest) {
   // ── Push to realtime service (browser push via socket.io) ─────────────
   // Emit ONLY to the site room — clients subscribed to this site receive
   // the per-site telemetry update immediately.
+  //
+  // `ts` is the READING's timestamp, not arrival time, so a browser rendering a
+  // late-arriving sample does not present it as happening just now.
   emitToRealtime(
     "telemetry:new",
-    { siteId, readings, applied, ts: nowMs },
+    {
+      siteId,
+      readings,
+      applied,
+      ts: readingDate.getTime(),
+      receivedAt: nowMs,
+      buffered: deviceTs === null ? "undated" : "timestamped",
+    },
     `site:${siteId}`,
   );
 
-  return NextResponse.json({ ok: true, applied, ts: nowMs });
+  return NextResponse.json({
+    ok: true,
+    applied,
+    ts: readingDate.getTime(),
+    receivedAt: nowMs,
+    // How far behind the measurement was when it reached us. Zero for an
+    // undated reading, which is why `buffered` distinguishes the two.
+    uplinkDelayMs: nowMs - readingDate.getTime(),
+    buffered: deviceTs === null ? "undated" : "timestamped",
+  });
 }
 
 /**
@@ -355,6 +485,7 @@ export async function GET(req: NextRequest) {
         battVoltage: "number? (V)",
         battSoc: "number? (0-100)",
         temp: "number? (°C)",
+        ts: "number|string? (device timestamp, epoch millis or ISO-8601)",
       },
     },
   });
