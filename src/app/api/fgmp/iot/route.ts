@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, engine, bootstrap } from "@/lib/fgmp";
+import { engine, bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import { iotActionSchema, validateBody } from "@/lib/fgmp/schemas";
 import {
@@ -28,7 +29,16 @@ export async function GET(req: NextRequest) {
     const siteId = searchParams.get("siteId");
     const where: Record<string, unknown> = { ...siteTenantWhereOrAll(user) };
     if (siteId) where.siteId = siteId;
-    const devices = await db.iotDevice.findMany({ where, orderBy: { name: "asc" }, include: { site: { select: { name: true, code: true } } } });
+    // NESTED READ: the `include: { site }` traversal is RLS-protected too, so
+    // it sits inside the same context as the top-level query. Scoping only the
+    // outer findMany would return devices with a null site.
+    const devices = await asTenant(user.tenantId, (tx) =>
+      tx.iotDevice.findMany({
+        where,
+        orderBy: { name: "asc" },
+        include: { site: { select: { name: true, code: true } } },
+      }),
+    );
     // merge live status from engine
     const live = engine.iotDevices;
     const merged = devices.map((d) => {
@@ -70,19 +80,25 @@ export async function PATCH(req: NextRequest) {
     if (data.action === "ota") {
       // Verify the device's site belongs to the caller's tenant before
       // mutating OTA state.
-      const existing = await db.iotDevice.findUnique({
-        where: { id: data.deviceId },
-        select: { site: { select: { tenantId: true } } },
+      // NESTED READ: `select: { site: { … } }` resolves on the same client and
+      // Site is RLS-protected, so the relation filter belongs in the query.
+      // assertSiteTenantOwned is KEPT as defence in depth.
+      const updated = await asTenant(user.tenantId, async (tx) => {
+        const existing = await tx.iotDevice.findFirst({
+          where: { id: data.deviceId, site: { tenantId: user.tenantId } },
+          select: { site: { select: { tenantId: true } } },
+        });
+        const denied = assertSiteTenantOwned(existing?.site ?? null, user);
+        if (denied) {
+          applyRateLimitHeaders(denied.headers, rl);
+          return denied;
+        }
+        return tx.iotDevice.update({
+          where: { id: data.deviceId },
+          data: { otaTargetFw: data.firmware, otaStatus: "IN_PROGRESS" },
+        });
       });
-      const denied = assertSiteTenantOwned(existing?.site ?? null, user);
-      if (denied) {
-        applyRateLimitHeaders(denied.headers, rl);
-        return denied;
-      }
-      const updated = await db.iotDevice.update({
-        where: { id: data.deviceId },
-        data: { otaTargetFw: data.firmware, otaStatus: "IN_PROGRESS" },
-      });
+      if (updated instanceof NextResponse) return updated;
       const live = engine.iotDevices.find((x) => x.id === data.deviceId);
       if (live) { live.otaStatus = "IN_PROGRESS"; live.otaTargetFw = data.firmware; }
       await audit({ userId: user.id, action: "OTA", entity: "iot", entityId: data.deviceId, details: { firmware: data.firmware } });
@@ -92,10 +108,13 @@ export async function PATCH(req: NextRequest) {
     }
     // reboot — verify tenant first.
     {
-      const existing = await db.iotDevice.findUnique({
-        where: { id: data.deviceId },
-        select: { site: { select: { tenantId: true } } },
-      });
+      // Same nested-relation treatment as the OTA branch above.
+      const existing = await asTenant(user.tenantId, (tx) =>
+        tx.iotDevice.findFirst({
+          where: { id: data.deviceId, site: { tenantId: user.tenantId } },
+          select: { site: { select: { tenantId: true } } },
+        }),
+      );
       const denied = assertSiteTenantOwned(existing?.site ?? null, user);
       if (denied) {
         applyRateLimitHeaders(denied.headers, rl);

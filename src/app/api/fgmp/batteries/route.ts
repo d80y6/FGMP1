@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { db, engine, bootstrap } from "@/lib/fgmp";
+import { engine, bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import {
   rateLimitByUser,
@@ -50,11 +51,14 @@ export async function GET(req: NextRequest) {
     const siteId = searchParams.get("siteId");
     const where: Record<string, unknown> = { ...siteTenantWhereOrAll(user) };
     if (siteId) where.siteId = siteId;
-    const batteries = await db.batteryBank.findMany({
+    // Nested `include: { site }` is inside the same context — BatteryBank and
+    // Site are both RLS-protected.
+    const batteries = await asTenant(user.tenantId, (tx) =>
+      tx.batteryBank.findMany({
       where,
       orderBy: { label: "asc" },
       include: { site: { select: { id: true, name: true, code: true } } },
-    });
+    }));
 
     // Merge live telemetry from the engine.
     const live = engine.batteries;
@@ -113,10 +117,14 @@ export async function POST(req: NextRequest) {
 
     // Verify the site exists in the acting admin's tenant
     // (SUPERADMIN bypasses for cross-tenant asset creation).
-    const site = await db.site.findUnique({
-      where: { id: data.siteId },
-      select: { id: true, tenantId: true, name: true },
-    });
+    // Scoped in the query so the acting admin's own tenant can find the site.
+    // assertTenantOwned is KEPT as defence in depth.
+    const site = await asTenant(user.tenantId, (tx) =>
+      tx.site.findFirst({
+        where: { id: data.siteId, tenantId: user.tenantId },
+        select: { id: true, tenantId: true, name: true },
+      }),
+    );
     const siteDenied = assertTenantOwned(site, user);
     if (siteDenied) {
       applyRateLimitHeaders(siteDenied.headers, rl);
@@ -131,7 +139,11 @@ export async function POST(req: NextRequest) {
       return res;
     }
 
-    const row = await db.batteryBank.create({
+    // The write AND its nested `include: { site }` are both inside the tenant
+    // context. An unscoped create would be rejected outright by WITH CHECK
+    // ("new row violates row-level security policy").
+    const row = await asTenant(site.tenantId, (tx) =>
+      tx.batteryBank.create({
       data: {
         siteId: data.siteId,
         tenantId: site.tenantId,
@@ -145,7 +157,7 @@ export async function POST(req: NextRequest) {
         status: "OK",
       },
       include: { site: { select: { id: true, name: true, code: true } } },
-    });
+    }));
 
     // Push into the engine so the next snapshot reflects the new battery.
     engine.batteries.push({
