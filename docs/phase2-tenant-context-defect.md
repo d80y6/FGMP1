@@ -268,3 +268,48 @@ aggregates over a possibly-empty set must distinguish *nothing failed* from
 *nothing ran*, and must refuse to claim success when it measured nothing. The
 same shape appears in the RLS suite itself, which is why it now names BLOCKED
 assertions and asserts per-table coverage rather than only counting outcomes.
+
+## Addendum — "this table has no tenantId" does not mean "this route is safe"
+
+The most easily missed variant of the tenant-context defect, found while fixing
+`GET /api/fgmp/tenants`.
+
+`Tenant` is keyed by its own `id` and carries **no `tenantId` column**, so it is
+not RLS-protected and its own row reads perfectly well unscoped. It looks safe on
+a glance — and is not. Its `_count` relations are resolved by Prisma through
+nested queries on the ambient client, and `users`, `sites` and `suppressions` all
+carry `tenantId` and are FORCE-protected.
+
+Measured against the live database:
+
+```
+UNSCOPED: [{"id":"t-default","_count":{"sites":0,"users":0}}]    <- lies
+SCOPED:   [{"id":"t-default","_count":{"sites":52,"users":5}}]   <- truth
+```
+
+So the route returned **HTTP 200 reporting that a 52-site tenant had no users and
+no sites**. Not an error, not an empty state — a confident falsehood, and the
+part most likely to be screenshotted into a status page.
+
+**The generalisation:** scoping the top-level query is not sufficient. Every
+nested `include`, every `_count`, and every relation traversal in a route must
+also be inside the tenant context, because Prisma resolves them independently.
+A parent-scoped fix that leaves one unscoped relation read is still a false 200.
+
+This is the same shape as the audit-log defect: the parent operation succeeds, so
+nothing looks wrong, while the nested part silently reports nothing.
+
+## Addendum — a `Promise.all` trap for tenant-scoped reads
+
+`Promise.all` returns a **tuple**. Destructuring it by property name type-checks
+(TS sees a property access on a tuple type) and fails at runtime:
+
+```ts
+// type-checks, then throws at runtime
+const { sampleSite } = await withTenant(t, () => Promise.all([q1, q2, q3]));
+// correct: destructure positionally
+const [sampleSite, sampleAlarm] = await withTenant(t, () => Promise.all([q1, q2]));
+```
+
+Neither `tsc` nor `eslint` catches this, so it is worth stating explicitly in
+any code that batches multiple tenant-scoped reads.
