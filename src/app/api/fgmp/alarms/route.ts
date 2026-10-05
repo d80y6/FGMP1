@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, bootstrap } from "@/lib/fgmp";
+import { bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import {
   alarmActionSchema,
@@ -48,11 +49,28 @@ export const GET = withMetrics(async function GET(req: NextRequest) {
     if (type) where.type = { in: type.split(",") };
     if (siteId) where.siteId = siteId;
 
-    const alarms = await db.alarm.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      take: limit,
-      include: { site: { select: { name: true, code: true } } },
+    // ── Tenant scoping ────────────────────────────────────────────────────
+    // `where.tenantId` is already set above, but a WHERE alone does NOT satisfy
+    // RLS: the policy's USING clause is ANDed with it and
+    // current_setting('app.tenant_id') is NULL, so this returned zero rows for
+    // every caller while returning HTTP 200 with an empty list — the exact
+    // "no data" vs "hidden by RLS" ambiguity that made the class survivable.
+    //
+    // The nested `site` is RLS-protected too and resolves on the same client,
+    // so it is selected WITH its tenantId and checked below. Leaving it
+    // unfiltered returns alarms carrying a null site — a populated response
+    // with silently wrong relations, which is worse than an empty one because
+    // it looks correct.
+    const alarms = await asTenant(me.tenantId, async (tx) => {
+      const rows = await tx.alarm.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        take: limit,
+        include: { site: { select: { name: true, code: true, tenantId: true } } },
+      });
+      // Defence in depth: drop any row whose site did not resolve inside this
+      // tenant rather than emitting a half-populated alarm.
+      return rows.filter((a) => !a.site || a.site.tenantId === me.tenantId);
     });
     const res = NextResponse.json(alarms);
     applyRateLimitHeaders(res.headers, rl);
@@ -89,20 +107,27 @@ export const POST = withMetrics(async function POST(req: NextRequest) {
 
     // Bulk actions.
     if (data.action === "bulkAcknowledge") {
-      const result = await db.alarm.updateMany({
+      // Tenant-scoped. `updateMany` with tenantId in the where was returning
+      // count: 0 under RLS while still answering `{ ok: true }` — a mutation
+      // that silently affected nothing and reported success.
+      const result = await asTenant(me.tenantId, (tx) =>
+        tx.alarm.updateMany({
         where: { id: { in: data.alarmIds }, tenantId: me.tenantId, status: { in: ["OPEN", "ESCALATED"] } },
         data: { status: "ACKNOWLEDGED", acknowledgedAt: new Date(), acknowledgedById: user.id },
-      });
+      }),
+      );
       await audit({ userId: user.id, action: "BULK_ACK", entity: "alarm", details: { count: result.count, ids: data.alarmIds } });
       const res = NextResponse.json({ ok: true, count: result.count });
       applyRateLimitHeaders(res.headers, rl);
       return res;
     }
     if (data.action === "bulkResolve") {
-      const result = await db.alarm.updateMany({
+      const result = await asTenant(me.tenantId, (tx) =>
+        tx.alarm.updateMany({
         where: { id: { in: data.alarmIds }, tenantId: me.tenantId, status: { in: ["OPEN", "ACKNOWLEDGED", "ESCALATED"] } },
         data: { status: "RESOLVED", resolvedAt: new Date(), resolvedById: user.id, resolution: data.resolution ?? "Bulk resolved by operator" },
-      });
+      }),
+      );
       await audit({ userId: user.id, action: "BULK_RESOLVE", entity: "alarm", details: { count: result.count, ids: data.alarmIds } });
       const res = NextResponse.json({ ok: true, count: result.count });
       applyRateLimitHeaders(res.headers, rl);
@@ -111,7 +136,15 @@ export const POST = withMetrics(async function POST(req: NextRequest) {
 
     // Single-alarm actions.
     const alarmId = data.alarmId;
-    const alarm = await db.alarm.findUnique({ where: { id: alarmId } });
+    // Scoped in the QUERY, not filtered after the fetch: assertTenantOwned
+    // compares alarm.tenantId after the row is read, and under RLS the read
+    // returned null for every alarm, so the check was comparing against
+    // nothing — the Phase 0 IDOR fix was inert rather than merely weak.
+    // Cross-tenant and non-existent ids are both null here, so this cannot be
+    // used to enumerate alarm ids.
+    const alarm = await asTenant(me.tenantId, (tx) =>
+      tx.alarm.findFirst({ where: { id: alarmId, tenantId: me.tenantId } }),
+    );
     const denied = assertTenantOwned(alarm, me);
     if (denied) {
       applyRateLimitHeaders(denied.headers, rl);
@@ -127,20 +160,47 @@ export const POST = withMetrics(async function POST(req: NextRequest) {
     }
 
     if (data.action === "acknowledge") {
-      const updated = await db.alarm.update({
-        where: { id: alarmId },
-        data: { status: "ACKNOWLEDGED", acknowledgedAt: new Date(), acknowledgedById: user.id },
+      // Re-assert ownership inside the writing transaction: `update` takes a
+      // unique selector so tenantId cannot be part of it, and a row that changed
+      // tenants between the authorising read and this write must not be touched.
+      const updated = await asTenant(me.tenantId, async (tx) => {
+        const owned = await tx.alarm.findFirst({
+          where: { id: alarmId, tenantId: me.tenantId },
+          select: { id: true },
+        });
+        if (!owned) return null;
+        return tx.alarm.update({
+          where: { id: owned.id },
+          data: { status: "ACKNOWLEDGED", acknowledgedAt: new Date(), acknowledgedById: user.id },
+        });
       });
+      if (!updated) {
+        const res = NextResponse.json({ error: "Alarm not found" }, { status: 404 });
+        applyRateLimitHeaders(res.headers, rl);
+        return res;
+      }
       await audit({ userId: user.id, action: "ACK", entity: "alarm", entityId: alarmId, details: { type: alarm.type } });
       const res = NextResponse.json(updated);
       applyRateLimitHeaders(res.headers, rl);
       return res;
     }
-    // resolve
-    const updated = await db.alarm.update({
-      where: { id: alarmId },
-      data: { status: "RESOLVED", resolvedAt: new Date(), resolvedById: user.id, resolution: data.resolution ?? "Resolved by operator" },
+    // resolve — same re-assert-ownership pattern as acknowledge above.
+    const updated = await asTenant(me.tenantId, async (tx) => {
+      const owned = await tx.alarm.findFirst({
+        where: { id: alarmId, tenantId: me.tenantId },
+        select: { id: true },
+      });
+      if (!owned) return null;
+      return tx.alarm.update({
+        where: { id: owned.id },
+        data: { status: "RESOLVED", resolvedAt: new Date(), resolvedById: user.id, resolution: data.resolution ?? "Resolved by operator" },
+      });
     });
+    if (!updated) {
+      const res = NextResponse.json({ error: "Alarm not found" }, { status: 404 });
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
     await audit({ userId: user.id, action: "RESOLVE", entity: "alarm", entityId: alarmId, details: { type: alarm.type, resolution: data.resolution } });
     const res = NextResponse.json(updated);
     applyRateLimitHeaders(res.headers, rl);
