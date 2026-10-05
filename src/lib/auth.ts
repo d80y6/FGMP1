@@ -2,6 +2,11 @@ import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
+import {
+  findUserByEmail,
+  findUserIdentity,
+  updateAuthUser,
+} from "@/lib/auth-identity";
 
 /**
  * FGMP Production Auth (Task 31-A)
@@ -25,6 +30,21 @@ import { db } from "@/lib/db";
 
 const LOCK_THRESHOLD = 5;
 const LOCK_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+
+/**
+ * A fixed bcrypt hash compared against when no user was found.
+ *
+ * bcrypt.compare is deliberately expensive; short-circuiting it for an unknown
+ * email makes "no such user" measurably faster than "wrong password", which
+ * turns the login form into an account-enumeration oracle. Comparing against a
+ * real hash of a throwaway value keeps the work — and therefore the timing —
+ * comparable. It is a hash of a value nobody can supply, so it can never
+ * authenticate anyone.
+ *
+ * Cost factor matches the seeded hashes (10) so the comparison takes the same
+ * time as a genuine one.
+ */
+const DUMMY_HASH = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
 
 /**
  * JWT signing secret.
@@ -106,15 +126,38 @@ export const authOptions: NextAuthOptions = {
         const password = credentials?.password ?? "";
         if (!email || !password) return null;
 
-        const user = await db.user.findUnique({ where: { email } });
-        // Don't reveal whether the email exists — return null on all failure
-        // paths so the client only sees a generic "invalid credentials".
-        if (!user) return null;
-        if (!user.passwordHash) return null;
-        if (!user.active) return null;
+        // ── Cross-tenant by design ──────────────────────────────────────
+        // The tenant is not known until the user is found, so this lookup
+        // cannot run inside withTenant(). It goes through the narrow auth
+        // module instead — see src/lib/auth-identity.ts for why that is a
+        // deliberate, narrow exception rather than moving the whole app to the
+        // owner role (which would disable RLS everywhere).
+        const user = await findUserByEmail(email);
 
-        // Lock window still active?
+        // ── Enumeration resistance ──────────────────────────────────────
+        // Every failure path below returns the same `null`, but returning null
+        // IMMEDIATELY for an unknown email makes the response measurably
+        // faster than a wrong password, which turns login into an oracle for
+        // "does this account exist". When there is no user we still run a
+        // bcrypt comparison against a fixed dummy hash so the timing is
+        // comparable.
+        if (!user) {
+          await bcrypt.compare(password, DUMMY_HASH);
+          return null;
+        }
+        if (!user.passwordHash) {
+          await bcrypt.compare(password, DUMMY_HASH);
+          return null;
+        }
+        if (!user.active) {
+          await bcrypt.compare(password, DUMMY_HASH);
+          return null;
+        }
+
+        // Lock window still active? Compare the password anyway so a locked
+        // account is not distinguishable from a wrong password by timing.
         if (user.lockedUntil && user.lockedUntil.getTime() > Date.now()) {
+          await bcrypt.compare(password, user.passwordHash);
           return null;
         }
 
@@ -132,28 +175,22 @@ export const authOptions: NextAuthOptions = {
           const priorAttempts = lockLapsed ? 0 : user.failedLoginAttempts;
           const attempts = priorAttempts + 1;
           const shouldLock = attempts >= LOCK_THRESHOLD;
-          await db.user.update({
-            where: { id: user.id },
-            data: {
-              failedLoginAttempts: attempts,
-              lockedUntil: shouldLock
-                ? new Date(Date.now() + LOCK_DURATION_MS)
-                : lockLapsed
-                  ? null
-                  : user.lockedUntil,
-            },
+          await updateAuthUser(user.id, {
+            failedLoginAttempts: attempts,
+            lockedUntil: shouldLock
+              ? new Date(Date.now() + LOCK_DURATION_MS)
+              : lockLapsed
+                ? null
+                : user.lockedUntil,
           });
           return null;
         }
 
         // Success — reset counters + stamp lastLoginAt.
-        await db.user.update({
-          where: { id: user.id },
-          data: {
-            lastLoginAt: new Date(),
-            failedLoginAttempts: 0,
-            lockedUntil: null,
-          },
+        await updateAuthUser(user.id, {
+          lastLoginAt: new Date(),
+          failedLoginAttempts: 0,
+          lockedUntil: null,
         });
 
         return {
@@ -186,10 +223,14 @@ export const authOptions: NextAuthOptions = {
       // server-derived: PATCH /api/fgmp/me is what authorizes the change, and
       // it rejects self-promotion to SUPERADMIN.
       if (trigger === "update" && token.id) {
-        const fresh = await db.user.findUnique({
-          where: { id: token.id },
-          select: { role: true, tenantId: true },
-        });
+        // tenantId comes from the SIGNED token, never from client input, so
+        // scoping by it is safe: a forged value would fail the token
+        // signature before reaching this line.
+        //
+        // Note this deliberately does NOT trust the session callback's `session`
+        // argument — see the comment above. Reading the role/tenant from the
+        // database keeps the token server-derived.
+        const fresh = await findUserIdentity(token.id);
         if (fresh) {
           token.role = fresh.role;
           token.tenantId = fresh.tenantId;

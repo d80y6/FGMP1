@@ -195,7 +195,7 @@ async function tickAllTenants(
       totals.correlationMatches += outcome.triggered.length;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      correlationErrors.push({ tenantId: tenant.id, error: message });
+      totals.correlationErrors.push({ tenantId: tenant.id, error: message });
       console.error(
         `[scheduler] correlation failed for tenant ${tenant.id} ` +
           `(tick still committed): ${message}`,
@@ -203,7 +203,6 @@ async function tickAllTenants(
     }
   }
 
-  totals.correlationErrors = correlationErrors;
   return totals;
 }
 

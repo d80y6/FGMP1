@@ -210,6 +210,39 @@ export function canView(role: Role, viewKey: string): boolean {
 // instead of being an invisible side effect of an import failure.
 
 import { db } from "@/lib/db";
+import { PrismaClient } from "@prisma/client";
+
+/**
+ * Owner/ops client for SYSTEM-level identity work.
+ *
+ * `getSystemUser()` and `setCurrentRole()` operate on the platform identity
+ * itself — the tenant and the user that owns it — which by definition cannot be
+ * tenant-scoped, since a tenant's own row is what must be created before any
+ * context exists. Under Phase 1's FORCE RLS the ambient `db` (the non-owner
+ * `fgmp_app` role) returns zero rows for these and the WITH CHECK rejects the
+ * write, so the bootstrap silently failed.
+ *
+ * This is a deliberate, narrow ops path — the same role split the rest of the
+ * system uses (see src/lib/fgmp/seed.ts). It is NOT a licence to move the web
+ * app's DATABASE_URL to the owner role, which would disable RLS everywhere.
+ */
+let systemClient: PrismaClient | null = null;
+
+function systemDb(): PrismaClient {
+  const url =
+    process.env.FGMP_OPS_DATABASE_URL ?? process.env.FGMP_MIGRATE_DATABASE_URL;
+  if (!url) return db;
+  if (!systemClient) {
+    systemClient = new PrismaClient({
+      datasources: { db: { url } },
+      log: [
+        { level: "warn", emit: "stdout" as const },
+        { level: "error", emit: "stdout" as const },
+      ],
+    });
+  }
+  return systemClient;
+}
 
 const DEFAULT_USER = {
   id: "u-noc-1",
@@ -270,12 +303,13 @@ export async function getCurrentUser(): Promise<FgmpUser> {
 export async function getSystemUser(): Promise<FgmpUser> {
   if (_current) return _current;
   try {
-    const tenant = await db.tenant.upsert({
+    const system = systemDb();
+    const tenant = await system.tenant.upsert({
       where: { code: "NATIONAL-TELCO" },
       update: {},
       create: { id: "t-default", name: "National Telecom Operator", code: "NATIONAL-TELCO", country: "Yemen" },
     });
-    const user = await db.user.upsert({
+    const user = await system.user.upsert({
       where: { email: DEFAULT_USER.email },
       update: {},
       create: { id: DEFAULT_USER.id, tenantId: tenant.id, email: DEFAULT_USER.email, name: DEFAULT_USER.name, role: DEFAULT_USER.role },
@@ -298,7 +332,7 @@ export async function setCurrentRole(role: Role) {
   const u = await getSystemUser();
   _current = { ...u, role };
   try {
-    await db.user.update({ where: { id: u.id }, data: { role } });
+    await systemDb().user.update({ where: { id: u.id }, data: { role } });
   } catch {
     /* ignore */
   }
