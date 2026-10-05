@@ -1194,9 +1194,52 @@ async function main(): Promise<void> {
   )
   const hasPolicies = (rlsCount[0]?.n ?? 0) > 0
 
-  console.log(
-    `\n  tenantId columns: ${colCount[0]?.n ?? 0}   RLS-enabled tables: ${rlsCount[0]?.n ?? 0}`,
+  // ── FORCE ROW LEVEL SECURITY coverage ───────────────────────────────────
+  // PostgreSQL skips RLS for a table's OWNER, and fgmp_migrate owns these
+  // tables. ENABLE alone therefore binds nothing for the owner — the policy
+  // would be decorative for exactly the principal most likely to be used by
+  // mistake. FORCE is what closes that.
+  //
+  // This suite cannot OBSERVE that difference by exercising queries: it runs
+  // as fgmp_app, a non-owner, and a policy binds a non-owner with or without
+  // FORCE. Verified by mutation — dropping FORCE on a table left this suite at
+  // 153 PASS. So the only honest check is to assert the catalog flag directly,
+  // and every tenant table must carry BOTH.
+  const forceCount = await q<{ n: number }>(
+    `SELECT count(*)::int AS n FROM pg_class c
+     JOIN pg_namespace ns ON ns.oid=c.relnamespace
+     WHERE ns.nspname='public' AND c.relkind='r' AND c.relforcerowsecurity`,
   )
+  const forcedTables = await q<{ n: number }>(
+    `SELECT count(*)::int AS n FROM pg_class c
+     JOIN pg_namespace ns ON ns.oid=c.relnamespace
+     WHERE ns.nspname='public' AND c.relkind='r'
+       AND c.relrowsecurity AND NOT c.relforcerowsecurity
+       AND EXISTS (SELECT 1 FROM information_schema.columns col
+                   WHERE col.table_schema='public'
+                     AND col.table_name=c.relname
+                     AND col.column_name='tenantId')`,
+  )
+  const nForced = forceCount[0]?.n ?? 0
+  const nUnforced = forcedTables[0]?.n ?? 0
+  const nCols = colCount[0]?.n ?? 0
+
+  console.log(
+    `\n  tenantId columns: ${nCols}   RLS-enabled tables: ${rlsCount[0]?.n ?? 0}` +
+      `   FORCE RLS tables: ${nForced}   tenant tables missing FORCE: ${nUnforced}`,
+  )
+
+  // FORCE must be present on EVERY tenant table, not merely most of them.
+  if (nUnforced > 0) {
+    fail(
+      'force-rls-coverage',
+      `${nUnforced} tenant table(s) have ENABLE ROW LEVEL SECURITY but not FORCE. ` +
+        `The owner bypasses RLS without FORCE, so the backstop would not apply ` +
+        `to fgmp_migrate. Re-apply the step-6 migration.`,
+    )
+  } else if (nForced > 0) {
+    pass('force-rls-coverage', `all ${nForced} tenant tables carry FORCE ROW LEVEL SECURITY`)
+  }
 
   if (!hasColumns || !hasPolicies) {
     console.log(
