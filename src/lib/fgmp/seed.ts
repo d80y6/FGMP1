@@ -197,11 +197,32 @@ async function seedTopology(): Promise<{ seeded: boolean; siteCount: number }> {
 
   let siteCounter = 0;
   for (const reg of GEO) {
-    const region = await db.region.create({ data: { tenantId: tenant.id, name: reg.region } });
+    // Geography is UPSERTED, not created. The only guard on this function is
+    // `site.count() > 0`, so a partially torn-down environment (sites deleted,
+    // regions left behind by a failed migration or a manual cleanup) reached
+    // here and died on:
+    //   Unique constraint failed on the fields: (`tenantId`,`name`)
+    // which left the platform unrecoverable without hand-written SQL.
+    //
+    // Resolving on (tenantId, name) makes the geography tree idempotent, so a
+    // re-seed adopts the existing rows instead of colliding with them.
+    const region = await db.region.upsert({
+      where: { tenantId_name: { tenantId: tenant.id, name: reg.region } },
+      update: {},
+      create: { tenantId: tenant.id, name: reg.region },
+    });
     for (const gov of reg.governorates) {
-      const governorate = await db.governorate.create({ data: { regionId: region.id, name: gov.name } });
+      const governorate = await db.governorate.upsert({
+        where: { regionId_name: { regionId: region.id, name: gov.name } },
+        update: {},
+        create: { regionId: region.id, name: gov.name },
+      });
       for (const distName of gov.districts) {
-        const district = await db.district.create({ data: { governorateId: governorate.id, name: distName } });
+        const district = await db.district.upsert({
+          where: { governorateId_name: { governorateId: governorate.id, name: distName } },
+          update: {},
+          create: { governorateId: governorate.id, name: distName },
+        });
         // 1-2 sites per district
         const nSites = intRange(1, 2);
         for (let i = 0; i < nSites; i++) {
