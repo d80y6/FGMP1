@@ -284,6 +284,112 @@ enum OtaStatus {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// Phase 2 — server-side alarm correlation (vertical 4)
+// ──────────────────────────────────────────────────────────────────────────
+
+/// Geographic scope a correlation rule groups alarms by.
+enum RuleScope {
+  SITE
+  REGION
+  GOVERNORATE
+  NATIONAL
+}
+
+/// The alarm type a rule counts.
+///
+/// `ANY` is a real enum member rather than a TypeScript-only sentinel so the
+/// database can store it and the RLS/CHECK constraints apply to it. It cannot
+/// collide with a genuine alarm type because it is not a member of AlarmType.
+enum RuleAlarmType {
+  ANY
+  FUEL_THEFT
+  FUEL_REFILL
+  FUEL_LOW
+  FUEL_CRITICAL
+  GEN_OFFLINE
+  GEN_FAILURE
+  GEN_OVERHEAT
+  BATT_LOW_VOLTAGE
+  BATT_FAILURE
+  COMM_LOSS
+  DISPENSER_FAULT
+}
+
+/// Outcome of evaluating one rule against the event stream.
+enum RuleEvaluationOutcome {
+  /// Threshold not reached, or the rule is disabled.
+  NOT_TRIGGERED
+  /// Threshold reached; the correlated alarm group was suppressed.
+  SUPPRESSED
+}
+
+model CorrelationRule {
+  id          String        @id @default(cuid())
+  tenantId    String
+  name        String
+  description String        @default("")
+  enabled     Boolean       @default(true)
+  /// ANY counts alarms of every type.
+  alarmType   RuleAlarmType
+  /// How many matching alarms inside the window are required.
+  threshold   Int           @default(1)
+  /// Rolling window length in minutes, ending at evaluation time.
+  windowMinutes Int         @default(5)
+  scope       RuleScope     @default(SITE)
+  /// Severity assigned to the correlated group when the rule fires.
+  escalateTo  AlarmSeverity @default(L2)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  matches CorrelationMatch[]
+
+  @@index([tenantId, enabled])
+  @@index([tenantId, updatedAt])
+}
+
+/// One rule firing against one geographic bucket at one evaluation time.
+///
+/// This table is the idempotency ledger, and the UNIQUE constraint is what
+/// makes re-evaluation safe: the same rule firing against the same scope
+/// bucket for the same set of member alarms can be INSERTed exactly once.
+/// Re-running evaluation over an unchanged event stream produces a constraint
+/// violation that is caught and treated as "already applied" — not a duplicate
+/// suppression.
+model CorrelationMatch {
+  id        String              @id @default(cuid())
+  tenantId  String
+  ruleId    String
+  /// Geographic bucket key: site id, region id, governorate id, or "__ALL__".
+  /// Persisted rather than a label so the UNIQUE constraint is on stable data.
+  scopeKey  String
+  scope     RuleScope
+  /// Human-readable label for display (e.g. "Region: Central Highlands").
+  scopeLabel String
+  outcome   RuleEvaluationOutcome
+  escalateTo AlarmSeverity
+  /// How many alarms satisfied the threshold.
+  matchCount Int
+  /// Sorted member alarm ids, joined with ",".
+  ///
+  /// This is the second half of the idempotency key and is what distinguishes
+  /// "the same event set again" (duplicate — ignored) from "the same bucket
+  /// gained another alarm" (a genuinely new match — recorded).
+  alarmIds  String
+  /// The instant the rule was evaluated, so the match is auditable.
+  evaluatedAt DateTime          @default(now())
+  createdAt   DateTime          @default(now())
+
+  tenant Tenant        @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  rule   CorrelationRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@unique([ruleId, scopeKey, alarmIds])
+  @@index([tenantId, evaluatedAt])
+  @@index([tenantId, scope])
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Identity & Multi-tenancy
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -319,10 +425,17 @@ model Tenant {
   siteEvents               SiteEvent[]
   fuelDeliveries           FuelDelivery[]
   controlCommands          ControlCommand[]
+  interlockOverrides      InterlockOverride[]
   maintenanceTickets       MaintenanceTicket[]
   siteGateways             SiteGateway[]
   notificationPreferences  NotificationPreference[]
   espFirmwareDeployments   EspFirmwareDeployment[]
+  // Phase 2 — server-side alarm correlation.
+  correlationRules         CorrelationRule[]
+  correlationMatches       CorrelationMatch[]
+  rs485Buses            Rs485Bus[]
+  rs485Diagnostics      Rs485BusDiagnostic[]
+  rs485LatencySamples   Rs485LatencySample[]
 }
 
 // role: ADMIN | NOC_OPERATOR | REGIONAL_MANAGER | FIELD_ENGINEER | EXECUTIVE | READONLY
@@ -358,6 +471,10 @@ model User {
   backupRecordsCreated  BackupRecord[] @relation("BackupCreatedBy")
   backupRecordsRestored BackupRecord[] @relation("BackupRestoredBy")
   espFirmwareDeployments EspFirmwareDeployment[]
+  // Phase 2 — two-person interlock overrides. Named relations because the same
+  // user appears twice per row, once as requester and once as approver.
+  interlockOverridesRequested InterlockOverride[] @relation("InterlockOverrideRequested")
+  interlockOverridesApproved  InterlockOverride[] @relation("InterlockOverrideApproved")
 
   @@index([tenantId])
 }
@@ -446,6 +563,7 @@ model Site {
   batteries    BatteryBank[]
   iotDevices   IotDevice[]
   dispensers   FuelDispenser[]
+  rs485Buses   Rs485Bus[]
   dispenserTransactions FuelTransaction[]
   // Task 48 — site-level ESP32/RS485 edge gateways aggregating dispenser traffic.
   gateways     SiteGateway[]
@@ -533,6 +651,7 @@ model Generator {
   site     Site            @relation(fields: [siteId], references: [id], onDelete: Cascade)
   tenant   Tenant          @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   commands ControlCommand[]
+  interlockOverrides InterlockOverride[]
 
   @@index([tenantId])
   @@index([tenantId, siteId])
@@ -856,6 +975,46 @@ model ControlCommand {
   @@index([tenantId])
   @@index([tenantId, status])
   @@index([generatorId, status])
+}
+
+/// Phase 2 — safety interlock override audit trail.
+///
+/// Every interlock DENIAL is recorded, and every two-person OVERRIDE is
+/// recorded here with both actors. The two-person rule is only meaningful if
+/// the second authorization is separately attributable: an override that just
+/// says "approved" cannot be reviewed afterwards to establish who carried the
+/// risk.
+///
+/// Deliberately append-only in practice — it answers "who bypassed a safety
+/// interlock, who countersigned it, and why", which is a compliance question
+/// long after the fact.
+model InterlockOverride {
+  id          String   @id @default(cuid())
+  tenantId    String
+  generatorId String
+  /// The command that was refused, and is being overridden.
+  command     GenCommandType
+  /// InterlockRuleId that produced the refusal.
+  ruleId      String
+  /// Operator who requested the override.
+  requestedById String
+  /// Second, higher-authority operator who authorised it. Null when the
+  /// override did NOT require two people — kept nullable so a single-tier
+  /// override is recorded by the same code path.
+  approvedById  String?
+  /// Operator's stated justification. Recorded verbatim; overrides without a
+  /// reason are how safety controls get normalised away.
+  justification String
+  createdAt   DateTime @default(now())
+
+  generator   Generator @relation(fields: [generatorId], references: [id], onDelete: Cascade)
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  requestedBy User      @relation("InterlockOverrideRequested", fields: [requestedById], references: [id])
+  approvedBy  User?     @relation("InterlockOverrideApproved", fields: [approvedById], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, createdAt])
+  @@index([generatorId])
 }
 
 // type: PREVENTIVE | CORRECTIVE | OIL_CHANGE | INSPECTION | CALIBRATION
@@ -1237,4 +1396,119 @@ model BackupRecord {
 
   @@index([tenantId, createdAt])
   @@index([status])
+}
+
+// ── Phase 2: RS485 / Modbus bus diagnostics ───────────────────────────────
+// Persisted rather than derived. The previous implementation reported zeros
+// because nothing measured the bus — and a dashboard showing "0 CRC errors" on
+// a failing bus is worse than showing nothing, because it looks healthy.
+//
+// These tables hold what the protocol layer ACTUALLY observed. Every counter is
+// incremented at the point the corresponding event happens (see
+// src/lib/fgmp/protocol/client.ts); nothing here is synthesised.
+
+/// A physical RS485 segment. Dispensers on one segment share a bus, so bus
+/// health is a property of the segment, not of any single dispenser — and two
+/// devices configured at the same slave address is a bus-level fault.
+model Rs485Bus {
+  id            String   @id @default(cuid())
+  tenantId      String   // Phase 1: denormalised so RLS can scope the bus.
+  label         String
+  siteId        String?
+
+  // Bus configuration. These are the values the modem is actually programmed
+  // with, and a mismatch between here and a device's own configuration is one
+  // of the most common causes of a silent bus.
+  baudrate      Int      @default(9600)
+  /// Modbus slave address, 1-247. Unique per bus: two devices sharing an
+  /// address makes both answers collide and is unrecoverable from software.
+  /// Enforced by a unique constraint rather than left to convention.
+  unitAddress   Int      @default(1)
+  parity        String   @default("8N1")
+  stopBits      Int      @default(1)
+  dataBits      Int      @default(8)
+
+  online        Boolean  @default(false)
+  lastPollAt    DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  site          Site?    @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  diagnostics   Rs485BusDiagnostic[]
+
+  @@unique([tenantId, unitAddress])
+  @@index([tenantId])
+  @@index([siteId])
+}
+
+/// One row per device per bus: the counters and latencies for that slave.
+///
+/// Separate from Rs485Bus because bus-level faults (collisions, a shorted
+/// trunk) and device-level faults (a dead slave) need different responses, and
+/// collapsing them into one table makes the operator's first question — "is the
+/// wire broken or is the device dead?" — unanswerable from the data.
+model Rs485BusDiagnostic {
+  id            String   @id @default(cuid())
+  tenantId      String
+  busId         String
+  /// Modbus slave address, 1-247.
+  unitAddress   Int
+  /// Prisma model this device is, so a reading can be attributed to an asset.
+  deviceKind    String
+  deviceId      String
+
+  // Counters since the row was created. Monotonic by design: an operator needs
+  // to see that errors are accumulating, and a counter that resets itself is
+  // indistinguishable from a bus that is healthy.
+  crcErrors         Int      @default(0)
+  timeouts          Int      @default(0)
+  retries           Int      @default(0)
+  retriesExhausted  Int      @default(0)
+  exceptionResponses Int     @default(0)
+  successfulReads   Int      @default(0)
+  failedReads       Int      @default(0)
+
+  lastLatencyMs     Float    @default(0)
+  averageLatencyMs  Float?
+  lastPollAt        DateTime?
+  lastError         String?
+  /// ModbusFailureKind: timeout | crc-mismatch | short-frame | address-echo |
+  /// function-code | exception-response | illegal-value. Stored as text
+  /// because the set is open and a new failure kind must not require a
+  /// migration on a live device fleet.
+  lastErrorKind     String?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant        Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  bus           Rs485Bus             @relation(fields: [busId], references: [id], onDelete: Cascade)
+  samples       Rs485LatencySample[]
+
+  @@unique([busId, unitAddress])
+  @@index([tenantId])
+  @@index([deviceKind, deviceId])
+}
+
+/// Rolling samples of per-poll latency.
+///
+/// Kept as raw samples rather than only aggregates because the SHAPE of the
+/// distribution is diagnostic: a bimodal latency on an RS485 segment usually
+/// means two devices are fighting for the bus, which an average hides
+/// completely. Bounded by the poller so the table cannot grow without limit.
+model Rs485LatencySample {
+  id            String   @id @default(cuid())
+  tenantId      String
+  diagnosticId  String
+  unitAddress   Int
+  latencyMs     Float
+  ok            Boolean
+  recordedAt    DateTime @default(now())
+
+  tenant        Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  diagnostic    Rs485BusDiagnostic     @relation(fields: [diagnosticId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, recordedAt])
+  @@index([diagnosticId, recordedAt])
 }
