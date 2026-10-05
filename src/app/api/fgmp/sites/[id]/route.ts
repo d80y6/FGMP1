@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { db, engine, bootstrap } from "@/lib/fgmp";
+import { engine, bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import {
   rateLimitByUser,
   applyRateLimitHeaders,
@@ -9,7 +10,7 @@ import {
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { audit } from "@/lib/fgmp/audit";
-import { requireAuth, requireRole, assertTenantOwned, ROLES } from "@/lib/fgmp/auth-helpers";
+import { requireAuth, requireRole, assertTenantOwned, isSuperAdminUser, ROLES } from "@/lib/fgmp/auth-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -69,6 +70,27 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       return res;
     }
     const { id } = await params;
+
+    // ── Tenant scoping ────────────────────────────────────────────────────
+    // Site is RLS-protected with FORCE, so the ownership question has to be
+    // answered in the QUERY: an unscoped read returns no rows at all and
+    // assertTenantOwned(site ?? null) then rejects a site the caller genuinely
+    // owns. The site row is fetched inside asTenant first, and only if it
+    // belongs to this caller do the child reads run.
+    const owned = await asTenant(user.tenantId, (tx) =>
+      tx.site.findFirst({
+        where: isSuperAdminUser(user) ? { id } : { id, tenantId: user.tenantId },
+        select: { id: true },
+      }),
+    );
+    if (!owned) {
+      // Identical to a non-existent id on purpose — a distinguishable response
+      // would let an attacker probe which site ids exist.
+      const res = NextResponse.json({ error: "Site not found" }, { status: 404 });
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
+
     const site = engine.sites.find((s) => s.id === id);
     const denied = assertTenantOwned(site ?? null, user);
     if (denied) {
@@ -79,11 +101,16 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const generators = engine.generators.filter((g) => g.siteId === id);
     const batteries = engine.batteries.filter((b) => b.siteId === id);
     const iot = engine.iotDevices.filter((d) => d.siteId === id);
-    const [alarms, deliveries, tickets] = await Promise.all([
-      db.alarm.findMany({ where: { siteId: id }, orderBy: { createdAt: "desc" }, take: 50 }),
-      db.fuelDelivery.findMany({ where: { siteId: id }, orderBy: { scheduledAt: "desc" }, take: 20 }),
-      db.maintenanceTicket.findMany({ where: { siteId: id }, orderBy: { createdAt: "desc" }, take: 20 }),
-    ]);
+    // Child tables are all RLS-protected too, so they run on the transaction
+    // client — on the ambient db they would return empty arrays and the panel
+    // would silently show "no alarms" on a site full of them.
+    const [alarms, deliveries, tickets] = await asTenant(user.tenantId, async (tx) =>
+      Promise.all([
+        tx.alarm.findMany({ where: { siteId: id }, orderBy: { createdAt: "desc" }, take: 50 }),
+        tx.fuelDelivery.findMany({ where: { siteId: id }, orderBy: { scheduledAt: "desc" }, take: 20 }),
+        tx.maintenanceTicket.findMany({ where: { siteId: id }, orderBy: { createdAt: "desc" }, take: 20 }),
+      ]),
+    );
     const res = NextResponse.json({ site, tanks, generators, batteries, iot, alarms, deliveries, tickets });
     applyRateLimitHeaders(res.headers, rl);
     return res;
@@ -144,72 +171,93 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       return res;
     }
 
-    // Fetch existing + tenant-own it.
-    const existing = await db.site.findUnique({
-      where: { id },
-      include: siteInclude,
+    // ── Tenant scoping ────────────────────────────────────────────────────
+    // Site is RLS-protected with FORCE, so ownership must be decided in the
+    // QUERY — unscoped, findUnique returns null and the assertTenantOwned below
+    // would reject a site the caller legitimately owns. Lookup, code-uniqueness
+    // check, hierarchy validation and the update all run in ONE transaction, so
+    // a concurrent rename cannot slip past the uniqueness check.
+    const outcome = await asTenant(me.tenantId, async (tx) => {
+      const existing = await tx.site.findFirst({
+        where: isSuperAdminUser(me) ? { id } : { id, tenantId: me.tenantId },
+        include: siteInclude,
+      });
+      if (!existing) return { kind: "not-found" as const };
+
+      // Unique code check on change (exclude self).
+      if (data.code && data.code !== existing.code) {
+        const clash = await tx.site.findUnique({ where: { code: data.code } });
+        if (clash) return { kind: "code-clash" as const };
+      }
+
+      // Hierarchy consistency check — only when moving the whole trio.
+      if (data.regionId && data.governorateId && data.districtId) {
+        // Region carries tenantId and is RLS-protected; Governorate and District
+        // reach tenancy through it, so all three are resolved on the tx client.
+        const [region, governorate, district] = await Promise.all([
+          tx.region.findFirst({
+            where: isSuperAdminUser(me) ? { id: data.regionId } : { id: data.regionId, tenantId: me.tenantId },
+          }),
+          tx.governorate.findFirst({
+            where: isSuperAdminUser(me) ? { id: data.governorateId } : { id: data.governorateId, region: { tenantId: me.tenantId } },
+          }),
+          tx.district.findFirst({
+            where: isSuperAdminUser(me) ? { id: data.districtId } : { id: data.districtId, governorate: { region: { tenantId: me.tenantId } } },
+          }),
+        ]);
+        if (!region || !governorate || !district) return { kind: "bad-hierarchy" as const };
+        if (governorate.regionId !== region.id || district.governorateId !== governorate.id) {
+          return { kind: "bad-hierarchy" as const };
+        }
+        // Defence in depth — the where clauses above already scoped these.
+        const regionDenied = assertTenantOwned(region, me);
+        if (regionDenied) return { kind: "region-denied" as const, regionDenied };
+      }
+
+      const updated = await tx.site.update({
+        where: { id },
+        data,
+        include: siteInclude,
+      });
+      return { kind: "updated" as const, existing, updated };
     });
-    if (!existing) {
+
+    if (outcome.kind === "not-found") {
       const res = NextResponse.json({ error: "Site not found" }, { status: 404 });
       applyRateLimitHeaders(res.headers, rl);
       return res;
     }
-    const denied = assertTenantOwned(existing, me);
+    if (outcome.kind === "code-clash") {
+      const res = NextResponse.json(
+        { error: "Site code already exists", code: "CODE_EXISTS" },
+        { status: 409 },
+      );
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
+    if (outcome.kind === "bad-hierarchy") {
+      const res = NextResponse.json(
+        { error: "Region/Governorate/District hierarchy is invalid", code: "INVALID_HIERARCHY" },
+        { status: 400 },
+      );
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
+    if (outcome.kind === "region-denied") {
+      applyRateLimitHeaders(outcome.regionDenied.headers, rl);
+      return outcome.regionDenied;
+    }
+
+    // Defence in depth — the where clause above already enforced ownership.
+    const denied = assertTenantOwned(outcome.existing, me);
     if (denied) {
       applyRateLimitHeaders(denied.headers, rl);
       return denied;
     }
 
-    // Unique code check on change (exclude self).
-    if (data.code && data.code !== existing.code) {
-      const clash = await db.site.findUnique({ where: { code: data.code } });
-      if (clash) {
-        const res = NextResponse.json(
-          { error: "Site code already exists", code: "CODE_EXISTS" },
-          { status: 409 },
-        );
-        applyRateLimitHeaders(res.headers, rl);
-        return res;
-      }
-    }
-
-    // Hierarchy consistency check — only when moving the whole trio.
-    if (data.regionId && data.governorateId && data.districtId) {
-      const [region, governorate, district] = await Promise.all([
-        db.region.findUnique({ where: { id: data.regionId } }),
-        db.governorate.findUnique({ where: { id: data.governorateId } }),
-        db.district.findUnique({ where: { id: data.districtId } }),
-      ]);
-      if (!region || !governorate || !district) {
-        const res = NextResponse.json(
-          { error: "Region/Governorate/District hierarchy is invalid", code: "INVALID_HIERARCHY" },
-          { status: 400 },
-        );
-        applyRateLimitHeaders(res.headers, rl);
-        return res;
-      }
-      if (governorate.regionId !== region.id || district.governorateId !== governorate.id) {
-        const res = NextResponse.json(
-          { error: "Region/Governorate/District hierarchy is invalid", code: "INVALID_HIERARCHY" },
-          { status: 400 },
-        );
-        applyRateLimitHeaders(res.headers, rl);
-        return res;
-      }
-      // Tenant boundary: the destination region/gov/district must belong to
-      // the caller's tenant (super-admin bypasses).
-      const regionDenied = assertTenantOwned(region, me);
-      if (regionDenied) {
-        applyRateLimitHeaders(regionDenied.headers, rl);
-        return regionDenied;
-      }
-    }
-
-    const updated = await db.site.update({
-      where: { id },
-      data,
-      include: siteInclude,
-    });
+    const updated = outcome.updated;
+    // The pre-update row, for the audit trail's "before" snapshot.
+    const existing = outcome.existing;
 
     // Force the engine to pick up the change on the next snapshot read.
     await engine.reload();
@@ -268,41 +316,64 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     }
     const { id } = await params;
 
-    // Fetch existing + tenant-own it + count children for the audit trail.
-    const existing = await db.site.findUnique({
-      where: { id },
-      include: siteInclude,
+    // ── Tenant scoping ────────────────────────────────────────────────────
+    // Site is RLS-protected with FORCE: an unscoped findUnique returns null and
+    // the delete would 404 on a site the caller owns. Every child count is on
+    // an RLS-protected table too, so unscoped they would report ZERO and the
+    // audit trail would understate the blast radius of a cascade delete.
+    // Ownership check, counts and delete share one transaction.
+    const outcome = await asTenant(me.tenantId, async (tx) => {
+      const existing = await tx.site.findFirst({
+        where: isSuperAdminUser(me) ? { id } : { id, tenantId: me.tenantId },
+        include: siteInclude,
+      });
+      if (!existing) return { kind: "not-found" as const };
+
+      // Count the child assets that will be cascade-deleted, for the audit log.
+      // (The DB cascade handles the actual deletion; these counts are purely
+      // informational and recorded so the audit trail shows the blast radius.)
+      const [
+        tanks, generators, batteries, iotDevices,
+        alarms, deliveries, tickets, sensorReadings, siteEvents,
+      ] = await Promise.all([
+        tx.fuelTank.count({ where: { siteId: id } }),
+        tx.generator.count({ where: { siteId: id } }),
+        tx.batteryBank.count({ where: { siteId: id } }),
+        tx.iotDevice.count({ where: { siteId: id } }),
+        tx.alarm.count({ where: { siteId: id } }),
+        tx.fuelDelivery.count({ where: { siteId: id } }),
+        tx.maintenanceTicket.count({ where: { siteId: id } }),
+        tx.sensorReading.count({ where: { siteId: id } }),
+        tx.siteEvent.count({ where: { siteId: id } }),
+      ]);
+
+      await tx.site.delete({ where: { id } });
+
+      return {
+        kind: "deleted" as const,
+        existing,
+        counts: { tanks, generators, batteries, iotDevices, alarms, deliveries, tickets, sensorReadings, siteEvents },
+      };
     });
-    if (!existing) {
+
+    if (outcome.kind === "not-found") {
       const res = NextResponse.json({ error: "Site not found" }, { status: 404 });
       applyRateLimitHeaders(res.headers, rl);
       return res;
     }
-    const denied = assertTenantOwned(existing, me);
+
+    // Defence in depth — the where clause above already enforced ownership.
+    const denied = assertTenantOwned(outcome.existing, me);
     if (denied) {
       applyRateLimitHeaders(denied.headers, rl);
       return denied;
     }
 
-    // Count the child assets that will be cascade-deleted, for the audit log.
-    // (The DB cascade handles the actual deletion; these counts are purely
-    // informational and recorded so the audit trail shows the blast radius.)
-    const [
+    const { existing } = outcome;
+    const {
       tanks, generators, batteries, iotDevices,
       alarms, deliveries, tickets, sensorReadings, siteEvents,
-    ] = await Promise.all([
-      db.fuelTank.count({ where: { siteId: id } }),
-      db.generator.count({ where: { siteId: id } }),
-      db.batteryBank.count({ where: { siteId: id } }),
-      db.iotDevice.count({ where: { siteId: id } }),
-      db.alarm.count({ where: { siteId: id } }),
-      db.fuelDelivery.count({ where: { siteId: id } }),
-      db.maintenanceTicket.count({ where: { siteId: id } }),
-      db.sensorReading.count({ where: { siteId: id } }),
-      db.siteEvent.count({ where: { siteId: id } }),
-    ]);
-
-    await db.site.delete({ where: { id } });
+    } = outcome.counts;
 
     // Force the engine to drop the site on the next snapshot read.
     await engine.reload();

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { db, bootstrap } from "@/lib/fgmp";
+import { bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import {
   rateLimitByUser,
@@ -8,7 +9,7 @@ import {
   MUTATION_LIMIT,
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
-import { requireRole, ROLES, assertTenantOwned } from "@/lib/fgmp/auth-helpers";
+import { requireRole, ROLES, assertTenantOwned, isSuperAdminUser } from "@/lib/fgmp/auth-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -58,65 +59,82 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       return res;
     }
 
-    const existing = await db.region.findUnique({ where: { id }, select: { id: true, tenantId: true, name: true } });
-    if (!existing) {
+    // ── Tenant scoping ──────────────────────────────────────────────────────
+    // Region is RLS-protected with FORCE, so an unscoped lookup returns zero rows
+    // and every update would 404 — which is why the Phase 0 assertTenantOwned
+    // check below was inert: it compares record.tenantId AFTER the read, and the
+    // read never returned a row. The tenant is therefore resolved IN THE QUERY
+    // with findFirst({ where: { id, tenantId } }), making a cross-tenant id
+    // indistinguishable from a non-existent one.
+    //
+    // assertTenantOwned is KEPT as defence in depth; the where clause is what
+    // makes it function.
+    const outcome = await asTenant(user.tenantId, async (tx) => {
+      const existing = await tx.region.findFirst({
+        where: isSuperAdminUser(auth.user) ? { id } : { id, tenantId: user.tenantId },
+        select: { id: true, tenantId: true, name: true },
+      });
+      if (!existing) return { kind: "not-found" as const };
+
+      if (data.name) {
+        const clash = await tx.region.findFirst({
+          where: {
+            AND: [{ id: { not: id } }, { tenantId: existing.tenantId }, { name: data.name }],
+          },
+          select: { id: true },
+        });
+        if (clash) return { kind: "clash" as const };
+      }
+
+      const updated = await tx.region.update({
+        where: { id },
+        data,
+        include: {
+          governorates: {
+            orderBy: { name: "asc" },
+            include: {
+              districts: { orderBy: { name: "asc" }, include: { _count: { select: { sites: true } } } },
+              _count: { select: { sites: true } },
+            },
+          },
+          _count: { select: { sites: true, governorates: true } },
+        },
+      });
+      return { kind: "updated" as const, existing, updated };
+    });
+
+    if (outcome.kind === "not-found") {
       const res = NextResponse.json({ error: "Region not found" }, { status: 404 });
       applyRateLimitHeaders(res.headers, rl);
       return res;
     }
+    if (outcome.kind === "clash") {
+      const res = NextResponse.json(
+        { error: "Region name already exists in this tenant", field: "name" },
+        { status: 409 },
+      );
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
 
-    // Tenant isolation: the owning tenantId was already selected above but was
-    // previously used only for the audit row. assertTenantOwned returns 404 (not
-    // 403) so a cross-tenant region id cannot be probed for existence, and it
-    // carries the SUPERADMIN bypass internally.
-    const denied = assertTenantOwned(existing, auth.user);
+    // Defence in depth: the where clause above already enforced this. Kept so a
+    // future change to the scoping cannot silently become a cross-tenant write.
+    const denied = assertTenantOwned(outcome.existing, auth.user);
     if (denied) {
       applyRateLimitHeaders(denied.headers, rl);
       return denied;
     }
 
-    if (data.name) {
-      const clash = await db.region.findFirst({
-        where: {
-          AND: [{ id: { not: id } }, { tenantId: existing.tenantId }, { name: data.name }],
-        },
-        select: { id: true },
-      });
-      if (clash) {
-        const res = NextResponse.json(
-          { error: "Region name already exists in this tenant", field: "name" },
-          { status: 409 },
-        );
-        applyRateLimitHeaders(res.headers, rl);
-        return res;
-      }
-    }
-
-    const updated = await db.region.update({
-      where: { id },
-      data,
-      include: {
-        governorates: {
-          orderBy: { name: "asc" },
-          include: {
-            districts: { orderBy: { name: "asc" }, include: { _count: { select: { sites: true } } } },
-            _count: { select: { sites: true } },
-          },
-        },
-        _count: { select: { sites: true, governorates: true } },
-      },
-    });
-
     await audit({
       userId: user.id,
-      tenantId: existing.tenantId,
+      tenantId: outcome.existing.tenantId,
       action: "REGION_UPDATE",
       entity: "Region",
       entityId: id,
       details: data as Record<string, unknown>,
     });
 
-    const res = NextResponse.json(updated);
+    const res = NextResponse.json(outcome.updated);
     applyRateLimitHeaders(res.headers, rl);
     return res;
   } catch (err) {
@@ -147,31 +165,37 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     }
     const { id } = await ctx.params;
 
-    const existing = await db.region.findUnique({
-      where: { id },
-      select: { id: true, name: true, tenantId: true, _count: { select: { sites: true, governorates: true } } },
+    // Tenant isolation — see the PATCH handler above. Scoped in the query
+    // because Region is FORCE-RLS protected, so an unscoped read returns null
+    // and assertTenantOwned would never see a row. The guardrail below and the
+    // cascade to governorates/districts make a wrong tenant here far worse than
+    // a wrong read.
+    const outcome = await asTenant(user.tenantId, async (tx) => {
+      const existing = await tx.region.findFirst({
+        where: isSuperAdminUser(auth.user) ? { id } : { id, tenantId: user.tenantId },
+        select: { id: true, name: true, tenantId: true, _count: { select: { sites: true, governorates: true } } },
+      });
+      if (!existing) return { kind: "not-found" as const };
+
+      if (existing._count.sites > 0) return { kind: "has-sites" as const, existing };
+
+      // Region.governorates has onDelete: Cascade at the schema level — the
+      // database removes all child governorates + their districts in this same
+      // transaction, so the guardrail check and the delete cannot be raced apart.
+      await tx.region.delete({ where: { id } });
+      return { kind: "deleted" as const, existing };
     });
-    if (!existing) {
+
+    if (outcome.kind === "not-found") {
       const res = NextResponse.json({ error: "Region not found" }, { status: 404 });
       applyRateLimitHeaders(res.headers, rl);
       return res;
     }
-
-    // Tenant isolation — see the PATCH handler above. Without this, any tenant
-    // ADMIN could delete another tenant's region, and because
-    // Region.governorates is onDelete:Cascade that removal would cascade into
-    // its governorates and districts.
-    const denied = assertTenantOwned(existing, auth.user);
-    if (denied) {
-      applyRateLimitHeaders(denied.headers, rl);
-      return denied;
-    }
-
-    if (existing._count.sites > 0) {
+    if (outcome.kind === "has-sites") {
       const res = NextResponse.json(
         {
           error: "Cannot delete a region that still has sites. Reassign or remove them first.",
-          counts: existing._count,
+          counts: outcome.existing._count,
         },
         { status: 409 },
       );
@@ -179,18 +203,20 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
       return res;
     }
 
-    // Region.governorates has onDelete: Cascade at the schema level — the
-    // database will remove all child governorates + their districts in one
-    // transaction.
-    await db.region.delete({ where: { id } });
+    // Defence in depth — the where clause above already enforced ownership.
+    const denied = assertTenantOwned(outcome.existing, auth.user);
+    if (denied) {
+      applyRateLimitHeaders(denied.headers, rl);
+      return denied;
+    }
 
     await audit({
       userId: user.id,
-      tenantId: existing.tenantId,
+      tenantId: outcome.existing.tenantId,
       action: "REGION_DELETE",
       entity: "Region",
       entityId: id,
-      details: { name: existing.name },
+      details: { name: outcome.existing.name },
     });
 
     const res = NextResponse.json({ ok: true, id });

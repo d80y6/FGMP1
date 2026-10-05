@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { db, bootstrap } from "@/lib/fgmp";
+import { bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import {
   rateLimitByUser,
@@ -8,7 +9,7 @@ import {
   MUTATION_LIMIT,
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
-import { requireRole, ROLES, assertTenantOwned } from "@/lib/fgmp/auth-helpers";
+import { requireRole, ROLES, assertTenantOwned, isSuperAdminUser } from "@/lib/fgmp/auth-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -57,57 +58,72 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       return res;
     }
 
-    const existing = await db.district.findUnique({
-      where: { id },
-      select: { id: true, governorateId: true, name: true, governorate: { select: { region: { select: { tenantId: true } } } } },
+    // ── Tenant scoping ────────────────────────────────────────────────────
+    // District carries no tenantId — it inherits the owning tenant TWO levels up,
+    // Governorate -> Region. Region is RLS-protected with FORCE, so the lookup
+    // must run inside asTenant and filter through both parents; unscoped it
+    // returns null and the assertTenantOwned defence never sees a row.
+    const outcome = await asTenant(user.tenantId, async (tx) => {
+      const existing = await tx.district.findFirst({
+        where: {
+          id,
+          ...(isSuperAdminUser(auth.user)
+            ? {}
+            : { governorate: { region: { tenantId: user.tenantId } } }),
+        },
+        select: { id: true, governorateId: true, name: true, governorate: { select: { region: { select: { tenantId: true } } } } },
+      });
+      if (!existing) return { kind: "not-found" as const };
+
+      if (data.name) {
+        const clash = await tx.district.findFirst({
+          where: {
+            AND: [{ id: { not: id } }, { governorateId: existing.governorateId }, { name: data.name }],
+          },
+          select: { id: true },
+        });
+        if (clash) return { kind: "clash" as const };
+      }
+
+      const updated = await tx.district.update({
+        where: { id },
+        data,
+        include: { _count: { select: { sites: true } } },
+      });
+      return { kind: "updated" as const, existing, updated };
     });
-    if (!existing) {
+
+    if (outcome.kind === "not-found") {
       const res = NextResponse.json({ error: "District not found" }, { status: 404 });
       applyRateLimitHeaders(res.headers, rl);
       return res;
     }
+    if (outcome.kind === "clash") {
+      const res = NextResponse.json(
+        { error: "District name already exists in this governorate", field: "name" },
+        { status: 409 },
+      );
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
 
-    // Tenant isolation: a District carries no tenantId — it inherits the owning
-    // tenant two levels up, through Governorate -> Region.
-    const denied = assertTenantOwned(existing.governorate.region, auth.user);
+    // Defence in depth — the where clause above already enforced ownership.
+    const denied = assertTenantOwned(outcome.existing.governorate.region, auth.user);
     if (denied) {
       applyRateLimitHeaders(denied.headers, rl);
       return denied;
     }
 
-    if (data.name) {
-      const clash = await db.district.findFirst({
-        where: {
-          AND: [{ id: { not: id } }, { governorateId: existing.governorateId }, { name: data.name }],
-        },
-        select: { id: true },
-      });
-      if (clash) {
-        const res = NextResponse.json(
-          { error: "District name already exists in this governorate", field: "name" },
-          { status: 409 },
-        );
-        applyRateLimitHeaders(res.headers, rl);
-        return res;
-      }
-    }
-
-    const updated = await db.district.update({
-      where: { id },
-      data,
-      include: { _count: { select: { sites: true } } },
-    });
-
     await audit({
       userId: user.id,
-      tenantId: existing.governorate.region.tenantId,
+      tenantId: outcome.existing.governorate.region.tenantId,
       action: "DISTRICT_UPDATE",
       entity: "District",
       entityId: id,
       details: data as Record<string, unknown>,
     });
 
-    const res = NextResponse.json(updated);
+    const res = NextResponse.json(outcome.updated);
     applyRateLimitHeaders(res.headers, rl);
     return res;
   } catch (err) {
@@ -133,28 +149,35 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     }
     const { id } = await ctx.params;
 
-    const existing = await db.district.findUnique({
-      where: { id },
-      select: { id: true, name: true, governorate: { select: { region: { select: { tenantId: true } } } }, _count: { select: { sites: true } } },
+    // Tenant isolation — see the PATCH handler above. The site guardrail and the
+    // delete share one transaction so they cannot be raced apart.
+    const outcome = await asTenant(user.tenantId, async (tx) => {
+      const existing = await tx.district.findFirst({
+        where: {
+          id,
+          ...(isSuperAdminUser(auth.user)
+            ? {}
+            : { governorate: { region: { tenantId: user.tenantId } } }),
+        },
+        select: { id: true, name: true, governorate: { select: { region: { select: { tenantId: true } } } }, _count: { select: { sites: true } } },
+      });
+      if (!existing) return { kind: "not-found" as const };
+      if (existing._count.sites > 0) return { kind: "has-sites" as const, existing };
+
+      await tx.district.delete({ where: { id } });
+      return { kind: "deleted" as const, existing };
     });
-    if (!existing) {
+
+    if (outcome.kind === "not-found") {
       const res = NextResponse.json({ error: "District not found" }, { status: 404 });
       applyRateLimitHeaders(res.headers, rl);
       return res;
     }
-
-    // Tenant isolation — see the PATCH handler above.
-    const denied = assertTenantOwned(existing.governorate.region, auth.user);
-    if (denied) {
-      applyRateLimitHeaders(denied.headers, rl);
-      return denied;
-    }
-
-    if (existing._count.sites > 0) {
+    if (outcome.kind === "has-sites") {
       const res = NextResponse.json(
         {
           error: "Cannot delete a district that still has sites. Reassign or remove them first.",
-          counts: existing._count,
+          counts: outcome.existing._count,
         },
         { status: 409 },
       );
@@ -162,15 +185,20 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
       return res;
     }
 
-    await db.district.delete({ where: { id } });
+    // Defence in depth — the where clause above already enforced ownership.
+    const denied = assertTenantOwned(outcome.existing.governorate.region, auth.user);
+    if (denied) {
+      applyRateLimitHeaders(denied.headers, rl);
+      return denied;
+    }
 
     await audit({
       userId: user.id,
-      tenantId: existing.governorate.region.tenantId,
+      tenantId: outcome.existing.governorate.region.tenantId,
       action: "DISTRICT_DELETE",
       entity: "District",
       entityId: id,
-      details: { name: existing.name },
+      details: { name: outcome.existing.name },
     });
 
     const res = NextResponse.json({ ok: true, id });

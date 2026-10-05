@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { db, bootstrap } from "@/lib/fgmp";
+import { bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import {
   rateLimitByUser,
@@ -53,32 +54,49 @@ export async function POST(req: NextRequest) {
     }
     const { governorateId, name } = parsed.data;
 
-    const gov = await db.governorate.findUnique({
-      where: { id: governorateId },
-      select: { id: true, region: { select: { tenantId: true } } },
+    // ── Tenant scoping ──────────────────────────────────────────────────────
+    // District has NO tenantId column and no RLS policy; tenancy reaches it two
+    // hops out, through Governorate -> Region. Region IS RLS-protected, so the
+    // governorate lookup must run inside asTenant — unscoped it returns zero
+    // rows and every create fails with a misleading 404.
+    //
+    // A governorate in another tenant is simply not found for a tenant admin:
+    // the region filter carries their tenantId, so absent and foreign are
+    // indistinguishable. Superadmins match on id alone and use the tenant the
+    // region actually belongs to.
+    const result = await asTenant(user.tenantId, async (tx) => {
+      const gov = await tx.governorate.findFirst({
+        where: {
+          id: governorateId,
+          // Two hops: filter through the parent region, which is the table that
+          // actually carries tenantId.
+          ...(isSuperAdminUser(user)
+            ? {}
+            : { region: { tenantId: user.tenantId } }),
+        },
+        select: { id: true, region: { select: { tenantId: true } } },
+      });
+      if (!gov) return { kind: "not-found" as const };
+
+      const clash = await tx.district.findUnique({
+        where: { governorateId_name: { governorateId, name } },
+        select: { id: true },
+      });
+      if (clash) return { kind: "clash" as const };
+
+      const district = await tx.district.create({
+        data: { governorateId, name },
+        include: { _count: { select: { sites: true } } },
+      });
+      return { kind: "created" as const, tenantId: gov.region.tenantId, district };
     });
-    if (!gov) {
+
+    if (result.kind === "not-found") {
       const res = NextResponse.json({ error: "Governorate not found" }, { status: 404 });
       applyRateLimitHeaders(res.headers, rl);
       return res;
     }
-    // Tenant isolation: a tenant admin may only create districts under
-    // governorates whose region belongs to their own tenant. Super-admins
-    // may cross tenants.
-    if (gov.region.tenantId !== user.tenantId && !isSuperAdminUser(user)) {
-      const res = NextResponse.json(
-        { error: "Governorate not found in your tenant", code: "CROSS_TENANT_FORBIDDEN" },
-        { status: 403 },
-      );
-      applyRateLimitHeaders(res.headers, rl);
-      return res;
-    }
-
-    const clash = await db.district.findUnique({
-      where: { governorateId_name: { governorateId, name } },
-      select: { id: true },
-    });
-    if (clash) {
+    if (result.kind === "clash") {
       const res = NextResponse.json(
         { error: "District name already exists in this governorate", field: "name" },
         { status: 409 },
@@ -87,21 +105,16 @@ export async function POST(req: NextRequest) {
       return res;
     }
 
-    const district = await db.district.create({
-      data: { governorateId, name },
-      include: { _count: { select: { sites: true } } },
-    });
-
     await audit({
       userId: user.id,
-      tenantId: gov.region.tenantId,
+      tenantId: result.tenantId,
       action: "DISTRICT_CREATE",
       entity: "District",
-      entityId: district.id,
+      entityId: result.district.id,
       details: { governorateId, name },
     });
 
-    const res = NextResponse.json(district, { status: 201 });
+    const res = NextResponse.json(result.district, { status: 201 });
     applyRateLimitHeaders(res.headers, rl);
     return res;
   } catch (err) {
