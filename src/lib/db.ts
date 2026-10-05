@@ -48,6 +48,46 @@ function usingRlsRole(databaseUrl: string | undefined): boolean {
 
 const dbIsRlsEnforced = usingRlsRole(process.env.DATABASE_URL)
 
+/**
+ * FGMP_REQUIRE_RLS — fail closed on a misconfigured connection.
+ *
+ * This module is imported by every route and by `next build`'s module graph, so
+ * the check MUST NOT throw at module scope: the build evaluates route modules
+ * without runtime secrets, and throwing there breaks `next build` entirely
+ * (the same reason auth.ts uses a build-time placeholder instead of throwing).
+ *
+ * So the guard is a FUNCTION that the startup path calls. It is exported
+ * separately from `db` so an entrypoint can run it before serving traffic.
+ *
+ * Default is OFF. Local development without PostgreSQL — or against a database
+ * with no policies yet — must still boot. A deployed environment opts in by
+ * setting FGMP_REQUIRE_RLS=1, which is the default in docker-compose.yml.
+ */
+export function assertRlsEnforced(): void {
+  const required = process.env.FGMP_REQUIRE_RLS
+  // Unset or "0"/"false" → opt out (local development).
+  if (!required || required === '0' || required.toLowerCase() === 'false') return
+
+  if (dbIsRlsEnforced) return
+
+  throw new Error(
+    'FGMP_REQUIRE_RLS is enabled but DATABASE_URL does not use the `fgmp_app` ' +
+      'role. The table owner bypasses Row Level Security, so every tenant ' +
+      'isolation guarantee in this application would be silently disabled.\n' +
+      '  Fix: set DATABASE_URL to postgresql://fgmp_app:…@…/fgmp?schema=public\n' +
+      '  Or:  set FGMP_REQUIRE_RLS=0 to acknowledge the risk (development only).\n' +
+      `  Detected role: ${describeDbUser(process.env.DATABASE_URL)}`,
+  )
+}
+
+/** Best-effort role name for the error message, with credentials redacted. */
+function describeDbUser(databaseUrl: string | undefined): string {
+  if (!databaseUrl) return '(DATABASE_URL is not set)'
+  const withoutScheme = databaseUrl.replace(/^[a-z+]+:\/\//i, '')
+  const userinfo = withoutScheme.split('@')[0] ?? ''
+  return userinfo.split(':')[0] || '(unparseable DATABASE_URL)'
+}
+
 if (process.env.NODE_ENV !== 'production' && !dbIsRlsEnforced) {
   console.warn(
     '[db] DATABASE_URL is not using the `fgmp_app` role. Row Level Security ' +
@@ -64,6 +104,25 @@ export const db =
   })
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = db
+
+/**
+ * Run the FGMP_REQUIRE_RLS guard.
+ *
+ * `assertRlsEnforced` is exported for explicit callers and tests. This wrapper
+ * runs it at module load on the SERVER runtime only, which is what makes the
+ * app actually "refuse to start" as docker-compose.yml claims — a process that
+ * imports the database layer with a misconfigured connection dies here rather
+ * than serving traffic with tenant isolation silently disabled.
+ *
+ * It is deliberately skipped during `next build`: the build imports every route
+ * module to collect page data, runtime secrets do not exist yet, and throwing
+ * there breaks the production build (the same constraint auth.ts documents for
+ * its placeholder secret). A build is not a serving process; a misconfigured
+ * deployment must still fail at boot.
+ */
+if (process.env.NEXT_PHASE !== 'phase-production-build') {
+  assertRlsEnforced()
+}
 
 /**
  * Whether this process is expected to be running under RLS enforcement.

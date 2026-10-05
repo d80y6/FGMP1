@@ -157,6 +157,11 @@ jobs:
           GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO fgmp_app;
           SQL
 
+      # Seeding is a deploy-time step (Phase 1 step 6 removed it from
+      # bootstrap()), so CI must do it explicitly — exactly as an operator would.
+      - name: Seed (deploy-time step, owner role)
+        run: bun run db:seed
+
       # Proves the schema works at runtime AND that the policies are live: the
       # smoke test asserts an unscoped app-role read returns zero rows.
       - name: PostgreSQL smoke test (non-destructive, asserts RLS is enforcing)
@@ -202,7 +207,6 @@ jobs:
           docker run -d --name fgmp-ci -p 3000:3000 \
             --network host \
             -e DATABASE_URL=postgresql://fgmp_app:ciapp@127.0.0.1:5432/fgmp?schema=public \
-            -e FGMP_MIGRATE_DATABASE_URL=postgresql://fgmp_migrate:cimigrate@127.0.0.1:5432/fgmp?schema=public \
             -e NEXTAUTH_SECRET=ci-secret-abcdefghijklmnopqrstuvwxyz0123456789 \
             -e IOT_API_KEY=ci-iot-key-abcdefghijklmnop \
             -e REALTIME_SERVER_SECRET=ci-srv-secret-abcdefghij \
