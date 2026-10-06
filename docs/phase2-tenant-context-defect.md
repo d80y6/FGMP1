@@ -433,3 +433,143 @@ to be in the right variable.
 
 The same property that made the helper easy to adopt made the mistake invisible.
 No amount of green testing would have caught it.
+
+---
+
+# Phase 3 — closing the tenant-context defect
+
+Phase 2 identified the defect and refused to call itself done. This phase closed it.
+
+## The queue, and its shape
+
+A new ESLint rule banned importing `db` inside `src/app/**`, converting a silent
+runtime wrong-answer into a compile error:
+
+```
+81 violations / 309 unscoped db.* calls / 79 route files   at phase start
+ 0 violations                                                   at phase end
+```
+
+The rule's first version banned only `@/lib/db` and flagged 4 violations in 2
+files — a **false green**. The dominant import path is the `@/lib/fgmp` barrel
+(77 files), which re-exports `db`. Banning only the direct path would have left
+77 broken routes passing.
+
+A runtime guard was deliberately **not** built. With Prisma, a query extension
+intercepts model operations but not reliably `$queryRaw`/`$executeRaw` or nested
+relation paths, so a guard loud on 90% of paths is worse than none.
+
+## Defects found while fixing, all verified against the live database
+
+**The engine had been holding an empty platform since Phase 1.** `ensureInit()`
+aborted on `permission denied for table Governorate`, because geography was
+loaded via nested `include:` on tables the geography migration had correctly
+revoked. Prisma resolves each nested include as a *separate* query requiring its
+own privilege, so a correct revocation silently emptied the engine:
+
+```
+sites 52 | tanks 84 | generators 76 | regions 4     (after)
+engine.sites.length = 0                              (before)
+```
+
+**Two endpoints returned 500 for every request since Phase 0.**
+`POST /api/fgmp/iot/ingest` and `/api/fgmp/realtime/snapshot` both opened with
+`await bootstrap()`, which resolves the user and throws without a session —
+correctly, that is the Phase 0.3 fail-closed work. But both authenticate by API
+key or service token and have no session. In ingest it was invisible because the
+handler never *read* the returned user, so nothing downstream referenced the
+value `bootstrap()` threw over.
+
+Found by actually issuing requests. Neither the type gate nor the RLS suite could
+have found it: both exercise code that is correct in isolation.
+
+**A cross-tenant cache key.** `analytics`' 7-day readings cache omitted the
+tenant id while the superadmin path passed `tenantSiteIds: null` — one tenant's
+result served to the next.
+
+**`db.$transaction` is a transaction without a tenant context.** Delivery
+cancel and deliver used it, so the guard read returned null and the
+`auditLog.create` inside was rejected by `WITH CHECK` — the audit write could
+never succeed on the path a cancellation takes.
+
+**`delete` throws when a row is absent**, so a cross-tenant id produced a 500
+that distinguished it from a nonexistent one — the exact enumeration oracle the
+404 guards exist to prevent. Six routes now use `deleteMany`.
+
+## The tenant helper, redesigned
+
+`asTenant(tenantId, fn)` took a string, and two routes passed it a value resolved
+partly from the **request body**. It was safe only because an `if` ten lines
+earlier rejected a non-superadmin supplying another tenant's id.
+
+```ts
+asTenant(user, fn)                             // the caller's own tenant
+asTenantForAnotherTenant(user, tenantId, fn)   // throws unless SUPERADMIN
+```
+
+Proven unrepresentable: `asTenant(parsed.data.tenantId, …)` is now `TS2345`.
+The narrow, true guarantee: a **client-supplied** value cannot reach the tenant
+context. An **in-code** mistake can still compile — a mechanical pass did exactly
+that, passing a Site row where a user was expected, because the row has a
+`tenantId` field. Review caught it; tooling did not.
+
+Three sites were deliberately **not** converted: doing so would have silently
+redirected superadmin provisioning into their own tenant — which type-checks and
+does the wrong thing.
+
+## Geography isolation
+
+`Governorate` and `District` carry no `tenantId` and so could never have had a
+policy. Measured before the fix:
+
+```
+no tenant context  -> 36 districts      withTenant t-default -> 36
+withTenant t-platform -> 36                             (identical = nothing filtered)
+```
+
+Closed with a `security_barrier` view (`v_geography`) deriving tenancy from the
+Region chain, plus a `REVOKE` — the revoke being the half that actually matters:
+
+```
+SELECT count(*) FROM "District"      -> ERROR: permission denied
+v_geography as t-default             -> 35 districts
+v_geography as t-platform            -> 0
+v_geography, no context              -> 0
+```
+
+A view rather than a denormalised `tenantId`, because duplication can drift: a
+district whose region moved would keep a stale tenant id, which no constraint
+prevents.
+
+## Verification
+
+```
+tsc --noEmit                   0 errors
+eslint .                       0 errors  (310 pre-existing warnings)
+prisma validate                valid
+migrate reset (from empty)     10 migrations, exit 0
+db:seed                        {"seeded":true,"siteCount":52}
+smoke-postgres                 PASS
+rls-regression                 191 PASS / 0 FAIL / 0 BLOCKED, 30/30 tables
+engine.ensureInit(['t-default'])  sites 52 | tanks 84 | generators 76
+POST /api/fgmp/iot/ingest      HTTP 200, reading persisted, correct tenant
+```
+
+## Still outstanding — stated plainly
+
+- **MQTT tenant isolation is unenforced.** A topic *structure* exists; there is
+  no broker ACL and no broker client. Proving it needs a live broker.
+- **Interlock thresholds are inferred, not sourced** (`NEEDS_OPERATOR_CONFIRMATION`).
+  They fail toward refusal, but they are not engineering standards.
+- **`SHED_BELOW_SITE_REQUIREMENT` cannot fire** — `protectedLoadKw` is unmodelled.
+- **Ingest watermarks are process-local** — a retry routed to another replica
+  will not see them.
+- **Not end-to-end tested for most routes.** Most proofs are query-layer. Only
+  ingest has been driven through a real HTTP handler. A route that typechecks and
+  lints is not a route that has been observed working.
+- **`app.tenant_id` is a session GUC.** Any process holding the `fgmp_app`
+  credential can set it to any tenant. RLS catches a *missing* context, not a
+  *wrong* one.
+- **Not production-ready.** The user's bar was Phase 1's suite passing and Phase
+  2's simulated telemetry gone. Both hold. Neither makes this production-ready
+  with MQTT isolation unproven and most routes never exercised end to end.
