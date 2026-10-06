@@ -336,27 +336,74 @@ class FgmpEngine {
     append = false,
   ) {
     // Load geo hierarchy
-    const regions = await tx.region.findMany({
-      include: { governorates: { include: { districts: true } } },
-      orderBy: { name: "asc" },
-    });
-    this.regions.push(...regions.map((r) => ({
-      id: r.id,
-      name: r.name,
-      governorates: r.governorates.map((g) => ({
-        id: g.id,
-        name: g.name,
-        districts: g.districts.map((d) => ({ id: d.id, name: d.name })),
-      })),
-    })));
+    //
+    // Governorate and District carry NO tenantId and therefore have no RLS
+    // policy — migration 20261007000000_geography_rls REVOKEs both from fgmp_app
+    // and exposes the tenant-filtered hierarchy through the `v_geography`
+    // security_barrier view instead. Prisma resolves a nested `include:` as a
+    // separate query that needs its own table privilege, so including them here
+    // threw "permission denied for table Governorate" and aborted
+    // ensureInit() entirely, leaving the engine with an EMPTY platform.
+    //
+    // The view's columns are camelCase, so every reference in raw SQL must be
+    // double-quoted — PostgreSQL folds unquoted identifiers to lower case.
+    const geoRows = await tx.$queryRawUnsafe<
+      Array<{
+        regionId: string;
+        regionName: string;
+        governorateId: string | null;
+        governorateName: string | null;
+        districtId: string | null;
+        districtName: string | null;
+      }>
+    >(
+      `SELECT "regionId","regionName","governorateId","governorateName","districtId","districtName"
+         FROM v_geography`,
+    );
+    const regionMap = new Map<string, { id: string; name: string; governorates: Array<{ id: string; name: string; districts: Array<{ id: string; name: string }> }> }>();
+    const govMap = new Map<string, { id: string; name: string; districts: Array<{ id: string; name: string }> }>();
+    for (const row of geoRows) {
+      let region = regionMap.get(row.regionId);
+      if (!region) {
+        region = { id: row.regionId, name: row.regionName, governorates: [] };
+        regionMap.set(row.regionId, region);
+      }
+      if (row.governorateId && row.governorateName) {
+        let gov = govMap.get(row.governorateId);
+        if (!gov) {
+          gov = { id: row.governorateId, name: row.governorateName, districts: [] };
+          govMap.set(row.governorateId, gov);
+          region.governorates.push(gov);
+        }
+        if (row.districtId && row.districtName) {
+          gov.districts.push({ id: row.districtId, name: row.districtName });
+        }
+      }
+    }
+    this.regions.push(...[...regionMap.values()]);
+
+    const regionNameById = new Map([...regionMap].map(([id, r]) => [id, r.name]));
+    const govNameById = new Map([...govMap].map(([id, g]) => [id, g.name]));
+    const districtNameById = new Map<string, string>();
+    for (const g of govMap.values()) {
+      for (const d of g.districts) districtNameById.set(d.id, d.name);
+    }
 
     const sites = await tx.site.findMany({
       include: {
-        region: true, governorate: true, district: true,
+        // Region / Governorate / District are NOT included here: those two
+        // tables are revoked from fgmp_app (migration
+        // 20261007000000_geography_rls) and Prisma resolves each nested include
+        // as its own query requiring its own table privilege. Their names come
+        // from the `v_geography` rows loaded above instead.
         tanks: true, generators: true, batteries: true, iotDevices: true,
         dispensers: { include: { transactions: { orderBy: { startedAt: "desc" }, take: MAX_DISPENSER_TXN_MEMORY } } },
       },
     });
+    // Region / Governorate / District are resolved from `geoRows` (the
+    // v_geography view) rather than by nested include: those two tables are
+    // revoked from fgmp_app, and Prisma resolves each include as its own query
+    // requiring its own privilege.
     // The old line here read `sites[0]?.tenantId ?? "t-default"` — inferring
     // scope from the result set and inventing a hardcoded tenant id when the
     // set was empty. Scope is now the explicit `tenants` argument, and every
@@ -373,9 +420,9 @@ class FgmpEngine {
       }
       return {
       id: s.id, tenantId: s.tenantId, code: s.code, name: s.name,
-      regionId: s.regionId, region: s.region.name,
-      governorateId: s.governorateId, governorate: s.governorate.name,
-      districtId: s.districtId, district: s.district.name,
+      regionId: s.regionId, region: regionNameById.get(s.regionId) ?? "",
+      governorateId: s.governorateId, governorate: govNameById.get(s.governorateId) ?? "",
+      districtId: s.districtId, district: districtNameById.get(s.districtId) ?? "",
       latitude: s.latitude, longitude: s.longitude, address: s.address,
       status: s.status, criticality: s.criticality, loadKw: s.loadKw,
       powerSource: s.powerSource, gridAvailable: s.gridAvailable,
