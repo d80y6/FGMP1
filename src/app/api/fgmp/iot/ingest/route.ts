@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
-import { bootstrap, engine } from "@/lib/fgmp";
+import { engine } from "@/lib/fgmp";
 import { withTenant } from "@/lib/fgmp/tenant-context";
 import { emitToRealtime } from "@/lib/fgmp/realtime-emitter";
 import {
@@ -135,7 +135,14 @@ function iotApiKey(): string {
 const HISTORY_LIMIT = 288; // match engine's 24h @ 5min history window
 
 export async function POST(req: NextRequest) {
-  await bootstrap();
+  // Initialise the engine WITHOUT bootstrap(). bootstrap() resolves the
+  // authenticated user and throws when there is no session — but this endpoint
+  // authenticates with an API key, and field devices have no NextAuth session.
+  // The call therefore threw on EVERY ingest request, before the API key was
+  // even checked, so the device path returned 500 for all traffic.
+  //
+  // Only engine state is wanted here; the handler never reads `user`.
+  await engine.ensureInit();
 
   // ── API-key auth (edge-device authentication) ──────────────────────────
   const apiKey = req.headers.get("x-api-key");
