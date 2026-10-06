@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { engine, bootstrap } from "@/lib/fgmp";
+import { engine } from "@/lib/fgmp";
 import { errorResponse } from "@/lib/fgmp/api-error";
 
 export const dynamic = "force-dynamic";
@@ -76,7 +76,17 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    await bootstrap();
+    // Initialise the engine WITHOUT bootstrap(). bootstrap() resolves the
+    // authenticated user and throws when there is no NextAuth session — but
+    // this endpoint authenticates with a static service token and is called by
+    // the realtime and iot-bridge mini-services, which have no session. The
+    // call therefore threw for every request and the realtime push channel had
+    // been dead since Phase 0.
+    //
+    // engine.snapshot() is deliberately GLOBAL: this is the service-to-service
+    // endpoint, and the realtime service partitions the payload per tenant
+    // before pushing each socket only its own slice. See the header note.
+    await engine.ensureInit();
     const snap = await engine.snapshot();
     return NextResponse.json(snap);
   } catch (err) {
