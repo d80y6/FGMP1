@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, bootstrap } from "@/lib/fgmp";
+import { bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import { requireRole, ROLES, tenantWhere, siteTenantWhere } from "@/lib/fgmp/auth-helpers";
 import {
   rateLimitByUser,
@@ -46,38 +47,40 @@ export async function GET(req: NextRequest) {
     } as const;
 
     // Run all five findMany in parallel for snappy load.
-    const [tanks, generators, batteries, iot, dispensers, sites] = await Promise.all([
-      db.fuelTank.findMany({
+    const [tanks, generators, batteries, iot, dispensers, sites] = await asTenant(me, (tx) =>
+      Promise.all([
+      tx.fuelTank.findMany({
         where: siteTenantWhere(me),
         orderBy: { label: "asc" },
         include: { site: siteSelect },
       }),
-      db.generator.findMany({
+      tx.generator.findMany({
         where: siteTenantWhere(me),
         orderBy: { label: "asc" },
         include: { site: siteSelect },
       }),
-      db.batteryBank.findMany({
+      tx.batteryBank.findMany({
         where: siteTenantWhere(me),
         orderBy: { label: "asc" },
         include: { site: siteSelect },
       }),
-      db.iotDevice.findMany({
+      tx.iotDevice.findMany({
         where: siteTenantWhere(me),
         orderBy: { name: "asc" },
         include: { site: siteSelect },
       }),
-      db.fuelDispenser.findMany({
+      tx.fuelDispenser.findMany({
         where: siteTenantWhere(me),
         orderBy: [{ siteId: "asc" }, { label: "asc" }],
         include: { site: siteSelect },
       }),
-      db.site.findMany({
+      tx.site.findMany({
         where: tenantWhere(me),
         orderBy: { name: "asc" },
         select: { id: true, name: true, code: true },
       }),
-    ]);
+    ]),
+    );
 
     const res = NextResponse.json({ tanks, generators, batteries, iot, dispensers, sites });
     applyRateLimitHeaders(res.headers, rl);

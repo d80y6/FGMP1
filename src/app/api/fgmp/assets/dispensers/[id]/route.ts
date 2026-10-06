@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, engine, bootstrap } from "@/lib/fgmp";
+import { engine, bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import { requireRole, ROLES, assertSiteTenantOwned } from "@/lib/fgmp/auth-helpers";
 import { audit } from "@/lib/fgmp/audit";
 import { updateDispenserSchema, validateBody } from "@/lib/fgmp/schemas";
@@ -35,6 +36,7 @@ const dispenserInclude = {
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireRole(req, ROLES.ADMIN_ONLY);
   if ("error" in auth) return auth.error;
+  const me = auth.user;
   try {
     const { user } = await bootstrap();
     const rl = rateLimitByUser(req, user.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
@@ -64,10 +66,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
     const data = r.data;
 
-    const existing = await db.fuelDispenser.findUnique({
-      where: { id },
+    const existing = await asTenant(me, (tx) =>
+      tx.fuelDispenser.findFirst({
+        where: { id },
       select: { id: true, site: { select: { tenantId: true } } },
-    });
+      }),
+    );
     const tenantDenied = assertSiteTenantOwned(existing?.site ?? null, user);
     if (tenantDenied) {
       applyRateLimitHeaders(tenantDenied.headers, rl);
@@ -95,11 +99,16 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if (data.mode === "LOCKED") updateData.status = "STOPPED";
     if (data.mode === "AUTO" || data.mode === "MANUAL") updateData.status = "IDLE";
 
-    const updated = await db.fuelDispenser.update({
-      where: { id },
+    // `update` takes a unique selector, so tenantId cannot be part of the
+// where clause; the `existing` guard above already asserted ownership and
+// the nested include of site is itself RLS-protected, so it belongs here.
+    const updated = await asTenant(me, (tx) =>
+      tx.fuelDispenser.update({
+        where: { id },
       data: updateData,
       include: dispenserInclude,
-    });
+      }),
+    );
 
     // Mirror the changes into the in-memory engine state
     const live = engine.dispensers.find((x) => x.id === id);
@@ -150,6 +159,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireRole(req, ROLES.ADMIN_ONLY);
   if ("error" in auth) return auth.error;
+  const me = auth.user;
   try {
     const { user } = await bootstrap();
     const rl = rateLimitByUser(req, user.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
@@ -160,8 +170,9 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     }
     const { id } = await params;
 
-    const existing = await db.fuelDispenser.findUnique({
-      where: { id },
+    const existing = await asTenant(me, (tx) =>
+      tx.fuelDispenser.findFirst({
+        where: { id },
       select: {
         id: true,
         label: true,
@@ -174,7 +185,8 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
         _count: { select: { transactions: true } },
         site: { select: { tenantId: true } },
       },
-    });
+      }),
+    );
     const tenantDenied = assertSiteTenantOwned(existing?.site ?? null, user);
     if (tenantDenied) {
       applyRateLimitHeaders(tenantDenied.headers, rl);
@@ -186,7 +198,11 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       return res;
     }
 
-    await db.fuelDispenser.delete({ where: { id } });
+    await asTenant(me, (tx) =>
+      // deleteMany, not delete: `delete` THROWS when the row is absent, so a
+      // cross-tenant id would 500 and distinguish itself from a missing one.
+      tx.fuelDispenser.deleteMany({ where: { id } }),
+    );
 
     // Remove from the in-memory engine state
     const idx = engine.dispensers.findIndex((x) => x.id === id);
@@ -206,7 +222,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
         totalizerLitres: existing.totalizerLitres,
         cascadeDeletedTransactions: existing._count.transactions,
       },
-    });
+      });
 
     const res = NextResponse.json({ ok: true, id });
     applyRateLimitHeaders(res.headers, rl);

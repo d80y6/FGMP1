@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { db, bootstrap } from "@/lib/fgmp";
+import { bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import { requireRole, ROLES, assertSiteTenantOwned } from "@/lib/fgmp/auth-helpers";
 import { audit } from "@/lib/fgmp/audit";
 import {
@@ -70,7 +71,11 @@ export async function POST(req: NextRequest) {
     const { siteId, label, manufacturer, model, ratedPowerKw, fuelType } = parsed.data;
 
     // Verify the site exists and belongs to the caller's tenant.
-    const site = await db.site.findUnique({ where: { id: siteId }, select: { tenantId: true } });
+    // Scoped in the query so the caller's tenant can actually find the site.
+    // assertTenantOwned is KEPT as defence in depth.
+    const site = await asTenant(me, (tx) =>
+      tx.site.findFirst({ where: { id: siteId, tenantId: me.tenantId }, select: { tenantId: true } }),
+    );
     const siteDenied = assertSiteTenantOwned(site, me);
     if (siteDenied) {
       applyRateLimitHeaders(siteDenied.headers, rl);
@@ -85,7 +90,10 @@ export async function POST(req: NextRequest) {
       return res;
     }
 
-    const generator = await db.generator.create({
+    // Scoped write: an unscoped create is rejected by WITH CHECK outright, and
+    // the nested include of `site` below is itself RLS-protected.
+    const generator = await asTenant(me, (tx) =>
+      tx.generator.create({
       data: {
         siteId,
         tenantId: site.tenantId,
@@ -102,7 +110,7 @@ export async function POST(req: NextRequest) {
         nextMaintenanceHrs: 250,
       },
       include: generatorInclude,
-    });
+    }));
 
     await audit({
       userId: me.id,

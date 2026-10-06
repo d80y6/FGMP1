@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { db, bootstrap } from "@/lib/fgmp";
+import { bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import { requireRole, ROLES, assertSiteTenantOwned } from "@/lib/fgmp/auth-helpers";
 import { audit } from "@/lib/fgmp/audit";
 import {
@@ -74,7 +75,11 @@ export async function POST(req: NextRequest) {
     // Verify the site exists and belongs to the caller's tenant (Prisma will
     // throw P2003 if the site doesn't exist, but assertSiteTenantOwned gives a
     // friendlier cross-tenant 404).
-    const site = await db.site.findUnique({ where: { id: siteId }, select: { tenantId: true } });
+    // Scoped in the query so the caller's tenant can actually find the site.
+    // assertTenantOwned is KEPT as defence in depth.
+    const site = await asTenant(me, (tx) =>
+      tx.site.findFirst({ where: { id: siteId, tenantId: me.tenantId }, select: { tenantId: true } }),
+    );
     const siteDenied = assertSiteTenantOwned(site, me);
     if (siteDenied) {
       applyRateLimitHeaders(siteDenied.headers, rl);
@@ -89,7 +94,10 @@ export async function POST(req: NextRequest) {
       return res;
     }
 
-    const tank = await db.fuelTank.create({
+    // Scoped write: an unscoped create is rejected by WITH CHECK, and the
+    // nested `include` of site below is itself RLS-protected.
+    const tank = await asTenant(me, (tx) =>
+      tx.fuelTank.create({
       data: {
         siteId,
         tenantId: site.tenantId,
@@ -104,7 +112,7 @@ export async function POST(req: NextRequest) {
         status: "OPERATIONAL",
       },
       include: tankInclude,
-    });
+    }));
 
     await audit({
       userId: me.id,

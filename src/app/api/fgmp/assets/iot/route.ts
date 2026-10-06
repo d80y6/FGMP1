@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { db, bootstrap } from "@/lib/fgmp";
+import { bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import { requireRole, ROLES, assertSiteTenantOwned } from "@/lib/fgmp/auth-helpers";
 import { audit } from "@/lib/fgmp/audit";
 import {
@@ -79,7 +80,14 @@ export async function POST(req: NextRequest) {
     const { siteId, name, type, protocol, vendor, serialNo, firmware, ipAddress, modbusUnit } = parsed.data;
 
     // Verify the site exists and belongs to the caller's tenant.
-    const site = await db.site.findUnique({ where: { id: siteId }, select: { tenantId: true } });
+    // Scoped in the query so the caller's tenant can find the site.
+    // assertTenantOwned is KEPT as defence in depth.
+    const site = await asTenant(me, (tx) =>
+      tx.site.findFirst({
+        where: { id: siteId, tenantId: me.tenantId },
+        select: { tenantId: true },
+      }),
+    );
     const siteDenied = assertSiteTenantOwned(site, me);
     if (siteDenied) {
       applyRateLimitHeaders(siteDenied.headers, rl);
@@ -96,7 +104,12 @@ export async function POST(req: NextRequest) {
 
     // Friendly 409 for duplicate serial number (instead of relying on the
     // Prisma P2002 path which says "Resource already exists" — too generic).
-    const dupSerial = await db.iotDevice.findUnique({ where: { serialNo }, select: { id: true } });
+    // Duplicate-serial check is also tenant-scoped: serialNo is unique per
+    // tenant, so an unscoped lookup would both miss other tenants' serials and
+    // return null under RLS, silently allowing duplicates.
+    const dupSerial = await asTenant(me, (tx) =>
+      tx.iotDevice.findFirst({ where: { serialNo, tenantId: me.tenantId }, select: { id: true } }),
+    );
     if (dupSerial) {
       const res = NextResponse.json(
         { error: "Serial number already in use", code: "IOT_SERIAL_DUPLICATE" },
@@ -106,7 +119,8 @@ export async function POST(req: NextRequest) {
       return res;
     }
 
-    const device = await db.iotDevice.create({
+    const device = await asTenant(me, (tx) =>
+      tx.iotDevice.create({
       data: {
         siteId,
         tenantId: site.tenantId,
@@ -122,7 +136,7 @@ export async function POST(req: NextRequest) {
         signalRssi: -70,
       },
       include: iotInclude,
-    });
+    }));
 
     await audit({
       userId: me.id,

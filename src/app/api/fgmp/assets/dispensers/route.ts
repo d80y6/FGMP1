@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, engine, bootstrap } from "@/lib/fgmp";
+import { engine, bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import { requireRole, ROLES, assertSiteTenantOwned } from "@/lib/fgmp/auth-helpers";
 import { audit } from "@/lib/fgmp/audit";
 import { createDispenserSchema } from "@/lib/fgmp/schemas";
@@ -30,6 +31,7 @@ const dispenserInclude = {
 export async function POST(req: NextRequest) {
   const auth = await requireRole(req, ROLES.ADMIN_ONLY);
   if ("error" in auth) return auth.error;
+  const me = auth.user;
   try {
     const { user } = await bootstrap();
     const rl = rateLimitByUser(req, user.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
@@ -60,7 +62,14 @@ export async function POST(req: NextRequest) {
     const data = parsed.data;
 
     // Verify the site exists and belongs to the caller's tenant.
-    const site = await db.site.findUnique({ where: { id: data.siteId }, select: { tenantId: true } });
+    // Scoped in the query so the caller's tenant can find the site.
+    // assertTenantOwned is KEPT as defence in depth.
+    const site = await asTenant(me, (tx) =>
+      tx.site.findFirst({
+        where: { id: data.siteId, tenantId: me.tenantId },
+        select: { tenantId: true },
+      }),
+    );
     const siteDenied = assertSiteTenantOwned(site, user);
     if (siteDenied) {
       applyRateLimitHeaders(siteDenied.headers, rl);
@@ -77,10 +86,15 @@ export async function POST(req: NextRequest) {
 
     // Enforce the unique [siteId, pumpNumber] constraint up front (Prisma will
     // also enforce it, but a friendlier 409 is nicer than a P2002 error).
-    const existing = await db.fuelDispenser.findUnique({
-      where: { siteId_pumpNumber: { siteId: data.siteId, pumpNumber: data.pumpNumber } },
-      select: { id: true },
-    });
+    // findUnique accepts the compound [siteId, pumpNumber] key but NOT an
+    // extra tenantId field, so tenant scoping here comes from asTenant's
+    // context rather than from the where clause.
+    const existing = await asTenant(me, (tx) =>
+      tx.fuelDispenser.findUnique({
+        where: { siteId_pumpNumber: { siteId: data.siteId, pumpNumber: data.pumpNumber } },
+        select: { id: true },
+      }),
+    );
     if (existing) {
       const res = NextResponse.json(
         { error: `Pump number ${data.pumpNumber} already exists at this site`, code: "PUMP_EXISTS" },
@@ -90,7 +104,8 @@ export async function POST(req: NextRequest) {
       return res;
     }
 
-    const dispenser = await db.fuelDispenser.create({
+    const dispenser = await asTenant(me, (tx) =>
+      tx.fuelDispenser.create({
       data: {
         siteId: data.siteId,
         tenantId: site.tenantId,
@@ -115,7 +130,7 @@ export async function POST(req: NextRequest) {
         flowRateLpm: 0,
       },
       include: dispenserInclude,
-    });
+    }));
 
     await audit({
       userId: user.id,
