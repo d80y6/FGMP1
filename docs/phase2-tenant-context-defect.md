@@ -573,3 +573,44 @@ POST /api/fgmp/iot/ingest      HTTP 200, reading persisted, correct tenant
 - **Not production-ready.** The user's bar was Phase 1's suite passing and Phase
   2's simulated telemetry gone. Both hold. Neither makes this production-ready
   with MQTT isolation unproven and most routes never exercised end to end.
+
+## Addendum — `tsc` passing does not mean the app builds
+
+`npx tsc --noEmit` reported **0 errors** while `bun run build` failed:
+
+```
+Type error: Type 'typeof import("src/app/api/fgmp/correlation/evaluate/route")'
+does not satisfy the constraint 'RouteHandlerConfig<"/api/fgmp/correlation/evaluate">'.
+  The types returned by 'POST(...)' are incompatible between these types.
+    Type 'Promise<unknown>' is not assignable to type 'void | Response | Promise<void | Response>'.
+```
+
+Next.js requires an exported route handler to return `Response | void`. A
+handler resolving to `Promise<unknown>` satisfies the compiler's own rules and
+fails the framework's contract, so plain `tsc` cannot see it.
+
+This matters more than an ordinary type error, because the build is what
+produces the artefact that gets deployed. A green type-check gate — which CI
+runs, and which was green for most of this programme — did not mean the
+application could be built at all.
+
+### The hierarchy of what actually verifies something
+
+Established the hard way across this phase, and worth stating plainly because
+each level was believed sufficient until a higher one found the defect:
+
+| Level | Found | Missed |
+|---|---|---|
+| `tsc --noEmit` | type errors | Next.js route-handler contracts |
+| `eslint` | import violations, syntax | everything behavioural |
+| RLS suite | cross-tenant policy breaches | routes that were never invoked |
+| `bun run build` | framework contracts | anything that compiles but 500s |
+| **real HTTP request** | 500s, empty-200s, wrong tenant | rendering, browser reachability |
+
+Every defect in this programme that mattered was invisible to the level above
+it: unscoped reads returning empty were invisible to `tsc`; the ingest 500 was
+invisible to the build; a list returning `[]` for a tenant owning 52 sites is
+invisible to every check except issuing the request.
+
+The E2E harness exists because of that table, not because HTTP tests are a
+general good practice.
