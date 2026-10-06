@@ -232,9 +232,12 @@ export async function POST(req: NextRequest) {
       });
       const siteDenied = assertSiteTenantOwned(site, me);
       if (siteDenied) throw new ApiError(siteDenied.status, await siteDenied.text());
-      // `site` is null when it does not exist; assertSiteTenantOwned returns
-      // null (allowed) for a same-tenant site, so the null case needs its own
-      // check before `site.tenantId` is read.
+      // `site` is null when it does not exist. assertSiteTenantOwned answers 404
+      // for a null record (and for another tenant's), so a missing site is
+      // already a 404 here and the explicit check below is what makes
+      // `site.tenantId` safe to read for TypeScript. Both paths are 404, which
+      // is deliberate: a caller must not be able to tell "no such site" from
+      // "site belongs to someone else".
       if (!site) {
         throw new ApiError(404, "Site not found");
       }
