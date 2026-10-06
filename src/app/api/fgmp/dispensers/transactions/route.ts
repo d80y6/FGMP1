@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, bootstrap } from "@/lib/fgmp";
+import { bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import {
   rateLimitByUser,
   applyRateLimitHeaders,
@@ -31,6 +32,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const auth = await requireAuth();
   if ("error" in auth) return auth.error;
+  const me = auth.user;
   try {
     const { user } = await bootstrap();
     const rl = rateLimitByUser(req, user.id, READ_LIMIT.limit, READ_LIMIT.windowMs);
@@ -69,8 +71,12 @@ export async function GET(req: NextRequest) {
       where.startedAt = r;
     }
 
-    const [rows, total] = await Promise.all([
-      db.fuelTransaction.findMany({
+    // Both reads inside one transaction. The nested `dispenser` and `site`
+    // includes are themselves RLS-protected, so scoping only the outer
+    // findMany would return transactions with null relations behind a 200.
+    const [rows, total] = await asTenant(me, (tx) =>
+      Promise.all([
+      tx.fuelTransaction.findMany({
         where,
         orderBy: { startedAt: "desc" },
         take: limit,
@@ -80,8 +86,9 @@ export async function GET(req: NextRequest) {
           site: { select: { id: true, name: true, code: true } },
         },
       }),
-      db.fuelTransaction.count({ where }),
-    ]);
+      tx.fuelTransaction.count({ where }),
+    ]),
+    );
 
     const res = NextResponse.json({ rows, total, limit, offset });
     applyRateLimitHeaders(res.headers, rl);

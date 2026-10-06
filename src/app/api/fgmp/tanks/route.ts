@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { db, engine, bootstrap } from "@/lib/fgmp";
+import { engine, bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import {
   rateLimitByUser,
@@ -49,11 +50,15 @@ export async function GET(req: NextRequest) {
     const siteId = searchParams.get("siteId");
     const where: Record<string, unknown> = { ...siteTenantWhereOrAll(user) };
     if (siteId) where.siteId = siteId;
-    const tanks = await db.fuelTank.findMany({
+    // Nested include of `site` below is RLS-protected, so it is scoped with
+    // the query rather than after it.
+    const tanks = await asTenant(user, (tx) =>
+      tx.fuelTank.findMany({
       where,
       orderBy: { label: "asc" },
       include: { site: { select: { id: true, name: true, code: true } } },
-    });
+    }),
+    );
 
     // Merge live telemetry from the engine.
     const live = engine.tanks;
@@ -110,10 +115,12 @@ export async function POST(req: NextRequest) {
 
     // Verify the site exists in the acting admin's tenant
     // (SUPERADMIN bypasses for cross-tenant asset creation).
-    const site = await db.site.findUnique({
-      where: { id: data.siteId },
+    const site = await asTenant(user, (tx) =>
+      tx.site.findFirst({
+      where: { id: data.siteId, tenantId: user.tenantId },
       select: { id: true, tenantId: true, name: true },
-    });
+    }),
+    );
     const siteDenied = assertTenantOwned(site, user);
     if (siteDenied) {
       applyRateLimitHeaders(siteDenied.headers, rl);
@@ -132,7 +139,8 @@ export async function POST(req: NextRequest) {
     const low = data.lowThreshold ?? data.capacityLitres * 0.25;
     const critical = data.criticalThreshold ?? data.capacityLitres * 0.1;
 
-    const row = await db.fuelTank.create({
+    const row = await asTenant(user, (tx) =>
+      tx.fuelTank.create({
       data: {
         siteId: data.siteId,
         tenantId: site.tenantId,
@@ -146,7 +154,8 @@ export async function POST(req: NextRequest) {
         status: "OPERATIONAL",
       },
       include: { site: { select: { id: true, name: true, code: true } } },
-    });
+    }),
+    );
 
     // Push into the engine so the next snapshot reflects the new tank.
     engine.tanks.push({

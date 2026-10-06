@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { db, engine, bootstrap } from "@/lib/fgmp";
+import { engine, bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import {
   rateLimitByUser,
@@ -62,6 +63,7 @@ const updateTankSchema = z
 export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const auth = await requireAuth();
   if ("error" in auth) return auth.error;
+  const me = auth.user;
   try {
     const { user } = await bootstrap();
     const rl = rateLimitByUser(req, user.id, READ_LIMIT.limit, READ_LIMIT.windowMs);
@@ -71,10 +73,12 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
       return res;
     }
     const { id } = await ctx.params;
-    const t = await db.fuelTank.findUnique({
-      where: { id },
+    const t = await asTenant(me, (tx) =>
+      tx.fuelTank.findFirst({
+        where: { id },
       include: { site: { select: { id: true, name: true, code: true, tenantId: true } } },
-    });
+      }),
+    );
     const denied = assertSiteTenantOwned(t?.site ?? null, user);
     if (denied) {
       applyRateLimitHeaders(denied.headers, rl);
@@ -108,6 +112,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const auth = await requireRole(req, ROLES.ADMIN_ONLY);
   if ("error" in auth) return auth.error;
+  const me = auth.user;
   try {
     const { user } = await bootstrap();
     const rl = rateLimitByUser(req, user.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
@@ -131,10 +136,12 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     const data = r.data;
 
     // Verify existence + tenant scope.
-    const existing = await db.fuelTank.findUnique({
-      where: { id },
+    const existing = await asTenant(me, (tx) =>
+      tx.fuelTank.findFirst({
+        where: { id },
       include: { site: { select: { tenantId: true } } },
-    });
+      }),
+    );
     const denied = assertSiteTenantOwned(existing?.site ?? null, user);
     if (denied) {
       applyRateLimitHeaders(denied.headers, rl);
@@ -152,11 +159,16 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       else if (k === "criticalFuelLitres") updateData.criticalThreshold = v;
       else updateData[k] = v;
     }
-    const row = await db.fuelTank.update({
-      where: { id },
+    // `update` takes a unique selector, so tenantId cannot be part of the
+// where clause; the `existing` guard above already asserted ownership and
+// the nested include of site is itself RLS-protected, so it belongs here.
+    const row = await asTenant(me, (tx) =>
+      tx.fuelTank.update({
+        where: { id },
       data: updateData,
       include: { site: { select: { id: true, name: true, code: true } } },
-    });
+      }),
+    );
 
     // Update engine's in-memory state.
     const live = engine.tanks.find((x) => x.id === id);
@@ -201,6 +213,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const auth = await requireRole(req, ROLES.ADMIN_ONLY);
   if ("error" in auth) return auth.error;
+  const me = auth.user;
   try {
     const { user } = await bootstrap();
     const rl = rateLimitByUser(req, user.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
@@ -211,10 +224,12 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     }
     const { id } = await ctx.params;
 
-    const existing = await db.fuelTank.findUnique({
-      where: { id },
+    const existing = await asTenant(me, (tx) =>
+      tx.fuelTank.findFirst({
+        where: { id },
       include: { site: { select: { tenantId: true, name: true } } },
-    });
+      }),
+    );
     const denied = assertSiteTenantOwned(existing?.site ?? null, user);
     if (denied) {
       applyRateLimitHeaders(denied.headers, rl);
@@ -226,7 +241,11 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
       return res;
     }
 
-    await db.fuelTank.delete({ where: { id } });
+    await asTenant(me, (tx) =>
+      // deleteMany, not delete: `delete` THROWS when the row is absent, so a
+      // cross-tenant id would 500 and distinguish itself from a missing one.
+      tx.fuelTank.deleteMany({ where: { id } }),
+    );
 
     // Remove from the engine's in-memory array.
     const idx = engine.tanks.findIndex((t) => t.id === id);
@@ -243,7 +262,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
         siteId: existing.siteId,
         siteName: existing.site.name,
       },
-    });
+      });
 
     const res = NextResponse.json({ ok: true, id });
     applyRateLimitHeaders(res.headers, rl);
