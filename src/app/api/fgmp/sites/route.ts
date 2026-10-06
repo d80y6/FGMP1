@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { engine, bootstrap } from "@/lib/fgmp";
 import { asTenant, asTenantForAnotherTenant } from "@/lib/fgmp/route-tenant";
-import { resolveGeographyPath } from "@/lib/fgmp/geography";
+import { resolveGeographyPath, attachGeographyNames } from "@/lib/fgmp/geography";
 import { requireAuth, requireRole, ROLES, tenantWhere } from "@/lib/fgmp/auth-helpers";
 import { audit } from "@/lib/fgmp/audit";
 import {
@@ -46,10 +46,17 @@ const createSiteSchema = z.object({
   status: z.enum(STATUS_VALUES).default("ONLINE"),
 });
 
+// Geography is attached by name through `v_geography`, not by Prisma include.
+//
+// `include: { governorate: true }` no longer works: migration 20261007000000
+// revoked SELECT on Governorate and District from `fgmp_app`, because neither
+// table carries a tenantId and so neither was protected by RLS. Including them
+// fails at the database with `permission denied for table Governorate` and 500s
+// the route. Only `region` remains directly includable — Region does carry
+// tenantId and is RLS-protected — and the view supplies the other two names
+// under the tenant filter.
 const siteInclude = {
   region: true,
-  governorate: true,
-  district: true,
 } as const;
 
 /**
@@ -80,13 +87,14 @@ export async function GET(req: NextRequest) {
     // regardless of the filter. The filter is kept — it is still correct and
     // still denies a superadmin's unfiltered view — but the query must also run
     // inside a tenant context for the rows to exist at all.
-    const sites = await asTenant(me, (tx) =>
-      tx.site.findMany({
+    const sites = await asTenant(me, async (tx) => {
+      const rows = await tx.site.findMany({
         where: tenantWhere(me),
         include: siteInclude,
         orderBy: { code: "asc" },
-      }),
-    );
+      });
+      return attachGeographyNames(tx, rows);
+    });
     const res = NextResponse.json(sites);
     applyRateLimitHeaders(res.headers, rl);
     return res;
@@ -246,6 +254,12 @@ export async function POST(req: NextRequest) {
       include: siteInclude,
       }),
     );
+    // Geography names come from the tenant-filtered view, not from a Prisma
+    // include — see `siteInclude`. Run inside the same tenant context as the
+    // create so the view's current_setting() predicate matches.
+    const [withGeography] = await asTenantForAnotherTenant(me, tenantId, (tx) =>
+      attachGeographyNames(tx, [site]),
+    );
 
     // Force the engine to pick up the new site on the next snapshot read.
     await engine.reload();
@@ -264,7 +278,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    const res = NextResponse.json(site, { status: 201 });
+    const res = NextResponse.json(withGeography ?? site, { status: 201 });
     applyRateLimitHeaders(res.headers, rl);
     return res;
   } catch (err) {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { engine, bootstrap } from "@/lib/fgmp";
-import { asTenant } from "@/lib/fgmp/route-tenant";
+import { asTenant, asTenantForAnotherTenant } from "@/lib/fgmp/route-tenant";
 import {
   rateLimitByUser,
   applyRateLimitHeaders,
@@ -11,7 +11,7 @@ import {
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { audit } from "@/lib/fgmp/audit";
 import { requireAuth, requireRole, assertTenantOwned, isSuperAdminUser, ROLES } from "@/lib/fgmp/auth-helpers";
-import { resolveGeographyPath } from "@/lib/fgmp/geography";
+import { resolveGeographyPath, attachGeographyNames } from "@/lib/fgmp/geography";
 
 export const dynamic = "force-dynamic";
 
@@ -27,10 +27,14 @@ const CRITICALITY_VALUES = ["CRITICAL", "HIGH", "MEDIUM", "LOW"] as const;
 const POWER_SOURCE_VALUES = ["GRID", "GENERATOR", "HYBRID"] as const;
 const STATUS_VALUES = ["ONLINE", "DEGRADED", "OFFLINE", "MAINTENANCE"] as const;
 
+// Region carries a tenantId and is RLS-protected, so it can be included
+// directly. Governorate and District do NOT: migration 20261007000000 revoked
+// SELECT on both from `fgmp_app` precisely because they had no tenantId to
+// filter on. Including them raises `permission denied for table Governorate`
+// and 500s the route. `attachGeographyNames` supplies those two names from the
+// tenant-filtered `v_geography` view instead.
 const siteInclude = {
   region: true,
-  governorate: true,
-  district: true,
 } as const;
 
 const updateSiteSchema = z
@@ -185,6 +189,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       });
       if (!existing) return { kind: "not-found" as const };
 
+
       // Unique code check on change (exclude self).
       if (data.code && data.code !== existing.code) {
         const clash = await tx.site.findUnique({ where: { code: data.code } });
@@ -286,7 +291,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       },
     });
 
-    const res = NextResponse.json(updated);
+    // The update ran inside asTenant(me, …); decorate inside a context too, since
+    // `v_geography` filters on current_setting('app.tenant_id') and returns
+    // nothing without one. A missing tenant on `updated` is a superadmin editing
+    // another tenant, which asTenantForAnotherTenant handles.
+    const decorated =
+      updated.tenantId && updated.tenantId !== me.tenantId
+        ? await asTenantForAnotherTenant(me, updated.tenantId, (tx) =>
+            attachGeographyNames(tx, [updated]),
+          ).then((r) => r[0])
+        : await asTenant(me, (tx) => attachGeographyNames(tx, [updated])).then((r) => r[0]);
+
+    const res = NextResponse.json(decorated ?? updated);
     applyRateLimitHeaders(res.headers, rl);
     return res;
   } catch (err) {
@@ -334,6 +350,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
         include: siteInclude,
       });
       if (!existing) return { kind: "not-found" as const };
+
 
       // Count the child assets that will be cascade-deleted, for the audit log.
       // (The DB cascade handles the actual deletion; these counts are purely
@@ -394,8 +411,13 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
         code: existing.code,
         name: existing.name,
         region: existing.region?.name,
-        governorate: existing.governorate?.name,
-        district: existing.district?.name,
+        // Governorate/District names are not read here: those tables are no
+        // longer readable by `fgmp_app` (migration 20261007000000). The ids are
+        // on the site row and are what the audit trail needs to identify what
+        // was deleted; resolving display names would mean another view query on
+        // a path that is about to delete the row anyway.
+        governorateId: existing.governorateId,
+        districtId: existing.districtId,
         cascadeDeleted: {
           tanks, generators, batteries, iotDevices,
           alarms, deliveries, tickets, sensorReadings, siteEvents,

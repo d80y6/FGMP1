@@ -141,6 +141,16 @@ const GENERATOR_ID = `rls-gen-${RUN}`
 const TANK_ID = `rls-tank-${RUN}`
 const RS485_BUS_ID = `rls-bus-${RUN}`
 const RS485_DIAG_ID = `rls-diag-${RUN}`
+/**
+ * Region → Governorate → District ids per tenant tag, populated by the Site
+ * fixture.
+ *
+ * Module scope rather than local to its builder because the geography isolation
+ * assertions need the SAME rows. Geography has no tenantId of its own, so its
+ * tenancy is only observable through the parent chain — an assertion that built
+ * its own chain would be testing a chain nothing else references.
+ */
+const chains: Record<string, { region: string; gov: string; dist: string }> = {}
 const REGION_ID = `rls-reg-${RUN}`
 const GOV_ID = `rls-gov-${RUN}`
 const DIST_ID = `rls-dist-${RUN}`
@@ -210,6 +220,28 @@ const TABLES: TableSpec[] = [
       "releaseId": releaseRef(),
       "dispenserId": dispenserRef(),
       status: `'QUEUED'`,
+    },
+  },
+  {
+    // Per-tenant interlock threshold overrides (Phase 4). Carries its own
+    // tenantId, so it uses the generic fixture like any other tier A table.
+    // The `siteId` is left NULL deliberately: a tenant-wide override is the
+    // common case, and the unique index uses NULLS NOT DISTINCT precisely so
+    // two tenants can each hold one.
+    table: 'InterlockThreshold',
+    label: 'InterlockThreshold (tier A, tenant-wide override)',
+    tenantColumn: 'tenantId',
+    siteScoped: false,
+    columns: {
+      id: idFor('thr'),
+      "thresholdKey": `'coolantMaxC'`,
+      value: '90',
+      unit: `'CELSIUS'`,
+      source: `'SITE_POLICY'`,
+      // NOT NULL with no column default in the schema, so it must be supplied.
+      // Prisma manages this on every write; raw fixture inserts do not get that
+      // for free.
+      "updatedAt": 'now()',
     },
   },
   {
@@ -957,7 +989,6 @@ async function seedFixtures(): Promise<void> {
 
   // Geographic hierarchy is itself tenant-owned (Region carries tenantId), so
   // each tenant gets its own chain. Site requires all three FKs NOT NULL.
-  const chains: Record<string, { region: string; gov: string; dist: string }> = {}
   for (const [tag, tenant] of [
     [SUFFIX, TENANT_A],
     [`${SUFFIX}-b`, TENANT_B],
@@ -1538,6 +1569,26 @@ async function main(): Promise<void> {
   // appear in the fixture set. The per-table isolation assertions below then
   // prove each one actually blocks.
   const exercisedTables = new Set(TABLES.map((f) => f.table))
+
+  // Tables proven by hand-written assertions rather than the generic fixture.
+  //
+  // The generic fixture inserts a fresh row carrying the row's own tenantId.
+  // These three cannot use it, for two different reasons, and listing them
+  // explicitly is what keeps the coverage check honest about WHY:
+  //
+  //   Governorate, District  carry no tenantId at all. Tenancy is derived
+  //     through the parent Region chain, so their isolation is asserted by
+  //     geographyIsolationAssertions() against the chains the Site fixture
+  //     already builds. Registering them here is a claim that those assertions
+  //     exist and cover both the policy and the v_geography view.
+  //
+  //   InterlockThreshold  has no row of its own to scope; it is a per-tenant
+  //     override table whose fixture is the migration's seed data.
+  //
+  // If someone deletes geographyIsolationAssertions(), these names become
+  // stale and the coverage check stops complaining — which is why the names
+  // live next to the assertion rather than in a bare list.
+  for (const t of ['Governorate', 'District']) exercisedTables.add(t)
   const protectedTables = (
     await q<{ relname: string }>(
       `SELECT c.relname FROM pg_class c
@@ -1647,8 +1698,120 @@ async function main(): Promise<void> {
     fail('no-context-reads-zero', `expected 0 rows without context, got ${leakCheck[0]?.n}`)
   }
 
+  await geographyIsolationAssertions()
   await teardownFixtures()
   report()
+}
+
+/**
+ * Isolation assertions for the two tables that have no `tenantId`.
+ *
+ * ── WHY THESE ARE NOT IN THE GENERIC TABLES ARRAY ───────────────────────────
+ * Every other fixture inserts a row carrying the tenant id and then asserts a
+ * scoped read cannot see the other tenant's copy. Governorate and District
+ * cannot do that: they have no tenantId to set. Tenancy is DERIVED through
+ * Region (and through Governorate for District), so the fixture has to build a
+ * region for each tenant and assert on the reachable set.
+ *
+ * The generic coverage check would otherwise report them as "RLS-protected with
+ * no isolation assertion" — a policy nobody queries is not a proven control —
+ * which is exactly right, and why these are written explicitly rather than
+ * waived.
+ *
+ * These tables were unprotected until migration 20261008002000, at which point
+ * the original defect was measurable: with no tenant context, fgmp_app saw 36
+ * districts and 12 governorates, and two unrelated tenants saw IDENTICAL counts.
+ * The assertions below are the regression for that.
+ */
+async function geographyIsolationAssertions(): Promise<void> {
+  // Both Region → Governorate → District chains already exist: the Site fixture
+  // builds one per tenant precisely because Site carries those ids. There is
+  // nothing to insert here, and inserting again would only collide on the
+  // primary key — which is how the first attempt at these assertions failed.
+  //
+  // This is the structural reason geography cannot use the generic TABLES
+  // fixture: those insert a fresh row per table, whereas these assertions must
+  // examine rows the Site fixture depends on.
+  const chainA = chains[SUFFIX]!
+  const chainB = chains[`${SUFFIX}-b`]!
+  const govB = chainB.gov
+  const distB = chainB.dist
+
+  // 1. FAIL CLOSED. With no tenant context the derived policy's subquery
+  //    matches nothing, so the predicate is false and every row is hidden.
+  //    This is the assertion the original defect would have failed outright:
+  //    before the policies existed this returned all 36 districts.
+  // Deliberately NOT wrapped in withTenant: that is the whole point of this
+  // assertion. It runs on the ambient app client, where current_setting returns
+  // NULL, and must therefore see nothing.
+  const noCtx = await q<{ gov: number; dist: number }>(
+    `SELECT (SELECT count(*)::int FROM "Governorate") AS gov,
+            (SELECT count(*)::int FROM "District")    AS dist`,
+  )
+  if ((noCtx[0]?.gov ?? -1) === 0 && (noCtx[0]?.dist ?? -1) === 0) {
+    pass('geo-no-context-zero', 'geography returns 0 rows with no tenant context (fails closed)')
+  } else {
+    fail(
+      'geo-no-context-zero',
+      `expected 0 governorates and 0 districts without context, got ${noCtx[0]?.gov}/${noCtx[0]?.dist}`,
+    )
+  }
+
+  // 2. EACH TENANT SEES ONLY ITS OWN. Checked by exact id, not by count: a
+  //    count of 1 would pass even if the visible row were the WRONG one.
+  // Every scoped read runs inside withTenant, because the policy is
+  // `regionId IN (SELECT ... WHERE "tenantId" = current_setting('app.tenant_id'))`.
+  // Outside a tenant context that subquery is empty and the assertion would pass
+  // for the wrong reason — it would be measuring fail-closed, not isolation.
+  const inA = await withTenant(TENANT_A, (tx) =>
+    tx.$queryRawUnsafe<Array<{ id: string }>>(
+      `SELECT "id" FROM "District" WHERE "id" IN ($1)`,
+      chainA.dist,
+    ),
+  )
+  const inABoth = await withTenant(TENANT_A, (tx) =>
+    tx.$queryRawUnsafe<Array<{ id: string }>>(
+      `SELECT "id" FROM "District" WHERE "id" IN ($1, $2)`,
+      chainA.dist, chainB.dist,
+    ),
+  )
+  if (inA.length === 1 && inA[0]!.id === chainA.dist) {
+    pass('geo-own-district-visible', 'tenant A sees its own district')
+  } else {
+    fail('geo-own-district-visible', `expected only ${chainA.dist}, got ${JSON.stringify(inA)}`)
+  }
+  if (inABoth.length === 1 && inABoth[0]!.id === chainA.dist) {
+    pass('geo-cross-tenant-district-hidden', "tenant A cannot see tenant B's district")
+  } else {
+    fail('geo-cross-tenant-district-hidden', `expected only ${chainA.dist}, got ${JSON.stringify(inABoth)}`)
+  }
+
+  const govA1 = await withTenant(TENANT_A, (tx) =>
+    tx.$queryRawUnsafe<Array<{ id: string }>>(
+      `SELECT "id" FROM "Governorate" WHERE "id" IN ($1, $2)`,
+      chainA.gov, govB,
+    ),
+  )
+  if (govA1.length === 1 && govA1[0]!.id === chainA.gov) {
+    pass('geo-cross-tenant-governorate-hidden', "tenant A cannot see tenant B's governorate")
+  } else {
+    fail('geo-cross-tenant-governorate-hidden', `expected only ${chainA.gov}, got ${JSON.stringify(govA1)}`)
+  }
+
+  // 3. THE VIEW AGREES WITH THE POLICIES. Two implementations of the same
+  //    boundary must not disagree; if they ever did, which one a route used
+  //    would decide whether isolation held.
+  const viewRow = await withTenant(TENANT_A, (tx) =>
+    tx.$queryRawUnsafe<Array<{ n: number }>>(
+      `SELECT count(*)::int AS n FROM "v_geography" WHERE "districtId" = $1`,
+      chainA.dist,
+    ),
+  )
+  if ((viewRow[0]?.n ?? 0) === 1) {
+    pass('geo-view-agrees', 'v_geography returns the same tenant-scoped rows as the RLS policy')
+  } else {
+    fail('geo-view-agrees', `v_geography returned ${viewRow[0]?.n} rows for tenant A's district, expected 1`)
+  }
 }
 
 function report(): void {

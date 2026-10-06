@@ -124,6 +124,78 @@ export async function listDistricts(
   );
 }
 
+/**
+ * Attach tenant-filtered geography NAMES to a list of rows that carry the ids.
+ *
+ * `prisma.site.findMany({ include: { governorate: true } })` is no longer
+ * available: migration 20261007000000 revoked SELECT on Governorate and District
+ * from `fgmp_app`, because those two tables carry no `tenantId` and therefore had
+ * no RLS protecting them. Reading them through Prisma now fails at the database
+ * with `permission denied for table Governorate`, which surfaced as a 500 on
+ * GET /api/fgmp/sites.
+ *
+ * That 500 was the revocation working as designed — the route had simply not
+ * been migrated with it. This helper is the supported replacement: one read of
+ * `v_geography`, filtered by tenant, mapped onto the caller's rows.
+ *
+ * A row whose ids do not resolve is returned with null names rather than being
+ * dropped. Dropping would silently change the length of a list a caller is about
+ * to page, and an id that is genuinely missing is a data problem to surface, not
+ * a row to hide.
+ */
+export async function attachGeographyNames<T extends {
+  regionId: string | null;
+  governorateId: string | null;
+  districtId: string | null;
+  region?: { id: string; name: string } | null;
+}>(
+  tx: { $queryRawUnsafe<T2>(sql: string, ...params: unknown[]): Promise<T2> },
+  rows: readonly T[],
+): Promise<
+  Array<
+    T & {
+      region: { id: string; name: string } | null;
+      governorate: { id: string; name: string } | null;
+      district: { id: string; name: string } | null;
+    }
+  >
+> {
+  const regionIds = rows.map((r) => r.regionId).filter((x): x is string => !!x);
+  const govIds = rows.map((r) => r.governorateId).filter((x): x is string => !!x);
+  const districtIds = rows.map((r) => r.districtId).filter((x): x is string => !!x);
+
+  const byRegion = new Map<string, string>();
+  const byGov = new Map<string, string>();
+  const byDistrict = new Map<string, string>();
+
+  // One query for all three name sets rather than three round-trips per page.
+  // `WHERE current_setting(...)` is already inside the view, so this stays
+  // tenant-filtered and fails closed with no tenant context.
+  const names = await tx.$queryRawUnsafe<
+    Array<{ regionId: string; regionName: string; governorateId: string | null; governorateName: string | null; districtId: string | null; districtName: string | null }>
+  >(
+    `SELECT "regionId", "regionName", "governorateId", "governorateName", "districtId", "districtName"
+       FROM "v_geography"`,
+  );
+  for (const n of names) {
+    if (n.governorateId && n.governorateName) byGov.set(n.governorateId, n.governorateName);
+    if (n.districtId && n.districtName) byDistrict.set(n.districtId, n.districtName);
+  }
+  for (const id of regionIds) {
+    if (!byRegion.has(id)) {
+      const hit = names.find((n) => n.regionId === id);
+      if (hit) byRegion.set(id, hit.regionName);
+    }
+  }
+
+  return rows.map((r) => ({
+    ...r,
+    region: r.regionId && byRegion.has(r.regionId) ? { id: r.regionId, name: byRegion.get(r.regionId)! } : r.region ?? null,
+    governorate: r.governorateId && byGov.has(r.governorateId) ? { id: r.governorateId, name: byGov.get(r.governorateId)! } : null,
+    district: r.districtId && byDistrict.has(r.districtId) ? { id: r.districtId, name: byDistrict.get(r.districtId)! } : null,
+  }));
+}
+
 /** List a tenant's governorates, optionally filtered by region. */
 export async function listGovernorates(
   tx: { $queryRawUnsafe<T>(sql: string, ...params: unknown[]): Promise<T> },
