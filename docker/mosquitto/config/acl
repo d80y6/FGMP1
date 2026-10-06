@@ -1,0 +1,56 @@
+# Per-tenant topic ACL — FGMP development/test broker.
+#
+# Read this alongside mosquitto.conf: the config file decides that these rules
+# are ENFORCED; this file is what they say.
+#
+# ── THE RULE SHAPE ───────────────────────────────────────────────────────────
+# A grant is `topic <tenant-subtree>`. The `#` terminates the pattern, so
+#
+#     topic fgmp/tenant-a/#
+#
+# covers exactly `fgmp/tenant-a/**` and nothing else. MQTT topic filters match
+# level by level, so there is no way for that pattern to spill into
+# `fgmp/tenant-b/...` — a subscription to tenant B's subtree matches zero of
+# tenant A's grants, and is refused.
+#
+# The absence of a leading `%u` or `+` wildcard matters. A rule written as
+# `topic fgmp/%u/#` looks tidier and is WRONG here: it would grant every user
+# access to every tenant's subtree, because the function is intended to be
+# bound to the user's own namespace.
+#
+# ── CHANNELS ─────────────────────────────────────────────────────────────────
+# Each tenant may:
+#   - read   its telemetry and status        (subscriber: dashboards, gateway)
+#   - write  its telemetry and status        (publisher: field devices)
+#   - read   its own `command` topic        (device executes downlink)
+#   - write  its own `command/ack`          (device acknowledges downlink)
+#
+# A tenant canNOT publish to another tenant's telemetry, and canNOT read
+# another tenant's commands. Those would be the two directions that turn
+# telemetry spoofing into a real attack: forge a fuel level, or issue a
+# generator start command to someone else's set.
+
+# ── tenant-a ─────────────────────────────────────────────────────────────────
+user tenant-a
+topic readwrite fgmp/tenant-a/
+topic read fgmp/tenant-a/#
+
+# ── tenant-b ─────────────────────────────────────────────────────────────────
+user tenant-b
+topic readwrite fgmp/tenant-b/
+topic read fgmp/tenant-b/#
+
+# ── platform (internal ops) ──────────────────────────────────────────────────
+# Ops is cross-tenant BY DESIGN and is explicitly NOT the application role.
+# It exists for support and diagnostics, mirroring the fgmp_ops database role.
+# It is kept on a separate connection and must never be present in the web
+# app's environment — the same rule that governs FGMP_OPS_DATABASE_URL.
+user platform
+topic readwrite fgmp/platform/
+topic read fgmp/#
+
+# ── NO CATCH-ALL ─────────────────────────────────────────────────────────────
+# There is deliberately no `topic read #` for anyone. An ACL file's implicit
+# behaviour for an unmatched request is to DENY, and that default is the
+# control. Adding a permissive trailing rule would turn every rule above into
+# decoration.

@@ -849,7 +849,19 @@ model SensorReading {
   @@index([tenantId])
   @@index([tenantId, ts])
   @@index([siteId, ts])
-  @@index([entityId, metric, ts])
+  // Phase 4 item 4. This was a NON-unique index, so a replayed reading was only
+  // UNLIKELY to duplicate, never impossible. Making it UNIQUE turns the ingest
+  // duplicate check from a best-effort process-local heuristic into a database
+  // guarantee: two replicas receiving the same retry both attempt the insert
+  // and exactly one succeeds, whether or not they share memory, cache or a
+  // Redis connection.
+  //
+  // This is why the DATABASE is the authority for the watermark and not Redis.
+  // A cache can be evicted, flushed, partitioned or absent, and a miss on a
+  // stale cache entry lets a duplicate straight through. A unique constraint
+  // survives a total cache outage precisely because it does not depend on the
+  // cache existing.
+  @@unique([entityId, metric, ts])
 }
 
 // ──────────────────────────────────────────────────────────────────────────
