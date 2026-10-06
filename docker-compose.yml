@@ -24,6 +24,104 @@ services:
   # NOTE: the web app connects as fgmp_app and MUST NOT be given fgmp_ops.
   # If the app ever holds a BYPASSRLS role, one injection bug anywhere would
   # defeat tenant isolation completely. See scripts/pg-init-roles.sql.
+  # ── MQTT broker with per-tenant ACLs ─────────────────────────────────────
+  # MQTT has no database, so PostgreSQL RLS cannot protect it. The ONLY thing
+  # that can is the broker refusing an operation, which is why this service
+  # ships an ACL file rather than relying on client-side filtering:
+  #
+  #   "our code filters"   one connection on fgmp/# that discards other
+  #                        tenants' messages in an `if`. One refactor and the
+  #                        isolation is gone, silently, with green tests.
+  #   "the broker refuses" each tenant connects with its OWN credentials and
+  #                        the ACL denies any topic outside its own subtree.
+  #                        A client-side mistake cannot widen it, because the
+  #                        denial does not happen in our code at all.
+  #
+  # Per-tenant grants live in docker/mosquitto/config/acl; see that file for why
+  # there is deliberately no catch-all and no `fgmp/%u/#` rule.
+  #
+  # Passwords are DEVELOPMENT credentials, committed on purpose so a developer
+  # and the test suite agree without setup. They are worthless outside the
+  # loopback listener, and allow_anonymous is false.
+  fgmp-broker:
+    image: eclipse-mosquitto:2
+    container_name: fgmp-broker
+    restart: unless-stopped
+    ports:
+      # Bound to loopback only — this broker is not a production surface.
+      # 1885, not the default 1883: other projects on this host already hold
+      # 1883/1884, and a hard failure to start is preferable to silently
+      # connecting a test to a stranger's broker.
+      - "127.0.0.1:1885:1883"
+    # ── WHY THESE ARE COPIED, NOT BIND-MOUNTED ──────────────────────────────
+    # A bind mount carries the HOST file's uid/gid and mode straight into the
+    # container, so /mosquitto/config/acl ends up owned by whoever wrote it on
+    # the host (uid 1000) rather than by the mosquitto user (uid 1883).
+    #
+    # Mosquitto 2 does NOT reject that. It logs six warnings — world readable,
+    # owner is not mosquitto, group is not mosquitto, twice over — and then
+    # KEEPS RUNNING WITH THE ACL NOT ENFORCED. Authentication still works,
+    # because the password file is read by the same mechanism. The result is
+    # the most dangerous possible half-working security state: every connection
+    # authenticates, and every tenant can subscribe to every other tenant's
+    # subtree, while the logs and the healthcheck both look healthy.
+    #
+    # This was found because the cross-tenant subscribe tests FAILED against a
+    # broker that was up and healthy — not by reading the warnings.
+    #
+    # Copying the files into a named volume at start-up fixes both the owner
+    # AND the mode, and an init script chowns them, so the broker loads them
+    # under its own identity.
+    volumes:
+      - broker-config:/mosquitto/config
+      # Read-only source for the copy-in above. Deliberately NOT mounted at
+      # /mosquitto/config — see the entrypoint comment for why.
+      - ./docker/mosquitto/config:/seed:ro
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        cp /seed/mosquitto.conf /mosquitto/config/mosquitto.conf
+        cp /seed/acl            /mosquitto/config/acl
+        cp /seed/passwd         /mosquitto/config/passwd
+        # 0600 owned by mosquitto: the mode mosquitto 2 will actually accept.
+        chown mosquitto:mosquitto /mosquitto/config/acl /mosquitto/config/passwd
+        chmod 0600 /mosquitto/config/acl /mosquitto/config/passwd
+        chmod 0644 /mosquitto/config/mosquitto.conf
+        exec /usr/sbin/mosquitto -c /mosquitto/config/mosquitto.conf
+    healthcheck:
+      # Proves the property that actually matters, and — critically — it asserts
+      # the ACL is ENFORCED, not merely loaded.
+      #
+      # The previous probe subscribed with `-C 1`, which waits for one MESSAGE.
+      # It ran every 15s against a broker where nobody publishes, so it always
+      # timed out: 383 consecutive failures while the container reported
+      # "unhealthy" and the broker was in fact serving. A healthcheck that
+      # cannot pass is worse than none — it trains everyone to ignore it.
+      #
+      # This probe asks the broker three questions instead:
+      #   1. does tenant-a's credential authenticate?        (it must)
+      #   2. is its own subtree granted?                     (it must be)
+      #   3. is ANOTHER tenant's subtree refused?           (it must be)
+      #
+      # Question 3 is the regression test for the ownership bug above. mosquitto
+      # grants a denied subscription with QoS 0x80 in the SUBACK, so `-d` output
+      # containing 0x80 for the foreign topic is the signal. If the ACL ever
+      # stops being enforced again, this goes unhealthy.
+      test:
+        - CMD-SHELL
+        - >-
+          out=$$(mosquitto_sub -h 127.0.0.1 -p 1883 -u tenant-a -P dev-tenant-a-pw
+          -t 'fgmp/tenant-a/#' -t 'fgmp/tenant-b/#' -d -W 2 2>&1);
+          echo "$$out" | grep -q 'SUBACK' || exit 1;
+          echo "$$out" | grep -q 'received CONNACK (0)' || exit 1;
+          echo "$$out" | grep -qE 'Subscribed \(mid: [0-9]+\): 128' || exit 1
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+
   fgmp-db:
     image: timescale/timescaledb:latest-pg17
     environment:
@@ -217,3 +315,7 @@ volumes:
   fgmp-backups:
   # PostgreSQL data directory (Phase 1 step 1).
   fgmp-pgdata:
+  # Broker configuration, as a VOLUME rather than three bind mounts, so the
+  # entrypoint can chown the ACL and password files to the mosquitto user.
+  # See the fgmp-broker entrypoint for why a bind mount is unsafe here.
+  broker-config:

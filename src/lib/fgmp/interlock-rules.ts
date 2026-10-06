@@ -132,10 +132,28 @@ export interface InterlockContext {
    */
   fuelLitres?: number;
   /**
+   * Usable capacity of that tank, in litres.
+   *
+   * REQUIRED for any fuel rule expressed as a fraction of tank capacity. A flat
+   * litre threshold cannot be correct across engine displacements — 12 L is
+   * trivial for a 2000 kW prime set and absurd for a 6 kW standby set — so
+   * cranking and low-fuel limits are percentages and the litre figure is
+   * derived at evaluation time. Absent when the site has no usable capacity
+   * modelled; a rule that needs it declines rather than substituting a guess.
+   */
+  tankCapacityLitres?: number;
+  /**
    * Load that must remain energised for this site regardless of generation
    * state — the protected/critical load floor. Never shed below this.
    */
   protectedLoadKw?: number;
+  /**
+   * Thresholds resolved for the acting tenant — merged over the shipped
+   * defaults by ./interlock-thresholds.ts. Optional only so that a rule can be
+   * unit-tested with a bare literal; `thresholdsOf` falls back to the
+   * conservative defaults when it is absent, never to `undefined`.
+   */
+  thresholds?: ResolvedThresholds;
 }
 
 /**
@@ -163,108 +181,46 @@ export interface InterlockRule {
 // THRESHOLDS — inferred, not from a specification. See the header.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const THRESHOLDS = {
-  /**
-   * Coolant temperature above which the set must not be asked to assume load.
-   * INFERRED. Typical gensets are rated to ~40-50 °C coolant at continuous
-   * load; below that they have headroom. Deliberately generous because a HOT
-   * reading at assume-load is a hard stop.
-   */
-  coolantMaxC: 85,
-
-  /**
-   * Oil pressure below which the set is not mechanically sound to load.
-   * INFERRED. Engines typically shut down below ~1.5 bar at operating speed;
-   * that figure is speed- and oil-dependent, hence NEEDS CONFIRMATION.
-   */
-  oilPressureMinKpa: 150,
-
-  /**
-   * Hours since oil change beyond which an extended run risks the engine.
-   * INFERRED PLACEHOLDER, deliberately a hard deny: running an overdue engine
-   * to failure takes the site's power with it.
-   */
-  oilOverdueMaxHours: 500,
-
-  /**
-   * Remaining run-hours before scheduled service at which we warn.
-   * INFERRED.
-   */
-  serviceWarnHours: 25,
-
-  /**
-   * Litres of fuel required to crank and reach a stable idle. Below this a
-   * START is refused: an engine that dies while carrying load is strictly
-   * worse than one that never started, because the site browns out during the
-   * crank.
-   *
-   * INFERRED. Real practice is quoted as either a percentage of tank capacity
-   * or as minutes of run at cranking load, both of which depend on engine
-   * displacement. A flat litre figure cannot be right for every engine, which
-   * is exactly why this needs operator confirmation.
-   */
-  crankingFuelLitres: 12,
-
-  /**
-   * Litres remaining at which a low-fuel warning is attached.
-   * INFERRED.
-   */
-  lowFuelWarnLitres: 40,
-
-  /**
-   * Minimum rest between a stop and a subsequent start. Restarting a
-   * just-stopped diesel is real wear (restart current, un-lubricated starts,
-   * hot turbo), and on some sets a safety concern.
-   *
-   * INFERRED, expressed in MINUTES. Needs confirmation against the OEM.
-   */
-  cooldownMs: 3 * 60 * 1000,
-
-  /**
-   * Backoff applied after a FAULT-triggered stop, longer than an ordinary
-   * cooldown because a latched fault usually has not been cleared.
-   * INFERRED, in MINUTES.
-   */
-  faultRestartBackoffMs: 10 * 60 * 1000,
-
-  /**
-   * Fraction of rated power above which assuming more load is flagged.
-   * INFERRED.
-   */
-  highLoadFraction: 0.9,
-
-  /**
-   * Minimum load as a fraction of rated power for sustained running.
-   * Below this a diesel runs rich, soaks, and burns fuel — but blocking STOP
-   * to protect the engine would be unsafe, so this is a soft warning only.
-   * INFERRED.
-   */
-  lowLoadFraction: 0.3,
-} as const;
+// Phase 4: threshold VALUES live in ./interlock-thresholds.ts, where each one
+// carries its provenance and can be overridden per tenant without a deploy.
+// A rule reads them through `thresholdsOf(ctx)`, so no rule can physically use
+// a value an operator has overridden.
+export {
+  DEFAULT_THRESHOLDS as THRESHOLDS,
+  describeThresholds,
+  resolveThresholds,
+  minutesToMs,
+} from "./interlock-thresholds";
+import {
+  DEFAULT_THRESHOLDS,
+  resolveThresholds,
+  minutesToMs,
+} from "./interlock-thresholds";
+import type { ResolvedThresholds, ThresholdKey } from "./interlock-thresholds";
 
 /**
- * Commands that must never be blocked, whatever the preconditions say.
+ * The thresholds a rule must evaluate against.
  *
- * EMERGENCY_STOP is in this set deliberately. An interlock that can prevent an
- * emergency stop is itself a hazard: if the software believes the engine is
- * safe to run, the operator needs to be able to stop it anyway.
+ * Every rule reads numbers through this and never through a bare constant, so
+ * an operator override cannot be silently bypassed by a rule that hard-coded
+ * one. When the context carries no resolved set — a unit test with a literal,
+ * or an emergency path that must not fail closed — the shipped INFERRED
+ * defaults apply. Those defaults all DENY, so that fallback is the safe
+ * direction: it over-refuses rather than over-permits.
  */
-export const UNBLOCKABLE_COMMANDS: readonly ControlCommandName[] = ["EMERGENCY_STOP"];
+const FALLBACK_THRESHOLDS = resolveThresholds([]);
+export const thresholdsOf = (ctx: InterlockContext): ResolvedThresholds =>
+  ctx.thresholds ?? FALLBACK_THRESHOLDS;
 
-/**
- * Commands that change an electrical state and therefore attract the strictest
- * preconditions. RESET clears a latched fault, so it is treated as an
- * assume-load-adjacent action.
- */
-export const STATE_CHANGING_COMMANDS: readonly ControlCommandName[] = [
-  "START",
-  "RESET",
-];
+/** The value a threshold currently resolves to, with its provenance intact. */
+export const thresholdValueOf = <K extends ThresholdKey>(
+  ctx: InterlockContext,
+  key: K,
+): number => thresholdsOf(ctx).values[key];
 
-// ─────────────────────────────────────────────────────────────────────────────
-// HARD RULES
-// ─────────────────────────────────────────────────────────────────────────────
-
+// Kept so a rule author writing `DEFAULT_THRESHOLDS.x.value` in a test has a
+// single obvious place to look; it is NOT the path rules take.
+void DEFAULT_THRESHOLDS;
 const HARD_RULES: InterlockRule[] = [
   {
     id: "GENERATOR_OFFLINE",
@@ -300,13 +256,23 @@ const HARD_RULES: InterlockRule[] = [
       "Fuel level is below the cranking threshold — the engine cannot reliably start and reach idle.",
     remedy:
       "Refuel before starting. Starting an engine that cannot sustain idle drops the site load mid-crank.",
-    evaluate: ({ generator, fuelLitres }) => {
+    evaluate: (ctx) => {
+      const { generator, fuelLitres, tankCapacityLitres } = ctx;
       // Absent fuel data is NOT treated as zero. Refusing every start on a site
       // with no bound tank would be a denial-of-service the operator cannot fix.
       if (fuelLitres === undefined || fuelLitres === null) return null;
       if (generator.status === "RUNNING") return null;
-      return fuelLitres < THRESHOLDS.crankingFuelLitres
-        ? `Only ${fuelLitres.toFixed(1)} L remain, below the ${THRESHOLDS.crankingFuelLitres} L cranking threshold.`
+      // Capacity is REQUIRED now the threshold is a percentage rather than a
+      // litre count: a flat litre figure cannot be correct across engine
+      // displacements. Without capacity the comparison is uncomputable, so the
+      // rule declines rather than substituting a guess.
+      if (!tankCapacityLitres || tankCapacityLitres <= 0) return null;
+      const pct = thresholdsOf(ctx).values.crankingFuelFractionPct;
+      const requiredLitres = (pct / 100) * tankCapacityLitres;
+      return fuelLitres < requiredLitres
+        ? `Only ${fuelLitres.toFixed(1)} L remain of ${tankCapacityLitres.toFixed(0)} L usable ` +
+          `(${((fuelLitres / tankCapacityLitres) * 100).toFixed(1)}%), below the ${pct}% ` +
+          `(${requiredLitres.toFixed(1)} L) cranking threshold.`
         : null;
     },
   },
@@ -332,10 +298,13 @@ const HARD_RULES: InterlockRule[] = [
     authority: "OPERATOR",
     explanation: "Coolant temperature is too high to accept load.",
     remedy: "Allow the set to cool, or investigate the cooling system.",
-    evaluate: ({ generator }) =>
-      generator.temperatureC > THRESHOLDS.coolantMaxC
-        ? `Coolant is ${generator.temperatureC.toFixed(1)} °C, above the ${THRESHOLDS.coolantMaxC} °C assume-load limit.`
-        : null,
+    evaluate: (ctx) => {
+      const { generator } = ctx;
+      const limit = thresholdsOf(ctx).values.coolantMaxC;
+      return generator.temperatureC > limit
+        ? `Coolant is ${generator.temperatureC.toFixed(1)} °C, above the ${limit} °C assume-load limit.`
+        : null;
+    },
   },
   {
     id: "OIL_PRESSURE_LOW",
@@ -344,10 +313,13 @@ const HARD_RULES: InterlockRule[] = [
     authority: "OPERATOR",
     explanation: "Oil pressure is below the safe operating minimum.",
     remedy: "Investigate the lubrication system before starting.",
-    evaluate: ({ generator }) =>
-      generator.oilPressureKpa < THRESHOLDS.oilPressureMinKpa
-        ? `Oil pressure is ${generator.oilPressureKpa.toFixed(0)} kPa, below the ${THRESHOLDS.oilPressureMinKpa} kPa minimum.`
-        : null,
+    evaluate: (ctx) => {
+      const { generator } = ctx;
+      const min = thresholdsOf(ctx).values.oilPressureMinKpa;
+      return generator.oilPressureKpa < min
+        ? `Oil pressure is ${generator.oilPressureKpa.toFixed(0)} kPa, below the ${min} kPa minimum.`
+        : null;
+    },
   },
   {
     id: "NOT_READY_TO_ASSUME_LOAD",
@@ -398,13 +370,17 @@ const HARD_RULES: InterlockRule[] = [
     explanation: "The generator is within its post-stop cooldown window.",
     remedy:
       "Wait for the cooldown to expire. Restarting a just-stopped diesel causes real wear and can be unsafe on some sets.",
-    evaluate: ({ now, generator }) => {
+    evaluate: (ctx) => {
+      const { now, generator } = ctx;
       if (generator.lastStoppedAt === undefined) return null;
       const elapsed = now - generator.lastStoppedAt;
       if (elapsed < 0) return null;
-      if (elapsed >= THRESHOLDS.cooldownMs) return null;
-      const remainSec = Math.ceil((THRESHOLDS.cooldownMs - elapsed) / 1000);
-      return `Cooldown active — ${remainSec}s remaining of the ${THRESHOLDS.cooldownMs / 60000}-minute rest period after stop.`;
+      const cooldownMinutes = thresholdsOf(ctx).values.cooldownMinutes;
+      const cooldownMs = minutesToMs(cooldownMinutes);
+      if (elapsed >= cooldownMs) return null;
+      const remainSec = Math.ceil((cooldownMs - elapsed) / 1000);
+      return `Cooldown active — ${remainSec}s remaining of the ` +
+        `${cooldownMinutes}-minute rest period after stop.`;
     },
   },
   {
@@ -478,9 +454,10 @@ const SOFT_RULES: InterlockRule[] = [
     authority: "OPERATOR",
     explanation: "Scheduled service is approaching due.",
     remedy: "Schedule the service; continuing to run shortens engine life.",
-    evaluate: ({ generator }) =>
-      generator.nextMaintenanceHrs > 0 && generator.nextMaintenanceHrs <= THRESHOLDS.serviceWarnHours
-        ? `Service is due in ${generator.nextMaintenanceHrs.toFixed(1)} run-hours.`
+    evaluate: (ctx) =>
+      ctx.generator.nextMaintenanceHrs > 0 &&
+        ctx.generator.nextMaintenanceHrs <= thresholdsOf(ctx).values.serviceWarnHours
+        ? `Service is due in ${ctx.generator.nextMaintenanceHrs.toFixed(1)} run-hours.`
         : null,
   },
   {
@@ -490,12 +467,17 @@ const SOFT_RULES: InterlockRule[] = [
     authority: "OPERATOR",
     explanation: "Fuel level is low.",
     remedy: "Arrange refuelling before the next expected run.",
-    evaluate: ({ fuelLitres }) =>
-      fuelLitres !== undefined &&
-      fuelLitres !== null &&
-      fuelLitres < THRESHOLDS.lowFuelWarnLitres
-        ? `${fuelLitres.toFixed(1)} L remain, below the ${THRESHOLDS.lowFuelWarnLitres} L warning level.`
-        : null,
+    evaluate: (ctx) => {
+      const { fuelLitres, tankCapacityLitres } = ctx;
+      if (fuelLitres === undefined || fuelLitres === null) return null;
+      if (!tankCapacityLitres || tankCapacityLitres <= 0) return null;
+      const pct = thresholdsOf(ctx).values.lowFuelWarnFractionPct;
+      const warnLitres = (pct / 100) * tankCapacityLitres;
+      return fuelLitres < warnLitres
+        ? `${fuelLitres.toFixed(1)} L remain of ${tankCapacityLitres.toFixed(0)} L usable ` +
+          `(${((fuelLitres / tankCapacityLitres) * 100).toFixed(1)}%), below the ${pct}% warning level.`
+        : null;
+    },
   },
   {
     id: "HIGH_EXISTING_LOAD",
@@ -504,11 +486,14 @@ const SOFT_RULES: InterlockRule[] = [
     authority: "OPERATOR",
     explanation: "The set is already at high load relative to its rating.",
     remedy: "Check available headroom before adding further load.",
-    evaluate: ({ generator }) =>
-      generator.ratedPowerKw > 0 &&
-      generator.loadKw / generator.ratedPowerKw > THRESHOLDS.highLoadFraction
-        ? `Existing load ${generator.loadKw.toFixed(1)} kW is above ${Math.round(THRESHOLDS.highLoadFraction * 100)}% of ${generator.ratedPowerKw} kW rating.`
-        : null,
+    evaluate: (ctx) => {
+      const { generator } = ctx;
+      const pct = thresholdsOf(ctx).values.highLoadFractionPct;
+      return generator.ratedPowerKw > 0 &&
+        (generator.loadKw / generator.ratedPowerKw) * 100 > pct
+        ? `Existing load ${generator.loadKw.toFixed(1)} kW is above ${pct}% of ${generator.ratedPowerKw} kW rating.`
+        : null;
+    },
   },
   {
     id: "REMOTE_MODE_NOT_SET",
@@ -533,76 +518,22 @@ export const INTERLOCK_RULES: readonly InterlockRule[] = Object.freeze([
   ...SOFT_RULES,
 ]);
 
+
 /**
- * Thresholds that were inferred rather than sourced, with what is needed to
- * confirm each one. Kept beside the rules so it is impossible to change a
- * number without reading that it is unconfirmed.
+ * Commands that must never be blocked, whatever the preconditions say.
+ *
+ * EMERGENCY_STOP is in this set deliberately. An interlock that can prevent an
+ * emergency stop is itself a hazard: if the software believes the engine is
+ * safe to run, the operator needs to be able to stop it anyway.
  */
-export const NEEDS_OPERATOR_CONFIRMATION: ReadonlyArray<{
-  threshold: keyof typeof THRESHOLDS;
-  value: number;
-  why: string;
-  confirmWith: string;
-}> = Object.freeze([
-  {
-    threshold: "coolantMaxC",
-    value: THRESHOLDS.coolantMaxC,
-    why: "No OEM datasheet or standard was supplied; chosen as a conservative generic genset assume-load limit.",
-    confirmWith: "The engine manufacturer, or the IEC 60068 ambient/coolant rating for the installed set.",
-  },
-  {
-    threshold: "oilPressureMinKpa",
-    value: THRESHOLDS.oilPressureMinKpa,
-    why: "Engine speed and oil viscosity dependent; a single figure cannot be correct for all sets.",
-    confirmWith: "OEM minimum oil pressure at rated speed, and the oil grade in use.",
-  },
-  {
-    threshold: "oilOverdueMaxHours",
-    value: THRESHOLDS.oilOverdueMaxHours,
-    why: "A generic service interval, not a figure from any specification. Set as a hard deny deliberately, because failing the engine under load also removes the site's power.",
-    confirmWith: "The site's actual maintenance schedule and the OEM oil-change interval.",
-  },
-  {
-    threshold: "crankingFuelLitres",
-    value: THRESHOLDS.crankingFuelLitres,
-    why: "Real practice expresses this as a tank percentage or as minutes of cranking load; both scale with engine displacement, so a flat litre figure is only a placeholder.",
-    confirmWith:
-      "Minimum usable fuel per site: typically 25% of tank capacity, or the litres needed to crank and reach stable idle for the installed engine.",
-  },
-  {
-    threshold: "lowFuelWarnLitres",
-    value: THRESHOLDS.lowFuelWarnLitres,
-    why: "A warning level, not a stop level. Chosen as a multiple of the cranking figure.",
-    confirmWith: "Site refuelling interval and delivery lead time.",
-  },
-  {
-    threshold: "cooldownMs",
-    value: THRESHOLDS.cooldownMs,
-    why: "Post-stop rest is real practice, but the correct interval varies by set and is not standardised by one number.",
-    confirmWith: "OEM guidance, and site policy for how long a stopped set must rest.",
-  },
-  {
-    threshold: "faultRestartBackoffMs",
-    value: THRESHOLDS.faultRestartBackoffMs,
-    why: "Longer than ordinary cooldown because a latched fault usually has not been cleared; not taken from any specification.",
-    confirmWith: "Site policy on how long to wait after a fault before remote restart is permitted.",
-  },
-  {
-    threshold: "serviceWarnHours",
-    value: THRESHOLDS.serviceWarnHours,
-    why: "An advance-warning margin, not a service interval.",
-    confirmWith: "Maintenance scheduling policy.",
-  },
-  {
-    threshold: "highLoadFraction",
-    value: THRESHOLDS.highLoadFraction,
-    why: "Generic headroom margin before flagging a set as heavily loaded.",
-    confirmWith: "The site's actual peak demand against installed generator rating.",
-  },
-  {
-    threshold: "lowLoadFraction",
-    value: THRESHOLDS.lowLoadFraction,
-    why: "Diesel engines run rich below roughly this fraction and wet the plugs. Recorded as SOFT only, because blocking STOP to protect the engine would be unsafe.",
-    confirmWith: "OEM minimum recommended continuous load fraction.",
-  },
-]);
+export const UNBLOCKABLE_COMMANDS: readonly ControlCommandName[] = ["EMERGENCY_STOP"];
+
+/**
+ * Commands that change an electrical state and therefore attract the strictest
+ * preconditions. RESET clears a latched fault, so it is treated as an
+ * assume-load-adjacent action.
+ */
+export const STATE_CHANGING_COMMANDS: readonly ControlCommandName[] = [
+  "START",
+  "RESET",
+];

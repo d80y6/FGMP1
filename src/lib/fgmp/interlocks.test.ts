@@ -18,9 +18,16 @@
 import { describe, expect, test } from "bun:test";
 import {
   INTERLOCK_RULES,
-  THRESHOLDS,
   UNBLOCKABLE_COMMANDS,
+  thresholdsOf,
 } from "./interlock-rules";
+import {
+  DEFAULT_THRESHOLDS,
+  THRESHOLD_KEYS,
+  describeThresholds,
+  resolveThresholds,
+  minutesToMs,
+} from "./interlock-thresholds";
 import {
   evaluateInterlocks,
   requiresTwoPerson,
@@ -29,6 +36,16 @@ import {
 import type { InterlockContext, ControlCommandName } from "./interlock-rules";
 
 const NOW = 1_700_000_000_000;
+
+/**
+ * The values a bare test context resolves to.
+ *
+ * Phase 4 moved thresholds from flat exported numbers to provenance-carrying
+ * records, so a rule reads `T.coolantMaxC` rather than `THRESHOLDS.coolantMaxC`.
+ * The magnitudes are unchanged — only their shape — so every boundary
+ * assertion below still tests the same rule at the same place.
+ */
+const T = resolveThresholds([]).values;
 
 /** A generator that satisfies every hard interlock, so each test can break exactly one thing. */
 function goodGenerator(overrides: Partial<InterlockContext["generator"]> = {}): InterlockContext["generator"] {
@@ -56,9 +73,16 @@ function goodContext(overrides: Partial<InterlockContext> = {}): InterlockContex
     commandInFlight: null,
     hoursSinceOilChange: 100,
     fuelLitres: 500,
+    tankCapacityLitres: TANK_L,
     ...overrides,
   };
 }
+
+/** Usable tank capacity for the fuel rules. Fixed so a percentage resolves to known litres. */
+const TANK_L = 1000;
+
+/** Litres remaining that is exactly AT the cranking threshold. */
+const CRANK_L = (T.crankingFuelFractionPct / 100) * TANK_L;
 
 /** Assert a command is denied and that a SPECIFIC rule is the reason. */
 function expectDeniedBy(
@@ -94,7 +118,7 @@ describe("HARD interlocks deny", () => {
   test("FUEL_BELOW_CRANKING_THRESHOLD", () => {
     expectDeniedBy(
       "START",
-      goodContext({ fuelLitres: THRESHOLDS.crankingFuelLitres - 0.1 }),
+      goodContext({ fuelLitres: CRANK_L - 0.1 }),
       "FUEL_BELOW_CRANKING_THRESHOLD",
     );
   });
@@ -110,7 +134,7 @@ describe("HARD interlocks deny", () => {
   test("COOLANT_HOT_AT_ASSUME_LOAD", () => {
     expectDeniedBy(
       "START",
-      goodContext({ generator: goodGenerator({ temperatureC: THRESHOLDS.coolantMaxC + 0.1 }) }),
+      goodContext({ generator: goodGenerator({ temperatureC: T.coolantMaxC + 0.1 }) }),
       "COOLANT_HOT_AT_ASSUME_LOAD",
     );
   });
@@ -118,7 +142,7 @@ describe("HARD interlocks deny", () => {
   test("OIL_PRESSURE_LOW", () => {
     expectDeniedBy(
       "START",
-      goodContext({ generator: goodGenerator({ oilPressureKpa: THRESHOLDS.oilPressureMinKpa - 1 }) }),
+      goodContext({ generator: goodGenerator({ oilPressureKpa: T.oilPressureMinKpa - 1 }) }),
       "OIL_PRESSURE_LOW",
     );
   });
@@ -156,7 +180,7 @@ describe("HARD interlocks deny", () => {
     expectDeniedBy(
       "START",
       goodContext({
-        generator: goodGenerator({ lastStoppedAt: NOW - THRESHOLDS.cooldownMs + 1000 }),
+        generator: goodGenerator({ lastStoppedAt: NOW - minutesToMs(T.cooldownMinutes) + 1000 }),
       }),
       "COOLDOWN_ACTIVE",
     );
@@ -226,43 +250,43 @@ describe("HARD interlocks deny", () => {
 
 describe("BOUNDARY conditions at exactly the threshold", () => {
   test("coolant: AT the limit allows, one tenth above denies", () => {
-    const at = goodContext({ generator: goodGenerator({ temperatureC: THRESHOLDS.coolantMaxC }) });
+    const at = goodContext({ generator: goodGenerator({ temperatureC: T.coolantMaxC }) });
     expect(evaluateInterlocks("START", at).allowed).toBe(true);
 
     const over = goodContext({
-      generator: goodGenerator({ temperatureC: THRESHOLDS.coolantMaxC + 0.1 }),
+      generator: goodGenerator({ temperatureC: T.coolantMaxC + 0.1 }),
     });
     expect(evaluateInterlocks("START", over).allowed).toBe(false);
   });
 
   test("oil pressure: AT the minimum allows, one kPa below denies", () => {
     const at = goodContext({
-      generator: goodGenerator({ oilPressureKpa: THRESHOLDS.oilPressureMinKpa }),
+      generator: goodGenerator({ oilPressureKpa: T.oilPressureMinKpa }),
     });
     expect(evaluateInterlocks("START", at).allowed).toBe(true);
 
     const under = goodContext({
-      generator: goodGenerator({ oilPressureKpa: THRESHOLDS.oilPressureMinKpa - 1 }),
+      generator: goodGenerator({ oilPressureKpa: T.oilPressureMinKpa - 1 }),
     });
     expect(evaluateInterlocks("START", under).allowed).toBe(false);
   });
 
   test("fuel: EXACTLY at the cranking threshold allows, a hair below denies", () => {
-    const at = goodContext({ fuelLitres: THRESHOLDS.crankingFuelLitres });
+    const at = goodContext({ fuelLitres: CRANK_L });
     expect(evaluateInterlocks("START", at).allowed).toBe(true);
 
-    const under = goodContext({ fuelLitres: THRESHOLDS.crankingFuelLitres - 0.001 });
+    const under = goodContext({ fuelLitres: CRANK_L - 0.001 });
     expect(evaluateInterlocks("START", under).allowed).toBe(false);
   });
 
   test("cooldown: EXACTLY elapsed allows, 1ms short denies", () => {
     const done = goodContext({
-      generator: goodGenerator({ lastStoppedAt: NOW - THRESHOLDS.cooldownMs }),
+      generator: goodGenerator({ lastStoppedAt: NOW - minutesToMs(T.cooldownMinutes) }),
     });
     expect(evaluateInterlocks("START", done).allowed).toBe(true);
 
     const notDone = goodContext({
-      generator: goodGenerator({ lastStoppedAt: NOW - THRESHOLDS.cooldownMs + 1 }),
+      generator: goodGenerator({ lastStoppedAt: NOW - minutesToMs(T.cooldownMinutes) + 1 }),
     });
     expect(evaluateInterlocks("START", notDone).allowed).toBe(false);
   });
@@ -297,9 +321,43 @@ describe("SOFT interlocks warn but allow", () => {
   });
 
   test("NEAR_CRITICAL_FUEL allows with a warning", () => {
-    const v = evaluateInterlocks("START", goodContext({ fuelLitres: 20 }));
+    // Must sit BETWEEN the cranking threshold (25%) and the warning level
+    // (40%). Below cranking the HARD rule fires instead and this warning is
+    // never reached — which is correct, and is why an arbitrary low number
+    // like the old 20 L no longer demonstrates this rule.
+    const v = evaluateInterlocks("START", goodContext({ fuelLitres: CRANK_L + 50 }));
     expect(v.allowed).toBe(true);
     expect(v.warnings.map((w) => w.ruleId)).toContain("NEAR_CRITICAL_FUEL" as never);
+  });
+
+  test("a percentage-of-tank fuel rule is capacity-independent", () => {
+    // The reason the litre thresholds were replaced. A flat 12 L cranking
+    // minimum is trivial on a 20 000 L tank and fatal on a 60 L one; a
+    // percentage is correct for both. Same 25% of tank, wildly different
+    // absolute litres, and the rule reaches the SAME verdict on each.
+    const above = (cap: number) => (T.crankingFuelFractionPct / 100) * cap;
+    const below = (cap: number) => above(cap) - 0.001;
+
+    for (const cap of [60, 1_000, 20_000]) {
+      expect(evaluateInterlocks("START", goodContext({ fuelLitres: above(cap), tankCapacityLitres: cap })).allowed).toBe(true);
+      const under = evaluateInterlocks("START", goodContext({ fuelLitres: below(cap), tankCapacityLitres: cap }));
+      expect(under.allowed).toBe(false);
+      if (!under.allowed) {
+        expect(under.reasons.map((r) => r.ruleId)).toContain("FUEL_BELOW_CRANKING_THRESHOLD" as never);
+      }
+    }
+  });
+
+  test("a fuel rule DECLINES rather than guessing when capacity is unknown", () => {
+    // Capacity is now required to compute a percentage. Without it the rule has
+    // no opinion — it must not treat missing capacity as full (permitting an
+    // unsafe start on 1 L), and it must not substitute a flat litre figure that
+    // is wrong for the engine. Denying every start on an unbound site would be
+    // a denial-of-service the operator cannot fix, which is the other failure.
+    const noCapacity = goodContext({ fuelLitres: 1, tankCapacityLitres: undefined });
+    const v = evaluateInterlocks("START", noCapacity);
+    expect(v.allowed).toBe(true);
+    expect(v.warnings.map((w) => w.ruleId)).not.toContain("NEAR_CRITICAL_FUEL" as never);
   });
 
   test("HIGH_EXISTING_LOAD allows with a warning", () => {
@@ -396,7 +454,7 @@ describe("two-person rule", () => {
   test("an ordinary operational refusal does NOT require two-person", () => {
     const v = evaluateInterlocks(
       "START",
-      goodContext({ fuelLitres: THRESHOLDS.crankingFuelLitres - 1 }),
+      goodContext({ fuelLitres: CRANK_L - 1 }),
     );
     expect(v.allowed).toBe(false);
     if (!v.allowed) {
@@ -449,14 +507,111 @@ describe("denial payload", () => {
 });
 
 describe("threshold provenance", () => {
-  test("every threshold is declared as needing operator confirmation", async () => {
-    // Guards against someone adding a number to THRESHOLDS without saying
-    // where it came from. A silent threshold in a safety file is the failure
-    // mode this exists to prevent.
-    const { NEEDS_OPERATOR_CONFIRMATION } = await import("./interlock-rules");
-    const declared = new Set(NEEDS_OPERATOR_CONFIRMATION.map((t: { threshold: string }) => t.threshold));
-    for (const key of Object.keys(THRESHOLDS)) {
-      expect(declared.has(key)).toBe(true);
+  test("every threshold declares where its value came from and how to confirm it", () => {
+    // Guards against someone adding a number to the defaults without saying
+    // what it is for or what must be checked to trust it. A silent threshold in
+    // a safety file is the failure mode this exists to prevent: it cannot be
+    // reviewed, and an operator has no way to know it is a guess.
+    for (const key of THRESHOLD_KEYS) {
+      const t = DEFAULT_THRESHOLDS[key];
+      expect(typeof t.value).toBe("number");
+      expect(Number.isFinite(t.value)).toBe(true);
+      expect(t.rationale.length).toBeGreaterThan(0);
+      expect(t.confirmWith.length).toBeGreaterThan(0);
+      expect(t.source).toBe("INFERRED");
     }
+  });
+
+  test("no shipped default is silently presented as confirmed", () => {
+    // The single most important assertion in this file. Nothing in this
+    // platform was ever supplied by a datasheet, so every default must still
+    // read INFERRED. If someone flips one to CONFIRMED without a source
+    // reference, this fails — which is the point.
+    for (const row of describeThresholds(resolveThresholds([]))) {
+      expect(row.confirmed).toBe(false);
+      expect(row.source).toBe("INFERRED");
+      expect(row.overridden).toBe(false);
+    }
+  });
+
+  test("a stored override is applied, recorded, and still reports its provenance", () => {
+    // An operator holding the OEM sheet must be able to correct a limit
+    // WITHOUT editing source, and the platform must keep saying where the
+    // number came from after they do.
+    const resolved = resolveThresholds([
+      {
+        thresholdKey: "coolantMaxC",
+        value: 90,
+        source: "OEM_DATASHEET",
+        sourceRef: "Cummins C900 D5, p.142",
+        confirmedById: "user-1",
+        confirmedAt: new Date("2026-01-15T00:00:00Z"),
+      },
+    ]);
+    expect(resolved.values.coolantMaxC).toBe(90);
+    expect(resolved.overridden).toEqual(["coolantMaxC"]);
+
+    const row = describeThresholds(resolved).find((r) => r.key === "coolantMaxC");
+    expect(row?.value).toBe(90);
+    expect(row?.source).toBe("OEM_DATASHEET");
+    expect(row?.sourceRef).toBe("Cummins C900 D5, p.142");
+    expect(row?.confirmed).toBe(true);
+    expect(row?.overridden).toBe(true);
+
+    // And the rule actually honours it — the override is not decorative.
+    const ctx = goodContext({
+      generator: goodGenerator({ temperatureC: 88 }),
+      thresholds: resolved,
+    });
+    expect(evaluateInterlocks("START", ctx).allowed).toBe(true);
+  });
+
+  test("a corrupt stored value falls back to the safe default instead of applying it", () => {
+    // A negative or NaN threshold makes every comparison behave degenerately
+    // — NaN comparisons are always false, so the rule would silently never
+    // fire and the interlock would be inert. Refusing to apply the row is the
+    // only safe handling.
+    for (const bad of [Number.NaN, -1, Number.POSITIVE_INFINITY]) {
+      const resolved = resolveThresholds([
+        {
+          thresholdKey: "coolantMaxC",
+          value: bad,
+          source: "SITE_POLICY",
+          sourceRef: null,
+          confirmedById: null,
+          confirmedAt: null,
+        },
+      ]);
+      expect(resolved.values.coolantMaxC).toBe(DEFAULT_THRESHOLDS.coolantMaxC.value);
+      expect(resolved.overridden).toEqual([]);
+    }
+  });
+
+  test("an unknown stored key is reported by neither value nor override list", () => {
+    // An operator may legitimately record a threshold this build does not
+    // enforce yet. It must be ignored, not applied, and must not pretend to
+    // have overridden anything.
+    const resolved = resolveThresholds([
+      {
+        thresholdKey: "batterySocFloorPct",
+        value: 20,
+        source: "SITE_POLICY",
+        sourceRef: null,
+        confirmedById: null,
+        confirmedAt: null,
+      },
+    ]);
+    expect(resolved.overridden).toEqual([]);
+    expect(resolved.values).not.toHaveProperty("batterySocFloorPct");
+  });
+
+  test("a context with no resolved set still enforces the conservative defaults", () => {
+    // The fallback path. A rule must never read `undefined` because thresholds
+    // failed to load — that would disable the interlock rather than fail it.
+    expect(thresholdsOf(goodContext()).values.coolantMaxC).toBe(
+      DEFAULT_THRESHOLDS.coolantMaxC.value,
+    );
+    const hot = goodContext({ generator: goodGenerator({ temperatureC: 200 }) });
+    expect(evaluateInterlocks("START", hot).allowed).toBe(false);
   });
 });

@@ -31,13 +31,29 @@
 # generator start command to someone else's set.
 
 # ── tenant-a ─────────────────────────────────────────────────────────────────
+# `readwrite` is REQUIRED, not decorative: a device publishes telemetry and
+# subscribes for its own downlinks. These lines were previously written
+#
+#     topic readwrite fgmp/tenant-a/
+#
+# — a trailing slash and no `#`. That is a malformed topic filter, not a
+# shorthand: a trailing `/` matches only the literal empty level that follows
+# it, so the grant covered `fgmp/tenant-a/` itself and nothing beneath it. The
+# effect was the opposite of what this file claimed: tenant-a could READ its
+# subtree but not PUBLISH into it, and every upload failed with MQTT reason
+# code 135 (Not authorized).
+#
+# It stayed invisible to the isolation tests, which only assert that one tenant
+# cannot see another — a permission that was never granted in the first place,
+# so it never failed. Nothing in the suite published as a tenant into its own
+# subtree until the same-tenant delivery assertion was added.
 user tenant-a
-topic readwrite fgmp/tenant-a/
+topic readwrite fgmp/tenant-a/#
 topic read fgmp/tenant-a/#
 
 # ── tenant-b ─────────────────────────────────────────────────────────────────
 user tenant-b
-topic readwrite fgmp/tenant-b/
+topic readwrite fgmp/tenant-b/#
 topic read fgmp/tenant-b/#
 
 # ── platform (internal ops) ──────────────────────────────────────────────────
@@ -46,7 +62,7 @@ topic read fgmp/tenant-b/#
 # It is kept on a separate connection and must never be present in the web
 # app's environment — the same rule that governs FGMP_OPS_DATABASE_URL.
 user platform
-topic readwrite fgmp/platform/
+topic readwrite fgmp/platform/#
 topic read fgmp/#
 
 # ── NO CATCH-ALL ─────────────────────────────────────────────────────────────
