@@ -81,3 +81,32 @@ and to prove it rather than assert it. A green test run is not evidence on its
 own; Phase 1's own review suite turned out to be unable to detect a missing
 `FORCE`, which was only found by deliberately breaking things and watching it
 fail. **Mutation-test your own work before you claim it works.**
+## Scratch files outside the repo are shared state
+
+An agent's authoritative work list was kept at `/tmp/myfiles.txt`. Another agent
+overwrote it with a repo-wide list, and the first agent lost its own scope
+silently — no error, just a batch that no longer matched what it was doing.
+
+`/tmp` is not private between agents on this machine. Anything another agent
+could reasonably need must live in the repo, or be reconstructible from the
+tools.
+
+**The rule that resolves this cleanly: derive the work queue from the gate's own
+output.** The ESLint rule `no-restricted-imports` reports exactly which files still
+violate, which is the queue by definition. A hand-maintained list is a cache of
+that, and caches drift.
+
+## Signature discipline
+
+`asTenant` takes the authenticated user, not a tenant id:
+
+```ts
+asTenant(user, …)                        // the caller's own tenant
+asTenantForAnotherTenant(user, tenantId, …)  // throws unless SUPERADMIN
+```
+
+`asTenant(user.tenantId, …)` is wrong and will not typecheck — which is the point.
+The guarantee is narrow and worth stating precisely: a client-supplied value
+cannot reach the tenant context, because a request body has no type that satisfies
+it. An **in-code** mistake can still compile — a row has a `tenantId` field too,
+and one mechanical pass did exactly that before review caught it.
