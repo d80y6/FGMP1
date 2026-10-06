@@ -354,3 +354,82 @@ gate would REFUSE delete: true
 Both were caught by agents reading each other's diffs rather than by tooling.
 Neither is detectable by `tsc` or `eslint`, which is the argument for reading
 diff line-by-line when a mechanical transform touches authorisation code.
+
+## Addendum — the tenant helper let a request body reach the transaction context
+
+`asTenant(tenantId, fn)` took a **plain string**. Two routes passed it a value
+resolved partly from the request body:
+
+```ts
+// src/app/api/fgmp/geography/regions/route.ts
+const tenantId = parsed.data.tenantId || user.tenantId;
+…
+await asTenant(tenantId, async (tx) => { … });
+```
+
+It was safe only because an `if` statement ten lines earlier rejected a
+non-superadmin who supplied someone else's tenantId. A tenant admin's entire
+isolation rested on one `if`, ten lines from the call that opens the
+transaction. That is a single point of failure, not a convention — one refactor
+that moves the check, and a body field reaches the tenant context directly.
+
+**The signature changed to take the user, not the id:** `asTenant(user, fn)`.
+
+Proven unrepresentable rather than asserted — the original pattern compiled
+against the new signature:
+
+```ts
+asTenant(parsed.data.tenantId, (tx) => tx.site.findMany())
+// TS2345: Argument of type 'string | undefined' is not assignable to
+//          parameter of type 'Pick<SessionUser, "tenantId">
+```
+
+79 mechanical substitutions, plus **two variables deleted rather than rewritten**
+(`verifiedSiteTenantId` in suppressions, `site.tenantId` in batteries). Both were
+derived from a row already scoped to the caller, so they always equalled the
+caller's tenant and gated nothing. Deleting them removes the possibility instead
+of fixing it — and in suppressions the row was written with `user.tenantId` while
+the *context* came from the variable, so the two could disagree.
+
+### What the new type does and does not guarantee
+
+Worth stating precisely, because the obvious summary overstates it:
+
+- **Guaranteed:** a client-supplied value — request body, query string, path
+  parameter — cannot reach the tenant context. None of them have this type.
+- **Not guaranteed:** an in-code mistake still compiles. During the mechanical
+  pass a regex rewrote one call to `asTenant(site, …)`, passing a **row** where a
+  user was expected. It compiled, because a Site row happens to have a `tenantId`
+  field. It was caught by review, not by tooling.
+
+Requiring a full `SessionUser` would catch that row case, but would not stop a
+deliberate in-code fabrication, so it buys a narrow accident class at the cost of
+friction on every legitimate call site. The narrower, true claim is the one worth
+making.
+
+### A mechanical pass that would have been a silent regression
+
+Three call sites passed a body-supplied tenant for a legitimate superadmin
+purpose, and were deliberately **not** converted:
+
+```ts
+asTenant(user, …)   // ← converting this SILENTLY redirects superadmin
+                     //   provisioning into their OWN tenant instead of failing
+```
+
+It type-checks, and it does the wrong thing — which is worse than refusing. Those
+sites moved to a separate `asTenantForAnotherTenant(user, targetTenantId, fn)`
+whose SUPERADMIN assertion lives **inside** the helper, making the cross-tenant
+capability named, greppable and runtime-checked rather than a string that happens
+to be in the right variable.
+
+### The lesson, in the author's own words
+
+> The `asTenant(string)` design was MY proposal. It made 60 call sites correct in
+> one afternoon, and it also made a body-sourced tenantId compile cleanly in a
+> route I wrote myself. A migration helper that is simultaneously the thing that
+> makes 300 calls correct and the thing that cannot express "this tenant came
+> from the user" is under-designed.
+
+The same property that made the helper easy to adopt made the mistake invisible.
+No amount of green testing would have caught it.
