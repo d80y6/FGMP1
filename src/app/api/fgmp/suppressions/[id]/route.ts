@@ -62,7 +62,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       return res;
     }
 
-    const existing = await asTenant(user.tenantId, (tx) =>
+    const existing = await asTenant(user, (tx) =>
       tx.alarmSuppression.findFirst({
         where: { id, tenantId: user.tenantId },
         select: { id: true, tenantId: true, startsAt: true, endsAt: true, isActive: true },
@@ -110,7 +110,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
     // Nested include of site + user: both are RLS-protected, so the relation
     // traversal must be inside the same context as the update.
-    const updated = await asTenant(user.tenantId, (tx) =>
+    const updated = await asTenant(user, (tx) =>
       tx.alarmSuppression.update({
         where: { id },
         data: update,
@@ -161,7 +161,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     }
 
     const { id } = await ctx.params;
-    const existing = await asTenant(user.tenantId, (tx) =>
+    const existing = await asTenant(user, (tx) =>
       tx.alarmSuppression.findFirst({
         where: { id, tenantId: user.tenantId },
         select: { id: true, tenantId: true, reason: true, siteId: true, alarmType: true },
@@ -181,7 +181,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
       return res;
     }
 
-    await asTenant(user.tenantId, (tx) =>
+    await asTenant(user, (tx) =>
       tx.alarmSuppression.deleteMany({ where: { id, tenantId: user.tenantId } }),
     );
 

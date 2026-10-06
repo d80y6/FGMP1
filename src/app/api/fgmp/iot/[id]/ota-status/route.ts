@@ -53,7 +53,7 @@ export async function GET(
     // for existing hardware.
     // Tenant comes from the authenticated session (`user` here, from
     // bootstrap()), never from the path parameter.
-    const device = await asTenant(user.tenantId, (tx) => tx.iotDevice.findFirst({
+    const device = await asTenant(user, (tx) => tx.iotDevice.findFirst({
       where: { id, site: { tenantId: user.tenantId } },
       include: { site: { select: { name: true, code: true, tenantId: true } } },
     }));

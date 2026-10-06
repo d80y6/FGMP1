@@ -69,7 +69,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     //
     // assertTenantOwned is KEPT as defence in depth; the where clause is what
     // makes it function.
-    const outcome = await asTenant(user.tenantId, async (tx) => {
+    const outcome = await asTenant(user, async (tx) => {
       const existing = await tx.region.findFirst({
         where: isSuperAdminUser(auth.user) ? { id } : { id, tenantId: user.tenantId },
         select: { id: true, tenantId: true, name: true },
@@ -170,7 +170,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     // and assertTenantOwned would never see a row. The guardrail below and the
     // cascade to governorates/districts make a wrong tenant here far worse than
     // a wrong read.
-    const outcome = await asTenant(user.tenantId, async (tx) => {
+    const outcome = await asTenant(user, async (tx) => {
       const existing = await tx.region.findFirst({
         where: isSuperAdminUser(auth.user) ? { id } : { id, tenantId: user.tenantId },
         select: { id: true, name: true, tenantId: true, _count: { select: { sites: true, governorates: true } } },

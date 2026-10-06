@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
     // The scoping tenant is always the AUTHENTICATED user's tenant. A superadmin
     // still has one (user.tenantId) and branches its `where` clause to search
     // all tenants; it never takes a tenant from the request body.
-    const result = await asTenant(user.tenantId, async (tx) => {
+    const result = await asTenant(user, async (tx) => {
       // A region in another tenant is simply not found for a tenant admin: the
       // where clause includes their tenantId, so the two cases are
       // indistinguishable and both 404. Superadmins match on id alone.

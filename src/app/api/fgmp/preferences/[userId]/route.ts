@@ -59,7 +59,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ userId: str
     //
     // The tenant comes from the AUTHENTICATED SESSION, never from the path, so
     // an admin cannot read another tenant's preferences by editing the URL.
-    const { target, pref } = await asTenant(user.tenantId, async (tx) => {
+    const { target, pref } = await asTenant(user, async (tx) => {
       const found = await tx.user.findFirst({
         where: { id: userId, tenantId: user.tenantId },
         select: { id: true, tenantId: true, name: true, email: true, role: true },
@@ -125,7 +125,7 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ userId: str
     // query, so a cross-tenant userId is invisible rather than filtered out
     // after the fact. Writing another operator's notification preferences is a
     // privilege escalation, so this must not depend on a post-fetch check.
-    const target = await asTenant(user.tenantId, async (tx) => {
+    const target = await asTenant(user, async (tx) => {
       const found = await tx.user.findFirst({
         where: { id: userId, tenantId: user.tenantId },
         select: { id: true, tenantId: true, name: true, email: true, role: true },
@@ -163,7 +163,7 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ userId: str
       return res;
     }
 
-    const updated = await asTenant(user.tenantId, (tx) =>
+    const updated = await asTenant(user, (tx) =>
       tx.notificationPreference.upsert({
       where: { userId: target.id },
       update: {

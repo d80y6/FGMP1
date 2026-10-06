@@ -78,7 +78,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     // assertTenantOwned(site ?? null) then rejects a site the caller genuinely
     // owns. The site row is fetched inside asTenant first, and only if it
     // belongs to this caller do the child reads run.
-    const owned = await asTenant(user.tenantId, (tx) =>
+    const owned = await asTenant(user, (tx) =>
       tx.site.findFirst({
         where: isSuperAdminUser(user) ? { id } : { id, tenantId: user.tenantId },
         select: { id: true },
@@ -105,7 +105,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     // Child tables are all RLS-protected too, so they run on the transaction
     // client — on the ambient db they would return empty arrays and the panel
     // would silently show "no alarms" on a site full of them.
-    const [alarms, deliveries, tickets] = await asTenant(user.tenantId, async (tx) =>
+    const [alarms, deliveries, tickets] = await asTenant(user, async (tx) =>
       Promise.all([
         tx.alarm.findMany({ where: { siteId: id }, orderBy: { createdAt: "desc" }, take: 50 }),
         tx.fuelDelivery.findMany({ where: { siteId: id }, orderBy: { scheduledAt: "desc" }, take: 20 }),
@@ -178,7 +178,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // would reject a site the caller legitimately owns. Lookup, code-uniqueness
     // check, hierarchy validation and the update all run in ONE transaction, so
     // a concurrent rename cannot slip past the uniqueness check.
-    const outcome = await asTenant(me.tenantId, async (tx) => {
+    const outcome = await asTenant(me, async (tx) => {
       const existing = await tx.site.findFirst({
         where: isSuperAdminUser(me) ? { id } : { id, tenantId: me.tenantId },
         include: siteInclude,
@@ -328,7 +328,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     // an RLS-protected table too, so unscoped they would report ZERO and the
     // audit trail would understate the blast radius of a cascade delete.
     // Ownership check, counts and delete share one transaction.
-    const outcome = await asTenant(me.tenantId, async (tx) => {
+    const outcome = await asTenant(me, async (tx) => {
       const existing = await tx.site.findFirst({
         where: isSuperAdminUser(me) ? { id } : { id, tenantId: me.tenantId },
         include: siteInclude,

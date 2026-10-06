@@ -213,7 +213,7 @@ export async function GET(req: NextRequest) {
     // cross-tenant read. `siteTenantWhereOrAll` is deliberately KEPT so the
     // non-superadmin filter is unchanged.
     const deliveryRows = tankIds.length
-      ? await asTenant(me.tenantId, (tx) => tx.fuelDelivery.findMany({
+      ? await asTenant(me, (tx) => tx.fuelDelivery.findMany({
           where: {
             ...siteTenantWhereOrAll(me),
             tankId: { in: tankIds },

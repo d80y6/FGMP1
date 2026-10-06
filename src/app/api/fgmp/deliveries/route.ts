@@ -61,7 +61,7 @@ export async function GET(req: NextRequest) {
     // includes resolve on the SAME client, and both tables are FORCE-protected,
     // so left unscoped this returned 200 with an empty list while the database
     // was full.
-    const deliveries = await asTenant(me.tenantId, (tx) =>
+    const deliveries = await asTenant(me, (tx) =>
       tx.fuelDelivery.findMany({
         where,
         orderBy: { scheduledAt: "desc" },
@@ -113,7 +113,7 @@ export async function POST(req: NextRequest) {
       // NextResponse that was never actually returned as a response. Throwing
       // ApiError keeps the transaction's return type clean and is already what
       // the 404/409 branches here do.
-      const outcome = await asTenant(me.tenantId, async (tx) => {
+      const outcome = await asTenant(me, async (tx) => {
         const existing = await tx.fuelDelivery.findUnique({
           where: { id: data.deliveryId },
           // `site` is read INSIDE the context: it is RLS-protected itself, and
@@ -176,7 +176,7 @@ export async function POST(req: NextRequest) {
     if (data.action === "dispatch") {
       // Same shape as `verify`: guard + conditional write + read-back in ONE
       // transaction, ownership checked on a row read inside it, audit outside.
-      const outcome = await asTenant(me.tenantId, async (tx) => {
+      const outcome = await asTenant(me, async (tx) => {
         const existing = await tx.fuelDelivery.findUnique({
           where: { id: data.deliveryId },
           select: { id: true, status: true, siteId: true, site: { select: { tenantId: true } } },
@@ -225,7 +225,7 @@ export async function POST(req: NextRequest) {
     // RLS it returned null for EVERY id, making this branch 404 for all callers.
     // The site lookup, the ownership check and the create are one transaction so
     // the tenant cannot change between the check and the write.
-    const created = await asTenant(me.tenantId, async (tx) => {
+    const created = await asTenant(me, async (tx) => {
       const site = await tx.site.findUnique({
         where: { id: data.siteId },
         select: { tenantId: true },

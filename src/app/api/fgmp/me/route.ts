@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
   // callback BEFORE a tenant is established, so it cannot use withTenant. Here
   // the session already carries `user.tenantId`, so the read is properly
   // scoped — no second identity pattern is invented here.
-  const dbUser = await asTenant(user.tenantId, (tx) =>
+  const dbUser = await asTenant(user, (tx) =>
     tx.user.findFirst({
       where: { id: user.id, tenantId: user.tenantId },
       select: { id: true, name: true, email: true, role: true, tenantId: true, lastLoginAt: true },
@@ -78,7 +78,7 @@ export async function PATCH(req: Request) {
       { status: 403 },
     );
   }
-  const updated = await asTenant(user.tenantId, (tx) =>
+  const updated = await asTenant(user, (tx) =>
     tx.user.update({
       // Scoped in the QUERY, not filtered afterwards. Under FORCE RLS an
       // unscoped update matches nothing, so `update` would have thrown rather

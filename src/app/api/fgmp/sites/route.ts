@@ -80,7 +80,7 @@ export async function GET(req: NextRequest) {
     // regardless of the filter. The filter is kept — it is still correct and
     // still denies a superadmin's unfiltered view — but the query must also run
     // inside a tenant context for the rows to exist at all.
-    const sites = await asTenant(me.tenantId, (tx) =>
+    const sites = await asTenant(me, (tx) =>
       tx.site.findMany({
         where: tenantWhere(me),
         include: siteInclude,

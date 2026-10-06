@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
     //
     // The nested `governorates.districts._count.sites` also resolve on this
     // client, so they were reporting 0 sites for a fully populated region.
-    const regions = await asTenant(user.tenantId, (tx) =>
+    const regions = await asTenant(user, (tx) =>
       tx.region.findMany({
         where: tenantWhereOrAll(user),
         orderBy: { name: "asc" },

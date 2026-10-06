@@ -63,7 +63,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     // Governorate -> Region. Region is RLS-protected with FORCE, so the lookup
     // must run inside asTenant and filter through both parents; unscoped it
     // returns null and the assertTenantOwned defence never sees a row.
-    const outcome = await asTenant(user.tenantId, async (tx) => {
+    const outcome = await asTenant(user, async (tx) => {
       const existing = await tx.district.findFirst({
         where: {
           id,
@@ -151,7 +151,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
 
     // Tenant isolation — see the PATCH handler above. The site guardrail and the
     // delete share one transaction so they cannot be raced apart.
-    const outcome = await asTenant(user.tenantId, async (tx) => {
+    const outcome = await asTenant(user, async (tx) => {
       const existing = await tx.district.findFirst({
         where: {
           id,

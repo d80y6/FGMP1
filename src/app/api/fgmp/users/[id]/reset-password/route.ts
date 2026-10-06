@@ -89,7 +89,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   // Scoping in the where clause also makes "other tenant" and "no such user"
   // indistinguishable: both yield null here and fall through to the same 404,
   // so this endpoint cannot be used to discover valid user ids.
-  const existing = await asTenant(me.tenantId, (tx) =>
+  const existing = await asTenant(me, (tx) =>
     tx.user.findFirst({ where: { id, tenantId: me.tenantId } }),
   );
   // Kept as defence in depth — the query above already scopes by tenantId.
@@ -121,7 +121,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   // tenants between the read and the write cannot be clobbered.
   let wrote = false;
   try {
-    await asTenant(me.tenantId, async (tx) => {
+    await asTenant(me, async (tx) => {
       const owner = await tx.user.findFirst({
         where: { id, tenantId: me.tenantId },
         select: { id: true },

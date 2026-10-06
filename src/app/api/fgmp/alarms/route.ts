@@ -61,7 +61,7 @@ export const GET = withMetrics(async function GET(req: NextRequest) {
     // unfiltered returns alarms carrying a null site — a populated response
     // with silently wrong relations, which is worse than an empty one because
     // it looks correct.
-    const alarms = await asTenant(me.tenantId, async (tx) => {
+    const alarms = await asTenant(me, async (tx) => {
       const rows = await tx.alarm.findMany({
         where,
         orderBy: { createdAt: "desc" },
@@ -110,7 +110,7 @@ export const POST = withMetrics(async function POST(req: NextRequest) {
       // Tenant-scoped. `updateMany` with tenantId in the where was returning
       // count: 0 under RLS while still answering `{ ok: true }` — a mutation
       // that silently affected nothing and reported success.
-      const result = await asTenant(me.tenantId, (tx) =>
+      const result = await asTenant(me, (tx) =>
         tx.alarm.updateMany({
         where: { id: { in: data.alarmIds }, tenantId: me.tenantId, status: { in: ["OPEN", "ESCALATED"] } },
         data: { status: "ACKNOWLEDGED", acknowledgedAt: new Date(), acknowledgedById: user.id },
@@ -122,7 +122,7 @@ export const POST = withMetrics(async function POST(req: NextRequest) {
       return res;
     }
     if (data.action === "bulkResolve") {
-      const result = await asTenant(me.tenantId, (tx) =>
+      const result = await asTenant(me, (tx) =>
         tx.alarm.updateMany({
         where: { id: { in: data.alarmIds }, tenantId: me.tenantId, status: { in: ["OPEN", "ACKNOWLEDGED", "ESCALATED"] } },
         data: { status: "RESOLVED", resolvedAt: new Date(), resolvedById: user.id, resolution: data.resolution ?? "Bulk resolved by operator" },
@@ -142,7 +142,7 @@ export const POST = withMetrics(async function POST(req: NextRequest) {
     // nothing — the Phase 0 IDOR fix was inert rather than merely weak.
     // Cross-tenant and non-existent ids are both null here, so this cannot be
     // used to enumerate alarm ids.
-    const alarm = await asTenant(me.tenantId, (tx) =>
+    const alarm = await asTenant(me, (tx) =>
       tx.alarm.findFirst({ where: { id: alarmId, tenantId: me.tenantId } }),
     );
     const denied = assertTenantOwned(alarm, me);
@@ -163,7 +163,7 @@ export const POST = withMetrics(async function POST(req: NextRequest) {
       // Re-assert ownership inside the writing transaction: `update` takes a
       // unique selector so tenantId cannot be part of it, and a row that changed
       // tenants between the authorising read and this write must not be touched.
-      const updated = await asTenant(me.tenantId, async (tx) => {
+      const updated = await asTenant(me, async (tx) => {
         const owned = await tx.alarm.findFirst({
           where: { id: alarmId, tenantId: me.tenantId },
           select: { id: true },
@@ -185,7 +185,7 @@ export const POST = withMetrics(async function POST(req: NextRequest) {
       return res;
     }
     // resolve — same re-assert-ownership pattern as acknowledge above.
-    const updated = await asTenant(me.tenantId, async (tx) => {
+    const updated = await asTenant(me, async (tx) => {
       const owned = await tx.alarm.findFirst({
         where: { id: alarmId, tenantId: me.tenantId },
         select: { id: true },

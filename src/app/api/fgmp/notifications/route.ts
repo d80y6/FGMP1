@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
     const status = searchParams.get("status");
     const where: Record<string, unknown> = { ...tenantWhereOrAll(me) };
     if (status) where.status = { in: status.split(",") };
-    const notifs = await asTenant(me.tenantId, (tx) =>
+    const notifs = await asTenant(me, (tx) =>
       tx.notification.findMany({ where, orderBy: { createdAt: "desc" }, take: 100 }),
     );
     const res = NextResponse.json(notifs);
@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
       // assertTenantOwned is KEPT as defence in depth — it compares
       // record.tenantId after the fetch, so it cannot work until the read is
       // scoped, but it still guards against a future where-clause regression.
-      const updated = await asTenant(me.tenantId, async (tx) => {
+      const updated = await asTenant(me, async (tx) => {
         const existing = await tx.notification.findFirst({
           where: { id: data.notificationId, tenantId: me.tenantId },
         });
@@ -92,7 +92,7 @@ export async function POST(req: NextRequest) {
       return res;
     }
     // markAllSent
-    const result = await asTenant(me.tenantId, (tx) =>
+    const result = await asTenant(me, (tx) =>
       tx.notification.updateMany({
         where: { status: "QUEUED", ...tenantWhereOrAll(me) },
         data: { status: "SENT", sentAt: new Date() },

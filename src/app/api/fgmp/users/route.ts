@@ -119,7 +119,7 @@ export async function GET(req: NextRequest) {
     // Scoped to the CALLER's tenant. A super-admin's unfiltered list is a
     // deliberate cross-tenant capability and is preserved via the where clause;
     // the counts for a non-superadmin cannot reach another tenant's rows.
-    const [users, total] = await asTenant(me.tenantId, (tx) =>
+    const [users, total] = await asTenant(me, (tx) =>
       Promise.all([
         tx.user.findMany({
           where,
@@ -205,7 +205,7 @@ export async function POST(req: NextRequest) {
   // refused regardless of which tenant holds it. Read inside the caller's own
   // tenant context so the probe cannot be used to confirm addresses in OTHER
   // tenants — that would turn a 409 into a cross-tenant enumeration oracle.
-  const existing = await asTenant(me.tenantId, (tx) =>
+  const existing = await asTenant(me, (tx) =>
     tx.user.findUnique({ where: { email } }),
   );
   if (existing) {

@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
       return res;
     }
 
-    const suppressions = await asTenant(user.tenantId, (tx) =>
+    const suppressions = await asTenant(user, (tx) =>
       tx.alarmSuppression.findMany({
       where: tenantWhereOrAll(user),
       orderBy: { endsAt: "desc" },
@@ -119,19 +119,26 @@ export async function POST(req: NextRequest) {
     // Declared in the outer scope because the create below is scoped to
     // `site.tenantId` once verified — declaring it inside the `if` left the
     // later reference unbound.
-    let verifiedSiteTenantId = user.tenantId;
-    // Narrowed to a concrete string so it can be used inside the closure —
-    // TypeScript does not carry the `if (data.siteId)` narrowing into an
-    // arrow function body, so the property is re-read as a local.
+    //
+    // `verifiedSiteTenantId` is DELETED, not rewritten. It was assigned from
+    // `site.tenantId` where `site` came from a query already scoped to
+    // `user.tenantId`, so it was always equal to the caller's own tenant and
+    // gated nothing — and the row itself was written with `user.tenantId`
+    // regardless, so the variable controlled the transaction CONTEXT while the
+    // data used the session. That inconsistency is the whole reason the helper
+    // now takes the user: there is no longer a way to pass a context that is
+    // not literally the caller's.
+    //
+    // The site check remains and is still required — it is what rejects a
+    // cross-tenant siteId, not the tenant it would have been written under.
     const requestedSiteId = data.siteId;
     if (requestedSiteId) {
-      const site = await asTenant(user.tenantId, (tx) =>
+      const site = await asTenant(user, (tx) =>
         tx.site.findFirst({
           where: { id: requestedSiteId, tenantId: user.tenantId },
           select: { id: true, tenantId: true },
         }),
       );
-      if (site) verifiedSiteTenantId = site.tenantId;
       if (!site || site.tenantId !== user.tenantId) {
         const res = NextResponse.json(
           { error: "Site not found in your tenant" },
@@ -146,7 +153,7 @@ export async function POST(req: NextRequest) {
     // blow up the column (SQLite is permissive, but the UI shows it).
     const alarmType = data.alarmType ? data.alarmType.slice(0, 60) : null;
 
-    const created = await asTenant(verifiedSiteTenantId, (tx) =>
+    const created = await asTenant(user, (tx) =>
       tx.alarmSuppression.create({
       data: {
         tenantId: user.tenantId,

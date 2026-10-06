@@ -40,7 +40,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
 
     const { id } = await ctx.params;
     // Scoped in the query. assertTenantOwned is KEPT as defence in depth.
-    const k = await asTenant(user.tenantId, (tx) =>
+    const k = await asTenant(user, (tx) =>
       tx.apiKey.findFirst({ where: { id, tenantId: user.tenantId } }),
     );
     const denied = assertTenantOwned(k, user);
@@ -56,7 +56,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
 
     // Resolve creator (plain-string FK, not a Prisma relation).
     const creator = k.createdBy
-      ? await asTenant(user.tenantId, (tx) =>
+      ? await asTenant(user, (tx) =>
           tx.user.findFirst({
             where: { id: k.createdBy, tenantId: user.tenantId },
             select: { id: true, name: true, email: true },
@@ -108,7 +108,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     }
 
     const { id } = await ctx.params;
-    const existing = await asTenant(user.tenantId, (tx) =>
+    const existing = await asTenant(user, (tx) =>
       tx.apiKey.findFirst({ where: { id, tenantId: user.tenantId } }),
     );
     const denied = assertTenantOwned(existing, user);
@@ -141,7 +141,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     // the 404 above.
     // updateMany returns a count rather than a row, so the record is read back
     // inside the SAME transaction. The response shape below is unchanged.
-    const updated = await asTenant(user.tenantId, async (tx) => {
+    const updated = await asTenant(user, async (tx) => {
       const result = await tx.apiKey.updateMany({
         where: { id, tenantId: user.tenantId },
         data: { revoked: true, revokedAt: now },

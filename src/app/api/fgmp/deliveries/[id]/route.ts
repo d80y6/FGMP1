@@ -29,7 +29,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     // top-level-scoped query that leaves the include unscoped still returns a
     // row with empty relations. Both are inside the tenant context, and the
     // relation filter is expressed in the query rather than checked afterwards.
-    const d = await asTenant(me.tenantId, (tx) =>
+    const d = await asTenant(me, (tx) =>
       tx.fuelDelivery.findFirst({
         where: { id, site: { tenantId: me.tenantId } },
         include: { site: true, tank: true },

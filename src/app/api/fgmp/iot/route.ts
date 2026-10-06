@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
     // NESTED READ: the `include: { site }` traversal is RLS-protected too, so
     // it sits inside the same context as the top-level query. Scoping only the
     // outer findMany would return devices with a null site.
-    const devices = await asTenant(user.tenantId, (tx) =>
+    const devices = await asTenant(user, (tx) =>
       tx.iotDevice.findMany({
         where,
         orderBy: { name: "asc" },
@@ -83,7 +83,7 @@ export async function PATCH(req: NextRequest) {
       // NESTED READ: `select: { site: { … } }` resolves on the same client and
       // Site is RLS-protected, so the relation filter belongs in the query.
       // assertSiteTenantOwned is KEPT as defence in depth.
-      const updated = await asTenant(user.tenantId, async (tx) => {
+      const updated = await asTenant(user, async (tx) => {
         const existing = await tx.iotDevice.findFirst({
           where: { id: data.deviceId, site: { tenantId: user.tenantId } },
           select: { site: { select: { tenantId: true } } },
@@ -109,7 +109,7 @@ export async function PATCH(req: NextRequest) {
     // reboot — verify tenant first.
     {
       // Same nested-relation treatment as the OTA branch above.
-      const existing = await asTenant(user.tenantId, (tx) =>
+      const existing = await asTenant(user, (tx) =>
         tx.iotDevice.findFirst({
           where: { id: data.deviceId, site: { tenantId: user.tenantId } },
           select: { site: { select: { tenantId: true } } },

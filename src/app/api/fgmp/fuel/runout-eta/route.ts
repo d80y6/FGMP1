@@ -197,7 +197,7 @@ export async function GET(req: NextRequest) {
     // SensorReading carries no tenantId of its own — tenancy reaches it
     // through Site — so the context comes from the caller's tenant and the
     // existing siteId filter remains as defence in depth.
-    const readings = await asTenant(me.tenantId, (tx) => tx.sensorReading.findMany({
+    const readings = await asTenant(me, (tx) => tx.sensorReading.findMany({
       where: {
         metric: "FUEL_LEVEL",
         entityKind: "TANK",

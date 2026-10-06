@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
     if (siteId) where.siteId = siteId;
     // Nested `include: { site }` is inside the same context — BatteryBank and
     // Site are both RLS-protected.
-    const batteries = await asTenant(user.tenantId, (tx) =>
+    const batteries = await asTenant(user, (tx) =>
       tx.batteryBank.findMany({
       where,
       orderBy: { label: "asc" },
@@ -119,7 +119,7 @@ export async function POST(req: NextRequest) {
     // (SUPERADMIN bypasses for cross-tenant asset creation).
     // Scoped in the query so the acting admin's own tenant can find the site.
     // assertTenantOwned is KEPT as defence in depth.
-    const site = await asTenant(user.tenantId, (tx) =>
+    const site = await asTenant(user, (tx) =>
       tx.site.findFirst({
         where: { id: data.siteId, tenantId: user.tenantId },
         select: { id: true, tenantId: true, name: true },
@@ -142,22 +142,31 @@ export async function POST(req: NextRequest) {
     // The write AND its nested `include: { site }` are both inside the tenant
     // context. An unscoped create would be rejected outright by WITH CHECK
     // ("new row violates row-level security policy").
-    const row = await asTenant(site.tenantId, (tx) =>
+    //
+    // `tenantId: user.tenantId`, NOT `site.tenantId`. The site was proven
+    // above to belong to the caller's tenant by a query already scoped to it, so
+    // the derived value was always equal to the caller's and added nothing. With
+    // `asTenant(user, …)` it is not merely redundant but structurally
+    // unnecessary: there is no longer a way to pass "the tenant" that is not
+    // literally the caller's own. This is the deletion the new signature was
+    // supposed to buy, and it is a deletion rather than a rewrite.
+    const row = await asTenant(user, (tx) =>
       tx.batteryBank.create({
-      data: {
-        siteId: data.siteId,
-        tenantId: site.tenantId,
-        label: data.label,
-        chemistry: data.chemistry,
-        capacityAh: data.capacityAh,
-        nominalVoltage: data.nominalVoltage,
-        voltage: data.nominalVoltage,
-        stateOfCharge: 80,
-        stateOfHealth: 95,
-        status: "OK",
-      },
-      include: { site: { select: { id: true, name: true, code: true } } },
-    }));
+        data: {
+          siteId: data.siteId,
+          tenantId: user.tenantId,
+          label: data.label,
+          chemistry: data.chemistry,
+          capacityAh: data.capacityAh,
+          nominalVoltage: data.nominalVoltage,
+          voltage: data.nominalVoltage,
+          stateOfCharge: 80,
+          stateOfHealth: 95,
+          status: "OK",
+        },
+        include: { site: { select: { id: true, name: true, code: true } } },
+      }),
+    );
 
     // Push into the engine so the next snapshot reflects the new battery.
     engine.batteries.push({

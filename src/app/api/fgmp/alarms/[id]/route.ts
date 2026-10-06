@@ -34,7 +34,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     // on this same client. Leaving it unfiltered returns the alarm with a NULL
     // site — a populated response with silently wrong relations, which is
     // WORSE than the original empty result because it looks correct.
-    const alarm = await asTenant(user.tenantId, async (tx) => {
+    const alarm = await asTenant(user, async (tx) => {
       const row = await tx.alarm.findFirst({
         where: { id, tenantId: user.tenantId },
         select: {

@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
 
     let pref;
     try {
-      pref = await asTenant(user.tenantId, (tx) =>
+      pref = await asTenant(user, (tx) =>
         tx.notificationPreference.upsert({
           where: { userId: user.id },
           update: {},
@@ -141,7 +141,7 @@ export async function PUT(req: NextRequest) {
       return res;
     }
 
-    const updated = await asTenant(user.tenantId, (tx) => tx.notificationPreference.upsert({
+    const updated = await asTenant(user, (tx) => tx.notificationPreference.upsert({
       where: { userId: user.id },
       update: {
         inAppEnabled: data.inAppEnabled,

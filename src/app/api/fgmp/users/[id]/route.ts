@@ -114,7 +114,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   //
   // Cross-tenant and non-existent ids are both null here, so this cannot be
   // used to enumerate user ids.
-  const user = await asTenant(me.tenantId, (tx) =>
+  const user = await asTenant(me, (tx) =>
     tx.user.findFirst({ where: { id, tenantId: me.tenantId }, select: userSelect }),
   );
   const denied = assertTenantOwned(user, me);
@@ -163,7 +163,7 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
     );
   }
 
-  const existing = await asTenant(me.tenantId, (tx) =>
+  const existing = await asTenant(me, (tx) =>
     tx.user.findFirst({ where: { id, tenantId: me.tenantId } }),
   );
   const denied = assertTenantOwned(existing, me);
@@ -188,7 +188,7 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
   // ownership re-read below happens in the SAME transaction as the write, so a
   // row that changed tenants between the authorising read and this write cannot
   // be clobbered.
-  const updated = await asTenant(me.tenantId, async (tx) => {
+  const updated = await asTenant(me, async (tx) => {
     const owned = await tx.user.findFirst({
       where: { id, tenantId: me.tenantId },
       select: { id: true },
@@ -244,7 +244,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     );
   }
 
-  const existing = await asTenant(me.tenantId, (tx) =>
+  const existing = await asTenant(me, (tx) =>
     tx.user.findFirst({ where: { id, tenantId: me.tenantId } }),
   );
   const denied = assertTenantOwned(existing, me);
@@ -254,7 +254,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
   // Ownership re-asserted inside the writing transaction — `update` takes a
   // unique selector so tenantId cannot be part of it.
-  const updated = await asTenant(me.tenantId, async (tx) => {
+  const updated = await asTenant(me, async (tx) => {
     const owned = await tx.user.findFirst({
       where: { id, tenantId: me.tenantId },
       select: { id: true },
@@ -300,7 +300,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     );
   }
 
-  const existing = await asTenant(me.tenantId, (tx) =>
+  const existing = await asTenant(me, (tx) =>
     tx.user.findFirst({ where: { id, tenantId: me.tenantId } }),
   );
   const denied = assertTenantOwned(existing, me);
@@ -310,7 +310,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
 
   // Ownership re-asserted inside the writing transaction — `update` takes a
   // unique selector so tenantId cannot be part of it.
-  const updated = await asTenant(me.tenantId, async (tx) => {
+  const updated = await asTenant(me, async (tx) => {
     const owned = await tx.user.findFirst({
       where: { id, tenantId: me.tenantId },
       select: { id: true },

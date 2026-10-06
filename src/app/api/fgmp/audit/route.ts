@@ -88,7 +88,7 @@ export async function GET(req: NextRequest) {
     // AuditLog is one of the 24 FORCE-RLS-protected tables, so this read must
     // carry the caller's tenant context. Previously it ran unscoped and
     // returned [] for every request.
-    const logs = await asTenant(me.tenantId, (tx) =>
+    const logs = await asTenant(me, (tx) =>
       tx.auditLog.findMany({
         where,
         orderBy: { createdAt: "desc" },

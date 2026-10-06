@@ -94,7 +94,7 @@ export async function GET(req: NextRequest) {
       return res;
     }
 
-    const keys = await asTenant(user.tenantId, (tx) =>
+    const keys = await asTenant(user, (tx) =>
       tx.apiKey.findMany({
         where: tenantWhereOrAll(user),
         orderBy: { createdAt: "desc" },
@@ -105,7 +105,7 @@ export async function GET(req: NextRequest) {
     // a plain String column, not a Prisma relation).
     const creatorIds = Array.from(new Set(keys.map((k) => k.createdBy)));
     const creators = creatorIds.length > 0
-      ? await asTenant(user.tenantId, (tx) =>
+      ? await asTenant(user, (tx) =>
           tx.user.findMany({
             // Scoped to the caller's tenant as well: creator ids are derived
             // from the keys just fetched, so they are already tenant-local,
@@ -223,7 +223,7 @@ export async function POST(req: NextRequest) {
     const ipAllowlist = parseIpAllowlist((body as { ipAllowlist?: unknown }).ipAllowlist);
 
     const { raw, prefix, hash } = generateApiKey();
-    const created = await asTenant(user.tenantId, (tx) =>
+    const created = await asTenant(user, (tx) =>
       tx.apiKey.create({
       data: {
         tenantId: user.tenantId,

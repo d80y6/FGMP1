@@ -62,7 +62,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   // The tenantId used is the ACTOR's, never the `:id` path parameter: a tenant
   // admin must not be able to read another tenant's user/site counts by
   // editing the URL.
-    const tenant = await asTenant(me.tenantId, (tx) =>
+    const tenant = await asTenant(me, (tx) =>
       tx.tenant.findUnique({ where: { id }, select: tenantSelect }),
     );
     // SUPERADMIN can read any tenant; everyone else only their own.
@@ -134,7 +134,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       return res;
     }
 
-    const existing = await asTenant(me.tenantId, (tx) =>
+    const existing = await asTenant(me, (tx) =>
       tx.tenant.findUnique({ where: { id }, select: tenantSelect }),
     );
     if (!existing) {
@@ -144,7 +144,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     }
     // Enforce unique name + code if either is being changed.
     if (data.name || data.code) {
-      const clash = await asTenant(me.tenantId, (tx) => tx.tenant.findFirst({
+      const clash = await asTenant(me, (tx) => tx.tenant.findFirst({
         where: {
           AND: [
             { id: { not: id } },
@@ -169,7 +169,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       }
     }
 
-    const updated = await asTenant(me.tenantId, (tx) => tx.tenant.update({
+    const updated = await asTenant(me, (tx) => tx.tenant.update({
       where: { id },
       data,
       select: tenantSelect,
@@ -227,7 +227,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     // returning rows.
     //
     // The actor's tenant context is used, never the `:id` path parameter.
-    const existing = await asTenant(me.tenantId, (tx) =>
+    const existing = await asTenant(me, (tx) =>
       tx.tenant.findUnique({
         where: { id },
         select: {
@@ -265,7 +265,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     // SAME transaction that performs the delete, so a user or site created
     // between the guard and this statement cannot slip a populated tenant
     // through the safety gate.
-    const deleted = await asTenant(me.tenantId, async (tx) => {
+    const deleted = await asTenant(me, async (tx) => {
       const stillOwns = await tx.tenant.findUnique({
         where: { id },
         select: { _count: { select: { users: true, sites: true } } },

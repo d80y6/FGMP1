@@ -31,12 +31,15 @@ import { asTenant } from "../src/lib/fgmp/route-tenant";
  * query rather than a re-implementation of it.
  */
 async function routeLookup(callerTenantId: string, targetUserId: string) {
-  return asTenant(callerTenantId, (tx) =>
+  // Stands in for the authenticated actor. asTenant takes the USER, not a bare
+  // tenant string, precisely so a body-sourced id cannot reach this call.
+  const actor = { tenantId: callerTenantId };
+  return asTenant(actor, (tx) =>
     tx.user.findFirst({
       where: { id: targetUserId, tenantId: callerTenantId },
       select: { id: true, tenantId: true, name: true, email: true, role: true },
     }),
-  );
+  ) as Promise<{ id: string; tenantId: string; name: string; email: string; role: string } | null>;
 }
 
 async function main() {

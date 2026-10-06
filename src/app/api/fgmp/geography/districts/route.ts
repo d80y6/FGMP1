@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
     // the region filter carries their tenantId, so absent and foreign are
     // indistinguishable. Superadmins match on id alone and use the tenant the
     // region actually belongs to.
-    const result = await asTenant(user.tenantId, async (tx) => {
+    const result = await asTenant(user, async (tx) => {
       const gov = await tx.governorate.findFirst({
         where: {
           id: governorateId,

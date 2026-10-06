@@ -64,7 +64,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     // the lookup MUST run inside asTenant and filter on the parent's tenant —
     // unscoped it returns null and the assertTenantOwned check below never sees
     // a row, which is why that defence was inert.
-    const outcome = await asTenant(user.tenantId, async (tx) => {
+    const outcome = await asTenant(user, async (tx) => {
       const existing = await tx.governorate.findFirst({
         where: {
           id,
@@ -153,7 +153,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
 
     // Tenant isolation — see the PATCH handler above. The site guardrail and
     // the delete share one transaction so they cannot be raced apart.
-    const outcome = await asTenant(user.tenantId, async (tx) => {
+    const outcome = await asTenant(user, async (tx) => {
       const existing = await tx.governorate.findFirst({
         where: {
           id,

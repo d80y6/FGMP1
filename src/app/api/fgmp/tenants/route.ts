@@ -73,7 +73,7 @@ export async function GET(req: NextRequest) {
     // all tenants gets counts scoped to THEIR tenant, which is the honest
     // answer for counts they are not entitled to see. The tenant list itself is
     // platform-level and deliberately not scoped.
-    const tenants = await asTenant(user.tenantId, (tx) =>
+    const tenants = await asTenant(user, (tx) =>
       tx.tenant.findMany({
         where: isSuperAdminUser(user) ? {} : { id: user.tenantId },
         orderBy: { name: "asc" },
@@ -136,7 +136,7 @@ export async function POST(req: NextRequest) {
     // asTenant() so the route holds no raw `db` reference at all — a single
     // unscoped client handle in a file is how the 300-call class of bug keeps
     // growing back, and the ESLint rule exists to keep that from being possible.
-    const existing = await asTenant(user.tenantId, (tx) =>
+    const existing = await asTenant(user, (tx) =>
       tx.tenant.findFirst({
         where: { OR: [{ name }, { code }] },
         select: { id: true, name: true, code: true },
@@ -152,7 +152,7 @@ export async function POST(req: NextRequest) {
       return res;
     }
 
-    const tenant = await asTenant(user.tenantId, (tx) =>
+    const tenant = await asTenant(user, (tx) =>
       tx.tenant.create({
         data: { name, code, country },
         select: tenantSelect,

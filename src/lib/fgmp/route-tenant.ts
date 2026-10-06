@@ -33,6 +33,7 @@
  */
 
 import { withTenant } from "./tenant-context";
+import type { SessionUser } from "@/lib/auth";
 import type { Prisma } from "@prisma/client";
 
 /**
@@ -45,16 +46,52 @@ export type TenantScopedClient = Prisma.TransactionClient;
 /**
  * Run `fn` as the authenticated user's tenant.
  *
- * `tenantId` MUST come from the authenticated session (`auth.user.tenantId`),
- * never from a query parameter, a body field, or a header. Passing
- * client-controlled input here would make every route in the codebase a
- * cross-tenant read primitive.
+ * ── WHY THE PARAMETER IS THE USER, NOT THE TENANT ID ───────────────────────
+ * This helper previously took `tenantId: string`. That made every call site
+ * correct-or-wrong by CONVENTION, and the convention was already broken in two
+ * live routes:
+ *
+ *     geography/regions/route.ts   asTenant(tenantId, …)  where tenantId = parsed.data.tenantId
+ *     users/route.ts                asTenant(tenantId, …)  where tenantId = clientTenantId
+ *
+ * Both were safe only because a 403 gate sat a few lines earlier — a tenant
+ * admin's entire isolation resting on an `if` statement away from the call that
+ * opens the transaction. One refactor and a request body reaches the database
+ * context directly.
+ *
+ * Taking the user makes that unrepresentable rather than merely discouraged: a
+ * request body value cannot satisfy this parameter's type at the call site, so
+ * the mistake becomes a COMPILE ERROR instead of a silent cross-tenant context.
+ *
+ * ── WHY `Pick<SessionUser, "tenantId">` AND NOT THE FULL USER ───────────────
+ * `tenantId` is the only field the helper reads. Tightening the type to the
+ * whole SessionUser would suggest the helper validates identity, which it does
+ * not — and it could not, because a structurally-identical object literal is
+ * indistinguishable from a real session user. Requiring the full type would be
+ * security theatre: it would look like a control while proving nothing.
+ *
+ * What actually provides the protection is that a body/query/header value
+ * cannot produce this type AT THE CALL SITE. Both versions achieve that; the
+ * narrower one just does not overstate what is being checked.
+ *
+ * Two user types exist in this codebase — `SessionUser` (auth.ts, role:
+ * `string`) from `requireAuth()`, and `FgmpUser` (rbac.ts, role: `Role`) from
+ * `bootstrap()`. They are NOT mutually assignable: FgmpUser -> SessionUser
+ * works, SessionUser -> FgmpUser does not. Typing the parameter as the LOOSER
+ * `SessionUser` shape is what lets both be passed, which is why the routes that
+ * bind their actor from either source all compile.
+ *
+ * ── CROSS-TENANT WORK IS DELIBERATELY NOT SUPPORTED HERE ───────────────────
+ * There is no variant of this function that accepts an arbitrary tenant id.
+ * A super-admin acting for another tenant must go through a separate, named and
+ * runtime-checked helper, so that capability is greppable and auditable rather
+ * than being a string that happens to be in the right variable.
  */
 export function asTenant<T>(
-  tenantId: string,
+  user: Pick<SessionUser, "tenantId">,
   fn: (tx: TenantScopedClient) => Promise<T>,
 ): Promise<T> {
-  return withTenant(tenantId, fn);
+  return withTenant(user.tenantId, fn);
 }
 
 /**
