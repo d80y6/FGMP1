@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { bootstrap } from "@/lib/fgmp";
-import { asTenant } from "@/lib/fgmp/route-tenant";
+import { asTenantForAnotherTenant } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import {
   rateLimitByUser,
@@ -80,7 +80,18 @@ export async function POST(req: NextRequest) {
     // `tenantId` was resolved above from the acting user's session (or an
     // explicitly-authorised superadmin), never from the body alone — a tenant
     // admin passing someone else's tenantId is rejected with 403 before here.
-    const { tenant, clash, region } = await asTenant(tenantId, async (tx) => {
+    // `tenantId` is `parsed.data.tenantId || user.tenantId`, so for a SUPERADMIN
+    // it can name another tenant. That is why this uses the privileged helper
+    // rather than asTenant(me, …): converting it to the caller's own tenant
+    // would type-check and SILENTLY write into the super-admin's tenant instead
+    // of the requested one — a passing build doing the wrong thing.
+    //
+    // For the common case (`parsed.data.tenantId` absent) this is the caller's
+    // own tenant and the assertion below is satisfied by their own role.
+    const { tenant, clash, region } = await asTenantForAnotherTenant(
+      user,
+      tenantId,
+      async (tx) => {
       // Verify the target tenant exists (defensive — admin's tenant always does).
       // Tenant itself carries no tenantId column, so it is outside RLS; the read
       // is scoped to the one id the caller is already authorised for.
@@ -111,7 +122,8 @@ export async function POST(req: NextRequest) {
         },
       });
       return { tenant: t, clash: null, region: created };
-    });
+      },
+    );
 
     if (!tenant) {
       const res = NextResponse.json({ error: "Tenant not found" }, { status: 404 });

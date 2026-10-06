@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { engine, bootstrap } from "@/lib/fgmp";
-import { asTenant } from "@/lib/fgmp/route-tenant";
+import { asTenant, asTenantForAnotherTenant } from "@/lib/fgmp/route-tenant";
 import { resolveGeographyPath } from "@/lib/fgmp/geography";
 import { requireAuth, requireRole, ROLES, tenantWhere } from "@/lib/fgmp/auth-helpers";
 import { audit } from "@/lib/fgmp/audit";
@@ -148,7 +148,15 @@ export async function POST(req: NextRequest) {
     // transaction so the validation and the insert cannot observe different
     // snapshots. Without a context, `region` came back null and every create
     // failed with INVALID_HIERARCHY — a wrong answer, not an error.
-    const { codeClash, path } = await asTenant(
+    // Also privileged, and for a reason that is easy to get wrong: this
+    // validates the Region/Governorate/District hierarchy for the site being
+    // CREATED. For a super-admin that site may live in another tenant, so the
+    // geography it is validated against must be read in the TARGET tenant.
+    // Scoping this to the caller's own tenant would make every cross-tenant
+    // site create fail with INVALID_HIERARCHY — a confusing wrong answer rather
+    // than an obvious refusal.
+    const { codeClash, path } = await asTenantForAnotherTenant(
+      me,
       tenantId,
       async (tx) => {
         // Unique code check (the DB enforces this too, but a 409 here gives a
@@ -215,7 +223,10 @@ export async function POST(req: NextRequest) {
       return res;
     }
 
-    const site = await asTenant(tenantId, (tx) => tx.site.create({
+    // Privileged helper, for the same reason as geography/regions and users:
+    // a super-admin may legitimately create a site in another tenant, and
+    // asTenant(me, …) would silently redirect it into their own tenant.
+    const site = await asTenantForAnotherTenant(me, tenantId, (tx) => tx.site.create({
       data: {
         tenantId,
         code: data.code,

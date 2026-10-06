@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { bootstrap } from "@/lib/fgmp";
-import { asTenant } from "@/lib/fgmp/route-tenant";
+import { asTenant, asTenantForAnotherTenant } from "@/lib/fgmp/route-tenant";
 import {
   requireRole,
   ROLES,
@@ -245,7 +245,12 @@ export async function POST(req: NextRequest) {
   // `tenantId` above is either the caller's own or a super-admin's explicit
   // choice — a tenant admin supplying someone else's id is rejected with 403
   // before this point.
-  const { tenant, user } = await asTenant(tenantId, async (tx) => {
+  // Privileged helper: for a SUPERADMIN `tenantId` may be a client-supplied
+  // target, which is the documented behaviour of this endpoint. Using
+  // asTenant(me, …) here would type-check and silently create the user in the
+  // super-admin's own tenant instead of the requested one — a credential
+  // written to the wrong place, which is worse than a build failure.
+  const { tenant, user } = await asTenantForAnotherTenant(me, tenantId, async (tx) => {
     const t = await tx.tenant.findUnique({ where: { id: tenantId }, select: { id: true } });
     if (!t) return { tenant: null, user: null };
     const created = await tx.user.create({

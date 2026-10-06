@@ -120,6 +120,51 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
             "withTenant(tenantId, …) from '@/lib/fgmp/tenant-context'.",
         },
       ],
+      // ── Tenant-context backstop (step 3) ──────────────────────────────
+      // asTenant() takes the AUTHENTICATED USER, so a request body / query
+      // param / path param cannot reach the tenant context: those values do
+      // not have a type that satisfies the parameter. That is the guarantee.
+      //
+      // What the type does NOT catch is an in-code mistake — passing a row, or
+      // a hand-built { tenantId }. This rule is a BACKSTOP for the common
+      // textual form of that mistake, not the control itself, and it is known
+      // to produce false negatives for any new alias name. Treat a hit as
+      // "look here", not as exhaustive.
+      //
+      // It deliberately does NOT forbid a client-supplied tenantId reaching
+      // asTenantForAnotherTenant, because that IS legitimate there — a
+      // super-admin provisioning for another tenant supplies it by design, and
+      // the helper asserts SUPERADMIN at runtime.
+    }],
+    // ── Backstop: asTenant() must be given the USER, not a tenant id ───────
+    // The real control is the TYPE: asTenant takes Pick<SessionUser,"tenantId">,
+    // so `asTenant(parsed.data.tenantId, …)` cannot compile. This rule is a
+    // backstop for the textual form of the mistake that the type ALSO rejects
+    // but which a careless find-and-replace can reintroduce — `asTenant(u.tenantId, …)`
+    // compiles fine, because any object with a tenantId satisfies the type.
+    //
+    // It is deliberately narrow, and deliberately NOT presented as exhaustive:
+    // it catches the common alias shapes, and a new alias name will slip past
+    // it. Treat a hit as "look here", never as proof the code is correct.
+    //
+    // It does NOT forbid a client-supplied tenantId reaching
+    // asTenantForAnotherTenant, because that is legitimate there by design — a
+    // super-admin provisioning for another tenant supplies one, and the helper
+    // asserts SUPERADMIN at runtime.
+    "no-restricted-syntax": ["error", {
+      selector:
+        // The `.` is the DESCENDANT combinator: the first argument of an
+        // asTenant() call is a `<name>.tenantId` MemberExpression. The previous
+        // selector used `>` (direct child of the CallExpression) plus a sibling
+        // MemberExpression, which matches nothing — verified by reintroducing
+        // the bug and confirming the rule stayed silent, then corrected here.
+        "CallExpression[callee.name=/^asTenant$/] > MemberExpression[property.name='tenantId']",
+      message:
+        "asTenant() takes the AUTHENTICATED USER, not a tenant id. Pass the user " +
+        "object (asTenant(user, …)) so the tenant cannot come from a body, query " +
+        "or path parameter. Cross-tenant work belongs in " +
+        "asTenantForAnotherTenant(user, targetTenantId, fn), which asserts " +
+        "SUPERADMIN at runtime. See src/lib/fgmp/route-tenant.ts.",
     }],
   },
 }, {

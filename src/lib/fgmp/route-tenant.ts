@@ -34,6 +34,7 @@
 
 import { withTenant } from "./tenant-context";
 import type { SessionUser } from "@/lib/auth";
+import { isSuperAdmin } from "@/lib/fgmp/rbac";
 import type { Prisma } from "@prisma/client";
 
 /**
@@ -92,6 +93,70 @@ export function asTenant<T>(
   fn: (tx: TenantScopedClient) => Promise<T>,
 ): Promise<T> {
   return withTenant(user.tenantId, fn);
+}
+
+/**
+ * Run `fn` as ANOTHER tenant — a deliberate, privileged capability.
+ *
+ * ── WHY THIS IS A SEPARATE NAMED FUNCTION AND NOT A THIRD asTenant FORM ──────
+ * Three super-admin routes legitimately act for another tenant: provisioning a
+ * region, creating a user, creating a site. Those need a tenant that is NOT the
+ * caller's, and that tenant usually originates in a request body.
+ *
+ * Routing them through `asTenant(user, …)` would be the worst possible outcome:
+ * it type-checks and silently redirects a super-admin's cross-tenant write into
+ * their OWN tenant. A compile error is recoverable; a super-admin who believes
+ * they provisioned a region for tenant B, and did not, is not. That is why
+ * these sites were deliberately NOT converted during the signature change
+ * rather than swept by it.
+ *
+ * So the capability is its own name, greppable and reviewable, and it carries its
+ * authorization INSIDE the helper rather than relying on a caller to have
+ * checked something nearby. A tenant admin reaching this function fails loudly
+ * instead of obtaining a cross-tenant context.
+ *
+ * ── SCOPE OF THE PRIVILEGE ──────────────────────────────────────────────────
+ * This grants a database CONTEXT, not an authorisation decision. It does not
+ * decide whether the operation should be permitted — that remains the route's
+ * own role guard. It ensures that IF a route does decide to act cross-tenant,
+ * it cannot do so by accident, and that the route had to name this function in
+ * order to try.
+ *
+ * `Tenant` counts, aggregate metrics and other non-row-bearing platform reads
+ * deliberately do NOT belong here — a count is not another tenant's data. Those
+ * use the ops connection (see health/route.ts `opsCounts`), which is a different
+ * capability with a different justification.
+ *
+ * ── WHAT THE TYPE DOES AND DOES NOT PREVENT (stated precisely) ─────────────
+ * GUARANTEED: a client-supplied value cannot reach the tenant context through
+ *             `asTenant`, because body/query/path values do not have a type
+ *             that satisfies it.
+ * NOT GUARANTEED: an in-code mistake — passing a row, or a hand-built
+ *             `{ tenantId }` — still compiles. `Pick<SessionUser, "tenantId">`
+ *             accepts any object with a tenantId, which is why this helper's
+ *             runtime assertion below matters: it re-checks the ROLE at the point
+ *             the privilege is actually exercised, so a wrong object cannot
+ *             silently acquire cross-tenant access.
+ */
+export function asTenantForAnotherTenant<T>(
+  user: Pick<SessionUser, "tenantId" | "role">,
+  targetTenantId: string,
+  fn: (tx: TenantScopedClient) => Promise<T>,
+): Promise<T> {
+  // Inside the helper, not beside it. A caller that forgets to check still gets
+  // refused; that is the whole reason this is not a plain string argument to
+  // asTenant.
+  if (!isSuperAdmin(user.role)) {
+    throw new Error(
+      "[route-tenant] asTenantForAnotherTenant() requires SUPERADMIN. " +
+        `Caller role is ${JSON.stringify(user.role)} and tenantId is ` +
+        `${JSON.stringify(user.tenantId)}. This helper exists so that a ` +
+        `cross-tenant context is a named, reviewable capability rather than a ` +
+        `string that happens to be in the right variable. Use asTenant(user, …) ` +
+        `for work in the caller's own tenant.`,
+    );
+  }
+  return withTenant(targetTenantId, fn);
 }
 
 /**

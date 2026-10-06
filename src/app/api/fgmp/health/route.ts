@@ -397,7 +397,7 @@ export async function GET(req: NextRequest) {
     // than inheriting the tenant path's scoping.
     const { sites, alarms, sensorReadings, users, auditLogs, activeUsers, scopeMode } =
       await (tenantId
-        ? asTenant(tenantId, async (tx) => {
+        ? asTenant(me, async (tx) => {
             const tenantSiteIds = (await tx.site.findMany({
               where: { tenantId },
               select: { id: true },
