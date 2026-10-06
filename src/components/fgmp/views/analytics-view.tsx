@@ -18,6 +18,22 @@ import { timeAgo } from "@/lib/fgmp/format";
 import { useT, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 
+/**
+ * Render a currency figure that is null when no FX rate is configured.
+ *
+ * Deliberately NOT "$0.00": a nil total would read as "no loss", which is a
+ * claim the data does not support. A dash states that we declined to convert.
+ */
+function formatUsd(
+  value: number | null | undefined,
+  numLang: Language,
+  opts: { scale?: number; suffix?: string } = {},
+): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+  const v = opts.scale ? value / opts.scale : value;
+  return `$${formatNumber(v.toFixed(opts.scale ? 1 : 2), numLang)}${opts.suffix ?? ""}`;
+}
+
 export function AnalyticsView() {
   const { snapshot } = useFgmp();
   const t = useT();
@@ -177,35 +193,52 @@ export function AnalyticsView() {
             <Wallet className="h-5 w-5 text-emerald-500" />
             <h2 className="text-base font-semibold">{t("analytics.fuelCostTitle")}</h2>
             <Badge variant="outline" className="text-[10px]">
-              ${formatNumber(a.fuelCost.pricePerLitre.toFixed(2), numLang)}/L
+              {formatUsd(a.fuelCost.pricePerLitre, numLang)}/L
             </Badge>
           </div>
+
+          {/* ── Why the currency figures are dashes ───────────────────────────
+              Litres are measured; USD is converted. With no rate configured the
+              conversion is not performed, so the currency KPIs below show "—".
+              Saying so explicitly stops a dash reading as "$0 lost". */}
+          {a.fuelCost.currencyAvailable === false ? (
+            <p className="text-xs text-muted-foreground border-l-2 border-amber-500/60 pl-2">
+              {t("analytics.noFxRateConfigured")}{" "}
+              <span className="opacity-70">
+                ({(a.fuelCost.theftLitres ?? 0).toLocaleString(numLang)} L detected)
+              </span>
+            </p>
+          ) : a.fuelCost.fxAsOf ? (
+            <p className="text-xs text-muted-foreground">
+              {t("analytics.fxRateAsOf")}: {a.fuelCost.fxAsOf}
+            </p>
+          ) : null}
 
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-4">
             <KpiCard
               label={t("analytics.consumedToday")}
-              value={`$${formatNumber((a.fuelCost.consumedTodayUsd / 1000).toFixed(1), numLang)}k`}
+              value={formatUsd(a.fuelCost.consumedTodayUsd, numLang, { scale: 1000, suffix: "k" })}
               icon={<TrendingDown className="h-4 w-4" />}
               tone="info"
               hint={`${formatNumber((totalConsumed).toLocaleString(), numLang)} L ${t("analytics.consumedToday").toLowerCase()}`}
             />
             <KpiCard
               label={t("analytics.stolenValue")}
-              value={`$${formatNumber(a.fuelCost.stolenValueUsd.toLocaleString(), numLang)}`}
+              value={formatUsd(a.fuelCost.stolenValueUsd, numLang)}
               icon={<AlertTriangle className="h-4 w-4" />}
               tone="danger"
               hint={`${formatNumber(a.fuelCost.theftLitres.toLocaleString(), numLang)} L ${t("analytics.stolen").toLowerCase()}`}
             />
             <KpiCard
               label={t("analytics.deliveredValue")}
-              value={`$${formatNumber((a.fuelCost.deliveredValueUsd / 1000).toFixed(1), numLang)}k`}
+              value={formatUsd(a.fuelCost.deliveredValueUsd, numLang, { scale: 1000, suffix: "k" })}
               icon={<DollarSign className="h-4 w-4" />}
               tone="good"
               hint={t("inventory.verified")}
             />
             <KpiCard
               label={t("analytics.forecastCost")}
-              value={`$${formatNumber((a.fuelCost.forecastCostUsd / 1000).toFixed(1), numLang)}k`}
+              value={formatUsd(a.fuelCost.forecastCostUsd, numLang, { scale: 1000, suffix: "k" })}
               icon={<Brain className="h-4 w-4" />}
               tone="warn"
               hint={t("analytics.forecast7dTitle")}
@@ -255,9 +288,12 @@ export function AnalyticsView() {
               </CardHeader>
               <CardContent>
                 {(() => {
-                  const consumed = a.fuelCost.consumedTodayUsd;
-                  const stolen = a.fuelCost.stolenValueUsd;
-                  const delivered = a.fuelCost.deliveredValueUsd;
+                  // Null when no rate is configured. Coalesce to 0 for the
+                  // chart geometry only — the section is hidden below unless
+                  // the data is real, so a zeroed pie is never shown.
+                  const consumed = a.fuelCost.consumedTodayUsd ?? 0;
+                  const stolen = a.fuelCost.stolenValueUsd ?? 0;
+                  const delivered = a.fuelCost.deliveredValueUsd ?? 0;
                   const total = consumed + stolen + delivered || 1;
                   const data = [
                     { name: t("analytics.consumed"), value: consumed, fill: cc.sky },

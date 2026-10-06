@@ -715,6 +715,14 @@ export const DICTIONARY: Dict = {
   "analytics.theftPattern": { en: "Theft Pattern Analysis", ar: "تحليل نمط السرقة" },
   "analytics.regionPerformance": { en: "Region Performance", ar: "أداء المناطق" },
   "analytics.fuelCostTitle": { en: "Fuel Cost Analytics", ar: "تحليلات تكلفة الوقود" },
+  "analytics.noFxRateConfigured": {
+    en: "Currency values unavailable: no FX rate is configured. Volumes below are measured; USD figures are shown as — rather than estimated.",
+    ar: "القيم بالعملة غير متاحة: لم يتم إعداد سعر الصرف. الأحجام أدناه مقاسة؛ وتظهر قيم الدولار بصيغة — بدلاً من تقديرها.",
+  },
+  "analytics.fxRateAsOf": {
+    en: "FX rate applied",
+    ar: "سعر الصرف المطبق",
+  },
   "analytics.consumedToday": { en: "Consumed Today", ar: "مستهلك اليوم" },
   "analytics.stolenValue": { en: "Stolen Value", ar: "قيمة المسروق" },
   "analytics.deliveredValue": { en: "Delivered Value", ar: "قيمة المُسلَّم" },

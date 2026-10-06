@@ -27,7 +27,7 @@ import {
   fleetBatteryHealthPct,
   resolveBattLowVoltagePct,
 } from "@/lib/fgmp/thresholds-battery";
-import { capacityWeightedFuelPct, resolveFuelPrice } from "@/lib/fgmp/metrics-fuel";
+import { capacityWeightedFuelPct, resolveFuelPrice, currencyReady } from "@/lib/fgmp/metrics-fuel";
 import { hoursWhereRunning, kwhFromPoints } from "@/lib/fgmp/metrics-duration";
 import { sumPlausibleDecreases, type LevelPoint } from "@/lib/fgmp/metrics-fuel-series";
 
@@ -403,6 +403,27 @@ export async function GET(req: NextRequest) {
         startMs: dayStarts[0]!,
       }));
     const perDayCost = bucketReadingsByZonedDay(dailyReadingsForCost.rows, tanks, timezone);
+    // ── Currency conversion is OPTIONAL and never guessed ────────────────────
+    // Litres are a MEASUREMENT; USD is a CONVERSION. `theftLitres` was parsed
+    // from the alarm text ("theft of 340L"), so somebody observed a volume.
+    // The previous implementation multiplied that volume by an invented
+    // 281 YER/USD and presented the product as a financial valuation of
+    // alleged theft — the most consequential number on the screen, asserted in
+    // a currency nobody measured.
+    //
+    // So when no rate is configured the conversion is NOT performed: the USD
+    // figures are null and the litres stand alone. Every null carries a reason,
+    // because "we declined to convert" and "there was nothing to report" are
+    // different statements and must not render identically.
+    const usdReady = currencyReady(price);
+    /** null when no rate is configured — never a fallback rate. */
+    const toUsd = (amount: number | null | undefined): number | null => {
+      if (amount === null || amount === undefined) return null;
+      if (price.usdPerLitre === null) return null;
+      return round2(amount * price.usdPerLitre);
+    };
+    const FX_ABSENT = "NO_FX_RATE_CONFIGURED" as const;
+
     const dailyCost = dayStarts.map((dayStartMs, i) => {
       const bucket = perDayCost.get(zonedWeekdayLabel(dayStartMs, timezone) + "|" + dayStartMs);
       // `litres: null` marks a day with NO readings at all. A fabricated 0 would
@@ -412,25 +433,44 @@ export async function GET(req: NextRequest) {
         day: `D-${dayStarts.length - 1 - i}`,
         dateKey: bucket?.dateKey ?? null,
         litres,
-        cost: litres === null ? null : round2(litres * price.usdPerLitre),
+        cost: toUsd(litres),
         samples: bucket?.samples ?? 0,
       };
     });
 
     const fuelCost = {
-      /** Kept numeric: analytics-view.tsx calls `.toFixed(2)` on it. */
+      /** Null when no rate is configured; analytics-view must handle it. */
       pricePerLitre: price.usdPerLitre,
       currency: "USD" as const,
       /** The same physical quantity the engine's UNIT_PRICE_YER_PER_L states. */
       pricePerLitreYer: price.yerPerLitre,
-      fxYerPerUsd: price.fxYerPerUsd,
+      /** The rate actually used, or null when the conversion was not performed. */
+      fxRate: price.fxYerPerUsd,
+      /**
+       * When that rate was recorded. A rate with no date silently rots, and an
+       * operator cannot tell a current rate from one set last year.
+       */
+      fxAsOf: price.fxAsOf ?? null,
       priceSource: price.source,
       priceFxSource: price.fxSource,
-      consumedTodayUsd: round2(totalConsumed * price.usdPerLitre),
-      stolenValueUsd: round2(theftLitres * price.usdPerLitre),
-      deliveredValueUsd: round2(deliveredLitres * price.usdPerLitre),
+      /**
+       * True when currency figures in this response are real conversions;
+       * false when they are null because no rate is configured.
+       */
+      currencyAvailable: usdReady,
+
+      consumedTodayUsd: toUsd(totalConsumed),
+      /**
+       * Currency value of detected theft. LITRES ARE THE MEASUREMENT — this
+       * number exists only if an operator configured a rate.
+       */
+      stolenValueUsd: toUsd(theftLitres),
+      /** Distinguishes "no theft detected" from "no rate configured". */
+      stolenValueUsdReason: usdReady ? null : FX_ABSENT,
+      deliveredValueUsd: toUsd(deliveredLitres),
+      /** The measured quantity. Always present, independent of any rate. */
       theftLitres,
-      forecastCostUsd: round2(forecast.reduce((s, f) => s + f.litres, 0) * price.usdPerLitre),
+      forecastCostUsd: toUsd(forecast.reduce((s, f) => s + f.litres, 0)),
       /**
        * Cost by region. `costUsd` values the fuel STOCK ON HAND (which is what
        * this always was); `consumedCostUsd` values what was actually burned in
@@ -438,10 +478,11 @@ export async function GET(req: NextRequest) {
        */
       costByRegion: regionBreakdown.map((r) => ({
         region: r.region,
-        costUsd: round2(r.fuel * price.usdPerLitre),
+        /** Null when no rate is configured; litres are unaffected. */
+        costUsd: toUsd(r.fuel),
         fuelStockOnHandPct: r.fuelPct,
         consumedLitres: r.consumed,
-        consumedCostUsd: round2(r.consumed * price.usdPerLitre),
+        consumedCostUsd: toUsd(r.consumed),
         sites: r.sites,
       })),
       /** Real 7-bucket series, oldest → newest. */

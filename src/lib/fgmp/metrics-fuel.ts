@@ -1,4 +1,4 @@
-import { getSystemSettingNumber } from "./metrics-settings";
+import { getSystemSetting, getSystemSettingNumber } from "./metrics-settings";
 
 /**
  * FGMP fuel money + capacity-weighted fuel statistics.
@@ -31,24 +31,103 @@ import { getSystemSettingNumber } from "./metrics-settings";
  * figure and the provenance are exposed in sibling fields.
  */
 
-/** Must match `UNIT_PRICE_YER_PER_L` in src/lib/fgmp/engine.ts. */
+/**
+ * Fallback fuel price in YER, used ONLY to keep the platform rendering when no
+ * price is configured.
+ *
+ * This is a DISPLAY DEFAULT, not a measurement, and `source: "default"` says so
+ * in every response that carries it. Unlike the FX rate below there is a
+ * defensible floor: fuel genuinely costs money, and a non-null number with a
+ * visible provenance flag is more useful to an operator than a null.
+ */
 export const DEFAULT_FUEL_PRICE_YER_PER_L = 520;
 
 /**
- * 281 YER/USD is the rate implied by the two historical constants
- * (520 ÷ 1.85 = 281.08). Replace with the operator's real rate.
+ * ── WHY THERE IS NO DEFAULT FX RATE ───────────────────────────────────────────
+ *
+ * An earlier revision exported `DEFAULT_FX_YER_PER_USD = 281`, derived by
+ * dividing the two historical hardcoded constants (520 ÷ 1.85). That number was
+ * never observed anywhere. It was an artefact of two invented values, and it
+ * multiplied straight into operator-visible financial figures — most seriously
+ * `stolenValueUsd`, a currency valuation of alleged fuel theft presented as
+ * fact.
+ *
+ * The defect was not the arithmetic, it was the provenance: an exchange rate is
+ * a MARKET observation with a source and a date, and this had neither. Any
+ * default is a fabrication, because a rate that is wrong by even 5% silently
+ * misstates a theft investigation.
+ *
+ * So the conversion is now OPTIONAL and refuses to guess. When no rate is
+ * configured, `fxYerPerUsd` is null and every USD figure derived from it is
+ * null. The measured quantity — litres — is always present, because litres are
+ * measured; the currency conversion is the part that needed permission.
  */
-export const DEFAULT_FX_YER_PER_USD = 281;
+export const DEFAULT_FX_YER_PER_USD = null;
 
 export interface FuelPrice {
-  /** Numerically identical to `pricePerLitre` (USD per litre) for compatibility. */
-  usdPerLitre: number;
+  /**
+   * USD per litre, or null when no FX rate is configured.
+   *
+   * Null, not 0 and not a guess: an operator must be able to tell "not
+   * converted" apart from "worth nothing". `analytics-view.tsx` renders these
+   * with toFixed(2) on the numeric path, so callers must handle null.
+   */
+  usdPerLitre: number | null;
   yerPerLitre: number;
-  /** YER per 1 USD. */
-  fxYerPerUsd: number;
+  /** YER per 1 USD, or null when unconfigured. See DEFAULT_FX_YER_PER_USD. */
+  fxYerPerUsd: number | null;
   /** Where the numbers came from — surfaced so a disagreement is debuggable. */
   source: "env" | "db" | "default";
-  fxSource: "env" | "db" | "default";
+  fxSource: "env" | "db" | "unset";
+  /**
+   * When the configured rate was recorded, when supplied.
+   *
+   * A rate without a date is a number that silently rots, and an operator
+   * cannot tell a current rate from one set last year. Optional because a rate
+   * set in an environment variable genuinely has no recorded date.
+   */
+  fxAsOf?: string;
+}
+
+/**
+ * Convert a YER amount to USD, or return null when no rate is configured.
+ *
+ * Used by every currency figure in analytics. Null propagates rather than
+ * collapsing to 0, because "no rate configured" and "this fuel was worth
+ * nothing" must never render identically — an operator investigating fuel theft
+ * would otherwise read a missing rate as a nil loss.
+ */
+export function usd(amount: number | null | undefined, price: FuelPrice): number | null {
+  if (amount === null || amount === undefined) return null;
+  if (price.usdPerLitre === null) return null;
+  return Math.round(amount * price.usdPerLitre * 100) / 100;
+}
+
+/**
+ * Why a currency figure is absent, so a consumer can tell the cases apart.
+ *
+ * A bare `null` is ambiguous: it could mean "nothing to report", "not
+ * computed", or "we declined to convert". Those are different statements and
+ * collapsing them is how a missing rate becomes indistinguishable from a nil
+ * loss. Same rule the notification states use.
+ */
+export type CurrencyUnavailableReason =
+  | "NO_FX_RATE_CONFIGURED"
+  | "NO_QUANTITY";
+
+export interface CurrencyValue {
+  value: number | null;
+  /** Absent when `value` is a number. */
+  reason?: CurrencyUnavailableReason;
+}
+
+/**
+ * Whether any currency figure can be produced at all.
+ *
+ * True when a rate is configured, whatever the amount.
+ */
+export function currencyReady(price: FuelPrice): boolean {
+  return price.usdPerLitre !== null;
 }
 
 function positiveEnv(name: string): number | undefined {
@@ -60,7 +139,13 @@ function positiveEnv(name: string): number | undefined {
 
 let cached: Promise<FuelPrice> | null = null;
 
-/** Resolve the single fuel price used by every cost view in analytics. */
+/**
+ * Resolve the single fuel price used by every cost view in analytics.
+ *
+ * The YER price always resolves. The USD price resolves ONLY when a rate is
+ * actually configured — there is no fallback rate, by design; see
+ * DEFAULT_FX_YER_PER_USD.
+ */
 export function resolveFuelPrice(): Promise<FuelPrice> {
   if (cached) return cached;
   cached = (async () => {
@@ -70,16 +155,32 @@ export function resolveFuelPrice(): Promise<FuelPrice> {
 
     const fxEnv = positiveEnv("FGMP_FX_YER_PER_USD");
     const fxDb = await getSystemSettingNumber("fxYerPerUsd");
+    // No default: an unconfigured rate leaves the conversion unperformed.
     const fxYerPerUsd = fxEnv ?? (fxDb !== undefined && fxDb > 0 ? fxDb : DEFAULT_FX_YER_PER_USD);
 
+    // Recorded alongside the rate when the operator supplies one, so a figure
+    // can be traced to the rate that produced it.
+    const fxAsOfEnv = process.env.FGMP_FX_AS_OF?.trim();
+    const fxAsOfDb = await getSystemSetting("fxAsOf");
+    const fxAsOf = fxAsOfEnv || fxAsOfDb || undefined;
+
     return {
-      // 4 dp keeps the price visible at sub-cent resolution instead of rounding
-      // 1.8506 down to 1.85 and hiding the difference from 1.8507.
-      usdPerLitre: Math.round((yerPerLitre / fxYerPerUsd) * 10000) / 10000,
+      usdPerLitre:
+        fxYerPerUsd === null
+          ? null
+          : // 4 dp keeps the price visible at sub-cent resolution instead of
+            // rounding 1.8506 down to 1.85 and hiding the difference from 1.8507.
+            Math.round((yerPerLitre / fxYerPerUsd) * 10000) / 10000,
       yerPerLitre,
       fxYerPerUsd,
       source: yerEnv !== undefined ? "env" : yerDb !== undefined && yerDb > 0 ? "db" : "default",
-      fxSource: fxEnv !== undefined ? "env" : fxDb !== undefined && fxDb > 0 ? "db" : "default",
+      fxSource:
+        fxEnv !== undefined
+          ? "env"
+          : fxDb !== undefined && fxDb > 0
+            ? "db"
+            : "unset",
+      ...(fxAsOf ? { fxAsOf } : {}),
     };
   })();
   return cached;

@@ -218,7 +218,17 @@ function CreateDeliveryDialog({ open, onOpenChange, onCreated, tanks, sites }: {
   const [supplier, setSupplier] = useState("Yemen Oil Co.");
   const [volume, setVolume] = useState(500);
   const [scheduled, setScheduled] = useState(new Date(Date.now() + 86400000).toISOString().slice(0, 10));
-  const [doNumber, setDoNumber] = useState(`DO-${Math.floor(10000 + Math.random() * 89999)}`);
+  /**
+   * EMPTY by default, deliberately.
+   *
+   * This was prefilled with `DO-${Math.floor(10000 + Math.random() * 89999)}` —
+   * a delivery-order number that looked exactly like it came from a system of
+   * record but was invented in the browser. An operator could dispatch fuel
+   * against a document number that exists nowhere, and the record would look
+   * legitimate afterwards. A blank field invites the real number; a fabricated
+   * one launders a fiction into a system of record.
+   */
+  const [doNumber, setDoNumber] = useState("");
   const [busy, setBusy] = useState(false);
 
   const siteTanks = tanks.filter((t) => t.siteId === siteId);
