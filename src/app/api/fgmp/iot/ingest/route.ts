@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { z } from "zod";
-import { db, bootstrap, engine } from "@/lib/fgmp";
+import { bootstrap, engine } from "@/lib/fgmp";
+import { withTenant } from "@/lib/fgmp/tenant-context";
 import { emitToRealtime } from "@/lib/fgmp/realtime-emitter";
 import {
   rateLimitByApiKey,
@@ -223,10 +225,16 @@ export async function POST(req: NextRequest) {
   const now = new Date();
   const nowMs = now.getTime();
   // Phase 1 step 4: SensorReading requires a tenantId, and the ingest body only
-  // carries siteId. Resolve the owning tenant once, from the Site already held
-  // in engine state. An unknown site is rejected rather than defaulted: a
-  // guessed tenant would place telemetry in the wrong tenant, and the step 6
-  // RLS policy would then protect it there forever.
+  // carries siteId. Resolve the owning tenant once, from the Site the engine
+  // loaded FROM THE DATABASE. An unknown site is rejected rather than
+  // defaulted: a guessed tenant would place telemetry in the wrong tenant, and
+  // the step 6 RLS policy would then protect it there forever.
+  //
+  // Reading it from the engine rather than issuing a fresh query is deliberate.
+  // The lookup needs a tenant in order to build the tenant context, so querying
+  // here would be circular. The engine's site list IS the database's site list
+  // for the tenants it has loaded, and an empty or stale list now fails CLOSED
+  // with a 404 rather than writing anywhere.
   const site = engine.sites.find((s) => s.id === siteId);
   if (!site) {
     const res = NextResponse.json(
@@ -242,7 +250,10 @@ export async function POST(req: NextRequest) {
     generator?: string;
     battery?: string;
   } = {};
-  const writes: Promise<unknown>[] = [];
+  // Queued as thunks over the transaction client rather than executed
+  // immediately, so every write runs inside the tenant context established
+  // below instead of on the ambient client.
+  const writes: ((tx: Prisma.TransactionClient) => Promise<unknown>)[] = [];
 
   // ── Buffering: judge freshness BEFORE any state is mutated (Phase 2) ──
   //
@@ -299,8 +310,8 @@ export async function POST(req: NextRequest) {
       tank.history.push({ t: nowMs, l: Math.round(tank.current) });
       if (tank.history.length > HISTORY_LIMIT) tank.history.shift();
       applied.tank = tank.id;
-      writes.push(
-        db.sensorReading.create({
+      writes.push((tx) =>
+        tx.sensorReading.create({
           data: {
             tenantId,
             siteId,
@@ -340,8 +351,8 @@ export async function POST(req: NextRequest) {
       });
       if (gen.history.length > HISTORY_LIMIT) gen.history.shift();
       applied.generator = gen.id;
-      writes.push(
-        db.sensorReading.create({
+      writes.push((tx) =>
+        tx.sensorReading.create({
           data: {
             tenantId,
             siteId,
@@ -370,8 +381,8 @@ export async function POST(req: NextRequest) {
       });
       if (batt.history.length > HISTORY_LIMIT) batt.history.shift();
       applied.battery = batt.id;
-      writes.push(
-        db.sensorReading.create({
+      writes.push((tx) =>
+        tx.sensorReading.create({
           data: {
             tenantId,
             siteId,
@@ -383,8 +394,8 @@ export async function POST(req: NextRequest) {
           },
         }),
       );
-      writes.push(
-        db.sensorReading.create({
+      writes.push((tx) =>
+        tx.sensorReading.create({
           data: {
             tenantId,
             siteId,
@@ -400,24 +411,40 @@ export async function POST(req: NextRequest) {
   }
 
   // Ambient temperature (logged at site level)
-  if (readings.temp !== undefined) {
-    writes.push(
-      db.sensorReading.create({
+  const temp = readings.temp;
+  if (temp !== undefined) {
+    writes.push((tx) =>
+      tx.sensorReading.create({
         data: {
           tenantId,
           siteId,
           entityKind: "SITE",
           entityId: siteId,
           metric: "TEMPERATURE",
-          value: readings.temp,
+          value: temp,
           ts: readingDate,
         },
       }),
     );
   }
 
-  // Persist (best-effort — never block the response on a DB hiccup)
-  await Promise.allSettled(writes);
+  // ── Persist inside the site's tenant context ──────────────────────────
+  // The tenant is the one resolved from the SITE above, which is server-side
+  // state loaded from the database — never a field from the request body. An
+  // unscoped create is rejected outright by WITH CHECK ("new row violates row
+  // level security policy"), so this is what makes the path work at all.
+  //
+  // Same-site guarantees hold because the buffer verdict ran before this: a
+  // stale or duplicate reading is refused with 409 above and never reaches a
+  // write. Resolving the tenant inside the transaction also means the site and
+  // the rows written against it are consistent with one another.
+  if (writes.length > 0) {
+    await withTenant(tenantId, async (tx) => {
+      // Rebuild the writes against the transaction client. They were queued as
+      // closures over `tx` above, so they execute inside this transaction.
+      await Promise.allSettled(writes.map((run) => run(tx)));
+    });
+  }
 
   // ── Push to realtime service (browser push via socket.io) ─────────────
   // Emit ONLY to the site room — clients subscribed to this site receive
