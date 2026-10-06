@@ -190,7 +190,11 @@ export async function GET(req: NextRequest) {
       };
     }
 
-    void user;
+    // `void user` was a leftover from when this handler destructured
+    // `const { user } = await bootstrap()`. Phase 1 removed seeding from the
+    // request path and bootstrap() from routes, so no `user` binding exists
+    // here any more — and nothing needs one: the reads above already run scoped
+    // to `me.tenantId`, and this response carries no per-actor data.
     const res = NextResponse.json(out);
     applyRateLimitHeaders(res.headers, rl);
     return res;
@@ -212,8 +216,16 @@ export async function GET(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   const auth = await requireRole(req, ROLES.ADMIN_ONLY);
   if ("error" in auth) return auth.error;
+  // The ACTING user, from the session. This is what the audit row below must
+  // attribute the change to.
+  //
+  // `const me = await bootstrap()` was wrong on two counts: bootstrap() no
+  // longer exists in the route layer (Phase 1 moved seeding off the request
+  // path), and even when it did it returned the ENGINE's context rather than
+  // this request's actor. Authorship of a configuration change is an audit
+  // fact, so it has to come from the session and nowhere else.
+  const me = auth.user;
   try {
-    const me = await bootstrap();
     const rl = rateLimitByUser(req, me.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
     if (!rl.success) {
       const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });

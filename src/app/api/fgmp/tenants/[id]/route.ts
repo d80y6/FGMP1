@@ -66,7 +66,13 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
       tx.tenant.findUnique({ where: { id }, select: tenantSelect }),
     );
     // SUPERADMIN can read any tenant; everyone else only their own.
-    if (!isSuperAdminUser(user) && (!tenant || tenant.id !== me.tenantId)) {
+    //
+    // `user` here was the pre-Phase-1 `const { user } = await bootstrap()`
+    // binding, which no longer exists — so this read a ReferenceError and the
+    // 404 branch below it was unreachable. The actor is `me` (from the
+    // session), and it must stay `me`: this is the authorisation check that
+    // decides whether a SUPERADMIN sees another tenant's counts.
+    if (!isSuperAdminUser(me) && (!tenant || tenant.id !== me.tenantId)) {
       const res = NextResponse.json({ error: "Tenant not found" }, { status: 404 });
       applyRateLimitHeaders(res.headers, rl);
       return res;

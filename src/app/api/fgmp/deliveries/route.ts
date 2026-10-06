@@ -1,6 +1,6 @@
 import type { FuelDeliveryStatus } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
-import { db, bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import {
   deliveryActionSchema,
@@ -45,8 +45,7 @@ export async function GET(req: NextRequest) {
   if ("error" in auth) return auth.error;
   const me = auth.user;
   try {
-    const { user } = await bootstrap();
-    const rl = rateLimitByUser(req, user.id, READ_LIMIT.limit, READ_LIMIT.windowMs);
+    const rl = rateLimitByUser(req, me.id, READ_LIMIT.limit, READ_LIMIT.windowMs);
     if (!rl.success) {
       const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
       applyRateLimitHeaders(res.headers, rl);
@@ -58,12 +57,18 @@ export async function GET(req: NextRequest) {
     const where: Record<string, unknown> = { ...siteTenantWhereOrAll(me) };
     if (status) where.status = { in: status.split(",") };
     if (siteId) where.siteId = siteId;
-    const deliveries = await db.fuelDelivery.findMany({
-      where,
-      orderBy: { scheduledAt: "desc" },
-      take: 200,
-      include: { site: { select: { name: true, code: true } }, tank: { select: { label: true } } },
-    });
+    // Phase 3: scoped to the caller's tenant. The nested `site` and `tank`
+    // includes resolve on the SAME client, and both tables are FORCE-protected,
+    // so left unscoped this returned 200 with an empty list while the database
+    // was full.
+    const deliveries = await asTenant(me.tenantId, (tx) =>
+      tx.fuelDelivery.findMany({
+        where,
+        orderBy: { scheduledAt: "desc" },
+        take: 200,
+        include: { site: { select: { name: true, code: true } }, tank: { select: { label: true } } },
+      }),
+    );
     const res = NextResponse.json(deliveries);
     applyRateLimitHeaders(res.headers, rl);
     return res;
@@ -77,8 +82,7 @@ export async function POST(req: NextRequest) {
   if ("error" in auth) return auth.error;
   const me = auth.user;
   try {
-    const { user } = await bootstrap();
-    const rl = rateLimitByUser(req, user.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
+    const rl = rateLimitByUser(req, me.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
     if (!rl.success) {
       const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
       applyRateLimitHeaders(res.headers, rl);
@@ -98,114 +102,166 @@ export async function POST(req: NextRequest) {
     const data = r.data;
 
     if (data.action === "verify") {
-      const existing = await db.fuelDelivery.findUnique({
-        where: { id: data.deliveryId },
-        select: { id: true, status: true, siteId: true, site: { select: { tenantId: true } } },
+      // Phase 3: the guard, the conditional write and the read-back run in ONE
+      // transaction. Previously each was a separate unscoped `db` statement, so
+      // the check-and-set was not atomic and nothing was tenant-scoped.
+      //
+      // The ownership check is done INSIDE the transaction on a row read inside
+      // it. `assertSiteTenantOwned` returns a NextResponse, which cannot be
+      // returned from this callback — doing so would widen the transaction's
+      // return type to `Response | {...}` and force the caller to handle a
+      // NextResponse that was never actually returned as a response. Throwing
+      // ApiError keeps the transaction's return type clean and is already what
+      // the 404/409 branches here do.
+      const outcome = await asTenant(me.tenantId, async (tx) => {
+        const existing = await tx.fuelDelivery.findUnique({
+          where: { id: data.deliveryId },
+          // `site` is read INSIDE the context: it is RLS-protected itself, and
+          // a relation read outside the tenant context silently yields null.
+          select: { id: true, status: true, siteId: true, site: { select: { tenantId: true } } },
+        });
+        if (!existing) throw new ApiError(404, "delivery not found");
+        const denied = assertSiteTenantOwned(existing.site, me);
+        if (denied) throw new ApiError(denied.status, await denied.text());
+        if (!VERIFY_FROM.includes(existing.status)) {
+          throw new ApiError(
+            409,
+            `Delivery cannot be verified from status ${existing.status}`,
+            { currentStatus: existing.status, allowedFrom: VERIFY_FROM },
+          );
+        }
+        // NOTE: `discrepancyNote` is only written when the client actually sent
+        // one. It was previously `data.discrepancyNote ?? null`, which SILENTLY
+        // WIPED the cancellation reason that `/deliveries/[id]/cancel` stores in
+        // this same column (that endpoint reuses it as the free-text annotation
+        // field). Omitting the key leaves the stored value untouched.
+        const verifyData: Record<string, unknown> = {
+          status: "VERIFIED",
+          volumeDeliveredLitres: data.volumeDelivered,
+          verifiedAt: new Date(),
+        };
+        if (data.discrepancyNote !== undefined) {
+          verifyData.discrepancyNote = data.discrepancyNote;
+        }
+        // Conditional write — atomic check-and-set, matching `dispatch` below.
+        const { count } = await tx.fuelDelivery.updateMany({
+          where: { id: data.deliveryId, status: { in: VERIFY_FROM } },
+          data: verifyData,
+        });
+        if (count === 0) {
+          throw new ApiError(
+            409,
+            "Delivery status changed concurrently — reload and retry",
+            { allowedFrom: VERIFY_FROM },
+          );
+        }
+        const updated = await tx.fuelDelivery.findUnique({ where: { id: data.deliveryId } });
+        // previousStatus is returned, not audited here: audit runs AFTER the
+        // transaction commits, so a rolled-back write is never recorded.
+        return { updated, previousStatus: existing.status };
       });
-      if (!existing) throw new ApiError(404, "delivery not found");
-      const denied = assertSiteTenantOwned(existing.site, me);
-      if (denied) return denied;
-      if (!VERIFY_FROM.includes(existing.status)) {
-        throw new ApiError(
-          409,
-          `Delivery cannot be verified from status ${existing.status}`,
-          { currentStatus: existing.status, allowedFrom: VERIFY_FROM },
-        );
-      }
-      // NOTE: `discrepancyNote` is only written when the client actually sent
-      // one. It was previously `data.discrepancyNote ?? null`, which SILENTLY
-      // WIPED the cancellation reason that `/deliveries/[id]/cancel` stores in
-      // this same column (that endpoint reuses it as the free-text annotation
-      // field). Omitting the key leaves the stored value untouched.
-      const verifyData: Record<string, unknown> = {
-        status: "VERIFIED",
-        volumeDeliveredLitres: data.volumeDelivered,
-        verifiedAt: new Date(),
-      };
-      if (data.discrepancyNote !== undefined) {
-        verifyData.discrepancyNote = data.discrepancyNote;
-      }
-      // Conditional write — atomic check-and-set, matching `dispatch` below.
-      const { count } = await db.fuelDelivery.updateMany({
-        where: { id: data.deliveryId, status: { in: VERIFY_FROM } },
-        data: verifyData,
+
+      await audit({
+        userId: me.id,
+        tenantId: me.tenantId,
+        action: "DELIVERY_VERIFY",
+        entity: "delivery",
+        entityId: data.deliveryId,
+        details: { volumeDelivered: data.volumeDelivered, previousStatus: outcome.previousStatus },
       });
-      if (count === 0) {
-        throw new ApiError(
-          409,
-          "Delivery status changed concurrently — reload and retry",
-          { allowedFrom: VERIFY_FROM },
-        );
-      }
-      const updated = await db.fuelDelivery.findUnique({ where: { id: data.deliveryId } });
-      await audit({ userId: user.id, action: "DELIVERY_VERIFY", entity: "delivery", entityId: data.deliveryId, details: { volumeDelivered: data.volumeDelivered, previousStatus: existing.status } });
-      const res = NextResponse.json(updated);
+      const res = NextResponse.json(outcome.updated);
       applyRateLimitHeaders(res.headers, rl);
       return res;
     }
     if (data.action === "dispatch") {
-      const existing = await db.fuelDelivery.findUnique({
-        where: { id: data.deliveryId },
-        select: { id: true, status: true, siteId: true, site: { select: { tenantId: true } } },
+      // Same shape as `verify`: guard + conditional write + read-back in ONE
+      // transaction, ownership checked on a row read inside it, audit outside.
+      const outcome = await asTenant(me.tenantId, async (tx) => {
+        const existing = await tx.fuelDelivery.findUnique({
+          where: { id: data.deliveryId },
+          select: { id: true, status: true, siteId: true, site: { select: { tenantId: true } } },
+        });
+        if (!existing) throw new ApiError(404, "delivery not found");
+        const denied = assertSiteTenantOwned(existing.site, me);
+        if (denied) throw new ApiError(denied.status, await denied.text());
+        if (!DISPATCH_FROM.includes(existing.status)) {
+          throw new ApiError(
+            409,
+            `Delivery cannot be dispatched from status ${existing.status}`,
+            { currentStatus: existing.status, allowedFrom: DISPATCH_FROM },
+          );
+        }
+        // Conditional write — the source status is part of the WHERE clause so
+        // the guard cannot interleave with a concurrent cancel/verify.
+        const { count } = await tx.fuelDelivery.updateMany({
+          where: { id: data.deliveryId, status: { in: DISPATCH_FROM } },
+          data: { status: "IN_TRANSIT", dispatchedAt: new Date() },
+        });
+        if (count === 0) {
+          throw new ApiError(
+            409,
+            "Delivery status changed concurrently — reload and retry",
+            { allowedFrom: DISPATCH_FROM },
+          );
+        }
+        const updated = await tx.fuelDelivery.findUnique({ where: { id: data.deliveryId } });
+        return { updated, previousStatus: existing.status };
       });
-      if (!existing) throw new ApiError(404, "delivery not found");
-      const denied = assertSiteTenantOwned(existing.site, me);
-      if (denied) return denied;
-      if (!DISPATCH_FROM.includes(existing.status)) {
-        throw new ApiError(
-          409,
-          `Delivery cannot be dispatched from status ${existing.status}`,
-          { currentStatus: existing.status, allowedFrom: DISPATCH_FROM },
-        );
-      }
-      // Conditional write — the source status is part of the WHERE clause so
-      // the guard cannot interleave with a concurrent cancel/verify.
-      const { count } = await db.fuelDelivery.updateMany({
-        where: { id: data.deliveryId, status: { in: DISPATCH_FROM } },
-        data: { status: "IN_TRANSIT", dispatchedAt: new Date() },
+
+      await audit({
+        userId: me.id,
+        tenantId: me.tenantId,
+        action: "DELIVERY_DISPATCH",
+        entity: "delivery",
+        entityId: data.deliveryId,
+        details: { previousStatus: outcome.previousStatus },
       });
-      if (count === 0) {
-        throw new ApiError(
-          409,
-          "Delivery status changed concurrently — reload and retry",
-          { allowedFrom: DISPATCH_FROM },
-        );
-      }
-      const updated = await db.fuelDelivery.findUnique({ where: { id: data.deliveryId } });
-      await audit({ userId: user.id, action: "DELIVERY_DISPATCH", entity: "delivery", entityId: data.deliveryId, details: { previousStatus: existing.status } });
-      const res = NextResponse.json(updated);
+      const res = NextResponse.json(outcome.updated);
       applyRateLimitHeaders(res.headers, rl);
       return res;
     }
     // create — verify the referenced site belongs to the caller's tenant
-    const site = await db.site.findUnique({
-      where: { id: data.siteId },
-      select: { tenantId: true },
+    // Phase 3: scoped. `site` was read on the bare `db` client, so under FORCE
+    // RLS it returned null for EVERY id, making this branch 404 for all callers.
+    // The site lookup, the ownership check and the create are one transaction so
+    // the tenant cannot change between the check and the write.
+    const created = await asTenant(me.tenantId, async (tx) => {
+      const site = await tx.site.findUnique({
+        where: { id: data.siteId },
+        select: { tenantId: true },
+      });
+      const siteDenied = assertSiteTenantOwned(site, me);
+      if (siteDenied) throw new ApiError(siteDenied.status, await siteDenied.text());
+      // `site` is null when it does not exist; assertSiteTenantOwned returns
+      // null (allowed) for a same-tenant site, so the null case needs its own
+      // check before `site.tenantId` is read.
+      if (!site) {
+        throw new ApiError(404, "Site not found");
+      }
+      return tx.fuelDelivery.create({
+        data: {
+          siteId: data.siteId,
+          tenantId: site.tenantId,
+          tankId: data.tankId,
+          supplier: data.supplier,
+          volumeOrderedLitres: data.volumeOrderedLitres,
+          scheduledAt: new Date(data.scheduledAt),
+          driverName: data.driverName,
+          vehiclePlate: data.vehiclePlate,
+          doNumber: data.doNumber,
+          unitPrice: data.unitPrice ?? 0,
+          status: "SCHEDULED",
+        },
+      });
     });
-    const siteDenied = assertSiteTenantOwned(site, me);
-    if (siteDenied) return siteDenied;
-    // `site` is null when it does not exist; assertSiteTenantOwned returns
-    // null (allowed) for a same-tenant site, so the null case needs its own
-    // check before `site.tenantId` is read.
-    if (!site) {
-      return NextResponse.json({ error: "Site not found" }, { status: 404 });
-    }
-    const created = await db.fuelDelivery.create({
-      data: {
-        siteId: data.siteId,
-        tenantId: site.tenantId,
-        tankId: data.tankId,
-        supplier: data.supplier,
-        volumeOrderedLitres: data.volumeOrderedLitres,
-        scheduledAt: new Date(data.scheduledAt),
-        driverName: data.driverName,
-        vehiclePlate: data.vehiclePlate,
-        doNumber: data.doNumber,
-        unitPrice: data.unitPrice ?? 0,
-        status: "SCHEDULED",
-      },
+    await audit({
+      userId: me.id,
+      tenantId: me.tenantId,
+      action: "DELIVERY_CREATE",
+      entity: "delivery",
+      entityId: created.id,
+      details: { siteId: data.siteId, tankId: data.tankId, volumeOrderedLitres: data.volumeOrderedLitres },
     });
-    await audit({ userId: user.id, action: "DELIVERY_CREATE", entity: "delivery", entityId: created.id, details: { siteId: data.siteId, tankId: data.tankId, volumeOrderedLitres: data.volumeOrderedLitres } });
     const res = NextResponse.json(created);
     applyRateLimitHeaders(res.headers, rl);
     return res;
