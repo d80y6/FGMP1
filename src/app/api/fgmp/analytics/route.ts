@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, engine, bootstrap } from "@/lib/fgmp";
+import { engine, bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
+import type { SessionUser } from "@/lib/auth";
 import {
   rateLimitByUser,
   applyRateLimitHeaders,
@@ -208,6 +210,7 @@ export async function GET(req: NextRequest) {
     const needsDailyReadings = range === "7d";
     const dailyReadings = needsDailyReadings
       ? await loadFuelLevelReadings({
+          user: me,
           tenantSiteIds: tenantSiteIds === null ? null : Array.from(tenantSiteIds),
           startMs: dayStarts[0]!,
         })
@@ -311,7 +314,16 @@ export async function GET(req: NextRequest) {
       r.running += generators.filter((g) => g.siteId === s.id && g.status === "RUNNING").length;
       regionMap.set(s.region, r);
     }
-    const alarmsByRegion = await db.alarm.groupBy({ by: ["siteId"], where: { ...tenantWhereOrAll(me), status: { in: ["OPEN", "ACKNOWLEDGED", "ESCALATED"] } }, _count: true });
+    // groupBy / aggregate / count are scoped by the policy exactly as a
+    // findMany is — an unscoped aggregate silently returns zero rows rather
+    // than erroring, so a revenue or alarm count reads as "no activity".
+    const alarmsByRegion = await asTenant(me, (tx) =>
+      tx.alarm.groupBy({
+        by: ["siteId"],
+        where: { ...tenantWhereOrAll(me), status: { in: ["OPEN", "ACKNOWLEDGED", "ESCALATED"] } },
+        _count: true,
+      }),
+    );
     for (const a of alarmsByRegion) {
       const s = sites.find((x) => x.id === a.siteId);
       if (s) { const r = regionMap.get(s.region); if (r) r.alarms += a._count; }
@@ -370,10 +382,11 @@ export async function GET(req: NextRequest) {
       const m = e.message.match(/theft of (\d+)L/i);
       return sum + (m ? parseInt(m[1], 10) : 0);
     }, 0);
-    const totalDelivered = await db.fuelDelivery.aggregate({
+    const totalDelivered = await asTenant(me, (tx) => tx.fuelDelivery.aggregate({
       _sum: { volumeDeliveredLitres: true },
       where: { ...siteTenantWhereOrAll(me), status: "VERIFIED" },
-    });
+    }),
+    );
     const deliveredLitres = Number.isFinite(totalDelivered._sum.volumeDeliveredLitres)
       ? (totalDelivered._sum.volumeDeliveredLitres as number)
       : 0;
@@ -385,6 +398,7 @@ export async function GET(req: NextRequest) {
     const dailyReadingsForCost =
       dailyReadings ??
       (await loadFuelLevelReadings({
+        user: me,
         tenantSiteIds: tenantSiteIds === null ? null : Array.from(tenantSiteIds),
         startMs: dayStarts[0]!,
       }));
@@ -438,7 +452,9 @@ export async function GET(req: NextRequest) {
 
     // Site health score breakdown (national aggregate factors)
     const onlineCount = sites.filter((s) => s.status === "ONLINE").length;
-    const alarmCount = await db.alarm.count({ where: { ...tenantWhereOrAll(me), status: { in: ["OPEN", "ACKNOWLEDGED", "ESCALATED"] } } });
+    const alarmCount = await asTenant(me, (tx) =>
+      tx.alarm.count({ where: { ...tenantWhereOrAll(me), status: { in: ["OPEN", "ACKNOWLEDGED", "ESCALATED"] } } }),
+    );
     const onlinePct = sites.length ? (onlineCount / sites.length) * 100 : 100;
     const weightedFuel = capacityWeightedFuelPct(tanks);
     // Capacity-weighted litres — the same statistic as the engine KPI
@@ -548,27 +564,37 @@ const DAILY_READINGS_TTL_MS = 5 * 60 * 1000;
 const dailyReadingsCache = new Map<string, { at: number; value: { rows: ReadingRow[]; truncated: boolean } }>();
 
 async function loadFuelLevelReadings({
+  user,
   tenantSiteIds,
   startMs,
 }: {
+  user: Pick<SessionUser, "tenantId">;
   tenantSiteIds: string[] | null;
   startMs: number;
 }): Promise<{ rows: ReadingRow[]; truncated: boolean }> {
-  const key = `${startMs}|${tenantSiteIds ? tenantSiteIds.slice().sort().join(",") : "*"}`;
+  // The tenant id is part of the cache key: two tenants can both pass
+  // `tenantSiteIds: null` (a superadmin view), and without this the first
+  // result would be served to the second.
+  const key = `${user.tenantId}|${startMs}|${tenantSiteIds ? tenantSiteIds.slice().sort().join(",") : "*"}`;
   const hit = dailyReadingsCache.get(key);
   if (hit && Date.now() - hit.at < DAILY_READINGS_TTL_MS) return hit.value;
 
-  const rows = await db.sensorReading.findMany({
-    where: {
-      metric: "FUEL_LEVEL",
-      entityKind: "TANK",
-      ts: { gte: new Date(startMs) },
-      ...(tenantSiteIds ? { siteId: { in: tenantSiteIds } } : {}),
-    },
-    select: { entityId: true, value: true, ts: true },
-    orderBy: { ts: "desc" },
-    take: MAX_DAILY_READINGS,
-  });
+  // SensorReading has no tenantId of its own — tenancy reaches it through
+  // Site — so the context comes from the session and the existing siteId filter
+  // is kept as defence in depth.
+  const rows = await asTenant(user, (tx) =>
+    tx.sensorReading.findMany({
+      where: {
+        metric: "FUEL_LEVEL",
+        entityKind: "TANK",
+        ts: { gte: new Date(startMs) },
+        ...(tenantSiteIds ? { siteId: { in: tenantSiteIds } } : {}),
+      },
+      select: { entityId: true, value: true, ts: true },
+      orderBy: { ts: "desc" },
+      take: MAX_DAILY_READINGS,
+    }),
+  );
   const value = {
     rows: rows.map((r) => ({ entityId: r.entityId, value: r.value, ts: r.ts.getTime() })),
     truncated: rows.length >= MAX_DAILY_READINGS,

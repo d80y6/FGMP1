@@ -1,7 +1,8 @@
 import type { FuelDeliveryStatus } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { db, bootstrap } from "@/lib/fgmp";
+import { bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import { validateBody } from "@/lib/fgmp/schemas";
 import {
   rateLimitByUser,
@@ -91,10 +92,19 @@ export async function POST(
     }
     const data = r.data;
 
-    const existing = await db.fuelDelivery.findUnique({
-      where: { id },
-      select: { id: true, status: true, siteId: true, site: { select: { tenantId: true } } },
-    });
+    // The guard, the conditional write and the audit insert run inside ONE
+    // asTenant transaction. Previously they ran on `db` / a raw
+    // db.$transaction, neither of which carries a tenant context, so the read
+    // returned null and the audit insert was rejected by WITH CHECK.
+    //
+    // The nested `site: { tenantId }` select is itself RLS-protected, so the
+    // relation filter is expressed in the query as well.
+    const existing = await asTenant(me, (tx) =>
+      tx.fuelDelivery.findFirst({
+        where: { id, site: { tenantId: me.tenantId } },
+        select: { id: true, status: true, siteId: true, site: { select: { tenantId: true } } },
+      }),
+    );
     if (!existing) throw new ApiError(404, "delivery not found");
     const tenantDenied = assertSiteTenantOwned(existing.site, me);
     if (tenantDenied) return tenantDenied;
@@ -108,9 +118,11 @@ export async function POST(
 
     // Conditional write — atomic check-and-set. This endpoint OWNS the
     // `discrepancyNote` column (it stores the cancellation reason here).
-    const updated = await db.$transaction(async (tx) => {
+    const updated = await asTenant(me, async (tx) => {
       const { count } = await tx.fuelDelivery.updateMany({
-        where: { id, status: { in: CANCEL_FROM } },
+        // tenantId added so a cross-tenant id matches zero rows instead of
+        // throwing — same reason the fetch above is scoped.
+        where: { id, site: { tenantId: me.tenantId }, status: { in: CANCEL_FROM } },
         data: {
           status: "CANCELLED",
           // reuse discrepancyNote as the free-text annotation column.
@@ -137,7 +149,7 @@ export async function POST(
           }),
         },
       });
-      return tx.fuelDelivery.findUnique({ where: { id } });
+      return tx.fuelDelivery.findFirst({ where: { id, site: { tenantId: me.tenantId } } });
     });
     if (!updated) throw new ApiError(404, "delivery not found");
 

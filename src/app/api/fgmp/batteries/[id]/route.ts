@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { db, engine, bootstrap } from "@/lib/fgmp";
+import { engine, bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import {
   rateLimitByUser,
@@ -44,10 +45,16 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
       return res;
     }
     const { id } = await ctx.params;
-    const b = await db.batteryBank.findUnique({
-      where: { id },
-      include: { site: { select: { id: true, name: true, code: true, tenantId: true } } },
-    });
+    // Scoped in the query, INCLUDING the nested relation: the `include: { site }`
+    // below is RLS-protected, so scoping only the outer findUnique returns a
+    // battery with a null site behind a 200 — a false success, not an obvious
+    // empty list.
+    const b = await asTenant(user, (tx) =>
+      tx.batteryBank.findFirst({
+        where: { id, site: { tenantId: user.tenantId } },
+        include: { site: { select: { id: true, name: true, code: true, tenantId: true } } },
+      }),
+    );
     const denied = assertSiteTenantOwned(b?.site ?? null, user);
     if (denied) {
       applyRateLimitHeaders(denied.headers, rl);
@@ -107,10 +114,12 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     const data = r.data;
 
     // Verify existence + tenant scope.
-    const existing = await db.batteryBank.findUnique({
-      where: { id },
-      include: { site: { select: { tenantId: true } } },
-    });
+    const existing = await asTenant(user, (tx) =>
+      tx.batteryBank.findFirst({
+        where: { id, site: { tenantId: user.tenantId } },
+        include: { site: { select: { tenantId: true } } },
+      }),
+    );
     const denied = assertSiteTenantOwned(existing?.site ?? null, user);
     if (denied) {
       applyRateLimitHeaders(denied.headers, rl);
@@ -122,11 +131,13 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     for (const [k, v] of Object.entries(data)) {
       if (v !== undefined) updateData[k] = v;
     }
-    const row = await db.batteryBank.update({
-      where: { id },
-      data: updateData,
-      include: { site: { select: { id: true, name: true, code: true } } },
-    });
+    const row = await asTenant(user, (tx) =>
+      tx.batteryBank.update({
+        where: { id },
+        data: updateData,
+        include: { site: { select: { id: true, name: true, code: true } } },
+      }),
+    );
 
     // Update engine's in-memory state.
     const live = engine.batteries.find((x) => x.id === id);
@@ -176,10 +187,12 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     }
     const { id } = await ctx.params;
 
-    const existing = await db.batteryBank.findUnique({
-      where: { id },
-      include: { site: { select: { tenantId: true, name: true } } },
-    });
+    const existing = await asTenant(user, (tx) =>
+      tx.batteryBank.findFirst({
+        where: { id, site: { tenantId: user.tenantId } },
+        include: { site: { select: { tenantId: true, name: true } } },
+      }),
+    );
     const denied = assertSiteTenantOwned(existing?.site ?? null, user);
     if (denied) {
       applyRateLimitHeaders(denied.headers, rl);
@@ -191,7 +204,13 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
       return res;
     }
 
-    await db.batteryBank.delete({ where: { id } });
+    // deleteMany, not delete: `delete` THROWS when the row is not found, so a
+    // cross-tenant id would produce a 500 that distinguishes it from a 404.
+    // deleteMany matches zero rows instead, which the existing 404 path
+    // already handles.
+    await asTenant(user, (tx) =>
+      tx.batteryBank.deleteMany({ where: { id, site: { tenantId: user.tenantId } } }),
+    );
 
     // Remove from the engine's in-memory array.
     const idx = engine.batteries.findIndex((b) => b.id === id);

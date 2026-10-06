@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, bootstrap } from "@/lib/fgmp";
+import { bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import { requireRole, ROLES, tenantWhereOrAll } from "@/lib/fgmp/auth-helpers";
 import {
   rateLimitByUser,
@@ -44,33 +45,35 @@ export async function GET(req: NextRequest) {
     // auth-helpers `tenantWhere` export.)
     const tenantFilter = tenantWhereOrAll(me);
 
-    const [total, active, revoked, expired, expiringSoon] = await Promise.all([
-      db.apiKey.count({ where: tenantFilter }),
-      db.apiKey.count({
+    const [total, active, revoked, expired, expiringSoon] = await asTenant(me, (tx) =>
+      Promise.all([
+      tx.apiKey.count({ where: tenantFilter }),
+      tx.apiKey.count({
         where: {
           ...tenantFilter,
           revokedAt: null,
           OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
         },
       }),
-      db.apiKey.count({
+      tx.apiKey.count({
         where: { ...tenantFilter, revokedAt: { not: null } },
       }),
-      db.apiKey.count({
+      tx.apiKey.count({
         where: {
           ...tenantFilter,
           revokedAt: null,
           expiresAt: { not: null, lte: now },
         },
       }),
-      db.apiKey.count({
+      tx.apiKey.count({
         where: {
           ...tenantFilter,
           revokedAt: null,
           expiresAt: { not: null, gt: now, lte: sevenDaysFromNow },
         },
       }),
-    ]);
+    ]),
+    );
 
     const body = { total, active, revoked, expired, expiringSoon };
     const res = NextResponse.json(body);

@@ -1,7 +1,8 @@
 import type { FuelDeliveryStatus } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { db, bootstrap } from "@/lib/fgmp";
+import { bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import { validateBody } from "@/lib/fgmp/schemas";
 import {
   rateLimitByUser,
@@ -93,10 +94,19 @@ export async function POST(
     }
     const data = r.data;
 
-    const existing = await db.fuelDelivery.findUnique({
-      where: { id },
-      select: { id: true, status: true, siteId: true, site: { select: { tenantId: true } } },
-    });
+    // Same fix as /cancel: `db.$transaction` below was a transaction WITHOUT a
+    // tenant context, so this guard read returned null and the auditLog.create
+    // inside it was rejected by WITH CHECK. The guard, the conditional write
+    // and the audit insert now share ONE asTenant transaction.
+    //
+    // The nested `site: { tenantId }` select is itself RLS-protected, so the
+    // relation filter is expressed in the query too.
+    const existing = await asTenant(me, (tx) =>
+      tx.fuelDelivery.findFirst({
+        where: { id, site: { tenantId: me.tenantId } },
+        select: { id: true, status: true, siteId: true, site: { select: { tenantId: true } } },
+      }),
+    );
     if (!existing) throw new ApiError(404, "delivery not found");
     const tenantDenied = assertSiteTenantOwned(existing.site, me);
     if (tenantDenied) return tenantDenied;
@@ -122,9 +132,11 @@ export async function POST(
     // Conditional write — atomic check-and-set. `discrepancyNote` is NOT
     // touched here: it holds the cancellation reason written by
     // `/deliveries/[id]/cancel` and must survive this transition.
-    const updated = await db.$transaction(async (tx) => {
+    const updated = await asTenant(me, async (tx) => {
       const { count } = await tx.fuelDelivery.updateMany({
-        where: { id, status: { in: DELIVER_FROM } },
+        // tenant-scoped so a cross-tenant id matches zero rows rather than
+        // throwing — converts an error into a refusal.
+        where: { id, site: { tenantId: me.tenantId }, status: { in: DELIVER_FROM } },
         data: update,
       });
       if (count === 0) {
@@ -149,7 +161,7 @@ export async function POST(
           }),
         },
       });
-      return tx.fuelDelivery.findUnique({ where: { id } });
+      return tx.fuelDelivery.findFirst({ where: { id, site: { tenantId: me.tenantId } } });
     });
     if (!updated) throw new ApiError(404, "delivery not found");
 

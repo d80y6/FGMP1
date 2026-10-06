@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, engine, bootstrap } from "@/lib/fgmp";
+import { engine, bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import {
   rateLimitByUser,
   applyRateLimitHeaders,
@@ -147,8 +148,11 @@ export async function GET(req: NextRequest) {
           .filter((s) => s.tenantId === me.tenantId)
           .map((s) => s.id);
     const cutoff = new Date(Date.now() - WINDOW_DAYS * 86400000);
-    const [readings, tankRows] = await Promise.all([
-      db.sensorReading.findMany({
+    // Both reads inside one transaction. The FuelTank query has a nested
+    // `site: { … governorate: { … } }` traversal — two RLS-protected hops — so
+    // scoping only the outer findMany would return tanks with a null site.
+    const [readings, tankRows] = await asTenant(me, (tx) => Promise.all([
+      tx.sensorReading.findMany({
         where: {
           metric: "FUEL_LEVEL",
           entityKind: "TANK",
@@ -161,7 +165,7 @@ export async function GET(req: NextRequest) {
         orderBy: { ts: "desc" },
         take: MAX_READINGS,
       }),
-      db.fuelTank.findMany({
+      tx.fuelTank.findMany({
         where: { ...siteTenantWhereOrAll(me) },
         select: {
           id: true,
@@ -170,7 +174,7 @@ export async function GET(req: NextRequest) {
           site: { select: { id: true, name: true, code: true, governorate: { select: { name: true } } } },
         },
       }),
-    ]);
+    ]));
 
     // Map tankId → { label, capacity, siteId, siteName, siteCode, governorate }
     const tankMeta = new Map<string, { label: string; capacity: number; siteId: string; siteName: string; siteCode: string; governorate: string }>();

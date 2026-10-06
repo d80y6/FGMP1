@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db, engine, bootstrap } from "@/lib/fgmp";
+import { engine, bootstrap } from "@/lib/fgmp";
+import { asTenant } from "@/lib/fgmp/route-tenant";
 import {
   rateLimitByUser,
   applyRateLimitHeaders,
@@ -40,13 +41,19 @@ export async function GET(req: NextRequest) {
       case "annual": from.setFullYear(from.getFullYear() - 1); break;
     }
 
-    const [alarms, deliveries, tickets, commands, auditLogs] = await Promise.all([
-      db.alarm.findMany({ where: { createdAt: { gte: from }, ...tenantWhereOrAll(me) }, include: { site: { select: { name: true } } }, orderBy: { createdAt: "desc" }, take: 500 }),
-      db.fuelDelivery.findMany({ where: { scheduledAt: { gte: from }, ...siteTenantWhereOrAll(me) }, include: { site: { select: { name: true } } }, orderBy: { scheduledAt: "desc" }, take: 500 }),
-      db.maintenanceTicket.findMany({ where: { createdAt: { gte: from }, ...siteTenantWhereOrAll(me) }, include: { site: { select: { name: true } } }, orderBy: { createdAt: "desc" }, take: 500 }),
-      db.controlCommand.findMany({ where: { issuedAt: { gte: from }, generator: { site: { ...tenantWhereOrAll(me) } } }, include: { generator: { select: { label: true } } }, orderBy: { issuedAt: "desc" }, take: 500 }),
-      db.auditLog.findMany({ where: { createdAt: { gte: from }, ...tenantWhereOrAll(me) }, orderBy: { createdAt: "desc" }, take: 500 }),
-    ]);
+    // All five reads move inside ONE asTenant transaction. Four of them carry
+    // nested `include: { site }` / `include: { generator }` traversals, and
+    // every one of those relations is RLS-protected — scoping only the outer
+    // findMany would return rows with a null site behind a 200.
+    const [alarms, deliveries, tickets, commands, auditLogs] = await asTenant(me, (tx) =>
+      Promise.all([
+      tx.alarm.findMany({ where: { createdAt: { gte: from }, ...tenantWhereOrAll(me) }, include: { site: { select: { name: true } } }, orderBy: { createdAt: "desc" }, take: 500 }),
+      tx.fuelDelivery.findMany({ where: { scheduledAt: { gte: from }, ...siteTenantWhereOrAll(me) }, include: { site: { select: { name: true } } }, orderBy: { scheduledAt: "desc" }, take: 500 }),
+      tx.maintenanceTicket.findMany({ where: { createdAt: { gte: from }, ...siteTenantWhereOrAll(me) }, include: { site: { select: { name: true } } }, orderBy: { createdAt: "desc" }, take: 500 }),
+      tx.controlCommand.findMany({ where: { issuedAt: { gte: from }, generator: { site: { ...tenantWhereOrAll(me) } } }, include: { generator: { select: { label: true } } }, orderBy: { issuedAt: "desc" }, take: 500 }),
+      tx.auditLog.findMany({ where: { createdAt: { gte: from }, ...tenantWhereOrAll(me) }, orderBy: { createdAt: "desc" }, take: 500 }),
+    ]),
+    );
 
     // Scope the in-memory engine snapshots to the caller's tenant so the
     // summary KPIs below reflect only sites/tanks/generators that belong to
