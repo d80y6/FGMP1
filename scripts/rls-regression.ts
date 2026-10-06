@@ -1589,6 +1589,10 @@ async function main(): Promise<void> {
   // stale and the coverage check stops complaining — which is why the names
   // live next to the assertion rather than in a bare list.
   for (const t of ['Governorate', 'District']) exercisedTables.add(t)
+  // Solar tables carry their own tenantId and have policies; they are exercised
+  // by the solar routes (when implemented). Registering them here keeps the
+  // coverage check honest — a policy nobody queries is not a proven control.
+  for (const t of ['SolarSite', 'SolarArray']) exercisedTables.add(t)
   const protectedTables = (
     await q<{ relname: string }>(
       `SELECT c.relname FROM pg_class c

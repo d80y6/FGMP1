@@ -252,6 +252,23 @@ enum NotificationStatus {
   SENT
   DELIVERED
   FAILED
+  // Phase 4: the notification was created and the operator is entitled to it,
+  // but NO TRANSPORT EXISTS for its channel — there is no SMTP host, webhook or
+  // SMS provider configured. This is deliberately NOT "FAILED": nothing was
+  // attempted, so nothing failed, and reporting a configuration gap as a delivery
+  // failure would send an operator hunting a broken provider that does not
+  // exist.
+  //
+  // It is equally deliberately NOT "SENT". Collapsing these three states into
+  // one is the defect this member exists to make visible:
+  //
+  //   NO_TRANSPORT -> nobody is configured to receive this class of alert
+  //   FAILED       -> a real transport was tried and the send failed
+  //   SENT         -> a real transport accepted it
+  //
+  // An operator must be able to tell those apart, because they are three
+  // different operational problems with three different fixes.
+  NO_TRANSPORT
 }
 
 enum SystemSettingCategory {
@@ -426,6 +443,7 @@ model Tenant {
   fuelDeliveries           FuelDelivery[]
   controlCommands          ControlCommand[]
   interlockOverrides      InterlockOverride[]
+  thresholds              InterlockThreshold[]
   maintenanceTickets       MaintenanceTicket[]
   siteGateways             SiteGateway[]
   notificationPreferences  NotificationPreference[]
@@ -436,6 +454,9 @@ model Tenant {
   rs485Buses            Rs485Bus[]
   rs485Diagnostics      Rs485BusDiagnostic[]
   rs485LatencySamples   Rs485LatencySample[]
+  // Phase 4 — Solar
+  solarSites              SolarSite[]
+  solarArrays             SolarArray[]
 }
 
 // role: ADMIN | NOC_OPERATOR | REGIONAL_MANAGER | FIELD_ENGINEER | EXECUTIVE | READONLY
@@ -475,6 +496,7 @@ model User {
   // user appears twice per row, once as requester and once as approver.
   interlockOverridesRequested InterlockOverride[] @relation("InterlockOverrideRequested")
   interlockOverridesApproved  InterlockOverride[] @relation("InterlockOverrideApproved")
+  thresholdsConfirmed        InterlockThreshold[]   @relation("ThresholdConfirmedBy")
 
   @@index([tenantId])
 }
@@ -547,6 +569,13 @@ model Site {
   criticality   Criticality   @default(MEDIUM)
   // Load profile (kW)
   loadKw        Float    @default(0)
+  /// Phase 4 — the load that must stay energised whatever else is shed. This is
+  /// the quantity that decides what may be shed without blacking the site out,
+  /// and it is what SHED_BELOW_SITE_REQUIREMENT checks. 0 means "nothing
+  /// declared"; the interlock treats 0 as "no floor declared" and NOT as
+  /// "free to shed everything", because an undeclared floor must never become
+  /// a licence to black out a site.
+  protectedLoadKw Float   @default(0)
   // Power preference: GRID | GENERATOR | HYBRID
   powerSource   PowerSource   @default(HYBRID)
   gridAvailable Boolean  @default(true)
@@ -572,6 +601,8 @@ model Site {
   tickets      MaintenanceTicket[]
   events       SiteEvent[]
   suppressions AlarmSuppression[]
+  thresholds    InterlockThreshold[]
+  solarSite     SolarSite?
 
   @@index([tenantId])
   @@index([regionId])
@@ -679,6 +710,15 @@ model BatteryBank {
   // Last discharge / service date, used for battery health scoring.
   lastReadingAt DateTime?
   updatedAt     DateTime @updatedAt
+  // Phase 4 additions
+  /// Total charge/discharge cycles since install. Null = no history recorded.
+  /// Nullable because an existing bank has no cycle history; inventing 0 would
+  /// assert a measurement nobody made.
+  cycleCount    Int?
+  /// Signed cell imbalance in millivolts, as reported by the BMS via Modbus.
+  /// Nullable for the same reason — an operator must be able to distinguish
+  /// "balanced" from "unmeasured".
+  cellBalanceMv Int?
 
   site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
@@ -1523,4 +1563,162 @@ model Rs485LatencySample {
 
   @@index([tenantId, recordedAt])
   @@index([diagnosticId, recordedAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 4 — interlock thresholds become DATA, and site protected load is modelled
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Appended, not edited in place: another agent's watermark change is committed
+// above and must not be reformatted or reordered.
+
+// Where a threshold's VALUE came from. This is the whole point of the model:
+// an operator must be able to see whether a limit they are relying on came from
+// an OEM datasheet or from a guess someone made in 2026.
+//
+//   INFERRED is the default for everything in this codebase, because nothing in
+//   the original specification supplied a safety number. It is not a shame
+//   label — it is the honest state of a threshold nobody has yet confirmed.
+enum ThresholdSource {
+  // Read from the engine/generator OEM datasheet for the installed unit.
+  OEM_DATASHEET
+  // Defined by the operator for their own fleet (cooldown, restart backoff).
+  SITE_POLICY
+  // Comes from the tenant's maintenance schedule (service intervals).
+  MAINTENANCE_SCHEDULE
+  // Derived from the engine's physical parameters rather than a fixed number
+  // (e.g. cranking fuel as a fraction of usable tank capacity).
+  DERIVED
+  // A placeholder. Chosen conservatively so it fails toward REFUSAL, never
+  // toward permitting an unsafe action. MUST be confirmed before the threshold
+  // is relied upon.
+  INFERRED
+}
+
+// The unit a threshold is expressed in. Storing the unit explicitly is what
+// lets a value be interpreted without reading the code: `500` means something
+// completely different as HOURS_OVERDUE than as PERCENT.
+enum ThresholdUnit {
+  CELSIUS
+  KPA
+  PERCENT_OF_TANK
+  MINUTES
+  HOURS
+  LITRES_PER_MINUTE
+  // Phase 4 — energy domain additions
+  MILLIVOLTS
+  PERCENT
+}
+
+/// A single interlock threshold, stored per tenant with its provenance.
+///
+/// WHY PERSISTED RATHER THAN A CONSTANT
+/// A safety threshold that can only be changed by editing source and shipping a
+/// deploy is not operable. Operators must be able to correct a number against
+/// their own OEM manual without a release. It also makes the provenance
+/// queryable: "which of my limits are still guesses?" becomes a SELECT.
+///
+/// WHY TENANT-SCOPED
+/// Coolant limits and service intervals are fleet-specific: the same engine
+/// model in two tenants can have different maintenance schedules, and one
+/// tenant may have sourced a real datasheet while another has not.
+model InterlockThreshold {
+  id        String   @id @default(cuid())
+  tenantId  String
+
+  /// Stable key matching the InterlockRuleId the value feeds. E.g.
+  /// "coolantMaxC", "crankingFuelFraction". Unknown to this schema on purpose:
+  /// a threshold the code does not understand is still worth storing and
+  /// surfacing, and rejecting it would block an operator recording a
+  /// provisional decision.
+  thresholdKey String
+
+  value     Float
+  unit      ThresholdUnit
+  source    ThresholdSource @default(INFERRED)
+
+  /// WHO confirmed the value, and WHEN. Null source=INFERRED with a null
+  /// confirmedBy is the honest "nobody has checked this" state. Populating
+  /// confirmedBy without changing `source` is allowed but misleading, so the
+  /// API reports that combination rather than hiding it.
+  confirmedById String?
+  confirmedAt   DateTime?
+
+  /// Free text: the document, manual page, or policy clause the value came
+  /// from. Without this, "confirmed" is unfalsifiable.
+  sourceRef String?
+
+  /// Optional per-site override. NULL means "use the tenant value". Some sites
+  /// legitimately differ (a coastal site, a genset on a restricted schedule),
+  /// and a global-only model forces operators to either over-protect everyone
+  /// or under-protect one site.
+  siteId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant     Tenant  @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  site       Site?   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  confirmedBy User?   @relation("ThresholdConfirmedBy", fields: [confirmedById], references: [id])
+
+  // A threshold key is unique per (tenant, site): one active value for a site,
+  // one tenant-wide default when siteId is NULL.
+  @@unique([tenantId, thresholdKey, siteId])
+  @@index([tenantId])
+  @@index([tenantId, siteId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 4 — Solar domain
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// A site can have multiple arrays on different roofs, at different tilts, with
+// different inverters. The child-table design is the only way to express that
+// without forcing every array on a site to share one rating — which would be
+// wrong for the multi-roof case the domain exists to describe.
+//
+// Telemetry for output kW, daily yield kWh and irradiance follows the EXISTING
+// sensor/telemetry pattern (IotDevice + SensorReading) rather than inventing a
+// parallel one. These models hold the static inventory; the live readings come
+// from the same ingestion pipeline that already handles fuel sensors and
+// battery sensors.
+
+/// A site's solar installation. One per site (1:1 with Site), holding the
+/// aggregated capacity and any site-level notes.
+model SolarSite {
+  id          String   @id @default(cuid())
+  siteId      String   @unique
+  tenantId    String
+  capacityKwp Float
+  installedAt DateTime @default(now())
+  notes       String?
+
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  arrays SolarArray[]
+
+  @@index([tenantId])
+}
+
+/// One array within a SolarSite. Each array has its own inverter and
+/// orientation, so a site with panels on two roofs at different tilts gets two
+/// rows — which is exactly the case a single Site field could not describe.
+model SolarArray {
+  id             String  @id @default(cuid())
+  solarSiteId    String
+  tenantId       String
+  label          String
+  ratedKwp       Float
+  orientation    String?  // e.g. "S", "SW", "flat"
+  tiltDegrees    Int?
+  azimuthDegrees Int?
+  inverterSerial String?
+  inverterModel  String?
+  installedAt    DateTime @default(now())
+
+  solarSite SolarSite @relation(fields: [solarSiteId], references: [id], onDelete: Cascade)
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId])
+  @@index([solarSiteId])
 }
