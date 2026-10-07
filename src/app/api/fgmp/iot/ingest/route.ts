@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { engine } from "@/lib/fgmp";
+import { errorResponse } from "@/lib/fgmp/api-error";
 import { withTenant } from "@/lib/fgmp/tenant-context";
 import { emitToRealtime } from "@/lib/fgmp/realtime-emitter";
 import {
@@ -82,6 +83,20 @@ const ReadingSchema = z.object({
   genLoad: z.number().nonnegative().max(10000).optional(),
   battVoltage: z.number().min(0).max(1000).optional(),
   battSoc: z.number().min(0).max(100).optional(),
+  /**
+   * Signed cell-to-cell imbalance in millivolts.
+   *
+   * Signed because the sign carries the diagnosis: a positive delta means one
+   * cell is sitting above the string mean and a negative one below, and the
+   * failing cell is identified by which. Taking the absolute value — the obvious
+   * implementation, and what the register map's unsigned encoding invites — would
+   * discard exactly the half of the measurement that says which cell to replace.
+   *
+   * Range is deliberately wide (±5000 mV). A real imbalance large enough to
+   * breach it is a battery already in failure, and clamping it here would make
+   * the most severe readings look like moderate ones.
+   */
+  battCellBalanceMv: z.number().min(-5000).max(5000).optional(),
   temp: z.number().min(-50).max(150).optional(),
   /**
    * Device-measured timestamp, epoch millis or ISO-8601 (Phase 2).
@@ -228,6 +243,9 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     );
   }
+  // Wrapped so the database duplicate verdict below can be mapped to a 409 and
+  // any other failure to errorResponse(), instead of escaping as a 500.
+  try {
   const { siteId, readings } = parsed.data;
   const now = new Date();
   const nowMs = now.getTime();
@@ -375,11 +393,18 @@ export async function POST(req: NextRequest) {
   }
 
   // Battery
-  if (readings.battVoltage !== undefined || readings.battSoc !== undefined) {
+  if (
+    readings.battVoltage !== undefined ||
+    readings.battSoc !== undefined ||
+    readings.battCellBalanceMv !== undefined
+  ) {
     const batt = engine.batteries.find((b) => b.siteId === siteId);
     if (batt) {
       if (readings.battVoltage !== undefined) batt.voltage = readings.battVoltage;
       if (readings.battSoc !== undefined) batt.stateOfCharge = readings.battSoc;
+      if (readings.battCellBalanceMv !== undefined) {
+        batt.cellBalanceMv = readings.battCellBalanceMv;
+      }
       batt.lastReadingAt = nowMs;
       batt.history.push({
         t: nowMs,
@@ -414,6 +439,39 @@ export async function POST(req: NextRequest) {
           },
         }),
       );
+
+      // Cell imbalance is stored TWICE on purpose.
+      //
+      // The SensorReading row is the trend — imbalance is diagnosed by how it
+      // MOVES, not by its value today, so a single snapshot is close to
+      // useless. The BatteryBank column is the current state, so the battery
+      // list and any interlock can read it without scanning the history.
+      //
+      // Before this, the Modbus reader parsed the value and dropped it: it was
+      // read off the wire and never stored anywhere, so it could not be trended,
+      // alarmed on, or reviewed. A measurement that is collected and discarded
+      // is the same defect as one never collected.
+      if (readings.battCellBalanceMv !== undefined) {
+        writes.push((tx) =>
+          tx.sensorReading.create({
+            data: {
+              tenantId,
+              siteId,
+              entityKind: "BATTERY",
+              entityId: batt.id,
+              metric: "BATT_CELL_BALANCE_MV",
+              value: readings.battCellBalanceMv!,
+              ts: readingDate,
+            },
+          }),
+        );
+        writes.push((tx) =>
+          tx.batteryBank.update({
+            where: { id: batt.id },
+            data: { cellBalanceMv: Math.round(readings.battCellBalanceMv!) },
+          }),
+        );
+      }
     }
   }
 
@@ -449,7 +507,34 @@ export async function POST(req: NextRequest) {
     await withTenant(tenantId, async (tx) => {
       // Rebuild the writes against the transaction client. They were queued as
       // closures over `tx` above, so they execute inside this transaction.
-      await Promise.allSettled(writes.map((run) => run(tx)));
+      //
+      // Phase 4 item 4: results are now INSPECTED rather than discarded.
+      // `Promise.allSettled` swallowed every rejection, so when two replicas
+      // raced on the same replayed reading the loser got a unique-constraint
+      // violation that nobody read — and still answered 200, claiming the
+      // reading was applied when it had in fact been dropped. The database is
+      // the authority for duplicates, which means its verdict has to be
+      // reported, not absorbed.
+      const results = await Promise.allSettled(writes.map((run) => run(tx)));
+
+      const duplicate = results.find(
+        (r): r is PromiseRejectedResult =>
+          r.status === "rejected" && isUniqueViolation(r.reason),
+      );
+      if (duplicate) {
+        // Another replica won the race, or this reading was already stored.
+        // Same verdict the process-local store produced, now derived from the
+        // storage engine rather than from one process's memory.
+        throw new DuplicateReadingError();
+      }
+
+      // Any OTHER failure keeps the previous best-effort behaviour: a DB hiccup
+      // must not stop a device from reporting, so it is logged and swallowed.
+      for (const r of results) {
+        if (r.status === "rejected" && !isUniqueViolation(r.reason)) {
+          console.error("[ingest] write failed (non-duplicate):", r.reason);
+        }
+      }
     });
   }
 
@@ -482,6 +567,66 @@ export async function POST(req: NextRequest) {
     uplinkDelayMs: nowMs - readingDate.getTime(),
     buffered: deviceTs === null ? "undated" : "timestamped",
   });
+  } catch (err) {
+    // Phase 4 item 4: the storage engine refused the insert because this exact
+    // (entity, metric, ts) already exists. That is a duplicate, not a fault —
+    // another replica accepted this replay first, or the row is already stored.
+    // 409 is the same class as the pre-write buffering verdict, so a device
+    // sees one consistent answer whether its retry landed on the replica that
+    // already had the reading or the one that did not.
+    if (err instanceof DuplicateReadingError) {
+      const res = NextResponse.json(
+        {
+          ok: false,
+          applied: {},
+          buffered: { status: "REJECT_DUPLICATE", source: "database-constraint" },
+        },
+        { status: 409 },
+      );
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
+    return errorResponse(err);
+  }
+}
+
+/**
+ * Raised when the database refuses an insert as an exact duplicate.
+ *
+ * Distinct from a generic write failure so the handler can map it to 409
+ * without inspecting driver internals at the call site.
+ */
+class DuplicateReadingError extends Error {
+  constructor() {
+    super("duplicate sensor reading (entity, metric, ts already stored)");
+    this.name = "DuplicateReadingError";
+  }
+}
+
+/**
+ * Is this a unique-constraint violation?
+ *
+ * Prisma reports these as P2002. The check is deliberately narrow — a generic
+ * failure must NOT be reported as a duplicate, or a real outage would be
+ * mislabelled as a device retry and answered 409, telling a field device to
+ * stop retrying while its data is being dropped.
+ */
+function isUniqueViolation(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const code = (err as { code?: unknown }).code;
+  if (code !== "P2002") return false;
+  // Where the driver tells us, confirm it is OUR index and not some other
+  // constraint, so an unrelated uniqueness failure is not misreported.
+  const target = (err as { meta?: { target?: unknown } }).meta?.target;
+  if (typeof target === "string") {
+    return target.includes("entityId") && target.includes("metric");
+  }
+  if (Array.isArray(target)) {
+    const fields = target.map(String);
+    return fields.includes("entityId") && fields.includes("metric") && fields.includes("ts");
+  }
+  // No target metadata: P2002 on a create from this route is the dedupe index.
+  return true;
 }
 
 /**
@@ -518,6 +663,7 @@ export async function GET(req: NextRequest) {
         genLoad: "number? (kW)",
         battVoltage: "number? (V)",
         battSoc: "number? (0-100)",
+        battCellBalanceMv: "number? (signed mV, cell-to-cell imbalance)",
         temp: "number? (°C)",
         ts: "number|string? (device timestamp, epoch millis or ISO-8601)",
       },

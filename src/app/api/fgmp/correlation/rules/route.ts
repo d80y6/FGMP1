@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
   if ("error" in auth) return auth.error;
   const me = auth.user;
 
-  const guard = requireRole(req, ROLES.ALARM_OPS);
+  const guard = await requireRole(req, ROLES.ALARM_OPS);
   if ("error" in guard) return guard.error;
 
   try {

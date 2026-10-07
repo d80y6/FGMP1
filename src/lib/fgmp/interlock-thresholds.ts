@@ -53,14 +53,39 @@ export type ThresholdSource =
   | "DERIVED"
   | "INFERRED";
 
-/** The unit a value is expressed in. Mirrors ThresholdUnit. */
+/**
+ * The unit a value is expressed in.
+ *
+ * Additive union, shared by interlock thresholds (which REFUSE an action) and
+ * energy thresholds (which ALARM). The two domains need genuinely different
+ * units — there is no Celsius equivalent of a cell-voltage spread — so a
+ * single vocabulary serves both rather than each inventing its own.
+ *
+ * Added for Phase 4 energy work, and added because a threshold genuinely needs
+ * them, not to silence a type error:
+ *   MILLIVOLTS — `battCellImbalanceMv`. The Modbus reader already parses a
+ *     signed per-cell delta from the bank mean in millivolts; the threshold that
+ *     judges it is measured in the same unit, and expressing it in volts would
+ *     put every plausible limit below the smallest representable value.
+ *   PERCENT    — state of charge, state of health, yield factor.
+ *
+ * Widening a union is additive and cannot change any existing consumer: every
+ * current `unit` value is still assignable. `solarLowIrradianceWm2` needs
+ * W_PER_SQM and deliberately still carries "KWP", because KWP is an array's
+ * rated CAPACITY — a different physical quantity from irradiance. That
+ * mislabel is recorded in `ENERGY_UNIT_DEFECTS` in energy-thresholds.ts rather
+ * than hidden, so it stays greppable when a proper unit is added.
+ */
 export type ThresholdUnit =
   | "CELSIUS"
   | "KPA"
   | "PERCENT_OF_TANK"
   | "MINUTES"
   | "HOURS"
-  | "LITRES_PER_MINUTE";
+  | "LITRES_PER_MINUTE"
+  // ── Phase 4 energy additions ──
+  | "MILLIVOLTS"
+  | "PERCENT";
 
 /**
  * One threshold, with everything needed to decide whether to trust it.

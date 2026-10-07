@@ -44,7 +44,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
   if ("error" in auth) return auth.error;
   const me = auth.user;
 
-  const guard = requireRole(req, ROLES.ALARM_OPS);
+  const guard = await requireRole(req, ROLES.ALARM_OPS);
   if ("error" in guard) return guard.error;
 
   try {
@@ -96,7 +96,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
   if ("error" in auth) return auth.error;
   const me = auth.user;
 
-  const guard = requireRole(req, ROLES.ALARM_OPS);
+  const guard = await requireRole(req, ROLES.ALARM_OPS);
   if ("error" in guard) return guard.error;
 
   try {

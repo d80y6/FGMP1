@@ -96,8 +96,8 @@ async function main(): Promise<void> {
   // that does not own them — which is exactly why the harness needs the owner
   // role to build fixtures and the app role to make assertions.
   const where = { tenantId: user.tenantId };
-  const first = async <T extends string>(
-    model: Record<string, { findFirst(a: unknown): Promise<Record<string, T> | null> }>,
+  const first = async (
+    model: { findFirst: (a: { where: object; select: { id: true } }) => Promise<{ id: string } | null> },
   ): Promise<string> => (await model.findFirst({ where, select: { id: true } }))?.id ?? foreign.siteId;
 
   const [aSite, aTank, aGen, aUser, aDisp, aCmd, aAlarm, aDelivery, aTicket, aBattery, aBatt] =

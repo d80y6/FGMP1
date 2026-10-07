@@ -87,15 +87,34 @@ export function parseReadingTs(input: unknown): number | null {
 }
 
 /**
- * Per-device watermark of the newest reading accepted.
+ * Per-device watermark of the newest reading seen — A CACHE, NOT THE AUTHORITY.
  *
- * In-memory and process-local. That is an honest limitation, not a design
- * choice: with more than one app replica this protects only the replica that
- * served the request. A shared store (Redis, which is already a dependency) or
- * a unique index on (entityId, metric, ts) is the durable answer. Stated here
- * rather than left for someone to assume it is global.
+ * Phase 4 item 4 changed the status of this class. It was the authority for
+ * duplicate and stale rejection while process memory was all there was, and it
+ * was wrong at that: with more than one replica a device retry could be
+ * rejected on replica A and ACCEPTED on replica B.
+ *
+ * The authority is now the database. Migration
+ * 20261008001000_sensor_reading_dedup_watermark makes (entityId, metric, ts)
+ * UNIQUE, so a duplicate INSERT is impossible rather than unlikely, enforced by
+ * the storage engine on every writer on every replica with no shared mutable
+ * state. That guarantee survives a total Redis outage and a process restart,
+ * because it does not depend on any cache existing. Redis remains usable as a
+ * read-through cache in front of it, never as the thing that decides.
+ *
+ * So this map is now an OPTIMISATION with a deliberately narrow job: it lets
+ * the route answer REJECT_STALE / REJECT_TOO_OLD without a database round trip,
+ * and it is safe to lose entirely. If it is empty, or stale, or on a different
+ * replica, correctness is unaffected — the write is still refused by the
+ * constraint. A cache that silently disagreed with the database would be a
+ * liability, so anything it gets WRONG is still caught downstream.
+ *
+ * The one thing it must never become again is the thing that decides. It is not
+ * primed from the database at startup, so a cold process has an empty map and
+ * simply does more work until it warms; correctness never depends on priming.
  */
 export class DeviceWatermarkStore {
+  /** Optimisation only. The database constraint is the authority — see the class note. */
   private newest = new Map<string, number>();
   private policy: IngestClockPolicy;
 

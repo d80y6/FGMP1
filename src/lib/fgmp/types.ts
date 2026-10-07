@@ -88,6 +88,15 @@ export interface BattState {
   status: string;
   installedAt: number;
   lastReadingAt: number;
+  /**
+   * Signed cell-to-cell imbalance in millivolts, or null when unmeasured.
+   *
+   * `number | null` rather than a numeric sentinel because 0 is a REAL and
+   * healthy value: a perfectly balanced string reports exactly 0 mV, and
+   * defaulting to 0 would make "no BMS reported" indistinguishable from
+   * "every cell agrees", which is the one thing an operator most needs to know.
+   */
+  cellBalanceMv?: number | null;
   history: { t: number; v: number; soc: number }[];
 }
 
