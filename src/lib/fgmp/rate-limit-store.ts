@@ -287,3 +287,15 @@ export function resetLocalBuckets(): void {
   local.clear();
   lastSweep = Date.now();
 }
+
+// ── Metrics wiring ───────────────────────────────────────────────────────────
+// Registered at import time so every rejection is counted without each call
+// site remembering to. The degraded gauge is what an operator needs: a rate
+// limiter quietly running per-process is the exact condition that hid the
+// original bug, and it is invisible without this.
+import { rateLimitDegraded, rateLimitRejections } from "../observability/metrics";
+
+setRejectionCounter((scope, reason) => {
+  rateLimitRejections.inc({ scope, reason });
+  if (reason === "degraded_closed") rateLimitDegraded.set({}, 1);
+});
