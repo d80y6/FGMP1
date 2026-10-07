@@ -99,7 +99,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       issuedById: me.id,
       existing: existing
         ? {
-            key: existing.idempotencyKey as string,
+            // The row was FOUND BY `idempotencyKey: idemKey`, so its key is
+            // `idemKey` by construction. It is passed rather than read back from
+            // the row because the previous version selected a column that was
+            // not there and cast `undefined` to string — which type-checked and
+            // then made the replay branch unreachable at runtime, disabling
+            // idempotency silently. The key the row was matched on is the
+            // authoritative value and cannot be undefined.
+            key: idemKey.trim(),
             payloadFingerprint: existing.payloadFingerprint ?? "",
             issuedById: existing.issuedById ?? "",
             issuedAt: existing.issuedAt,
