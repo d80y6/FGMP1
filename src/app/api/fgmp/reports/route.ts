@@ -6,6 +6,7 @@ import {
   applyRateLimitHeaders,
   READ_LIMIT,
 } from "@/lib/fgmp/rate-limit";
+import { toNum } from "@/lib/fgmp/decimal";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import {
   requireAuth,
@@ -93,7 +94,15 @@ export async function GET(req: NextRequest) {
       },
       deliveriesTotal: deliveries.length,
       deliveriesVerified: deliveries.filter((d) => d.status === "VERIFIED").length,
-      volumeDelivered: deliveries.reduce((a, d) => a + (d.volumeDeliveredLitres ?? 0), 0),
+      // Phase 5 task 1: volumeDeliveredLitres is Decimal(12,3). The old
+      // `(d.volumeDeliveredLitres ?? 0)` was inert — `??` only fires on null or
+      // undefined, and a Decimal is an object, so this was `0 + DecimalObject`,
+      // yielding NaN rather than a total. toNum handles both the conversion and
+      // the genuinely-absent case (a delivery not yet delivered).
+      volumeDelivered: deliveries.reduce(
+        (a, d) => a + toNum(d.volumeDeliveredLitres, { scale: 3 }),
+        0,
+      ),
       ticketsTotal: tickets.length,
       ticketsDone: tickets.filter((t) => t.status === "DONE").length,
       commandsTotal: commands.length,

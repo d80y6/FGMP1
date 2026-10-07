@@ -30,6 +30,7 @@
  * column expects numeric order.
  */
 
+import type { DecimalLike } from "@/lib/fgmp/decimal";
 import { Document, Packer, Paragraph, Table, TableCell, TableRow, TextRun, WidthType } from "docx";
 
 export type ExportRow = Record<string, unknown>;
@@ -48,9 +49,26 @@ export interface RenderOptions {
  * Prisma.Decimal survives exactly. Otherwise `Number(v)` and round to 4 decimal
  * places, which is well beyond any real litre or rial precision and far below
  * float noise.
+ *
+ * PHASE 5: widened to accept `DecimalLike` so a Prisma.Decimal OBJECT is
+ * rendered as faithfully as its string form. The parameter was `unknown`, and
+ * an unknown carrying a Decimal fell through to the `typeof v !== "number"`
+ * branch and was emitted via String(v) — which happens to look right for
+ * Decimal, and wrong for every other object, since it also swallows
+ * `{toString}` wrappers that are not numbers at all. The type is widened here
+ * at the definition rather than cast at each call site, because this module's
+ * entire purpose is faithful numeric rendering and a cast would defeat it.
  */
-export function renderNumber(v: unknown): string {
+export function renderNumber(v: DecimalLike): string {
   if (v === null || v === undefined || v === "") return "";
+
+  // Prisma.Decimal as an object. toString() gives the exact decimal text, and it
+  // is then handled by the string branch below — deliberately NOT Number(),
+  // because converting to binary double is the precision loss this function
+  // exists to prevent.
+  if (typeof v === "object") {
+    return renderNumber(String(v));
+  }
 
   // Prisma.Decimal arrives as a string. Do NOT Number() it: the string is the
   // exact decimal and converting to binary double is the precision loss this
@@ -324,9 +342,13 @@ export async function render(
  * module is a singleton by nature; caching the promise just stops paying for
  * the resolution repeatedly.
  */
-let jszipPromise: Promise<typeof import("jszip").default> | null = null;
-function loadJsZip(): Promise<typeof import("jszip").default> {
-  jszipPromise ??= import("jszip").then((m) => m.default);
+type JSZipCtor = typeof import("jszip");
+let jszipPromise: Promise<JSZipCtor> | null = null;
+function loadJsZip(): Promise<JSZipCtor> {
+  // `jszip`'s types export the constructor as a NAMED export, not default, and
+  // under `esModuleInterop` the runtime object has both. Use the namespace form
+  // so the type and the runtime agree.
+  jszipPromise ??= import("jszip").then((m) => (m.default ?? m) as JSZipCtor);
   return jszipPromise;
 }
 

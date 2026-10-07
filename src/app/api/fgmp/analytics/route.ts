@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { engine, bootstrap } from "@/lib/fgmp";
 import { asTenant } from "@/lib/fgmp/route-tenant";
+import { toNum } from "@/lib/fgmp/decimal";
 import { SITE_HEALTH_WEIGHTS, alarmScore } from "@/lib/health/site-health-score";
 import type { SessionUser } from "@/lib/auth";
 import { projectConsumption } from "@/lib/fgmp/metrics-fuel-projection";
@@ -399,9 +400,15 @@ export async function GET(req: NextRequest) {
       where: { ...siteTenantWhereOrAll(me), status: "VERIFIED" },
     }),
     );
-    const deliveredLitres = Number.isFinite(totalDelivered._sum.volumeDeliveredLitres)
-      ? (totalDelivered._sum.volumeDeliveredLitres as number)
-      : 0;
+    // Phase 5 task 1: volumeDeliveredLitres is Decimal(12,3). The previous
+    // `Number.isFinite(decimal)` guard was silently always-false — a Decimal is
+    // an object, never a finite number — so this collapsed to 0 regardless of
+    // the data. toNum with a NaN fallback makes the guard mean what it says.
+    const deliveredLitres = toNum(totalDelivered._sum.volumeDeliveredLitres, {
+      scale: 3,
+      fallback: Number.NaN,
+    });
+    const deliveredLitresSafe = Number.isFinite(deliveredLitres) ? deliveredLitres : 0;
 
     // ── dailyCost: a real 7-bucket series ────────────────────────────────
     // The old code reduced over `hourBuckets` (always 24 entries) testing
@@ -479,7 +486,7 @@ export async function GET(req: NextRequest) {
       stolenValueUsd: toUsd(theftLitres),
       /** Distinguishes "no theft detected" from "no rate configured". */
       stolenValueUsdReason: usdReady ? null : FX_ABSENT,
-      deliveredValueUsd: toUsd(deliveredLitres),
+      deliveredValueUsd: toUsd(deliveredLitresSafe),
       /** The measured quantity. Always present, independent of any rate. */
       theftLitres,
       forecastCostUsd: toUsd(forecast.reduce((s, f) => s + f.litres, 0)),

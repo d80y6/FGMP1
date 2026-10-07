@@ -19,6 +19,7 @@ import {
   type LevelPoint,
 } from "@/lib/fgmp/metrics-fuel-series";
 import { safeTankPct } from "@/lib/fgmp/metrics-fuel";
+import { toNum } from "@/lib/fgmp/decimal";
 
 export const dynamic = "force-dynamic";
 
@@ -233,9 +234,18 @@ export async function GET(req: NextRequest) {
     const deliveriesByTank = new Map<string, DeliveryEvent[]>();
     for (const d of deliveryRows) {
       if (!d.deliveredAt) continue;
-      const volume = Number.isFinite(d.volumeDeliveredLitres)
-        ? (d.volumeDeliveredLitres as number)
-        : d.volumeOrderedLitres;
+      // Phase 5 task 1: both volume columns are Decimal(12,3).
+      //
+      // The previous `Number.isFinite(d.volumeDeliveredLitres)` test was not
+      // merely mistyped — it was silently WRONG. A Prisma.Decimal is an object,
+      // so Number.isFinite() is always false for it, meaning this branch took
+      // the `volumeOrderedLitres` fallback on every single row. A delivery that
+      // was short or over (the DISCREPANCY case this file exists to detect)
+      // would have been reconciled against the ORDERED volume instead of the
+      // DELIVERED one. toNum(…, {fallback: null}) makes the null check mean
+      // what it says.
+      const delivered = toNum(d.volumeDeliveredLitres, { scale: 3, fallback: Number.NaN });
+      const volume = Number.isFinite(delivered) ? delivered : toNum(d.volumeOrderedLitres, { scale: 3 });
       if (!Number.isFinite(volume) || volume <= 0) continue;
       let arr = deliveriesByTank.get(d.tankId);
       if (!arr) { arr = []; deliveriesByTank.set(d.tankId, arr); }

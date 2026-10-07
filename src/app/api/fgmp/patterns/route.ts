@@ -6,6 +6,7 @@ import {
   applyRateLimitHeaders,
   READ_LIMIT,
 } from "@/lib/fgmp/rate-limit";
+import { toNum } from "@/lib/fgmp/decimal";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import {
   requireAuth,
@@ -181,7 +182,9 @@ export async function GET(req: NextRequest) {
     for (const tk of tankRows) {
       tankMeta.set(tk.id, {
         label: tk.label,
-        capacity: tk.capacityLitres,
+        // Phase 5 task 1: capacityLitres is Decimal(12,3); the analytics
+        // bucket below does arithmetic on it, so convert at the read.
+        capacity: toNum(tk.capacityLitres, { scale: 3 }),
         siteId: tk.site.id,
         siteName: tk.site.name,
         siteCode: tk.site.code,

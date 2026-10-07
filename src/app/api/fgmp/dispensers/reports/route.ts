@@ -1,4 +1,4 @@
-import { toJsonNumber } from "@/lib/fgmp/decimal";
+import { toJsonNumber, toNum, decimalsToJson } from "@/lib/fgmp/decimal";
 import { NextRequest, NextResponse } from "next/server";
 import { bootstrap } from "@/lib/fgmp";
 import {
@@ -137,7 +137,7 @@ export async function GET(req: NextRequest) {
           siteName: site?.name ?? s.siteId,
           siteCode: site?.code ?? "",
           txns: s._count,
-          volume: Math.round(s._sum.volumeLitres ?? 0),
+          volume: toNum(s._sum.volumeLitres, { scale: 3 }),
           revenue: toJsonNumber(s._sum.amountYer),
         };
       })
@@ -152,7 +152,7 @@ export async function GET(req: NextRequest) {
           pumpNumber: disp?.pumpNumber ?? 0,
           siteName: disp?.site?.name ?? "",
           txns: d._count,
-          volume: Math.round(d._sum.volumeLitres ?? 0),
+          volume: toNum(d._sum.volumeLitres, { scale: 3 }),
           revenue: toJsonNumber(d._sum.amountYer),
         };
       })
@@ -162,7 +162,7 @@ export async function GET(req: NextRequest) {
       .map((v) => ({
         vehiclePlate: v.vehiclePlate ?? "—",
         txns: v._count,
-        volume: Math.round(v._sum.volumeLitres ?? 0),
+        volume: toNum(v._sum.volumeLitres, { scale: 3 }),
         revenue: toJsonNumber(v._sum.amountYer),
       }))
       .sort((a, b) => b.volume - a.volume);
@@ -170,7 +170,7 @@ export async function GET(req: NextRequest) {
     const byStatus = byStatusRaw.map((s) => ({
       status: s.status,
       txns: s._count,
-      volume: Math.round(s._sum.volumeLitres ?? 0),
+      volume: toNum(s._sum.volumeLitres, { scale: 3 }),
     }));
 
     // Hourly histogram (24 buckets, hour-of-day)
@@ -178,9 +178,11 @@ export async function GET(req: NextRequest) {
     for (const t of hourlyRaw) {
       const h = new Date(t.startedAt).getHours();
       hourly[h].txns++;
-      hourly[h].volume += t.volumeLitres;
+      hourly[h].volume += toNum(t.volumeLitres, { scale: 3 });
     }
-    for (const h of hourly) h.volume = Math.round(h.volume);
+    // No second Math.round() pass here: the sums above are exact decimals via
+    // toNum(scale:3), so re-rounding would only discard the third digit the
+    // ledger stores.
 
     // Daily breakdown
     const dailyMap = new Map<string, { txns: number; volume: number; revenue: number }>();
@@ -189,19 +191,19 @@ export async function GET(req: NextRequest) {
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
       const entry = dailyMap.get(key) ?? { txns: 0, volume: 0, revenue: 0 };
       entry.txns++;
-      entry.volume += t.volumeLitres;
+      entry.volume += toNum(t.volumeLitres, { scale: 3 });
       entry.revenue += toJsonNumber(t.amountYer);
       dailyMap.set(key, entry);
     }
     const daily = Array.from(dailyMap.entries())
-      .map(([date, v]) => ({ date, txns: v.txns, volume: Math.round(v.volume), revenue: Math.round(v.revenue) }))
+      .map(([date, v]) => ({ date, txns: v.txns, volume: v.volume, revenue: Math.round(v.revenue) }))
       .sort((a, b) => a.date.localeCompare(b.date));
 
     const totals = {
       txns: totalAgg._count,
-      volume: Math.round(totalAgg._sum.volumeLitres ?? 0),
+      volume: toNum(totalAgg._sum.volumeLitres, { scale: 3 }),
       revenue: toJsonNumber(totalAgg._sum.amountYer),
-      avgVolume: Math.round((totalAgg._avg.volumeLitres ?? 0) * 10) / 10,
+      avgVolume: toNum(totalAgg._avg.volumeLitres, { scale: 1 }),
       avgDuration: Math.round(totalAgg._avg.durationSec ?? 0),
       faultCount,
     };
@@ -228,7 +230,11 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    const res = NextResponse.json({
+    // `recent` carries raw Prisma rows, so volumeLitres/amountYer are Decimal
+    // objects. decimalsToJson() at the response boundary keeps the JSON
+    // contract numeric — without it NextResponse.json stringifies them and the
+    // API silently changes shape from number to string.
+    const res = NextResponse.json(decimalsToJson({
       period,
       since: since.toISOString(),
       until: now.toISOString(),
@@ -240,7 +246,7 @@ export async function GET(req: NextRequest) {
       hourly,
       daily,
       recent,
-    });
+    }));
     applyRateLimitHeaders(res.headers, rl);
     return res;
   } catch (err) {

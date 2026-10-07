@@ -545,7 +545,11 @@ class FgmpEngine {
           s.dispensers.flatMap((d) =>
             d.transactions.map((tx) => ({
               id: tx.id, dispenserId: tx.dispenserId, siteId: tx.siteId,
-              nozzle: tx.nozzle, volumeLitres: tx.volumeLitres, amountYer: tx.amountYer,
+              // Phase 5 task 1: volumeLitres is Decimal(12,3) in the DB but
+              // FuelTransactionState types it as number (the in-memory ring
+              // buffer feeds arithmetic). Convert at the boundary, scale 3.
+              nozzle: tx.nozzle, volumeLitres: toNum(tx.volumeLitres, { scale: 3 }),
+              amountYer: tx.amountYer,
               unitPriceYer: tx.unitPriceYer, vehiclePlate: tx.vehiclePlate ?? undefined,
               operatorName: tx.operatorName ?? undefined,
               status: tx.status as FuelTransactionState["status"],
@@ -1317,8 +1321,16 @@ class FgmpEngine {
     this.fuelTransactions.unshift(txn);
     if (this.fuelTransactions.length > MAX_RECENT_TXN_SNAPSHOT) this.fuelTransactions.pop();
 
-    // Update dispenser cumulative totalizer
-    d.totalizerLitres = Math.round((d.totalizerLitres + volume) * 100) / 100;
+    // Update dispenser cumulative totalizer.
+    //
+    // Phase 5 task 1: this is the accumulation the Decimal conversion exists to
+    // protect, so it is done at the COLUMN's scale (3dp) rather than the old
+    // 2dp. Rounding to 2dp here would silently discard the third digit the
+    // ledger now stores — a 12.345 L dispense would total as 12.35, and across
+    // months of dispensing that quantisation is exactly the drift that reads as
+    // theft. toNum({scale:3}) keeps the in-memory value on the stored scale so
+    // the persisted total and the in-memory total are the same number.
+    d.totalizerLitres = toNum(d.totalizerLitres + volume, { scale: 3 });
     d.lastTransactionAt = this.now;
 
     // Persist totalizer + reset state to DB occasionally (every ~5 txns)
@@ -1326,10 +1338,17 @@ class FgmpEngine {
       db.fuelDispenser.update({
         where: { id: d.id },
         data: {
-          totalizerLitres: d.totalizerLitres,
+          // Phase 5 task 1: these four are Decimal(12,3). The in-memory values
+          // are JS numbers, so they are wrapped rather than cast — a cast would
+          // silence the compiler without converting anything, which is how the
+          // JSON-contract regression became invisible in the first place.
+          // totalizerLitres is the lifetime accumulator this conversion exists
+          // to protect, so it is built from the exact stored scale, not from a
+          // Math.round(…, 100) that reintroduces two-decimal float arithmetic.
+          totalizerLitres: new Prisma.Decimal(toJsonNumber(d.totalizerLitres, { scale: 3 })),
           lastTransactionAt: new Date(this.now),
-          currentVolumeLitres: 0,
-          flowRateLpm: 0,
+          currentVolumeLitres: new Prisma.Decimal(0),
+          flowRateLpm: new Prisma.Decimal(0),
           currentTransactionId: null,
           status: "IDLE",
         },
