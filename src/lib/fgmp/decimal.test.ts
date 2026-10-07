@@ -179,29 +179,37 @@ describe("mulDecimals", () => {
  */
 describe("decimalsToJson", () => {
   test("converts a Decimal to a number", () => {
-    const out = decimalsToJson({ capacityLitres: new Prisma.Decimal("5000.000") });
+    const out = decimalsToJson<{ capacityLitres: unknown }>({
+      capacityLitres: new Prisma.Decimal("5000.000"),
+    });
     expect(typeof out.capacityLitres).toBe("number");
     expect(out.capacityLitres).toBe(5000);
   });
 
   test("leaves ordinary numbers, strings and booleans alone", () => {
-    const out = decimalsToJson({ a: 1, b: "x", c: true, d: null });
+    const out = decimalsToJson<Record<string, unknown>>({ a: 1, b: "x", c: true, d: null });
     expect(out).toEqual({ a: 1, b: "x", c: true, d: null });
   });
 
   test("recurses into nested objects and arrays", () => {
-    const out = decimalsToJson({
+    const out = decimalsToJson<{
+      tanks: Array<{ capacityLitres: unknown }>;
+      meta: { totals: { volumeLitres: unknown } };
+    }>({
       tanks: [{ capacityLitres: new Prisma.Decimal("100.500") }],
       meta: { totals: { volumeLitres: new Prisma.Decimal("7.250") } },
     });
     expect(typeof out.tanks[0]!.capacityLitres).toBe("number");
+    expect(out.tanks[0]!.capacityLitres).toBe(100.5);
     expect(out.meta.totals.volumeLitres).toBe(7.25);
   });
 
   test("preserves Date as an ISO string rather than coercing it", () => {
     // The route layer wants the ISO form; silently switching to epoch millis
     // would be a second, quieter contract change.
-    const out = decimalsToJson({ createdAt: new Date("2026-01-02T03:04:05Z") });
+    const out = decimalsToJson<{ createdAt: unknown }>({
+      createdAt: new Date("2026-01-02T03:04:05Z"),
+    });
     expect(out.createdAt).toBeInstanceOf(Date);
   });
 
@@ -213,6 +221,8 @@ describe("decimalsToJson", () => {
 
   test("rounds to the stored scale rather than exposing float noise", () => {
     // This is the reason the columns are Decimal at all.
-    expect(decimalsToJson({ v: new Prisma.Decimal("691.000") }).v).toBe(691);
+    expect(
+      decimalsToJson<{ v: unknown }>({ v: new Prisma.Decimal("691.000") }).v,
+    ).toBe(691);
   });
 });

@@ -145,14 +145,23 @@ export function useDestructiveConfirm() {
   const [target, setTarget] = React.useState<ConfirmDestructiveTarget | null>(null);
   const [busy, setBusy] = React.useState(false);
 
+  // Declared as a binding rather than inlined into the returned object.
+  // `settle` referenced itself from within the object literal it was defined in,
+  // which resolves to nothing at that point in the evaluation — it compiled as
+  // `TS2304: Cannot find name 'settle'` and would have thrown a ReferenceError
+  // the moment an operator cancelled a deletion. The most safety-relevant
+  // interaction in the component (the one that must NOT perform the action) was
+  // the broken one.
+  const settle = React.useCallback(() => {
+    setTarget(null);
+    setBusy(false);
+  }, []);
+
   return {
     target,
     busy,
     ask: (t: ConfirmDestructiveTarget) => setTarget(t),
-    settle: () => {
-      setTarget(null);
-      setBusy(false);
-    },
+    settle,
     setBusy,
     dialogProps: {
       target,

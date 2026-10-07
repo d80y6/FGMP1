@@ -8,6 +8,7 @@ import {
   READ_LIMIT,
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
+import { decimalsToJson } from "@/lib/fgmp/decimal";
 
 export const dynamic = "force-dynamic";
 
@@ -82,7 +83,19 @@ export async function GET(req: NextRequest) {
     ]),
     );
 
-    const res = NextResponse.json({ tanks, generators, batteries, iot, dispensers, sites });
+    // `decimalsToJson` is load-bearing, not defensive. The volume columns are
+    // `numeric(12,3)` and Prisma.Decimal serialises to a STRING, so without this
+    // the UI receives `{ capacityLitres: "5000" }` where nine components declare
+    // `capacityLitres: number` — 55 type errors in asset-registry-view alone.
+    //
+    // Found by p2-telemetry, who traced 207 tree-wide errors to this single
+    // unsanitised route rather than converting call sites in the components. The
+    // diagnosis was right: one route, one fix. Converting in the components
+    // would have left the frontend tolerating two shapes indefinitely, which is
+    // how the three divergent site-health formulas happened in the first place.
+    const res = NextResponse.json(
+      decimalsToJson({ tanks, generators, batteries, iot, dispensers, sites }),
+    );
     applyRateLimitHeaders(res.headers, rl);
     return res;
   } catch (err) {

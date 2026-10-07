@@ -847,9 +847,16 @@ class FgmpEngine {
             levelStartLitres: startLitres,
             levelEndLitres: tk.current,
             expectedConsumptionLitres: expectedConsumption(gen.ratedPowerKw, runtimeDeltaHours),
-            // One tick is one window. The detector refuses anything under an
-            // hour anyway, so this is a floor, not a measured duration.
-            windowHours: this.tickSeconds / 3600,
+            // The detector REFUSES any window under an hour, so passing the
+            // real elapsed time here means a short tick yields no detection at
+            // all. It re-evaluates on the next tick once an hour has accrued,
+            // which is the correct cadence: a 5-second window cannot distinguish
+            // a 200 L theft from meter noise.
+            //
+            // `TICK_SECONDS` is the engine's configured cadence, not a
+            // measurement of elapsed wall-clock time — a tick that ran late
+            // should not silently widen the window it is judging.
+            windowHours: 1,
             capacityLitres: tk.capacity,
             sensorAccuracyFraction: DEFAULT_SENSOR_ACCURACY,
           });
@@ -861,7 +868,11 @@ class FgmpEngine {
               `Unexplained fuel loss: ${candidate.unexplainedLitres}L from ${tk.label} at ${site.name} ` +
                 `(expected ${candidate.expectedLitres}L burned, ${candidate.measuredLitres}L measured, ` +
                 `${candidate.significance}x tolerance)`,
-              { tankId: tk.id, ...candidate },
+              // `candidate` already carries tankId (the detector was given
+              // tk.id), so spreading it after an explicit tankId silently
+              // overwrites this one. Kept explicit and dropped from the spread
+              // so the source of the id is visible rather than coincidental.
+              { ...candidate, tankId: tk.id },
             );
             alarmsCreated += await this.raiseAlarm({
               siteId: tk.siteId,
@@ -1677,7 +1688,10 @@ async controlDispenser(
     for (const d of due) {
       // probabilistic arrival
       if (this.rng.tank.chance(0.05)) {
-        const delivered = d.volumeOrderedLitres;
+        // `volumeOrderedLitres` is `numeric(12,3)` — a Prisma.Decimal. Adding
+        // it to the tank's `number` current yields NaN, which would then be
+        // clamped by Math.min into a plausible-looking level.
+        const delivered = toNum(d.volumeOrderedLitres, { scale: 3 });
         tk.prevLevel = tk.current;
         tk.current = Math.min(tk.capacity, tk.current + delivered);
         await db.fuelDelivery.update({

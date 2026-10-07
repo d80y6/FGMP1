@@ -29,7 +29,18 @@ export const dynamic = "force-dynamic";
  * hijacked admin session) could enumerate or churn the entire roster with no
  * throttle at all.
  */
-function limitFor(req: NextRequest, me: { id: string }, mutating: boolean) {
+/**
+ * `async` is load-bearing, not incidental.
+ *
+ * `rateLimitByUser` became async when the limiter moved to Redis (Phase 5), so
+ * this function awaits it. Without `async` the `await` is a syntax error —
+ * `tsc` catches it, but only because the compiler looks at this file. A helper
+ * of this shape that is NOT awaited at the call site would instead return a
+ * Promise, and `if (!rl.success)` would be false for every request because a
+ * Promise has no `.success` — silently disabling rate limiting on this route.
+ * Hence: async, awaited, and the response checked.
+ */
+async function limitFor(req: NextRequest, me: { id: string }, mutating: boolean) {
   const cfg = mutating ? MUTATION_LIMIT : READ_LIMIT;
   const rl = await rateLimitByUser(req, me.id, cfg.limit, cfg.windowMs);
   if (!rl.success) {

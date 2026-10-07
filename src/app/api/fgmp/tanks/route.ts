@@ -11,7 +11,7 @@ import {
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireAuth, requireRole, ROLES, siteTenantWhereOrAll, assertTenantOwned } from "@/lib/fgmp/auth-helpers";
-import { decimalsToJson } from "@/lib/fgmp/decimal";
+import { decimalsToJson, toNum } from "@/lib/fgmp/decimal";
 
 export const dynamic = "force-dynamic";
 
@@ -164,14 +164,19 @@ export async function POST(req: NextRequest) {
       siteId: row.siteId,
       label: row.label,
       fuelType: row.fuelType,
-      capacity: row.capacityLitres,
-      current: row.currentLitres,
-      low: row.lowThreshold,
-      critical: row.criticalThreshold,
+      // The volume columns are `numeric(12,3)` — Prisma.Decimal. This object
+      // feeds the in-process engine, whose TankState declares `number`, so the
+      // conversion happens HERE rather than being cast away. `scale: 3` matches
+      // the column so the value is not widened into digits the ledger does not
+      // hold.
+      capacity: toNum(row.capacityLitres, { scale: 3 }),
+      current: toNum(row.currentLitres, { scale: 3 }),
+      low: toNum(row.lowThreshold, { scale: 3 }),
+      critical: toNum(row.criticalThreshold, { scale: 3 }),
       status: row.status,
       lastReadingAt: row.lastReadingAt?.getTime() ?? Date.now(),
       history: [],
-      prevLevel: row.currentLitres,
+      prevLevel: toNum(row.currentLitres, { scale: 3 }),
     });
 
     await audit({

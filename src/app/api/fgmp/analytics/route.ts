@@ -574,7 +574,16 @@ export async function GET(req: NextRequest) {
         },
         openAlarms: alarmCount,
         alarmsPerSite: round2(alarmsPerSite),
-        alarmPenaltyPoints: round2(alarmPenalty),
+        // The canonical penalty from `alarmScore()` (src/lib/health/
+        // site-health-score.ts), which is the same factor every site badge
+        // uses. The local `alarmPenalty` this referenced was deleted when the
+        // duplicate server-side formula was removed — leaving a dangling name
+        // that still typechecked because it is only a bare identifier.
+        //
+        // Reporting the canonical value is the point: the headline number and
+        // the per-site badge must come from ONE implementation, which is the
+        // whole reason that module exists.
+        alarmPenaltyPoints: round2(alarmLoadPct),
       },
     };
 

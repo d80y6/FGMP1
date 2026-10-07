@@ -1,5 +1,11 @@
 import type { Role } from "./types";
 
+// Re-exported so consumers of the capability matrix can name the role type
+// without reaching into `./types`. `rbac-matrix.test.ts` does exactly that,
+// and `ROLE_PERMISSIONS` is `Record<Role, …>` — a matrix you cannot type-check
+// against its own key union is a matrix nothing verifies.
+export type { Role };
+
 export interface Permission {
   view: string; // dashboard view key
 }

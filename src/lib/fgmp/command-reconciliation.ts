@@ -147,12 +147,21 @@ export function decideReconciliation(
   // If `executedAt` IS set, the device acknowledged the action but the status
   // was never advanced. Recording it as TIMEOUT would be wrong — the command DID
   // execute — so it is reported distinctly and still moved, because leaving a
-  // row in PENDING after an execution is what blocks the generator.
-  const executedButUnrecorded = cmd.executedAt !== null;
+  // Destructure rather than test `cmd.executedAt !== null` inline.
+  //
+  // Assigning the test to a boolean does NOT narrow the object property for
+  // TypeScript, so `cmd.executedAt.toISOString()` on the next line was an error
+  // (TS18047) and would have thrown at runtime on exactly the path that matters:
+  // reconciling a command a device acknowledged but never closed out.
+  //
+  // A `local` narrows, so the fix is the destructuring — not a non-null
+  // assertion, which would satisfy the compiler while leaving the crash.
+  const { executedAt, status } = cmd;
+  const executedButUnrecorded = executedAt !== null;
 
   const note = executedButUnrecorded
-    ? `Reconciled by sweep: acknowledged at ${cmd.executedAt.toISOString()} but ` +
-      `status was still ${cmd.status}. Treated as a timeout for the status ` +
+    ? `Reconciled by sweep: acknowledged at ${executedAt.toISOString()} but ` +
+      `status was still ${status}. Treated as a timeout for the status ` +
       `field; the acknowledgement timestamp is preserved.`
     : `Reconciled by sweep: no acknowledgement ${Math.round(ageMs / 1000)}s after ` +
       `issuance. No device response was ever recorded for this command.`;
