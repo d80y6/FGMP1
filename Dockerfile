@@ -10,18 +10,11 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN bun run db:generate
-# Emit the schema as plain SQL here, where the full Prisma CLI is available.
-# The runtime applies it via scripts/docker-init-db.js using bun:sqlite — no
-# CLI (and no ~1500-package `bunx` download) needed on every container start.
-RUN bun ./node_modules/prisma/build/index.js migrate diff \
-      --from-empty --to-schema-datamodel prisma/schema.prisma --script \
-      > /app/prisma/schema.sql \
- && test -s /app/prisma/schema.sql
 RUN bun run build
 
 # ---- Runner ----
 # NOTE: `oven/bun:1-slim` is Debian 13 (trixie) and ships WITHOUT the
-# `adduser`/`addgroup` shims (only /usr/sbin/useradd + /usr/sbin/groupadd).
+# `adduser`/`addgroup` shims (only /usr/sbin/useradd and /usr/sbin/groupadd).
 # The previous `addgroup --system && adduser --system` line exited 127 and
 # broke the image build entirely.
 FROM oven/bun:1-slim AS runner
@@ -32,16 +25,25 @@ RUN groupadd --system --gid 1001 nodejs \
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
+# The 16 committed migrations are the schema authority (Phase 1). The runner
+# needs prisma/migrations/ to deploy them, and the Prisma CLI + engines to run
+# `migrate deploy`. Without these the container could only ever have used the
+# old SQLite bootstrap, which hard-exits against PostgreSQL.
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
-# Schema bootstrap script — applies prisma/schema.sql with bun:sqlite.
-COPY --from=builder /app/scripts/docker-init-db.js ./scripts/docker-init-db.js
+COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
+COPY --from=builder /app/node_modules/@prisma/engines ./node_modules/@prisma/engines
+# Entrypoint: applies pending migrations, then execs the standalone server.
+COPY --from=builder /app/scripts/docker-entrypoint.mjs ./scripts/docker-entrypoint.mjs
+# Schema preflight used when FGMP_SKIP_MIGRATE=1, so a mis-ordered deploy fails
+# at container start instead of on the first request.
+COPY --from=builder /app/scripts/db-preflight.mjs ./scripts/db-preflight.mjs
 # `.next/standalone` re-emits any `.env` it finds via output tracing, so one
 # can land in the shipped image. Remove it — secrets come from the environment.
 RUN rm -f /app/.env \
- && mkdir -p /app/db /app/backups \
- && chown -R nextjs:nodejs /app/db /app/backups
+ && mkdir -p /app/backups \
+ && chown -R nextjs:nodejs /app/backups /app/prisma
 USER nextjs
 EXPOSE 3000
 ENV PORT=3000
@@ -49,7 +51,13 @@ ENV HOSTNAME=0.0.0.0
 # The unprivileged user has no home dir; Prisma needs a writable cache/temp.
 ENV HOME=/tmp
 
-# Apply the Prisma schema before serving. Without this a fresh named volume
-# has no tables and the first request fails with "no such table". `db push` is
-# idempotent, so running it on every boot is safe.
-CMD ["sh", "-c", "bun ./scripts/docker-init-db.js && exec bun server.js"]
+# Apply migrations (no-op when already current) and then serve. Failures exit
+# non-zero rather than starting the server against an out-of-date schema.
+#
+# SECURITY: in any real deployment these run as a SEPARATE one-shot job against
+# FGMP_MIGRATE_DATABASE_URL (docker-compose's `migrate` service, or CI), and the
+# app is started with FGMP_SKIP_MIGRATE=1 so this container never holds DDL
+# rights. The app connects as fgmp_app, which cannot migrate; handing it an
+# owner credential would make the RLS boundary decorative.
+ENTRYPOINT ["bun", "./scripts/docker-entrypoint.mjs"]
+

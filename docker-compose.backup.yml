@@ -1,0 +1,193 @@
+# FGMP — scheduled backups (Phase 5, P1-7)
+#
+# ── Why this exists ──────────────────────────────────────────────────────────
+# Phase 0 deleted the /api/fgmp/backup* surface because it served a
+# byte-for-byte copy of the whole database to any tenant ADMIN, which is a
+# cross-tenant data breach (every tenant's users, bcrypt hashes, alarms and
+# audit log in one file). Removing the breach was correct — but it also removed
+# the only backup path the project had, leaving a national telco's fuel ledger
+# with none. This service is the replacement, and it is deliberately shaped so
+# it cannot reintroduce that bug.
+#
+# ── The two properties that matter ───────────────────────────────────────────
+#
+# 1. THE DUMP LEAVES THE APP NETWORK. It runs as a separate one-shot container
+#    talking to fgmp-db over the internal compose network. There is no HTTP
+#    route, so no authenticated user — of any role — can trigger, download or
+#    restore a dump. That is the whole difference from what Phase 0 removed.
+#
+# 2. IT USES fgmp_ops, WHICH IS BYPASSRLS. A plain `pg_dump` as fgmp_app would
+#    export *whatever the RLS policies let it see*, which is nothing — an RLS
+#    dump is silently incomplete, and a restore from it loses every row of every
+#    other tenant. Restoring tenant data requires bypassing RLS, so the dump
+#    must too. fgmp_ops exists for exactly this and is never given to the app
+#    (see the note in docker-compose.yml).
+#
+# The dump is written to the fgmp-backups volume and nowhere else.
+
+services:
+  # One-shot: `docker compose --profile backup run --rm fgmp-backup`
+  # Schedule it with the host's cron/systemd timer — see docs/RUNBOOK-backup.md.
+  fgmp-backup:
+    profiles: ["backup"]
+    # The PostgreSQL image, not the app image: pg_dump must come from the same
+    # major version as the server, and the app image (oven/bun:1-slim) ships no
+    # PostgreSQL client binaries at all.
+    image: ${PG_CLIENT_IMAGE:-postgres:17}
+    environment:
+      - PGPASSWORD=${PGOPS_PASSWORD:?set PGOPS_PASSWORD (openssl rand -hex 24)}
+      - PGHOST=fgmp-db
+      - PGPORT=5432
+      - PGDATABASE=fgmp
+      # Compression + parallelism: the ledger grows by SensorReading fastest, and
+      # an uncompressed custom dump of a year of telemetry is not something an
+      # operator should discover the size of during an incident.
+      - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-14}
+      - BACKUP_OUT_DIR=/backups
+    volumes:
+      - fgmp-backups:/backups
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -eu
+        echo "fgmp-backup: starting dump of $${PGDATABASE} as fgmp_ops (BYPASSRLS)"
+        # Timestamp is UTC and sortable, so retention can delete by mtime with
+        # plain find(1) rather than parsing filenames.
+        STAMP="$$(date -u +%Y%m%dT%H%M%SZ)"
+        OUT="$${BACKUP_OUT_DIR}/fgmp-$${STAMP}.dump"
+
+        # --format=custom is required: a custom dump is compressed, and can be
+        # restored selectively (pg_restore --table) instead of forcing a
+        # whole-database replace. --serializable-deferrable takes a consistent
+        # snapshot without blocking writers.
+        pg_dump \
+          --host="$$PGHOST" --port="$$PGPORT" --username=fgmp_ops --dbname="$$PGDATABASE" \
+          --format=custom --compress=6 \
+          --serializable-deferrable \
+          --file="$$OUT"
+
+        if [ ! -s "$$OUT" ]; then
+          echo "fgmp-backup: FATAL — dump produced no output at $$OUT" >&2
+          exit 1
+        fi
+
+        # Record the size and a checksum beside the dump. A backup nobody can
+        # tell is intact is a backup nobody can trust; the checksum is what the
+        # restore drill verifies before believing a file.
+        SIZE=$$(wc -c < "$$OUT")
+        ( cd "$$BACKUP_OUT_DIR" && sha256sum "$$(basename "$$OUT")" > "$$OUT.sha256" )
+        echo "fgmp-backup: wrote $$OUT ($$SIZE bytes)"
+
+        # ── Retention ──────────────────────────────────────────────────────
+        # Delete dumps (and their checksum files) older than the retention
+        # window. Never touches anything newer, and never touches a file this
+        # run did not create.
+        echo "fgmp-backup: pruning dumps older than $${BACKUP_RETENTION_DAYS} days"
+        find "$$BACKUP_OUT_DIR" -maxdepth 1 -type f \
+          -name 'fgmp-*.dump' -mtime +"$${BACKUP_RETENTION_DAYS}" -print -delete
+        find "$$BACKUP_OUT_DIR" -maxdepth 1 -type f \
+          -name 'fgmp-*.dump.sha256' -mtime +"$${BACKUP_RETENTION_DAYS}" -print -delete
+
+        echo "fgmp-backup: done. Current contents of $${BACKUP_OUT_DIR}:"
+        ls -lh "$$BACKUP_OUT_DIR" || true
+    depends_on:
+      fgmp-db:
+        condition: service_healthy
+    restart: "no"
+
+  # Restore drill. Run this REGULARLY against a throwaway database — a backup
+  # that has never been restored is not a backup, it is a hope.
+  #
+  #   docker compose --profile backup run --rm \
+  #     -e RESTORE_TARGET_DB=fgmp_restore_probe fgmp-backup-restore
+  #
+  # It restores into RESTORE_TARGET_DB and then READS BACK row counts and a
+  # checksum, so "the restore succeeded" is a verified claim rather than an exit
+  # code. The probe database is dropped afterwards; nothing touches the live one.
+  fgmp-backup-restore:
+    profiles: ["backup"]
+    image: ${PG_CLIENT_IMAGE:-postgres:17}
+    environment:
+      # BYPASSRLS role — the one that actually restores rows.
+      - PGPASSWORD=${PGOPS_PASSWORD:?set PGOPS_PASSWORD (openssl rand -hex 24)}
+      # Same value under an unambiguous name, because the script below swaps
+      # PGPASSWORD between roles and must not lose the original.
+      - FGMP_OPS_PASSWORD=${PGOPS_PASSWORD:?set PGOPS_PASSWORD (openssl rand -hex 24)}
+      - PGHOST=fgmp-db
+      - PGPORT=5432
+      - PGUSER=fgmp_ops
+      # Owner role — used ONLY to create/drop the throwaway probe database.
+      # fgmp_ops deliberately has no CREATEDB: it exists to dump and restore,
+      # never to create databases. Verified: pg_roles.rolcreatedb is true for
+      # fgmp_migrate and false for fgmp_ops.
+      - PGMIGRATE_PASSWORD=${PGMIGRATE_PASSWORD:?set PGMIGRATE_PASSWORD (openssl rand -hex 24)}
+      - RESTORE_TARGET_DB=${RESTORE_TARGET_DB:-fgmp_restore_probe}
+    volumes:
+      - fgmp-backups:/backups:ro
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -eu
+        SRC=$$(ls -1t /backups/fgmp-*.dump 2>/dev/null | head -1 || true)
+        if [ -z "$$SRC" ]; then
+          echo "fgmp-backup-restore: FATAL — no dump found in /backups" >&2
+          exit 1
+        fi
+        echo "fgmp-backup-restore: restoring $$SRC into $${RESTORE_TARGET_DB}"
+
+        # Verify the checksum BEFORE trusting the file. A truncated or
+        # half-written dump restores without error in some cases; the checksum
+        # is what catches that.
+        if [ -f "$$SRC.sha256" ]; then
+          ( cd /backups && sha256sum -c "$$(basename "$$SRC").sha256" ) \
+            || { echo "fgmp-backup-restore: FATAL — checksum mismatch, refusing to restore" >&2; exit 1; }
+          echo "fgmp-backup-restore: checksum OK"
+        else
+          echo "fgmp-backup-restore: WARNING — no .sha256 beside the dump; cannot verify integrity"
+        fi
+
+        # Create the scratch database as the OWNER role: fgmp_ops has no
+        # CREATEDB by design. Then switch back to fgmp_ops for the restore so
+        # RLS is bypassed and every tenant's rows actually come back.
+        export PGPASSWORD="$${PGMIGRATE_PASSWORD}"
+        psql -U fgmp_migrate -d postgres -v ON_ERROR_STOP=1 \
+          -c "DROP DATABASE IF EXISTS \"$${RESTORE_TARGET_DB}\" WITH (FORCE);" \
+          -c "CREATE DATABASE \"$${RESTORE_TARGET_DB}\" TEMPLATE template0;"
+        # pg_restore has to CREATE the tables, and PostgreSQL 15+ ships the
+        # public schema with USAGE only — no CREATE. Without this grant the
+        # restore fails with ~70 "permission denied for schema public" errors
+        # and then a cascade of "relation does not exist" for every RLS policy
+        # that references a table that was never created. Observed, not guessed.
+        # The grant is on a throwaway database that is dropped moments later.
+        psql -U fgmp_migrate -d "$${RESTORE_TARGET_DB}" -v ON_ERROR_STOP=1 \
+          -c "GRANT CREATE ON SCHEMA public TO fgmp_ops;"
+        export PGPASSWORD="$${FGMP_OPS_PASSWORD}"
+
+        # --no-owner: the dump records fgmp_ops/other roles as owners; the probe
+        # database is local to this drill and those roles must not be recreated.
+        pg_restore -U fgmp_ops -d "$${RESTORE_TARGET_DB}" \
+          --no-owner --no-privileges --no-comments "$$SRC"
+
+        # Read back real numbers. A restore that "succeeded" but restored 0 rows
+        # is the failure mode this whole service exists to catch.
+        echo "fgmp-backup-restore: verifying restored contents…"
+        psql -U fgmp_ops -d "$${RESTORE_TARGET_DB}" -v ON_ERROR_STOP=1 -tA <<'SQL'
+        SELECT 'Tenant      ' || count(*) FROM "Tenant";
+        SELECT 'Site        ' || count(*) FROM "Site";
+        SELECT 'User        ' || count(*) FROM "User";
+        SELECT 'FuelTank    ' || count(*) FROM "FuelTank";
+        SELECT 'Alarm       ' || count(*) FROM "Alarm";
+        SELECT 'AuditLog    ' || count(*) FROM "AuditLog";
+        SELECT 'SensorRead  ' || count(*) FROM "SensorReading";
+        SQL
+
+        export PGPASSWORD="$${PGMIGRATE_PASSWORD}"
+        psql -U fgmp_migrate -d postgres -v ON_ERROR_STOP=1 \
+          -c "DROP DATABASE \"$${RESTORE_TARGET_DB}\" WITH (FORCE);"
+        echo "fgmp-backup-restore: PASS — dump restores and contains readable data. Probe database dropped."
+    depends_on:
+      fgmp-db:
+        condition: service_healthy
+    restart: "no"

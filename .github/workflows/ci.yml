@@ -55,6 +55,20 @@ jobs:
         env:
           DATABASE_URL: postgresql://fgmp_app:ciapp@127.0.0.1:5432/fgmp?schema=public
 
+      # ── The unit-test gate ───────────────────────────────────────────────
+      # Phase 5, P0-6. Twelve test files and a `test` script existed while CI
+      # ran typecheck/lint/validate/build and never invoked them, so nothing
+      # mechanically prevented a regression. That is exactly the failure mode
+      # that let this codebase reach a state where "feature-complete" was
+      # claimed without a single test ever having run.
+      #
+      # `bun test` runs the whole suite: pure unit tests (decimal conversion,
+      # interlocks, control scope, protocol framing) plus the in-process suites
+      # under __tests__. No database is required — the suites that need
+      # PostgreSQL live in the `rls` job below, which provisions a real server.
+      - name: Unit tests (must be zero failures)
+        run: bun run test
+
       # ── The production build ─────────────────────────────────────────────
       # Runs with `typescript.ignoreBuildErrors: false`, so a type error fails
       # here too, and it proves the standalone output the Dockerfile depends
