@@ -259,6 +259,12 @@ enum ControlCommandStatus {
   EXECUTED
   FAILED
   TIMEOUT
+  // Phase 5: the command was overtaken by a newer command for the same
+  // generator and will never now run. Genuinely TERMINAL, and deliberately
+  // distinct from FAILED — nothing went wrong, the command simply lost the race.
+  // Collapsing it into FAILED would tell an operator the generator rejected a
+  // start when in fact a later start superseded it.
+  SUPERSEDED
 }
 
 enum TicketPriority {
@@ -1113,6 +1119,26 @@ model ControlCommand {
   executedAt  DateTime?
   result      String?
 
+  // Phase 5 idempotency. NULLABLE with no default, so every pre-existing row
+  // and every command from a client that sends no key is honestly NULL.
+  //
+  // The key lives on the command row rather than in a separate IdempotencyRecord
+  // table for one reason: a replay must return the ORIGINAL outcome, and that
+  // outcome is this row. A side table would mean joining back to find which
+  // command the key produced, duplicating tenant/actor columns, and
+  // reconstructing the result instead of reading it.
+  idempotencyKey String?
+  /**
+   * Short digest of the request payload for this key.
+   *
+   * Lets a replay with the SAME key but a DIFFERENT payload be rejected rather
+   * than silently answered with the first outcome — which would be a client bug
+   * (reusing a key for a different command) disguised as a successful retry.
+   * A digest rather than the raw body so the column does not become a store of
+   * arbitrary client input, and so it is fixed-width.
+   */
+  payloadFingerprint String?
+
   generator Generator @relation(fields: [generatorId], references: [id], onDelete: Cascade)
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   issuedBy  User?     @relation(fields: [issuedById], references: [id])
@@ -1120,6 +1146,15 @@ model ControlCommand {
   @@index([tenantId])
   @@index([tenantId, status])
   @@index([generatorId, status])
+  // Scoped to (tenant, generator) so one tenant's key cannot collide with
+  // another's, and a key cannot be reused across two different generators.
+  //
+  // NULLs are ignored by a Postgres unique index, which is load-bearing: every
+  // existing client that sends no Idempotency-Key has idempotencyKey = NULL, and
+  // those rows must NOT be treated as duplicates of each other. A unique index
+  // that treated NULLs as equal would make every un-keyed command a duplicate of
+  // the first one ever issued.
+  @@unique([tenantId, generatorId, idempotencyKey])
 }
 
 /// Phase 2 — safety interlock override audit trail.
