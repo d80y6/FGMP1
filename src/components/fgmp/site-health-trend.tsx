@@ -1,6 +1,6 @@
 "use client";
 
-import { computeSiteHealth as computeCanonicalSiteHealth } from "./site-health-score";
+import { computeSiteHealth as computeCanonicalSiteHealth } from "@/lib/health/site-health-score";
 import { useMemo } from "react";
 import { Activity, TrendingUp, TrendingDown } from "lucide-react";
 import {

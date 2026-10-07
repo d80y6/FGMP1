@@ -1,6 +1,6 @@
 "use client";
 
-import { computeSiteHealth as computeCanonicalSiteHealth } from "./site-health-score";
+import { computeSiteHealth as computeCanonicalSiteHealth } from "@/lib/health/site-health-score";
 import { useShallow } from "zustand/react/shallow";
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,

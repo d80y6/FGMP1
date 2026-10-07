@@ -17,8 +17,9 @@ import {
   SITE_HEALTH_FACTOR_ORDER,
   healthBand,
   HEALTH_BAND_CLASSES,
+  alarmScore,
   type SiteHealthInput,
-} from "../site-health-score";
+} from "@/lib/health/site-health-score";
 import { computeSiteHealth as computeFromBadge } from "../site-health-badge";
 
 /** A representative site: healthy but not perfect. */
@@ -177,5 +178,44 @@ describe("band scale", () => {
         expect(order.indexOf(healthBand(s))).toBeLessThanOrEqual(order.indexOf(healthBand(s - 1)));
       }
     }
+  });
+});
+/**
+ * Phase 5 (analytics task) — the server-side aggregate and the per-site
+ * surfaces now share one alarm factor.
+ *
+ * Before this change the analytics route computed alarm pressure as a per-site
+ * density penalty capped at 25 points, while every per-site surface computed
+ * it as a bounded factor saturating at 10 alarms. Measured across sampled
+ * inputs the two disagreed by up to 80 points on the factor, which is 8 points
+ * on the 0-100 headline — enough for the same site to read "healthy" on the
+ * dashboard and "unhealthy" on its badge.
+ *
+ * This asserts the old penalty shape no longer exists anywhere, and that the
+ * factor is the one both call.
+ */
+describe("alarm factor is shared, not re-derived", () => {
+  test("the old per-site density penalty is gone from analytics", async () => {
+    const src = await Bun.file("src/app/api/fgmp/analytics/route.ts").text();
+    // ALARM_PENALTY_PER_SITE / ALARM_PENALTY_CAP defined the old shape.
+    expect(src).not.toContain("ALARM_PENALTY_PER_SITE");
+    expect(src).not.toContain("ALARM_PENALTY_CAP");
+    // And it must actually import the canonical factor rather than inline it.
+    expect(src).toContain("alarmScore");
+    expect(src).toContain("@/lib/health/site-health-score");
+  });
+
+  test("the old private weight table is gone from analytics", async () => {
+    const src = await Bun.file("src/app/api/fgmp/analytics/route.ts").text();
+    expect(src).not.toContain("const HEALTH_WEIGHTS");
+    expect(src).toContain("SITE_HEALTH_WEIGHTS");
+  });
+
+  test("alarmScore ignores siteCount, so no caller can reintroduce density", () => {
+    // A site has exactly one site. Dividing by a site count would let a fleet
+    // of 20 sites hide a genuine alarm backlog behind a per-site average.
+    expect(alarmScore(10, 1)).toBe(alarmScore(10, 20));
+    expect(alarmScore(10, 1)).toBe(0);
+    expect(alarmScore(0, 1)).toBe(100);
   });
 });

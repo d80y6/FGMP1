@@ -107,7 +107,7 @@ const UNKNOWN_UPTIME_SCORE = 50;
  * honest signal: state-of-health is a slowly-moving estimate, while voltage is
  * what actually limits a battery bank right now. Voltage wins.
  */
-const BATTERY_MIN_HEALTHY_VOLTAGE = 46;
+const BATTERY_TRIP_RATIO = 0.88;
 
 export interface SiteHealthFactors {
   uptime: number;
@@ -131,7 +131,7 @@ function clamp(n: number): number {
 }
 
 /** Average % full across tanks. Empty → 100 (see the header note). */
-function fuelScore(tanks: SiteHealthInput["tanks"]): number {
+export function fuelScore(tanks: SiteHealthInput["tanks"]): number {
   if (tanks.length === 0) return 100;
   const avg =
     tanks.reduce((sum, t) => sum + (t.current / Math.max(1, t.capacity)) * 100, 0) /
@@ -140,28 +140,53 @@ function fuelScore(tanks: SiteHealthInput["tanks"]): number {
 }
 
 /** Fraction of generators not in FAULT. Empty → 100. */
-function generatorScore(generators: SiteHealthInput["generators"]): number {
+export function generatorScore(generators: SiteHealthInput["generators"]): number {
   if (generators.length === 0) return 100;
   const ok = generators.filter((g) => g.status !== "FAULT").length;
   return (ok / generators.length) * 100;
 }
 
-/** Fraction of batteries above the healthy voltage threshold. Empty → 100. */
-function batteryScore(batteries: SiteHealthInput["batteries"]): number {
+/**
+ * Fraction of batteries above their own trip voltage. Empty → 100.
+ *
+ * Phase 5 (analytics task): the hardcoded absolute `> 46` this replaced scored
+ * EVERY 24 V bank 0% — 24 V never reaches 46 V, healthy or not — while the
+ * server-side aggregate correctly compared against nominal. Two surfaces, two
+ * answers, for the same fleet. Both now use nominal-relative here.
+ */
+export function batteryScore(
+  batteries: { voltage: number; nominalVoltage?: number }[],
+): number {
   if (batteries.length === 0) return 100;
-  const ok = batteries.filter((b) => b.voltage > BATTERY_MIN_HEALTHY_VOLTAGE).length;
-  return (ok / batteries.length) * 100;
+  const healthy = batteries.filter(
+    (b) =>
+      // A bank with no declared nominal voltage cannot be judged; treat it as
+      // healthy rather than penalising an un-instrumented site.
+      b.nominalVoltage == null || b.voltage > b.nominalVoltage * BATTERY_TRIP_RATIO,
+  ).length;
+  return (healthy / batteries.length) * 100;
 }
 
 /**
  * Alarm pressure → a 0-100 factor, not a penalty.
  *
  * Capped at 10 alarms because by then the factor is 0 and further alarms carry
- * no extra information. Mapping density to a bounded factor (rather than
+ * no extra information. Mapping pressure to a bounded factor (rather than
  * subtracting it) keeps the score a weighted average, so the weights still mean
  * what they say.
+ *
+ * Phase 5 (analytics task): the server-side aggregate used a per-site density
+ * penalty capped at 25 points. Measured against this function the two differ
+ * by up to 80 points on the factor — 8 points on the 0-100 headline — so the
+ * same site could read "healthy" on the dashboard and "unhealthy" on its badge.
+ * The server now calls this.
+ *
+ * @param alarmCount open alarms. `siteCount` is accepted and IGNORED: the
+ * penalty shape is kept for signature compatibility with the old aggregate,
+ * which divided by site count. Per-SITE scoring has one site by definition, so
+ * dividing would only mask a real alarm backlog.
  */
-function alarmScore(alarmCount: number): number {
+export function alarmScore(alarmCount: number, _siteCount?: number): number {
   const ALARM_SATURATION = 10;
   return clamp(100 - (Math.max(0, alarmCount) / ALARM_SATURATION) * 100);
 }

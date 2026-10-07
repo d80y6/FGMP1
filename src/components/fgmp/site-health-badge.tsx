@@ -8,7 +8,7 @@ import {
   computeSiteHealth as computeCanonicalSiteHealth,
   healthBand,
   HEALTH_BAND_CLASSES,
-} from "./site-health-score";
+} from "@/lib/health/site-health-score";
 
 /**
  * Per-site Health Score badge.

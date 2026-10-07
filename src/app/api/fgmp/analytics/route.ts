@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { engine, bootstrap } from "@/lib/fgmp";
 import { asTenant } from "@/lib/fgmp/route-tenant";
+import { SITE_HEALTH_WEIGHTS, alarmScore } from "@/lib/health/site-health-score";
 import type { SessionUser } from "@/lib/auth";
 import { projectConsumption } from "@/lib/fgmp/metrics-fuel-projection";
 import {
@@ -49,17 +50,10 @@ export const dynamic = "force-dynamic";
  * fuel, no generator faults and no alarms the displayed cards weighted-sum to
  * 85 while the headline read 89 — the number contradicted its own breakdown.
  */
-const HEALTH_WEIGHTS = {
-  uptime: 0.30,
-  fuel: 0.25,
-  generator: 0.20,
-  battery: 0.15,
-  alarm: 0.10,
-} as const;
+// Phase 5: the local HEALTH_WEIGHTS copy is deleted. It happened to hold the
+// same numbers as the canonical module, which is exactly why the divergence
+// went unnoticed — identical weights, different factor arithmetic.
 
-/** Penalty (points) per open alarm per site in the "Alarm Load" factor. */
-const ALARM_PENALTY_PER_SITE = 2;
-const ALARM_PENALTY_CAP = 25;
 
 /** Days shown by the `dailyCost` series and the `range=7d` chart. */
 const TREND_DAYS = 7;
@@ -529,22 +523,30 @@ export async function GET(req: NextRequest) {
     );
     const battHealthPct = battery.healthPct;
     const alarmsPerSite = sites.length ? alarmCount / sites.length : 0;
-    const alarmPenalty = Math.min(ALARM_PENALTY_CAP, alarmsPerSite * ALARM_PENALTY_PER_SITE);
-    const alarmLoadPct = Math.max(0, 100 - alarmPenalty);
+    // Phase 5: the alarm factor now comes from the canonical module.
+    //
+    // It was a per-site density penalty capped at 25 points, which disagreed
+    // with the per-site surfaces by up to 80 points on the factor (8 on the
+    // 0-100 headline). At 10 alarms for a single site the old code scored the
+    // alarm factor at 80 while every site badge scored it 0 — so a fleet in
+    // genuine alarm trouble could read as healthy here and critical there.
+    // Measured across sampled inputs before the change; the divergence is now
+    // zero by construction because both call alarmScore().
+    const alarmLoadPct = alarmScore(alarmCount, sites.length);
 
     const factors = [
-      { label: "Site Uptime", value: Math.round(onlinePct), weight: HEALTH_WEIGHTS.uptime, icon: "uptime", good: onlinePct > 90 },
-      { label: "Fuel Reserves", value: Math.round(fuelHealthPct), weight: HEALTH_WEIGHTS.fuel, icon: "fuel", good: fuelHealthPct > 50 },
-      { label: "Generator Health", value: Math.round(genHealthPct), weight: HEALTH_WEIGHTS.generator, icon: "generator", good: genHealthPct > 80 },
-      { label: "Battery Health", value: Math.round(battHealthPct), weight: HEALTH_WEIGHTS.battery, icon: "battery", good: battHealthPct > 75 },
-      { label: "Alarm Load", value: Math.round(alarmLoadPct), weight: HEALTH_WEIGHTS.alarm, icon: "alarm", good: alarmPenalty < 15 },
+      { label: "Site Uptime", value: Math.round(onlinePct), weight: SITE_HEALTH_WEIGHTS.uptime, icon: "uptime", good: onlinePct > 90 },
+      { label: "Fuel Reserves", value: Math.round(fuelHealthPct), weight: SITE_HEALTH_WEIGHTS.fuel, icon: "fuel", good: fuelHealthPct > 50 },
+      { label: "Generator Health", value: Math.round(genHealthPct), weight: SITE_HEALTH_WEIGHTS.generator, icon: "generator", good: genHealthPct > 80 },
+      { label: "Battery Health", value: Math.round(battHealthPct), weight: SITE_HEALTH_WEIGHTS.battery, icon: "battery", good: battHealthPct > 75 },
+      { label: "Alarm Load", value: Math.round(alarmLoadPct), weight: SITE_HEALTH_WEIGHTS.alarms, icon: "alarm", good: alarmLoadPct > 75 },
     ];
     // Weighted mean of exactly the factors rendered above: no magic offset, and
     // the displayed cards always sum to the headline.
     const weightedSum = factors.reduce((s, f) => s + f.weight * f.value, 0);
     const siteHealth = {
       overall: Math.round(Math.max(0, Math.min(100, weightedSum))),
-      weights: HEALTH_WEIGHTS,
+      weights: SITE_HEALTH_WEIGHTS,
       factorWeightSum: Math.round(factors.reduce((s, f) => s + f.weight, 0) * 1000) / 1000,
       factors,
       detail: {
