@@ -1,5 +1,6 @@
 "use client";
 
+import { computeSiteHealth as computeCanonicalSiteHealth } from "./site-health-score";
 import { useMemo } from "react";
 import { Activity, TrendingUp, TrendingDown } from "lucide-react";
 import {
@@ -49,8 +50,17 @@ function seededNoise(siteId: string, dayIdx: number, range: number): number {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Health score formula (mirrors analytics/rbac logic)                */
+/*  Health score — Phase 5 task 1                                   */
 /* ------------------------------------------------------------------ */
+/*                                                                       */
+/*  This used to be a private formula that differed from the badge in    */
+/*  three ways: it omitted the alarm term entirely, it scored battery by  */
+/*  a 46 V threshold while the badge used state-of-health, and it        */
+/*  applied alarms as `-penalty + 15` — so a site with ZERO alarms        */
+/*  scored 15 points HIGHER than one with no measured factor at all.      */
+/*                                                                       */
+/*  All four surfaces now call the single implementation in                */
+/*  site-health-score.ts, and a test asserts they agree.                   */
 
 function computeTodayScore(
   siteStatus: string,
@@ -59,41 +69,13 @@ function computeTodayScore(
   batteries: SiteHealthTrendProps["batteries"],
   alarms: SiteHealthTrendProps["alarms"],
 ): number {
-  // Site Uptime: ONLINE → 100, DEGRADED/MAINTENANCE → 50, OFFLINE → 0
-  const uptimeScore =
-    siteStatus === "ONLINE" ? 100 :
-    siteStatus === "DEGRADED" || siteStatus === "MAINTENANCE" ? 50 : 0;
-
-  // Fuel Reserves: avg of current/capacity*100 across all tanks
-  const fuelScore = tanks.length > 0
-    ? tanks.reduce(
-        (a, t) => a + (t.current ?? 0) / Math.max(1, t.capacity ?? 1) * 100,
-        0,
-      ) / tanks.length
-    : 100;
-
-  // Generator Health: count of generators NOT in FAULT / total * 100
-  const genScore = generators.length > 0
-    ? (generators.filter((g) => g.status !== "FAULT").length / generators.length) * 100
-    : 100;
-
-  // Battery Health: count of batteries with voltage > 46 / total * 100
-  const battScore = batteries.length > 0
-    ? (batteries.filter((b) => b.voltage > 46).length / batteries.length) * 100
-    : 100;
-
-  // Alarm load penalty: min(25, alarmsPerSite * 2)
-  // For a single site, alarmsPerSite === alarms.length
-  const alarmPenalty = Math.min(25, alarms.length * 2);
-
-  const weightedSum =
-    uptimeScore * 0.30 +
-    fuelScore * 0.25 +
-    genScore * 0.20 +
-    battScore * 0.15;
-
-  const final = weightedSum - alarmPenalty + 15;
-  return Math.round(Math.max(0, Math.min(100, final)));
+  return computeCanonicalSiteHealth({
+    site: { status: siteStatus },
+    tanks,
+    generators,
+    batteries,
+    alarmCount: alarms.length,
+  }).overall;
 }
 
 /* ------------------------------------------------------------------ */

@@ -1,5 +1,6 @@
 "use client";
 
+import { computeSiteHealth as computeCanonicalSiteHealth } from "./site-health-score";
 import { useMemo } from "react";
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
@@ -38,7 +39,14 @@ function alarmTypeLabel(type: string, lang: Language): string {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Region score (mirrors region-leaderboard.tsx computeScore)         */
+/*  Region score — a DIFFERENT metric from site health, deliberately.      */
+/* ------------------------------------------------------------------ */
+/*  Phase 5 task 1 note: this measures a REGION (aggregate stability,     */
+/*  fleet coverage), not a site, so it keeps its own factors. It is NOT    */
+/*  compared against a site badge anywhere in the UI. Previously it looked  */
+/*  interchangeable with site health because both rendered as a 0-100      */
+/*  "score" beside a site name, which invited exactly the comparison the   */
+/*  audit flagged. The name now says what it is.                           */
 /* ------------------------------------------------------------------ */
 
 const AVG_TANK_CAPACITY_PER_SITE = 5000;
@@ -78,6 +86,11 @@ function computeRegionScore(r: RegionAgg, totalSites: number): RegionScore {
 /*  Site health (mirrors site-health-trend.tsx computeTodayScore)      */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Phase 5 task 1: the sheet carried a SECOND private copy of the trend
+ * formula, identical to it and different from the badge. It now calls the one
+ * canonical implementation like every other surface.
+ */
 function computeSiteHealth(
   siteStatus: string,
   tanks: { current: number; capacity: number }[],
@@ -85,23 +98,13 @@ function computeSiteHealth(
   batteries: { voltage: number }[],
   alarmCount: number,
 ): number {
-  const uptimeScore =
-    siteStatus === "ONLINE" ? 100 :
-    siteStatus === "DEGRADED" || siteStatus === "MAINTENANCE" ? 50 : 0;
-  const fuelScore = tanks.length > 0
-    ? tanks.reduce((a, t) => a + (t.current ?? 0) / Math.max(1, t.capacity ?? 1) * 100, 0) / tanks.length
-    : 100;
-  const genScore = generators.length > 0
-    ? (generators.filter((g) => g.status !== "FAULT").length / generators.length) * 100
-    : 100;
-  const battScore = batteries.length > 0
-    ? (batteries.filter((b) => b.voltage > 46).length / batteries.length) * 100
-    : 100;
-  const alarmPenalty = Math.min(25, alarmCount * 2);
-  const weightedSum =
-    uptimeScore * 0.30 + fuelScore * 0.25 + genScore * 0.20 + battScore * 0.15;
-  const final = weightedSum - alarmPenalty + 15;
-  return Math.round(Math.max(0, Math.min(100, final)));
+  return computeCanonicalSiteHealth({
+    site: { status: siteStatus },
+    tanks,
+    generators,
+    batteries,
+    alarmCount,
+  }).overall;
 }
 
 /* ------------------------------------------------------------------ */
