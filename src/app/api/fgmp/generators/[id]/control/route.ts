@@ -11,6 +11,7 @@ import {
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireRole, ROLES, assertSiteTenantOwned } from "@/lib/fgmp/auth-helpers";
 import { enforceInterlock, denialResponseBody } from "@/lib/fgmp/interlock-enforce";
+import { withGeneratorCommandLock } from "@/lib/fgmp/command-lock";
 import type { GenCommand } from "@/lib/fgmp/types";
 
 export const dynamic = "force-dynamic";
@@ -123,19 +124,77 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return res;
     }
 
-    // ── PHASE 3: the AUTHENTICATED tenant is passed down so the engine can
-    // assert the generator's tenant matches it, before any state mutation.
-    const result = await engine.applyCommand(
-      id,
-      command as GenCommand,
-      me.id,
-      reason,
-      me.tenantId,
-    );
+    // ── PHASE 5: CLOSE THE CHECK-THEN-DISPATCH WINDOW (TOCTOU) ───────────────
+    // `enforceInterlock()` above and `applyCommand()` below were two separate
+    // awaits with no lock between them. A concurrent IoT ingest could change
+    // coolant temperature or fuel level inside that window, and the command
+    // would then be authorised against a STALE reading.
+    //
+    // Latent today only because the dispatch is an in-process memory write.
+    // The moment it becomes a Modbus write this is a real race: the interlock
+    // would have said "safe at 84 °C" and the engine would receive START while
+    // the sensor read 97 °C.
+    //
+    // The interlock is therefore RE-EVALUATED inside a per-generator critical
+    // section, immediately before dispatch, and the dispatch is refused if the
+    // state has moved. Re-evaluating under the lock is what makes this correct:
+    // an advisory lock alone would serialise commands but still admit a
+    // telemetry write that landed between the first check and the lock being
+    // taken.
+    //
+    // The lock is IN-PROCESS and per-generator. It is honest about its own
+    // limits: it cannot order a write arriving from another replica. Once the
+    // dispatch targets real hardware this needs a database advisory lock held
+    // across the read-and-dispatch, not a process-local mutex — recorded rather
+    // than left to be discovered as an unexplained unsafe start.
+    const { result, revalidated } = await withGeneratorCommandLock(id, async () => {
+      const recheck = await enforceInterlock({
+        tenantId: me.tenantId,
+        generatorId: id,
+        command: command as GenCommand,
+        userId: me.id,
+        override: null,
+      });
+      if (!recheck.ok) {
+        await audit({
+          userId: me.id,
+          action: "CONTROL_DENIED",
+          entity: "generator",
+          entityId: id,
+          details: {
+            command,
+            reasonCode: denialResponseBody(recheck.verdict).reasonCode,
+            // Distinguishes "refused at the initial check" from "state moved
+            // between the check and the dispatch". The second is the finding
+            // this whole block exists to catch, so it must be visible.
+            stage: "REVALIDATED_BEFORE_DISPATCH",
+          },
+        });
+        return {
+          result: { ok: false, message: denialResponseBody(recheck.verdict).reasonCode },
+          revalidated: denialResponseBody(recheck.verdict),
+        };
+      }
+
+      // ── PHASE 3: the AUTHENTICATED tenant is passed down so the engine can
+      // assert the generator's tenant matches it, before any state mutation.
+      return {
+        result: await engine.applyCommand(id, command as GenCommand, me.id, reason, me.tenantId),
+        revalidated: null,
+      };
+    });
+
+    if (revalidated) {
+      const res = NextResponse.json(revalidated, { status: 409 });
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
     await audit({ userId: me.id, action: "CONTROL", entity: "generator", entityId: id, details: { command, reason, result } });
     const res = NextResponse.json(
       {
         ...result,
+        // The warnings that matter are the ones from the check that actually
+        // authorised this dispatch, which is the re-check inside the lock.
         interlockWarnings: enforced.verdict.warnings.map((w) => ({
           ruleId: w.ruleId,
           explanation: w.explanation,
