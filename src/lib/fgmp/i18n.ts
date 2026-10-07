@@ -1980,6 +1980,11 @@ export const DICTIONARY: Dict = {
   "handover.deleteFailed": { en: "Failed to delete handover note", ar: "فشل في حذف ملاحظة التسليم" },
   "handover.delete": { en: "Delete", ar: "حذف" },
   "handover.confirmDelete": { en: "Delete this handover note? This cannot be undone.", ar: "حذف ملاحظة التسليم؟ لا يمكن التراجع عن هذا الإجراء." },
+  // Phase 5 task 4 — dialog chrome. The design-system confirm dialog needs a
+  // heading naming the ACTION and separate cancel/confirm labels; a native
+  // window.confirm had only a message.
+  "confirm.deleteTitle": { en: "Delete", ar: "حذف" },
+  "confirm.cancel": { en: "Cancel", ar: "إلغاء" },
   "handover.empty": { en: "No handover notes yet", ar: "لا توجد ملاحظات تسليم بعد" },
   "handover.emptyDesc": { en: "Outgoing operators can leave a note for the next shift here.", ar: "يمكن للمشغّلين المنتهية وردتهم ترك ملاحظة للوردية القادمة هنا." },
   "handover.shift": { en: "Shift", ar: "الوردية" },
