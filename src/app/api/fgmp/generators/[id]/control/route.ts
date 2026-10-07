@@ -73,7 +73,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // the body: a header is set by the HTTP client as transport metadata and is
     // never populated by a form post or a JSON deserialiser, so it cannot be
     // smuggled in with the command payload.
-    const idemKey = req.headers.get("idempotency-key");
+    // Normalised here so the type below is `string | null` rather than
+    // `string | null | undefined`, and so trimming happens once. A blank header
+    // is treated as ABSENT, matching decideIdempotency's own rule: a client that
+    // sends an empty key has not opted into idempotency, and rejecting it would
+    // be a new failure mode nobody asked for.
+    const rawKey = req.headers.get("idempotency-key");
+    const idemKey = rawKey && rawKey.trim() !== "" ? rawKey.trim() : null;
     const fingerprint = fingerprintPayload({ command, generatorId: id, reason });
     const nowInstant = new Date();
 
@@ -97,7 +103,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       key: idemKey,
       fingerprint,
       issuedById: me.id,
-      existing: existing
+      existing: existing && idemKey
         ? {
             // The row was FOUND BY `idempotencyKey: idemKey`, so its key is
             // `idemKey` by construction. It is passed rather than read back from
@@ -105,8 +111,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             // not there and cast `undefined` to string — which type-checked and
             // then made the replay branch unreachable at runtime, disabling
             // idempotency silently. The key the row was matched on is the
-            // authoritative value and cannot be undefined.
-            key: idemKey.trim(),
+            // authoritative value.
+            //
+            // Narrowed by the `existing && idemKey` guard on this object rather
+            // than by `!`. `existing` is derived FROM `idemKey`, so inside this
+            // branch the key is genuinely present and the guard makes the type
+            // say so. A `!` would have silenced the same compiler complaint and
+            // left a null key reaching the helper — the exact failure fixed one
+            // line above, reintroduced by the fix.
+            key: idemKey,
             payloadFingerprint: existing.payloadFingerprint ?? "",
             issuedById: existing.issuedById ?? "",
             issuedAt: existing.issuedAt,
