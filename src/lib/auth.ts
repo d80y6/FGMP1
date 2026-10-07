@@ -110,8 +110,76 @@ declare module "next-auth/jwt" {
   }
 }
 
+/**
+ * Session lifetime.
+ *
+ * ── WHY THIS IS SET AT ALL ───────────────────────────────────────────────────
+ * `session: { strategy: "jwt" }` with no `maxAge` means a token is valid until
+ * the signing secret rotates — which may be never. On a platform that can
+ * REMOTE-START a generator, an unbounded session is a real risk: a laptop left
+ * on a desk, a shared terminal, or a token lifted from a compromised host stays
+ * authorised indefinitely, with no server-side event that could revoke it.
+ *
+ * ── WHY THESE VALUES ─────────────────────────────────────────────────────────
+ * maxAge 8h — one shift. Long enough that an operator is not re-authenticating
+ * constantly during an incident, short enough that a stolen token expires while
+ * the shift it was stolen on is still relevant. Deliberately NOT sliding:
+ * a token with no absolute expiry is a permanent credential.
+ *
+ * updateAge 1h — how often a SESSION cookie is refreshed when the user is
+ * active. This is what makes a shift-long session possible while still bounding
+ * how long an INACTIVE token stays usable without any human present.
+ *
+ * Both are env-overridable because the right value is a deployment decision: a
+ * site with a physical control room may want longer, a field tablet on a moving
+ * vehicle may want shorter. The DEFAULTS are the safe ones — an operator who
+ * forgets to configure this still gets bounded sessions.
+ */
+const SESSION_MAX_AGE_MS = Number(process.env.FGMP_SESSION_MAX_AGE_MS ?? 8 * 60 * 60 * 1000);
+const SESSION_UPDATE_AGE_MS = Number(process.env.FGMP_SESSION_UPDATE_AGE_MS ?? 60 * 60 * 1000);
+
+/**
+ * Reject a session configuration that would silently remove the bound.
+ *
+ * `Number("")` is 0 and `Number("abc")` is NaN, so a typo like
+ * FGMP_SESSION_MAX_AGE_MS= (empty) would produce a zero or NaN lifetime and
+ * reintroduce exactly the unbounded-session defect this change exists to fix.
+ * A loud failure at boot beats a silently-insecure default.
+ */
+function assertSaneSessionConfig(maxAge: number, updateAge: number): void {
+  if (!Number.isFinite(maxAge) || maxAge <= 0) {
+    throw new Error(
+      `FGMP_SESSION_MAX_AGE_MS is not a positive number (got ${maxAge}). ` +
+        `A session with no valid lifetime is unbounded, which is the defect ` +
+        `this setting exists to prevent.`,
+    );
+  }
+  if (!Number.isFinite(updateAge) || updateAge < 0) {
+    throw new Error(
+      `FGMP_SESSION_UPDATE_AGE_MS must be a non-negative number (got ${updateAge}).`,
+    );
+  }
+  if (updateAge >= maxAge) {
+    // updateAge >= maxAge means the cookie is never refreshed before expiry,
+    // so every user is logged out at maxAge regardless of activity.
+    throw new Error(
+      `FGMP_SESSION_UPDATE_AGE_MS (${updateAge}) must be less than ` +
+        `FGMP_SESSION_MAX_AGE_MS (${maxAge}), otherwise active sessions are ` +
+        `never refreshed and expire mid-shift.`,
+    );
+  }
+}
+
+assertSaneSessionConfig(SESSION_MAX_AGE_MS, SESSION_UPDATE_AGE_MS);
+
 export const authOptions: NextAuthOptions = {
-  session: { strategy: "jwt" },
+  session: {
+    strategy: "jwt",
+    /** Absolute lifetime. A token stops being valid here regardless of use. */
+    maxAge: SESSION_MAX_AGE_MS,
+    /** How often an active session's cookie is refreshed. */
+    updateAge: SESSION_UPDATE_AGE_MS,
+  },
   secret: process.env.NEXTAUTH_SECRET ?? BUILD_PLACEHOLDER_SECRET,
   providers: [
     CredentialsProvider({
