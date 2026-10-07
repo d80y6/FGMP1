@@ -91,6 +91,12 @@ export function evaluateInterlocks(
 
   const unblockable = UNBLOCKABLE_COMMANDS.includes(command);
 
+  // Phase 5: expose the REQUESTED command on the context so a rule can compare
+  // it against an in-flight one. Without this the idempotency flag is a blanket
+  // bypass — a START could slip past an in-flight STOP, which is precisely the
+  // race COMMAND_ALREADY_IN_FLIGHT exists to stop.
+  const ctxWithCommand: InterlockContext = { ...ctx, command };
+
   for (const rule of rules) {
     // EMERGENCY_STOP bypasses every rule without even evaluating it. A HARD
     // interlock exists to prevent damage; it must never become the reason a
@@ -99,7 +105,7 @@ export function evaluateInterlocks(
 
     if (rule.appliesTo.length > 0 && !rule.appliesTo.includes(command)) continue;
 
-    const explanation = rule.evaluate(ctx);
+    const explanation = rule.evaluate(ctxWithCommand);
     if (explanation === null) continue;
 
     const f = finding(rule, explanation);

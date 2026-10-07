@@ -175,6 +175,17 @@ export interface InterlockContext {
    * refused as a race, and the caller does not act on it twice.
    */
   idempotentReplay?: boolean;
+  /**
+   * The command being evaluated.
+   *
+   * Set by `evaluateInterlocks` before any rule runs, so a rule can compare the
+   * REQUESTED command against an in-flight one. The idempotency flag is not
+   * sufficient on its own: without the requested command, "this is a replay"
+   * cannot be distinguished from "this is a different command that happens to
+   * carry the replay flag", and the second case is a race the interlock exists
+   * to stop.
+   */
+  command?: ControlCommandName;
 }
 
 /**
@@ -402,16 +413,26 @@ const HARD_RULES: InterlockRule[] = [
     authority: "OPERATOR",
     explanation: "A conflicting control command is already in flight.",
     remedy: "Wait for the outstanding command to resolve.",
-    evaluate: ({ generator, commandInFlight, idempotentReplay }) => {
-      // PHASE 5: a retry of the SAME command is not a conflict — it is the same
-      // intent, and the enforcement layer will not dispatch it twice.
-      if (!commandInFlight || idempotentReplay) return null;
+    evaluate: ({ generator, commandInFlight, idempotentReplay, command }) => {
+      if (!commandInFlight) return null;
+      // PHASE 5: the replay flag is only honoured when the in-flight command is
+      // the SAME intent. `command` is not currently in InterlockContext, so the
+      // rule falls back to comparing the CONFLICT itself rather than the flag —
+      // a blanket `if (idempotentReplay) return null` here would let a START slip
+      // past an in-flight STOP, which is the exact race this rule exists to stop.
+      //
+      // If the requested command matches the in-flight one, there is no conflict
+      // to report: it is a retry, and the enforcement layer will not dispatch it
+      // twice.
+      const sameIntent = idempotentReplay && command === commandInFlight.command;
       if (generator.status === "RUNNING") {
-        return commandInFlight.command === "STOP"
+        // A running set with a STOP in flight: only a START conflicts, and only
+        // when the retry is NOT the same command.
+        return commandInFlight.command === "STOP" && !sameIntent
           ? `A STOP (${commandInFlight.id}) is already in flight; issuing START would race it.`
           : null;
       }
-      return commandInFlight.command === "START"
+      return commandInFlight.command === "START" && !sameIntent
         ? `A START (${commandInFlight.id}) is already in flight; issuing ${generator.status === "STOPPED" ? "START" : "a command"} would race it.`
         : null;
     },

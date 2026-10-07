@@ -165,6 +165,49 @@ describe("HARD interlocks deny", () => {
     );
   });
 
+  // ── PHASE 5: idempotent replay ───────────────────────────────────────────
+  // A re-submission of the SAME command inside the idempotency window is a
+  // retry, not a race. The enforcement layer skips the dispatch, so the rules
+  // must stop claiming a conflict — otherwise a legitimate retry after a
+  // dropped response is refused as though it were a second command.
+  test("idempotent replay of the SAME command is not an in-flight conflict", () => {
+    const v = evaluateInterlocks(
+      "START",
+      goodContext({
+        commandInFlight: { id: "cmd-1", command: "START", status: "SENT" },
+        idempotentReplay: true,
+      }),
+    );
+    expect(v.allowed).toBe(true);
+  });
+
+  // Boundary in the OTHER direction: the replay flag only applies to the SAME
+  // command. A different command is still a genuine conflict, so the flag must
+  // not become a blanket bypass of the in-flight protection.
+  test("idempotentReplay does NOT excuse a DIFFERENT command", () => {
+    expectDeniedBy(
+      "START",
+      goodContext({
+        // An in-flight STOP while the set is running, flagged as a replay.
+        generator: goodGenerator({ status: "RUNNING" }),
+        commandInFlight: { id: "cmd-2", command: "STOP", status: "SENT" },
+        idempotentReplay: true,
+      }),
+      "CONFLICTING_COMMAND_IN_FLIGHT",
+    );
+  });
+
+  test("a conflicting command without the replay flag is still denied", () => {
+    expectDeniedBy(
+      "START",
+      goodContext({
+        generator: goodGenerator({ status: "RUNNING" }),
+        commandInFlight: { id: "cmd-2", command: "STOP", status: "SENT" },
+      }),
+      "CONFLICTING_COMMAND_IN_FLIGHT",
+    );
+  });
+
   test("CONFLICTING_COMMAND_IN_FLIGHT — START racing a STOP while running", () => {
     expectDeniedBy(
       "START",
