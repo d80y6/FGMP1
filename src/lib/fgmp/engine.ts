@@ -450,10 +450,17 @@ class FgmpEngine {
 
     this.tanks.push(...sites.flatMap((s) => s.tanks.map((t) => ({
       id: t.id, siteId: t.siteId, label: t.label, fuelType: t.fuelType,
-      capacity: t.capacityLitres, current: t.currentLitres,
-      low: t.lowThreshold, critical: t.criticalThreshold, status: t.status,
+      // Phase 5 task 1: these are Decimal(12,3) in the DB. toNum(…, {scale: 3})
+      // matches the column's own scale, so the in-memory number is exactly the
+      // stored value — no silent widening, and no re-introducing the drift the
+      // migration just removed.
+      capacity: toNum(t.capacityLitres, { scale: 3 }),
+      current: toNum(t.currentLitres, { scale: 3 }),
+      low: toNum(t.lowThreshold, { scale: 3 }),
+      critical: toNum(t.criticalThreshold, { scale: 3 }),
+      status: t.status,
       lastReadingAt: t.lastReadingAt?.getTime() ?? Date.now(),
-      history: [], prevLevel: t.currentLitres,
+      history: [], prevLevel: toNum(t.currentLitres, { scale: 3 }),
     }))))
 
     this.generators.push(...sites.flatMap((s) => s.generators.map((g) => ({
@@ -498,9 +505,12 @@ class FgmpEngine {
       rs485Parity: d.rs485Parity, wifiRssi: d.wifiRssi,
       ipAddress: d.ipAddress ?? undefined,
       lastCommAt: d.lastCommAt?.getTime() ?? Date.now(),
-      currentVolumeLitres: d.currentVolumeLitres,
-      presetVolumeLitres: d.presetVolumeLitres ?? undefined,
-      flowRateLpm: d.flowRateLpm, totalizerLitres: d.totalizerLitres,
+      // Phase 5 task 1: volume columns are Decimal(12,3) — see the mapping note
+      // in init(). toNum at scale 3 matches the stored precision exactly.
+      currentVolumeLitres: toNum(d.currentVolumeLitres, { scale: 3 }),
+      presetVolumeLitres: d.presetVolumeLitres === null ? undefined : toNum(d.presetVolumeLitres, { scale: 3 }),
+      flowRateLpm: toNum(d.flowRateLpm, { scale: 3 }),
+      totalizerLitres: toNum(d.totalizerLitres, { scale: 3 }),
       currentTransactionId: d.currentTransactionId ?? undefined,
       lastTransactionAt: d.lastTransactionAt?.getTime(),
       tempC: d.tempC, history: [],
@@ -1561,9 +1571,11 @@ async controlDispenser(
       rs485Parity: row.rs485Parity, wifiRssi: row.wifiRssi,
       ipAddress: row.ipAddress ?? undefined,
       lastCommAt: row.lastCommAt?.getTime() ?? Date.now(),
-      currentVolumeLitres: row.currentVolumeLitres,
-      presetVolumeLitres: row.presetVolumeLitres ?? undefined,
-      flowRateLpm: row.flowRateLpm, totalizerLitres: row.totalizerLitres,
+      // Phase 5 task 1: Decimal(12,3) -> number at the DB boundary.
+      currentVolumeLitres: toNum(row.currentVolumeLitres, { scale: 3 }),
+      presetVolumeLitres: row.presetVolumeLitres === null ? undefined : toNum(row.presetVolumeLitres, { scale: 3 }),
+      flowRateLpm: toNum(row.flowRateLpm, { scale: 3 }),
+      totalizerLitres: toNum(row.totalizerLitres, { scale: 3 }),
       currentTransactionId: row.currentTransactionId ?? undefined,
       lastTransactionAt: row.lastTransactionAt?.getTime(),
       tempC: row.tempC, history: [],
