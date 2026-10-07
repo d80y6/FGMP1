@@ -85,7 +85,7 @@ const COUNT_LABELS: Record<string, string> = {
 
 export function TenantIsolationView() {
   const t = useT();
-  const { me } = useFgmp();
+  const me = useFgmp((s) => s.me);
   const { data: report, loading, error, refetch } = useApi<IsolationReport>("/api/fgmp/admin/tenant-isolation-test");
   const [running, setRunning] = useState(false);
   const [localReport, setLocalReport] = useState<IsolationReport | null>(null);

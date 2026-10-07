@@ -23,7 +23,7 @@
  * actions call ROLES.ALARM_OPS-guarded endpoints; DELETE is ADMIN-only.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import {
   ShieldOff, Plus, X, Clock, Calendar, AlertTriangle, History,
   ShieldAlert, Hourglass, Ban, Globe,
@@ -151,7 +151,7 @@ const ALL_TYPES_VALUE = "__all__";
  * ──────────────────────────────────────────────────────────────────────── */
 
 export function SuppressionsView() {
-  const { me, snapshot } = useFgmp();
+  const { me, snapshot } = useFgmp(useShallow((s) => ({ me: s.me, snapshot: s.snapshot })));
   const t = useT();
   const dir = useDir();
   const useArabicNums = useArabicNumerals();

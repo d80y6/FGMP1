@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useShallow } from "zustand/react/shallow";
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from "@/components/ui/sheet";
@@ -44,7 +44,7 @@ export function SiteDetailSheet({ siteId, open, onOpenChange }: { siteId: string
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
   const { data, loading, refetch } = useApi<any>(siteId ? `/api/fgmp/sites/${siteId}` : null, { interval: 6000, deps: [siteId] });
-  const { tick, me } = useFgmp();
+  const { tick, me } = useFgmp(useShallow((s) => ({ tick: s.tick, me: s.me })));
   const [ctrl, setCtrl] = useState<{ id: string; label: string; cmd: GenCommand } | null>(null);
 
   if (!siteId) return null;

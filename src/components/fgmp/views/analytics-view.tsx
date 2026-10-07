@@ -35,7 +35,7 @@ function formatUsd(
 }
 
 export function AnalyticsView() {
-  const { snapshot } = useFgmp();
+  const snapshot = useFgmp((s) => s.snapshot);
   const t = useT();
   const dir = useDir();
   const useArabicNums = useArabicNumerals();

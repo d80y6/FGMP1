@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { Truck, Plus, CheckCircle2, Package, TrendingUp, Download, FileCheck } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Cell } from "recharts";
 import { useFgmp } from "@/lib/fgmp/store";
@@ -41,7 +41,7 @@ function supplierLabel(supplier: string, lang: Language): string {
 }
 
 export function InventoryView() {
-  const { snapshot, tick } = useFgmp();
+  const { snapshot, tick } = useFgmp(useShallow((s) => ({ snapshot: s.snapshot, tick: s.tick })));
   const t = useT();
   const dir = useDir();
   const useArabicNums = useArabicNumerals();

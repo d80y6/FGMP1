@@ -156,7 +156,7 @@ export function SystemHealthView() {
   const dir = useDir();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
-  const { me } = useFgmp();
+  const me = useFgmp((s) => s.me);
 
   const [data, setData] = useState<HealthResponse | null>(null);
   const [loading, setLoading] = useState(true);

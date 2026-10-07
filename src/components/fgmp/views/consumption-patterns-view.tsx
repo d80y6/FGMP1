@@ -86,7 +86,7 @@ function colorForIntensity(intensity: number): string {
 }
 
 export function ConsumptionPatternsView() {
-  const { snapshot } = useFgmp();
+  const snapshot = useFgmp((s) => s.snapshot);
   const t = useT();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";

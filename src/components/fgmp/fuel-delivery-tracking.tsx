@@ -140,7 +140,7 @@ function parseDate(ts: string | null | undefined): Date | null {
 
 export function FuelDeliveryTracking() {
   const { data: deliveries, loading } = useApi<Delivery[]>("/api/fgmp/deliveries", { interval: 10000 });
-  const { snapshot } = useFgmp();
+  const snapshot = useFgmp((s) => s.snapshot);
   const [completionsOpen, setCompletionsOpen] = useState(true);
 
   /** Build siteId → region lookup from the FGMP snapshot (API only returns name+code). */

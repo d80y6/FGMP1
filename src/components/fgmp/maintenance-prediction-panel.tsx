@@ -510,7 +510,7 @@ type FilterTab = "all" | "urgent" | "overdue" | "ok";
  */
 export function MaintenancePredictionPanel() {
   const t = useT();
-  const { snapshot } = useFgmp();
+  const snapshot = useFgmp((s) => s.snapshot);
   const [filter, setFilter] = useState<FilterTab>("all");
 
   const rows = useMemo<MaintRow[]>(() => {

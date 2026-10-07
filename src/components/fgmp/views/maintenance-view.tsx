@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { Wrench, Plus, CheckCircle2, Calendar, User, Flag, X, Download } from "lucide-react";
 import { useFgmp } from "@/lib/fgmp/store";
 import { useApi, apiPost } from "@/lib/fgmp/use-api";
@@ -74,7 +74,7 @@ const STATUS_BADGE_DETAIL: Record<string, string> = {
 };
 
 export function MaintenanceView() {
-  const { snapshot, tick } = useFgmp();
+  const { snapshot, tick } = useFgmp(useShallow((s) => ({ snapshot: s.snapshot, tick: s.tick })));
   const t = useT();
   const dir = useDir();
   const useArabicNums = useArabicNumerals();

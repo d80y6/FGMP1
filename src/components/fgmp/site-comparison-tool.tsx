@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -106,7 +106,7 @@ const METRICS: ComparisonRow[] = [
 ];
 
 export function SiteComparisonTool() {
-  const { snapshot, selectSite, setView } = useFgmp();
+  const { snapshot, selectSite, setView } = useFgmp(useShallow((s) => ({ snapshot: s.snapshot, selectSite: s.selectSite, setView: s.setView })));
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [pickerValue, setPickerValue] = useState("");
 

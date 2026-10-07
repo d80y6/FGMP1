@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import {
   Globe2, Map, MapPin, Plus, Pencil, Trash2,
   ShieldAlert, Building2, Layers,
@@ -73,7 +73,7 @@ interface DeleteTarget {
  * ──────────────────────────────────────────────────────────────────────── */
 
 export function GeographyView() {
-  const { me, snapshot } = useFgmp();
+  const { me, snapshot } = useFgmp(useShallow((s) => ({ me: s.me, snapshot: s.snapshot })));
   const t = useT();
   const dir = useDir();
   const useArabicNums = useArabicNumerals();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import {
   CircuitBoard, Wifi, HardDriveDownload, RefreshCw, Search,
   Radio, Router, Activity, AlertTriangle, CheckCircle2, Cpu,
@@ -98,7 +98,7 @@ export function EdgeFirmwareView() {
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
   const cc = useChartColors();
-  const { snapshot, me, tick } = useFgmp();
+  const { snapshot, me, tick } = useFgmp(useShallow((s) => ({ snapshot: s.snapshot, me: s.me, tick: s.tick })));
   const [tab, setTab] = useState<"gateways" | "firmware" | "rs485" | "reboot">("gateways");
 
   const { data: dispensers, loading: dispLoading } = useApi<DispenserRow[]>(

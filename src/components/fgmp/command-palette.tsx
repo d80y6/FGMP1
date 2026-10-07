@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   LayoutDashboard, Building2, Droplet, Zap, BatteryCharging, Siren,
@@ -52,7 +52,7 @@ interface Props {
 export function CommandPalette({ open, onOpenChange }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { snapshot, me, view, setView, livePaused, toggleLive, switchRole } = useFgmp();
+  const { snapshot, me, view, setView, livePaused, toggleLive, switchRole } = useFgmp(useShallow((s) => ({ snapshot: s.snapshot, me: s.me, view: s.view, setView: s.setView, livePaused: s.livePaused, toggleLive: s.toggleLive, switchRole: s.switchRole })));
   const { resolvedTheme, setTheme } = useTheme();
   const t = useT();
   const [query, setQuery] = useState("");

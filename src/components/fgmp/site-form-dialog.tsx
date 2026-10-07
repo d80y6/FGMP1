@@ -84,7 +84,7 @@ function SiteForm({
   onSaved: () => void;
 }) {
   const t = useT();
-  const { snapshot } = useFgmp();
+  const snapshot = useFgmp((s) => s.snapshot);
   const regions = snapshot?.regions ?? [];
 
   const isEdit = !!site;

@@ -176,7 +176,7 @@ export function CorrelationRulesEditor({ open, onOpenChange }: Props) {
 
   const rules = useCorrelationRulesList();
   const { canView } = useRulePermissions();
-  const { snapshot } = useFgmp();
+  const snapshot = useFgmp((s) => s.snapshot);
   const sites = snapshot?.sites ?? [];
 
   // Alarm feed — pulled from the same SWR hook the alarms-view uses so the

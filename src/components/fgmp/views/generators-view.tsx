@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { Zap, Power, AlertOctagon, RotateCcw, Search, Thermometer, Clock, Fuel as FuelIcon } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Line, LineChart } from "recharts";
 import { useFgmp } from "@/lib/fgmp/store";
@@ -25,7 +25,7 @@ import { useT, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-la
 import type { Language } from "@/lib/fgmp/i18n";
 
 export function GeneratorsView() {
-  const { snapshot, tick } = useFgmp();
+  const { snapshot, tick } = useFgmp(useShallow((s) => ({ snapshot: s.snapshot, tick: s.tick })));
   const t = useT();
   const dir = useDir();
   const useArabicNums = useArabicNumerals();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useShallow } from "zustand/react/shallow";
 import {
   Brain, AlertTriangle, AlertOctagon, Clock, TrendingDown,
   PackagePlus, Activity,
@@ -91,7 +91,7 @@ function fmtHours(h: number, numLang: Language): string {
 }
 
 export function FuelForecastView() {
-  const { snapshot, setView } = useFgmp();
+  const { snapshot, setView } = useFgmp(useShallow((s) => ({ snapshot: s.snapshot, setView: s.setView })));
   const t = useT();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";

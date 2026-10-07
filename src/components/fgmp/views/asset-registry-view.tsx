@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import {
   Boxes, Fuel, Zap, BatteryCharging, Cpu, Droplets, Search, Plus,
   Pencil, Trash2, MoreVertical, ShieldAlert,
@@ -121,7 +121,7 @@ export function AssetRegistryView() {
   const t = useT();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
-  const { snapshot, me } = useFgmp();
+  const { snapshot, me } = useFgmp(useShallow((s) => ({ snapshot: s.snapshot, me: s.me })));
   const [tab, setTab] = useState<Tab>("tanks");
   const isAdmin = me?.role === "ADMIN";
 

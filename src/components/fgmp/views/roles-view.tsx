@@ -80,7 +80,7 @@ function groupCapabilities(role: Role): { prefix: string; items: string[] }[] {
  * ──────────────────────────────────────────────────────────────────────── */
 
 export function RolesView() {
-  const { me } = useFgmp();
+  const me = useFgmp((s) => s.me);
   const t = useT();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";

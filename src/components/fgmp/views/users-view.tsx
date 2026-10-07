@@ -113,7 +113,7 @@ type ResetForm = z.infer<typeof resetSchema>;
  * ──────────────────────────────────────────────────────────────────────── */
 
 export function UsersView() {
-  const { me } = useFgmp();
+  const me = useFgmp((s) => s.me);
   const t = useT();
   const dir = useDir();
   const useArabicNums = useArabicNumerals();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { Cpu, Wifi, Search, RefreshCw, Download, Radio, HardDriveDownload } from "lucide-react";
 import { useFgmp } from "@/lib/fgmp/store";
 import { useApi, apiPatch } from "@/lib/fgmp/use-api";
@@ -40,7 +40,7 @@ function iotProtocolLabel(proto: string, lang: Language): string {
 }
 
 export function IotView() {
-  const { snapshot, tick } = useFgmp();
+  const { snapshot, tick } = useFgmp(useShallow((s) => ({ snapshot: s.snapshot, tick: s.tick })));
   const t = useT();
   const dir = useDir();
   const useArabicNums = useArabicNumerals();

@@ -1,7 +1,7 @@
 "use client";
 
 import { computeSiteHealth as computeCanonicalSiteHealth } from "./site-health-score";
-import { useMemo } from "react";
+import { useShallow } from "zustand/react/shallow";
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from "@/components/ui/sheet";
@@ -231,7 +231,7 @@ export function RegionDetailSheet({ region, onOpenChange }: RegionDetailSheetPro
   const t = useT();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
-  const { snapshot, selectSite, setView } = useFgmp();
+  const { snapshot, selectSite, setView } = useFgmp(useShallow((s) => ({ snapshot: s.snapshot, selectSite: s.selectSite, setView: s.setView })));
   const cc = useChartColors();
   // Fetch open/ack/escalated alarms for the region drilldown. Reuse the same
   // endpoint pattern as dashboard-view's live alarm feed.

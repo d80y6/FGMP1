@@ -54,7 +54,7 @@
  *    in-progress), slate (neutral). No indigo/blue per project palette.
  */
 
-import { useMemo, useSyncExternalStore } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Card,
@@ -158,7 +158,7 @@ export function OnboardingChecklist() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const { me, snapshot } = useFgmp();
+  const { me, snapshot } = useFgmp(useShallow((s) => ({ me: s.me, snapshot: s.snapshot })));
   const role = me?.role;
 
   // Subscribe to localStorage flags so the card re-renders when the user

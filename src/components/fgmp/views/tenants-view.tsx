@@ -64,7 +64,7 @@ const EMPTY_FORM: TenantForm = { name: "", code: "", country: "Yemen" };
  * ──────────────────────────────────────────────────────────────────────── */
 
 export function TenantsView() {
-  const { me } = useFgmp();
+  const me = useFgmp((s) => s.me);
   const t = useT();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
