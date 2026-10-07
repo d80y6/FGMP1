@@ -135,15 +135,26 @@ export async function enforceInterlock(params: {
   // Fix 1: bound the query by age. A command that has not resolved within
   // STALE_COMMAND_MS cannot still be in flight — there is nothing left to race.
   // That turns an unbounded permanent lockout into a bounded window.
+  //
+  // `issuedAt`, NOT a `createdAt` (ControlCommand has no such column — its
+  // timestamps are issuedAt and executedAt) and NOT `executedAt`.
+  //
+  // The semantic question is "how long has this command been OUTSTANDING", which
+  // is time since issuance. `executedAt` answers a different question — time
+  // since the device acknowledged — and using it here would be wrong twice over:
+  // today executedAt is null for every command that was ever written (I stopped
+  // populating it at issue time in Phase 5), so a filter on it would match
+  // nothing and the lockout would return; and even once a real dispatcher sets
+  // it, an acknowledged command is not the hazard this bound exists to exclude.
   const STALE_COMMAND_MS = 5 * 60 * 1000;
   const staleBefore = new Date(now - STALE_COMMAND_MS);
   const inFlight = await db.controlCommand.findFirst({
     where: {
       generatorId: params.generatorId,
       status: { in: ["PENDING", "SENT"] },
-      createdAt: { gte: staleBefore },
+      issuedAt: { gte: staleBefore },
     },
-    select: { id: true, command: true, status: true, createdAt: true },
+    select: { id: true, command: true, status: true, issuedAt: true },
   });
   ctx.commandInFlight = inFlight;
 
@@ -157,8 +168,8 @@ export async function enforceInterlock(params: {
     inFlight.command === params.command &&
     !ctx.idempotentReplay
   ) {
-    const ageMs = now - inFlight.createdAt.getTime();
-    // Within a short window, treat as a replay. Beyond it the row is genuinely
+    const ageMs = now - inFlight.issuedAt.getTime();
+    // Within the window, treat as a replay. Beyond it the row is genuinely
     // stale and the age bound above would not have selected it.
     ctx.idempotentReplay = ageMs < STALE_COMMAND_MS;
   }
