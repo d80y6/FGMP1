@@ -11,14 +11,26 @@ import type { NextConfig } from "next";
  *   - Strict-Transport-Security        → forces HTTPS for 1 year (production only)
  *   - Content-Security-Policy          → restricts resource origins + frame-ancestors
  *
- * Frame embedding (preview): the Z.ai platform renders the dev/preview app
- * inside an iframe. The exact preview hostname varies by chat session
- * (preview-chat-{chatId}.space-z.ai, sandbox subdomains, etc.), so we allow
- * ANY https origin to frame the app via `frame-ancestors 'self' https:`.
- * This is safe because (a) the app is behind NextAuth, (b) HTTPS framing
- * is still required (blocks plain-HTTP clickjacking), and (c) the deprecated
- * X-Frame-Options header is removed entirely (it only supports DENY/SAMEORIGIN
- * and cannot express the platform's wildcard-subdomain allow-list).
+ * FRAME EMBEDDING — a deliberate trade-off, kept here so the reasoning survives.
+ *
+ * `frame-ancestors 'self' https:` allows ANY https origin to frame the app.
+ * That is weaker than `X-Frame-Options: SAMEORIGIN`, and it is intentional: the
+ * platform is deployed inside a preview iframe whose hostname varies per
+ * session, and SAMEORIGIN cannot express a wildcard-subdomain allow-list. The
+ * deprecated X-Frame-Options header is therefore removed entirely rather than
+ * left to contradict this.
+ *
+ * What makes it acceptable:
+ *   (a) the app is behind NextAuth, so an embedded frame still requires a
+ *       valid session;
+ *   (b) https framing is still required, which blocks the plain-HTTP
+ *       clickjacking this would otherwise permit;
+ *   (c) an attacker who can frame us can already run script in their OWN origin
+ *       — the residual risk is UI redressing, bounded by (a) and (b).
+ *
+ * If this is ever deployed somewhere that does NOT need iframe embedding,
+ * tighten it to `'self'` and re-add X-Frame-Options: SAMEORIGIN. Removing the
+ * comment is what makes that decision hard to revisit.
  *
  * The CSP is intentionally permissive about `'unsafe-inline'` for scripts
  * and styles because Next.js 16 + Tailwind 4 inject inline styles and the
@@ -51,8 +63,7 @@ const securityHeaders = [
       "img-src 'self' data: blob: https:",
       "font-src 'self' data:",
       "connect-src 'self' ws: wss: http://localhost:*",
-      // Allow ANY https origin to frame the app (Z.ai preview iframes use
-      // varying hostnames per chat session). Blocks plain-HTTP framing.
+      // See the FRAME EMBEDDING note above — deliberately permissive.
       "frame-ancestors 'self' https:",
     ].join("; "),
   },
