@@ -52,6 +52,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
+import { ConfirmDestructive } from "@/components/fgmp/confirm-destructive";
 import { useT, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 import { cn } from "@/lib/utils";
@@ -146,6 +147,9 @@ export function PreferencesView() {
   const me = useFgmp((s) => s.me);
 
   const [loading, setLoading] = useState(true);
+
+  // Phase 5 task 4 — drives the reset confirmation dialog.
+  const [resetOpen, setResetOpen] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -256,10 +260,12 @@ export function PreferencesView() {
   };
 
   /* ── Reset to defaults ────────────────────────────────────────────── */
-  const onReset = () => {
-    if (!window.confirm(t("preferences.resetConfirm"))) return;
+  // Phase 5 task 4 — the reset is gated by a design-system dialog instead of
+  // window.confirm. Split into ask/perform so the dialog can decide.
+  const performReset = () => {
     reset(DEFAULT_VALUES);
     toast.success(t("preferences.resetDone"));
+    setResetOpen(false);
   };
 
   /* ── Loading state ────────────────────────────────────────────────── */
@@ -308,6 +314,7 @@ export function PreferencesView() {
 
   /* ── Render ───────────────────────────────────────────────────────── */
   return (
+    <>
     <form
       onSubmit={handleSubmit(onSubmit, () => {
         toast.error(t("preferences.saveError"));
@@ -591,7 +598,7 @@ export function PreferencesView() {
           <Button
             type="button"
             variant="ghost"
-            onClick={onReset}
+            onClick={() => setResetOpen(true)}
             disabled={saving}
             className="gap-1.5"
           >
@@ -616,6 +623,25 @@ export function PreferencesView() {
         </div>
       </div>
     </form>
+
+    {/* Phase 5 task 4 — replaces window.confirm for the reset action. Sibling
+        of the form so it is not nested inside it and cannot inherit submit
+        semantics from it. */}
+    <ConfirmDestructive
+      target={
+        resetOpen
+          ? {
+              title: t("confirm.resetTitle"),
+              description: t("preferences.resetConfirm"),
+              cancelLabel: t("confirm.cancel"),
+              confirmLabel: t("preferences.reset"),
+            }
+          : null
+      }
+      onCancel={() => setResetOpen(false)}
+      onConfirm={performReset}
+    />
+    </>
   );
 }
 
