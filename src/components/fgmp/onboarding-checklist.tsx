@@ -54,6 +54,8 @@
  *    in-progress), slate (neutral). No indigo/blue per project palette.
  */
 
+import type React from "react";
+import { useSyncExternalStore, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useRouter, useSearchParams } from "next/navigation";
 import {

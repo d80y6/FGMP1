@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import {
   Brain, AlertTriangle, AlertOctagon, Clock, TrendingDown,

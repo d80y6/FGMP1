@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { Cpu, Wifi, Search, RefreshCw, Download, Radio, HardDriveDownload } from "lucide-react";
 import { useFgmp } from "@/lib/fgmp/store";

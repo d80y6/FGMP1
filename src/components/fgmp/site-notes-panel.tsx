@@ -12,6 +12,7 @@ import {
   Check,
 } from "lucide-react";
 import { toast } from "sonner";
+import { ConfirmDestructive } from "./confirm-destructive";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -58,6 +59,9 @@ export function SiteNotesPanel({
 
   const [draft, setDraft] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  // Phase 5 task 4 — which note the confirm dialog is about.
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   const composerRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -120,14 +124,10 @@ export function SiteNotesPanel({
     toast.success(currentlyPinned ? t("notes.noteUnpinned") : t("notes.notePinned"));
   }
 
-  function handleDelete(id: string) {
-    if (readOnly) return;
-    // Guard window access for SSR safety (component renders only on client, but
-    // keep the guard in case of weird testing environments).
-    if (typeof window !== "undefined") {
-      const ok = window.confirm(t("notes.deleteConfirm"));
-      if (!ok) return;
-    }
+  // Phase 5 task 4: the delete is split into "ask" and "perform" so the
+  // design-system dialog can gate it. The old shape could not: it asked and
+  // then immediately acted, in one function.
+  function performDelete(id: string) {
     deleteNote(id);
     // If we were editing this note, cancel the edit session.
     if (editingId === id) {
@@ -135,11 +135,18 @@ export function SiteNotesPanel({
       setDraft("");
     }
     toast.success(t("notes.noteDeleted"));
+    setPendingDeleteId(null);
+  }
+
+  function handleDelete(id: string) {
+    if (readOnly) return;
+    setPendingDeleteId(id);
   }
 
   const count = notes.length;
 
   return (
+    <>
     <div className="rounded-lg border bg-card text-card-foreground">
       {/* Header */}
       <div className="flex items-center gap-2 border-b px-3 py-2.5">
@@ -354,5 +361,20 @@ export function SiteNotesPanel({
         )}
       </div>
     </div>
+      <ConfirmDestructive
+        target={
+          pendingDeleteId
+            ? {
+                title: t("confirm.deleteTitle"),
+                description: t("notes.deleteConfirm"),
+                cancelLabel: t("confirm.cancel"),
+                confirmLabel: t("confirm.deleteTitle"),
+              }
+            : null
+        }
+        onCancel={() => setPendingDeleteId(null)}
+        onConfirm={() => pendingDeleteId && performDelete(pendingDeleteId)}
+      />
+    </>
   );
 }

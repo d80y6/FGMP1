@@ -1,5 +1,7 @@
 "use client";
 
+import type React from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import {
   Globe2, Map, MapPin, Plus, Pencil, Trash2,

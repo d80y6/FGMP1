@@ -53,7 +53,7 @@
  * already the convention in two of the three originals and is preserved here.
  */
 
-import type { TankState, GenState, BattState, SiteState } from "@/lib/fgmp/types";
+import type { GenStatus, TankState, GenState, BattState } from "@/lib/fgmp/types";
 
 /**
  * Canonical factor weights. MUST sum to 1.
@@ -118,9 +118,15 @@ export interface SiteHealthFactors {
 }
 
 export interface SiteHealthInput {
-  site: Pick<SiteState, "status">;
+  /**
+   * `status` is widened to `string` deliberately. The score only ever compares
+   * against "FAULT", and a call site holding an untyped row (the region sheet
+   * builds generators from a local aggregate type) should not be forced to
+   * cast to satisfy the scorer. Narrowing happens here instead.
+   */
+  site: { status: string };
   tanks: Pick<TankState, "current" | "capacity">[];
-  generators: Pick<GenState, "status">[];
+  generators: { status: string }[];
   batteries: Pick<BattState, "voltage">[];
   /** Open alarm count for the site. */
   alarmCount: number;

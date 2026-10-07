@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { Building2, Search, MapPin, Filter, Star, Plus, Pencil, Trash2, MoreHorizontal, Loader2 } from "lucide-react";
 import { useFgmp } from "@/lib/fgmp/store";

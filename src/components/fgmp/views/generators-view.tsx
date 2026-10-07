@@ -1,5 +1,7 @@
 "use client";
 
+import type React from "react";
+import { useState, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { Zap, Power, AlertOctagon, RotateCcw, Search, Thermometer, Clock, Fuel as FuelIcon } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Line, LineChart } from "recharts";
