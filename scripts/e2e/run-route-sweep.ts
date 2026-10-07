@@ -100,7 +100,7 @@ async function main(): Promise<void> {
     model: { findFirst: (a: { where: object; select: { id: true } }) => Promise<{ id: string } | null> },
   ): Promise<string> => (await model.findFirst({ where, select: { id: true } }))?.id ?? foreign.siteId;
 
-  const [aSite, aTank, aGen, aUser, aDisp, aCmd, aAlarm, aDelivery, aTicket, aBattery, aBatt] =
+  const [aSite, aTank, aGen, aUser, aDisp, aCmd, aAlarm, aDelivery, aTicket, aBattery, aBatt, aSolarSite, aSolarArray, aThreshold] =
     await Promise.all([
       first(owner.site),
       first(owner.fuelTank),
@@ -114,6 +114,9 @@ async function main(): Promise<void> {
       first(owner.batteryBank),
       // Shift handover is keyed by SITE, not by its own row.
       first(owner.site),
+      first(owner.solarSite),
+      first(owner.solarArray),
+      first(owner.interlockThreshold),
     ]);
   // Each segment gets an id of the RIGHT type. A previous version mapped a
   // generic `[id]` to a SITE id, so `/api/fgmp/tanks/<siteId>` correctly
@@ -158,6 +161,12 @@ async function main(): Promise<void> {
     "/api/fgmp/tenants/[id]": aSite,
     "/api/fgmp/sites/[id]": aSite,
     "/api/fgmp/iot/[siteId]": aSite,
+    // Phase 4 solar. A 404 here is the harness's fault if the id is a Site —
+    // the route wants a SolarSite — and indistinguishable from a correct
+    // refusal if it is not.
+    "/api/fgmp/solar-sites/[id]": aSolarSite,
+    "/api/fgmp/solar-arrays/[id]": aSolarArray,
+    "/api/fgmp/interlocks/thresholds/[id]": aThreshold,
     "/api/fgmp/history/[entityId]": aSite,
     "/api/fgmp/generators/[id]/control/[commandId]": aGen,
   });
