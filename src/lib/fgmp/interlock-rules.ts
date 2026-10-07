@@ -164,6 +164,17 @@ export interface InterlockContext {
    * would conclude the wrong limit was enforced.
    */
   thresholdsFromDatabase?: boolean;
+  /**
+   * PHASE 5: set by the enforcement layer when the only in-flight command for
+   * this generator is the SAME command being re-submitted, within the idempotency
+   * window.
+   *
+   * A duplicate START must not re-dispatch, but it is also not a conflict the
+   * operator needs blocked — a retry after a dropped response is legitimate. The
+   * in-flight rules consult this so a replay is reported as a replay rather than
+   * refused as a race, and the caller does not act on it twice.
+   */
+  idempotentReplay?: boolean;
 }
 
 /**
@@ -374,8 +385,13 @@ const HARD_RULES: InterlockRule[] = [
     authority: "OPERATOR",
     explanation: "A control command is already in flight for this generator.",
     remedy: "Wait for the outstanding command to resolve before issuing another.",
-    evaluate: ({ commandInFlight }) =>
-      commandInFlight
+    // PHASE 5: a same-command re-submission inside the idempotency window is a
+    // RETRY, not a second command. Refusing it as a race would break a
+    // legitimate retry after a dropped response; dispatching it again is the
+    // hazard. The enforcement layer recognises it as already applied and skips
+    // the dispatch, so this rule must stop claiming a conflict.
+    evaluate: ({ commandInFlight, idempotentReplay }) =>
+      commandInFlight && !idempotentReplay
         ? `Command ${commandInFlight.id} (${commandInFlight.command}) is still ${commandInFlight.status}; a second command would race it.`
         : null,
   },
@@ -386,8 +402,10 @@ const HARD_RULES: InterlockRule[] = [
     authority: "OPERATOR",
     explanation: "A conflicting control command is already in flight.",
     remedy: "Wait for the outstanding command to resolve.",
-    evaluate: ({ generator, commandInFlight }) => {
-      if (!commandInFlight) return null;
+    evaluate: ({ generator, commandInFlight, idempotentReplay }) => {
+      // PHASE 5: a retry of the SAME command is not a conflict — it is the same
+      // intent, and the enforcement layer will not dispatch it twice.
+      if (!commandInFlight || idempotentReplay) return null;
       if (generator.status === "RUNNING") {
         return commandInFlight.command === "STOP"
           ? `A STOP (${commandInFlight.id}) is already in flight; issuing START would race it.`

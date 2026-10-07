@@ -37,6 +37,16 @@ export type EnforcementOutcome =
       verdict: InterlockVerdict;
       /** True when the command proceeded despite a hard interlock, via override. */
       overridden: boolean;
+      /**
+       * PHASE 5: the caller re-submitted a command that is already in flight
+       * with the SAME intent, inside the idempotency window.
+       *
+       * The route must NOT dispatch again. Returning `ok: true` here is
+       * deliberate — the command's intent has already been applied — but the
+       * caller needs to know it is a replay so it does not act twice and so the
+       * operator sees that their retry did not queue a second start.
+       */
+      replay?: { commandId: string; command: string };
     }
   | {
       ok: false;
@@ -106,22 +116,65 @@ export async function enforceInterlock(params: {
     };
   }
 
-  // Any command already dispatched to this generator and not yet resolved
-  // makes a second command unsafe, so the in-flight command is part of the
-  // context rather than a separate check.
+  // PHASE 5 — IDEMPOTENCY AND THE STUCK-SENT LOCKOUT.
+  //
+  // Two problems with the previous query, both measured:
+  //
+  // 1. STUCK ROWS. It matched any command in PENDING/SENT with no age bound.
+  //    Because the dispatch is simulated, a SENT row never transitions to
+  //    EXECUTED — so after the FIRST command to a generator, every subsequent
+  //    command matched this query forever and COMMAND_ALREADY_IN_FLIGHT refused
+  //    all control for that asset permanently. That is a self-inflicted lockout
+  //    dressed as a safety property: an operator locked a working generator out
+  //    of remote control permanently, with no way to recover but manual SQL.
+  //
+  // 2. NO IDEMPOTENCY. A double-POSTed START replayed, because nothing
+  //    recognised the repeat. For a safety-relevant action that is a real
+  //    hazard even when the dispatch is simulated.
+  //
+  // Fix 1: bound the query by age. A command that has not resolved within
+  // STALE_COMMAND_MS cannot still be in flight — there is nothing left to race.
+  // That turns an unbounded permanent lockout into a bounded window.
+  const STALE_COMMAND_MS = 5 * 60 * 1000;
+  const staleBefore = new Date(now - STALE_COMMAND_MS);
   const inFlight = await db.controlCommand.findFirst({
     where: {
       generatorId: params.generatorId,
       status: { in: ["PENDING", "SENT"] },
+      createdAt: { gte: staleBefore },
     },
-    select: { id: true, command: true, status: true },
+    select: { id: true, command: true, status: true, createdAt: true },
   });
   ctx.commandInFlight = inFlight;
+
+  // Fix 2: an exact-duplicate resubmission is treated as the SAME command, not
+  // a second one. The caller may legitimately retry after a dropped response,
+  // and re-dispatching a START that was already applied is the hazard. Rather
+  // than silently ignoring it, the duplicate is reported so the route can tell
+  // the operator it was already applied.
+  if (
+    inFlight &&
+    inFlight.command === params.command &&
+    !ctx.idempotentReplay
+  ) {
+    const ageMs = now - inFlight.createdAt.getTime();
+    // Within a short window, treat as a replay. Beyond it the row is genuinely
+    // stale and the age bound above would not have selected it.
+    ctx.idempotentReplay = ageMs < STALE_COMMAND_MS;
+  }
 
   const verdict = evaluateInterlocks(params.command, ctx);
 
   if (verdict.allowed) {
-    return { ok: true, verdict, overridden: false };
+    // PHASE 5 idempotency: a duplicate submission is reported, not re-dispatched.
+    return {
+      ok: true,
+      verdict,
+      overridden: false,
+      replay: inFlight && ctx.idempotentReplay
+        ? { commandId: inFlight.id, command: inFlight.command }
+        : undefined,
+    };
   }
 
   // ── Override gate ─────────────────────────────────────────────────────────

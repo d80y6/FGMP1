@@ -14,11 +14,27 @@ export const dynamic = "force-dynamic";
 /**
  * GET /api/fgmp/generators/[id]/control/[commandId] — poll a command's status.
  *
- * Returns the persisted ControlCommand row so the UI can observe the
- * PENDING → SENT → EXECUTED | FAILED | TIMEOUT lifecycle transition
- * without re-issuing the command. The path-param `id` is the generatorId
- * (used to scope the lookup and prevent cross-generator enumeration);
- * `commandId` is the ControlCommand row id returned in the POST response.
+ * Returns the persisted ControlCommand row. The path-param `id` is the
+ * generatorId (used to scope the lookup and prevent cross-generator
+ * enumeration); `commandId` is the ControlCommand row id returned in the POST
+ * response.
+ *
+ * ── WHAT THE STATUS ACTUALLY MEANS (corrected, Phase 5) ──────────────────
+ * This comment previously claimed a
+ *     PENDING → SENT → EXECUTED | FAILED | TIMEOUT
+ * lifecycle. IT DOES NOT EXIST. `grep -rn '"EXECUTED"' src/` returns zero hits
+ * and TIMEOUT is likewise never written. A comment asserting a safety
+ * lifecycle that does not exist is worse than no comment, because it tells an
+ * auditor the control is verified when nothing observes an outcome.
+ *
+ * What is actually written today:
+ *   SENT   accepted by the application, and its SIMULATED dispatch applied to
+ *          in-process state. No hardware was signalled.
+ *   FAILED refused by a safety interlock, or the write itself failed.
+ *
+ * There is no transition out of SENT: no row becomes EXECUTED or TIMEOUT,
+ * because nothing reports an outcome back. See the ControlCommand model doc in
+ * prisma/schema.prisma for the same correction.
  *
  * Roles: ADMIN, NOC_OPERATOR (ROLES.CONTROL) — same as the POST endpoint.
  *

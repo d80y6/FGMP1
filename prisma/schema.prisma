@@ -28,6 +28,43 @@ datasource db {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// Phase 5 task 1 — the Float / Decimal boundary, and why it sits there
+// ──────────────────────────────────────────────────────────────────────────
+//
+// Money and VOLUME are Decimal. Everything else stays Float. The line is not
+// "important numbers" — it is specifically ACCUMULATION and RECONCILIATION:
+//
+//   Decimal where a value is (a) counted up over time, or (b) later compared
+//   against another recorded quantity to decide whether something went wrong.
+//     - litres, capacities, thresholds  (a tank's balance must reconcile)
+//     - totalizerLitres                 (monotonic lifetime accumulator)
+//     - amountYer / unitPrice           (money)
+//   Float where the value is a re-read instrument sample that is replaced on
+//   the next reading and never summed into a balance:
+//     - voltage, current, temperature, load, oil pressure, SoH/SoC
+//     - SensorReading.value, lat/long, CPU temp, MQTT latency
+//
+// Why the asymmetry is safe: float error in a telemetry sample is bounded by
+// the sample's own magnitude and disappears when the next sample overwrites
+// it. Float error in an ACCUMULATOR is monotonic — it never cancels — so it
+// compounds for the life of the row. totalizerLitres is the case that
+// matters: it accumulates across months of dispensing, and its drift lands
+// directly in a fuel-reconciliation comparison, where it is indistinguishable
+// from theft in either direction.
+//
+// Deliberately still Float, despite being volume-derived:
+//   - fuelRateLph, flowRateLpm, maxFlowLpm — RATES and LIMITS, not balances.
+//     A rate is re-derived each tick and compared against a configured
+//     ceiling; nothing accumulates them. Their precision need is "is this
+//     above the limit", not "reconcile to the litre".
+//   - capacityAh, ratedPowerKw, capacityKwp — static nameplate ratings that
+//     never change and are never summed.
+//
+// The test for any future column: does it accumulate, or does it participate
+// in a reconciliation? If either, it is Decimal. That is the whole rule.
+// ──────────────────────────────────────────────────────────────────────────
+
+// ──────────────────────────────────────────────────────────────────────────
 // Native enums (Phase 1 step 8)
 // ──────────────────────────────────────────────────────────────────────────
 // Phase 1 step 1 moved the datasource to PostgreSQL, which makes native enum
@@ -336,8 +373,20 @@ enum RuleAlarmType {
 enum RuleEvaluationOutcome {
   /// Threshold not reached, or the rule is disabled.
   NOT_TRIGGERED
-  /// Threshold reached; the correlated alarm group was suppressed.
+  /// LEGACY. Written by service.ts before Phase 5, which recorded
+  /// `SUPPRESSED` unconditionally and then took no action, so a row with this
+  /// value does NOT mean anything was suppressed. Retained so historical rows
+  /// stay readable; nothing writes it any more.
   SUPPRESSED
+  /// The match fired AND at least one referenced alarm was actually raised to
+  /// the rule's `escalateTo` severity. The only outcome that asserts an action
+  /// was taken.
+  ESCALATED
+  /// The match fired but nothing was changed: either the rule has no
+  /// `escalateTo`, or every referenced alarm was already at or above the target
+  /// (severity is never lowered). Recorded honestly rather than recorded as a
+  /// suppression that did not happen.
+  ESCALATION_NOOP
 }
 
 model CorrelationRule {
@@ -397,6 +446,21 @@ model CorrelationMatch {
   /// The instant the rule was evaluated, so the match is auditable.
   evaluatedAt DateTime          @default(now())
   createdAt   DateTime          @default(now())
+  /// Phase 5 — how many referenced alarms this match actually RAISED.
+  ///
+  /// The UNIQUE constraint on (ruleId, scopeKey, alarmIds) dedupes the MATCH
+  /// row, which is NOT the same as deduping the ACTION: a rule re-evaluating
+  /// the same alarm set would insert nothing but must also not re-apply an
+  /// escalation. This count, recorded at the same transaction as the severity
+  /// write, is what makes "did this action already happen?" answerable from the
+  /// database rather than inferred.
+  escalatedCount Int               @default(0)
+  /// Per-alarm BEFORE severities, JSON: {"<alarmId>":"L2", …}.
+  ///
+  /// Stored because the escalation overwrites `Alarm.severity` in place, so
+  /// without this the original value is unrecoverable and the change can only be
+  /// asserted, never reconstructed. Null for rows written before Phase 5.
+  fromSeverity   Json?
 
   tenant Tenant        @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   rule   CorrelationRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
@@ -622,14 +686,20 @@ model FuelTank {
   tenantId      String
   label         String
   fuelType      FuelType   @default(DIESEL)
-  capacityLitres Float
+  // Phase 5 task 1: volume is Decimal, not Float. `totalizerLitres` is a
+  // lifetime accumulator, so float error is monotonic — it compounds and never
+  // cancels — and the drift surfaces as a volume mismatch that reads as theft.
+  // 3dp on litres is millilitre resolution: finer than any dispenser flow
+  // meter, coarser than the float noise it removes. See
+  // 20261009000000_volume_columns_to_decimal for the rounding rationale.
+  capacityLitres Decimal @db.Decimal(12, 3)
   // Current live level (litres) — updated by telemetry engine & persisted on tick
-  currentLitres Float
+  currentLitres Decimal @db.Decimal(12, 3)
   // Calibration curve: JSON array of [{litres, percent}] strapping points
   calibration   String
   // Thresholds (litres)
-  lowThreshold  Float
-  criticalThreshold Float
+  lowThreshold  Decimal @db.Decimal(12, 3)
+  criticalThreshold Decimal @db.Decimal(12, 3)
   // Telemetry meta
   lastReadingAt DateTime?
   status        TankStatus   @default(OPERATIONAL)
@@ -803,10 +873,12 @@ model FuelDispenser {
   lastCommAt      DateTime?
 
   // ── Live telemetry (updated by engine tick) ───────────────────────────
-  currentVolumeLitres  Float    @default(0)   // in-progress transaction volume
-  presetVolumeLitres   Float?                 // optional preset limit
-  flowRateLpm          Float    @default(0)
-  totalizerLitres      Float    @default(0)   // cumulative lifetime volume
+  // Phase 5 task 1 — volume is Decimal. totalizerLitres is the important one:
+  // it accumulates across months of dispensing, so float drift is monotonic.
+  currentVolumeLitres  Decimal  @default(0) @db.Decimal(12, 3)   // in-progress transaction volume
+  presetVolumeLitres   Decimal? @db.Decimal(12, 3)                // optional preset limit
+  flowRateLpm          Decimal  @default(0) @db.Decimal(12, 3)
+  totalizerLitres      Decimal  @default(0) @db.Decimal(12, 3)   // cumulative lifetime volume
   currentTransactionId String?
   lastTransactionAt    DateTime?
   tempC                Float    @default(35)
@@ -843,7 +915,7 @@ model FuelTransaction {
   siteId        String
   tenantId      String    // Phase 1 step 2-5: denormalised from Site.
   nozzle        Int       @default(1)
-  volumeLitres  Float
+  volumeLitres  Decimal  @db.Decimal(12, 3)
   amountYer     Decimal     @default(0)   // cost in Yemeni Rial
   unitPriceYer  Decimal     @default(0)
   vehiclePlate  String?
@@ -979,8 +1051,8 @@ model FuelDelivery {
   supplier    String
   driverName  String?
   vehiclePlate String?
-  volumeOrderedLitres Float
-  volumeDeliveredLitres Float?
+  volumeOrderedLitres Decimal @db.Decimal(12, 3)
+  volumeDeliveredLitres Decimal? @db.Decimal(12, 3)
   doNumber    String   // delivery order number
   status      FuelDeliveryStatus   @default(SCHEDULED)
   scheduledAt DateTime
@@ -1003,7 +1075,28 @@ model FuelDelivery {
 }
 
 // command: START | STOP | EMERGENCY_STOP | RESET
-// status: PENDING | SENT | EXECUTED | FAILED | TIMEOUT
+//
+// status — WHAT IS ACTUALLY WRITTEN (corrected, Phase 5). The previous
+// comment here claimed:
+//
+//     status: PENDING | SENT | EXECUTED | FAILED | TIMEOUT
+//
+// EXECUTED and TIMEOUT are NEVER WRITTEN anywhere in the codebase
+// (`grep -rn '"EXECUTED"' src/` returns zero hits). The enum still declares
+// them, so this comment described an aspiration rather than behaviour, and an
+// auditor reading it would conclude a command lifecycle was verified when
+// nothing observes an outcome. The enum members are left in place because
+// removing them is a destructive schema change and they remain the correct
+// target states for a future real dispatcher.
+//
+//   SENT    the command was accepted and its SIMULATED dispatch was applied to
+//           in-process state. No hardware is signalled; there is no Modbus,
+//           MQTT or serial write anywhere in the control path.
+//   FAILED  refused by a safety interlock, or the write itself failed.
+//
+// There is no transition out of SENT. `executedAt` is populated at ISSUE time
+// and `result` is set to "OK" before anything could have happened, so neither
+// field is evidence of execution — read `status` and this comment instead.
 model ControlCommand {
   id          String   @id @default(cuid())
   generatorId String

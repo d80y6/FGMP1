@@ -89,6 +89,40 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return res;
     }
 
+    // ── PHASE 5 IDEMPOTENCY ───────────────────────────────────────────────────
+    // A duplicate submission of a command that is already in flight with the
+    // SAME intent must NOT be dispatched again. Dispatching a second START
+    // because a client retried after a dropped response is a real hazard, and
+    // the operator needs to be told their retry was recognised rather than
+    // seeing a fresh success that implies a second start.
+    if (enforced.replay) {
+      await audit({
+        userId: me.id,
+        tenantId: me.tenantId,
+        action: "CONTROL_REPLAY_SUPPRESSED",
+        entity: "generator",
+        entityId: id,
+        details: {
+          command,
+          duplicateOf: enforced.replay.commandId,
+          duplicateCommand: enforced.replay.command,
+        },
+      });
+      const res = NextResponse.json(
+        {
+          ok: true,
+          replayed: true,
+          message:
+            `Duplicate ${enforced.replay.command} suppressed — command ` +
+            `${enforced.replay.commandId} is already in flight for this generator.`,
+          duplicateOf: enforced.replay.commandId,
+        },
+        { status: 200 },
+      );
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
+
     // ── PHASE 3: the AUTHENTICATED tenant is passed down so the engine can
     // assert the generator's tenant matches it, before any state mutation.
     const result = await engine.applyCommand(

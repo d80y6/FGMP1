@@ -1918,11 +1918,25 @@ async controlDispenser(
           tenantId: site.tenantId,
           generatorId: genId,
           command,
+          // PHASE 5. `executedAt` and `result: "OK"` are NO LONGER written at
+          // issue time.
+          //
+          // Both were false. Nothing had executed and no outcome had been
+          // observed: the dispatch below is a simulated in-process mutation with
+          // no Modbus, MQTT or serial write anywhere in the path. Recording an
+          // execution timestamp and an OK result at the moment of issue asserted
+          // a hardware event that never happened, and an auditor reading the row
+          // would conclude the engine had been commanded.
+          //
+          // What IS true at this point: the command was accepted and the
+          // simulated dispatch applied. executedAt stays null — leaving it free
+          // to mean "a device actually reported back" once a real dispatcher
+          // exists — and `result` says so in words rather than implying success.
           status: "SENT",
           reason: reason ?? null,
           issuedById: userId,
-          executedAt: new Date(this.now),
-          result: "OK",
+          executedAt: null,
+          result: "SIMULATED_DISPATCH_APPLIED_NO_HARDWARE",
         },
       }),
     );
