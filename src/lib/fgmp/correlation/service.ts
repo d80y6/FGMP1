@@ -245,6 +245,12 @@ export async function evaluateAndPersist(
         notTriggered: [],
         deduplicated: 0,
         inserted: 0,
+        // No rules, so nothing could have been evaluated and nothing could have
+        // been escalated. Zero is the truthful value, not a default — and it is
+        // stated explicitly rather than left off, because omitting it made this
+        // return literal structurally different from the main path and the
+        // mismatch only surfaced as a type error at the call site.
+        raisedAlarms: 0,
       };
     }
 
