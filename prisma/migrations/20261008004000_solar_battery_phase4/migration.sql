@@ -21,12 +21,7 @@ CREATE TABLE IF NOT EXISTS "SolarSite" (
     "installedAt"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "notes"         TEXT,
     "createdAt"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    -- DEFAULT is required, not decorative. Prisma's @updatedAt is applied by
-    -- the client on write, but the column must still satisfy NOT NULL for any
-    -- write that does not go through Prisma — including a raw fixture insert.
-    -- Omitting it here produced exactly the failure the RLS suite caught for
-    -- InterlockThreshold: P2011 null constraint on updatedAt.
-    "updatedAt"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt"     TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "SolarSite_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "SolarSite_siteId_key" UNIQUE ("siteId"),
@@ -50,8 +45,7 @@ CREATE TABLE IF NOT EXISTS "SolarArray" (
     "inverterModel"   TEXT,
     "installedAt"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "createdAt"       TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    -- See the note on SolarSite.updatedAt: the DEFAULT is load-bearing.
-    "updatedAt"       TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt"       TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "SolarArray_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "SolarArray_solarSiteId_fkey" FOREIGN KEY ("solarSiteId") REFERENCES "SolarSite"("id") ON DELETE CASCADE ON UPDATE CASCADE,

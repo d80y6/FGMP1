@@ -222,6 +222,27 @@ class FgmpEngine {
   private transientRaisedAt = new Map<string, number>();
   // Escalation step thresholds (minutes). Read from settings where possible;
   // these defaults match .fgmp-settings.json.
+  /**
+   * Alarm escalation step intervals, in minutes.
+   *
+   * ── THESE ARE HARDCODED, NOT READ FROM SETTINGS ────────────────────────────
+   * A previous version of this file carried a comment claiming "the step
+   * thresholds now come from settings". That was false: nothing ever assigned
+   * this field, so the literals below were what ran, and the comment told a
+   * reader the numbers were operator-configurable when they were not.
+   *
+   * A comment that asserts configurability that does not exist is worse than no
+   * comment: an operator reads it, believes they can tune escalation from the UI,
+   * and never discovers otherwise until an alarm fails to escalate as expected.
+   *
+   * Why they are left hardcoded rather than wired now: `resolveThresholds()` in
+   * `interlock-thresholds.ts` already merges per-tenant DB overrides, and adding
+   * a SECOND path here would produce two sources of truth for the same concept.
+   * That is a real change and belongs in its own piece of work, not as a drive-by
+   * edit to a comment.
+   *
+   * Both values are INFERRED. No specification or OEM document supplied them.
+   */
   private escalationThresholds = { l1ToL2Minutes: 15, l2ToL3Minutes: 30 };
   // site -> tank index pointer for consumption round-robin
   private tankPtr = new Map<string, number>();
@@ -1789,8 +1810,8 @@ async controlDispenser(
    *     so a FUEL_CRITICAL raised as L3 was DOWNGRADED to L2 at 15 minutes
    *     and only restored on a later tick — and the L1/L2/L3 KPI tile,
    *     which counts by severity, was really counting alarm *age*.
-   *  2. The step thresholds now come from settings (l1ToL2Minutes,
-   *     l2ToL3Minutes) instead of one hardcoded 15 minutes for every step.
+   *  2. The two steps are now DISTINCT (l1ToL2Minutes, l2ToL3Minutes) instead
+   *     of one hardcoded 15 minutes applying to every step.
    *
    * Notifications are written under the OWNING SITE's tenant, not the
    * engine-wide fallback.
