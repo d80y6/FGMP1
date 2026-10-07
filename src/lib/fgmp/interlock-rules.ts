@@ -154,6 +154,16 @@ export interface InterlockContext {
    * conservative defaults when it is absent, never to `undefined`.
    */
   thresholds?: ResolvedThresholds;
+  /**
+   * Whether `thresholds` came from the tenant's stored rows or from the shipped
+   * defaults.
+   *
+   * Carried so a refusal is attributed to the right limit. A denial recorded
+   * against the hardcoded 85 °C when the operator confirmed 120 °C is an
+   * INACCURATE audit record, not merely an incomplete one — an incident review
+   * would conclude the wrong limit was enforced.
+   */
+  thresholdsFromDatabase?: boolean;
 }
 
 /**
@@ -258,15 +268,41 @@ const HARD_RULES: InterlockRule[] = [
       "Refuel before starting. Starting an engine that cannot sustain idle drops the site load mid-crank.",
     evaluate: (ctx) => {
       const { generator, fuelLitres, tankCapacityLitres } = ctx;
-      // Absent fuel data is NOT treated as zero. Refusing every start on a site
-      // with no bound tank would be a denial-of-service the operator cannot fix.
-      if (fuelLitres === undefined || fuelLitres === null) return null;
       if (generator.status === "RUNNING") return null;
-      // Capacity is REQUIRED now the threshold is a percentage rather than a
-      // litre count: a flat litre figure cannot be correct across engine
-      // displacements. Without capacity the comparison is uncomputable, so the
-      // rule declines rather than substituting a guess.
-      if (!tankCapacityLitres || tankCapacityLitres <= 0) return null;
+
+      // ── PHASE 5: THIS NOW DENIES INSTEAD OF PERMITTING ──────────────────
+      // It previously returned null for both absent fuel and absent capacity.
+      // `null` means "the rule does not fire", and a rule that does not fire
+      // PERMITS. Verified before the fix:
+      //
+      //     fuel = 0.1 L, capacity UNKNOWN -> allowed = TRUE   <- fail-open
+      //     fuel = 0.1 L, capacity = 0      -> allowed = TRUE   <- fail-open
+      //
+      // The old comment justified this as "uncomputable, so the rule declines
+      // rather than guessing". That is correct about not INVENTING A NUMBER
+      // and wrong about what the rule should DO. Declining the CHECK is the
+      // opposite of fail-safe: an unknown tank capacity silently became a
+      // licence to crank an engine that may be running on fumes.
+      //
+      // A missing tank reading is now also a DENIAL rather than a pass. The
+      // earlier concern — refusing every start on a site with no telemetry
+      // would be a denial-of-service the operator cannot fix — is answered by
+      // the remedy text: the operator is told exactly what to do, and the
+      // condition is one they can clear. An interlock they cannot act on is
+      // not usable either.
+      if (fuelLitres === undefined || fuelLitres === null) {
+        return (
+          "Fuel level cannot be read for this site, so the cranking-fuel check " +
+          "cannot be satisfied. Refusing to start on an unmeasured fuel state."
+        );
+      }
+      if (!tankCapacityLitres || tankCapacityLitres <= 0) {
+        return (
+          "Tank capacity is unknown for this site, so the cranking-fuel " +
+          "threshold (a percentage of capacity) cannot be computed. Declare " +
+          "the tank capacity to enable remote start."
+        );
+      }
       const pct = thresholdsOf(ctx).values.crankingFuelFractionPct;
       const requiredLitres = (pct / 100) * tankCapacityLitres;
       return fuelLitres < requiredLitres
@@ -469,8 +505,18 @@ const SOFT_RULES: InterlockRule[] = [
     remedy: "Arrange refuelling before the next expected run.",
     evaluate: (ctx) => {
       const { fuelLitres, tankCapacityLitres } = ctx;
-      if (fuelLitres === undefined || fuelLitres === null) return null;
-      if (!tankCapacityLitres || tankCapacityLitres <= 0) return null;
+      // PHASE 5 audit of the second capacity-dependent rule. This one is SOFT,
+      // so declining the check cannot permit an unsafe START the way it did for
+      // the hard rule — but silence is still the wrong signal here. An operator
+      // seeing "fuel state unknown" is better placed than one seeing nothing,
+      // and the HARD rule already refuses the start, so this warning is
+      // genuinely informational rather than a backstop.
+      if (fuelLitres === undefined || fuelLitres === null) {
+        return "Fuel level cannot be read for this site; fuel state is unknown.";
+      }
+      if (!tankCapacityLitres || tankCapacityLitres <= 0) {
+        return "Tank capacity is unknown; fuel percentage cannot be computed.";
+      }
       const pct = thresholdsOf(ctx).values.lowFuelWarnFractionPct;
       const warnLitres = (pct / 100) * tankCapacityLitres;
       return fuelLitres < warnLitres

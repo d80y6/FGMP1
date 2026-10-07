@@ -66,7 +66,11 @@ export async function enforceInterlock(params: {
   // If the engine cannot describe the asset, the preconditions cannot be
   // assessed. Refusing is the safe direction: an unassessable command is not
   // an approved one.
-  const ctx = buildInterlockContext(params.generatorId, now);
+  // Phase 5: now ASYNC — the context loads the tenant's thresholds from the
+  // database inside withTenant. A read failure PROPAGATES rather than silently
+  // degrading to the shipped defaults: a transient database error must never
+  // quietly change a safety limit without anyone noticing.
+  const ctx = await buildInterlockContext(params.generatorId, params.tenantId, now);
   if (!ctx) {
     const recorded = await recordDeniedCommand({
       tenantId: params.tenantId,

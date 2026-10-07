@@ -304,9 +304,35 @@ describe("BOUNDARY conditions at exactly the threshold", () => {
     expectDeniedBy("START", past, "IN_SERVICE_OVERDUE");
   });
 
-  test("absent fuel data does NOT deny — absence is not zero", () => {
+  test("absent fuel data DENIES — an unmeasured fuel state is not an approval", () => {
+    // PHASE 5. This test previously asserted `allowed === true`, encoding the
+    // fail-open behaviour the gap assessment flagged: `null` from a rule means
+    // "does not fire", and a rule that does not fire PERMITS. Starting an engine
+    // whose fuel state cannot be read is how a site browns out mid-crank.
     const noFuel = goodContext({ fuelLitres: undefined });
-    expect(evaluateInterlocks("START", noFuel).allowed).toBe(true);
+    const v = evaluateInterlocks("START", noFuel);
+    expect(v.allowed).toBe(false);
+    if (!v.allowed) {
+      expect(v.reasons.map((r) => r.ruleId)).toContain("FUEL_BELOW_CRANKING_THRESHOLD" as never);
+      expect(v.reasons[0].explanation).toContain("cannot be read");
+    }
+  });
+
+  test("unknown tank capacity DENIES, in every degenerate form", () => {
+    // Boundary in both directions: absent, zero and negative capacity must all
+    // deny. Only a KNOWN capacity can satisfy the check.
+    for (const cap of [undefined, 0, -1, NaN]) {
+      const v = evaluateInterlocks("START", goodContext({ fuelLitres: 400, tankCapacityLitres: cap }));
+      expect(v.allowed).toBe(false);
+      if (!v.allowed) expect(v.reasons[0].explanation).toMatch(/capacity/i);
+    }
+  });
+
+  test("a known capacity with ample fuel still ALLOWS", () => {
+    // The converse boundary: the denial must not be unconditional, or the
+    // interlock is a blanket refusal rather than a real check.
+    const ok = goodContext({ fuelLitres: 400, tankCapacityLitres: 500 });
+    expect(evaluateInterlocks("START", ok).allowed).toBe(true);
   });
 });
 
@@ -348,16 +374,16 @@ describe("SOFT interlocks warn but allow", () => {
     }
   });
 
-  test("a fuel rule DECLINES rather than guessing when capacity is unknown", () => {
-    // Capacity is now required to compute a percentage. Without it the rule has
-    // no opinion — it must not treat missing capacity as full (permitting an
-    // unsafe start on 1 L), and it must not substitute a flat litre figure that
-    // is wrong for the engine. Denying every start on an unbound site would be
-    // a denial-of-service the operator cannot fix, which is the other failure.
+  test("the SOFT fuel rule also stops going silent on unknown state", () => {
+    // PHASE 5. This previously asserted the SOFT rule returned null on unknown
+    // capacity. Silence is still the wrong signal: the HARD rule already refuses
+    // the start, so this warning is informational rather than a backstop — but an
+    // operator seeing "fuel state unknown" is better placed than one seeing
+    // nothing at all.
     const noCapacity = goodContext({ fuelLitres: 1, tankCapacityLitres: undefined });
-    const v = evaluateInterlocks("START", noCapacity);
+    const v = evaluateInterlocks("STOP", noCapacity);
     expect(v.allowed).toBe(true);
-    expect(v.warnings.map((w) => w.ruleId)).not.toContain("NEAR_CRITICAL_FUEL" as never);
+    expect(v.warnings.map((w) => w.ruleId)).toContain("NEAR_CRITICAL_FUEL" as never);
   });
 
   test("HIGH_EXISTING_LOAD allows with a warning", () => {
