@@ -172,3 +172,64 @@ export function toJsonNumber(
 ): number {
   return toNum(value, opts);
 }
+
+/**
+ * Recursively convert Prisma.Decimal values to numbers, for a JSON response.
+ *
+ * ── WHY THIS EXISTS ──────────────────────────────────────────────────────────
+ * `NextResponse.json()` stringifies a Decimal, because `Decimal.prototype.toJSON`
+ * returns its string form. So converting `FuelTank.capacityLitres` to
+ * `numeric(12,3)` silently changed the API contract from
+ *
+ *     { "capacityLitres": 5000 }
+ *
+ * to
+ *
+ *     { "capacityLitres": "5000" }
+ *
+ * without a single type error — a string is valid JSON, and the route handler's
+ * inferred return type widens with it. Every numeric consumer of those endpoints
+ * (sorting a volume column, summing a fleet total, charting a trend) then
+ * produces garbage, and nothing in the toolchain objects.
+ *
+ * Calling `toJsonNumber()` at each field is correct but is a per-field tax that
+ * every future route author has to remember. A route that forgets reintroduces
+ * the same bug silently, which is the pattern this function exists to end.
+ *
+ * ── WHAT IT TOUCHES ──────────────────────────────────────────────────────────
+ * Only objects that expose a Prisma-shaped `toNumber()` — i.e. actual Decimals
+ * — and plain objects/arrays containing them. `Date` is preserved because
+ * `toJSON` on it is meaningful and the route layer wants the ISO string;
+ * `bigint` is preserved for the same reason rather than being silently coerced
+ * to a lossy number.
+ *
+ * Depth is bounded so a cyclic object cannot hang the request.
+ */
+export function decimalsToJson<T>(value: T, depth = 0): T {
+  // A cycle here would otherwise be a denial of service on a request path.
+  if (depth > 12) return value;
+
+  if (value === null || typeof value !== "object") return value;
+
+  // Dates keep their own toJSON (ISO string). Not coerced to epoch millis —
+  // that would be a second, quieter contract change.
+  if (value instanceof Date) return value;
+
+  // Prisma.Decimal: has toNumber() and a string toString().
+  if (
+    typeof (value as { toNumber?: unknown }).toNumber === "function" &&
+    typeof (value as { toString?: unknown }).toString === "function"
+  ) {
+    return toNum(value as DecimalLike, { scale: 3 }) as unknown as T;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((v) => decimalsToJson(v, depth + 1)) as unknown as T;
+  }
+
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    out[k] = decimalsToJson(v, depth + 1);
+  }
+  return out as T;
+}

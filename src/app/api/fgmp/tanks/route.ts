@@ -11,6 +11,7 @@ import {
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireAuth, requireRole, ROLES, siteTenantWhereOrAll, assertTenantOwned } from "@/lib/fgmp/auth-helpers";
+import { decimalsToJson } from "@/lib/fgmp/decimal";
 
 export const dynamic = "force-dynamic";
 
@@ -74,7 +75,7 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    const res = NextResponse.json(merged);
+    const res = NextResponse.json(decimalsToJson(merged));
     applyRateLimitHeaders(res.headers, rl);
     return res;
   } catch (err) {

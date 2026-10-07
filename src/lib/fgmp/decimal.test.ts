@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 /**
  * Unit tests for src/lib/fgmp/decimal.ts (Phase 1 step 9 groundwork).
  *
@@ -20,9 +21,9 @@
 // point of the module is to convert that specific type. A hand-rolled stand-in
 // would not catch the `JSON.stringify(Decimal) === "1234.56"` string leak.
 import { describe, expect, test } from "bun:test";
-import { Prisma } from "@prisma/client";
 import {
   DEFAULT_DECIMAL_SCALE,
+  decimalsToJson,
   mulDecimals,
   sumDecimals,
   toJsonNumber,
@@ -163,5 +164,55 @@ describe("mulDecimals", () => {
   test("handles zero and null factors as zero", () => {
     expect(mulDecimals(dec("10"), dec("0"))).toBe(0);
     expect(mulDecimals(dec("10"), null)).toBe(0);
+  });
+});
+
+/**
+ * Regression tests for the Decimal → JSON contract.
+ *
+ * Converting volume columns to `numeric(12,3)` silently changed four API
+ * responses from numbers to STRINGS, because `Decimal.prototype.toJSON` returns
+ * its string form. It passed `tsc` — a string is valid JSON and the handler's
+ * inferred type widens with it — so no gate caught it.
+ *
+ * These tests exist so the next route author does not have to remember.
+ */
+describe("decimalsToJson", () => {
+  test("converts a Decimal to a number", () => {
+    const out = decimalsToJson({ capacityLitres: new Prisma.Decimal("5000.000") });
+    expect(typeof out.capacityLitres).toBe("number");
+    expect(out.capacityLitres).toBe(5000);
+  });
+
+  test("leaves ordinary numbers, strings and booleans alone", () => {
+    const out = decimalsToJson({ a: 1, b: "x", c: true, d: null });
+    expect(out).toEqual({ a: 1, b: "x", c: true, d: null });
+  });
+
+  test("recurses into nested objects and arrays", () => {
+    const out = decimalsToJson({
+      tanks: [{ capacityLitres: new Prisma.Decimal("100.500") }],
+      meta: { totals: { volumeLitres: new Prisma.Decimal("7.250") } },
+    });
+    expect(typeof out.tanks[0]!.capacityLitres).toBe("number");
+    expect(out.meta.totals.volumeLitres).toBe(7.25);
+  });
+
+  test("preserves Date as an ISO string rather than coercing it", () => {
+    // The route layer wants the ISO form; silently switching to epoch millis
+    // would be a second, quieter contract change.
+    const out = decimalsToJson({ createdAt: new Date("2026-01-02T03:04:05Z") });
+    expect(out.createdAt).toBeInstanceOf(Date);
+  });
+
+  test("survives a cyclic object instead of hanging the request", () => {
+    const cyclic: Record<string, unknown> = { a: 1 };
+    cyclic.self = cyclic;
+    expect(() => decimalsToJson(cyclic)).not.toThrow();
+  });
+
+  test("rounds to the stored scale rather than exposing float noise", () => {
+    // This is the reason the columns are Decimal at all.
+    expect(decimalsToJson({ v: new Prisma.Decimal("691.000") }).v).toBe(691);
   });
 });
