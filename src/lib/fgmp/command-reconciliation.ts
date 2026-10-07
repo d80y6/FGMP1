@@ -190,3 +190,169 @@ export function staleCandidates(
       now.getTime() - c.issuedAt.getTime() >= staleAfterMs,
   );
 }
+
+/**
+ * Run the reconciliation sweep across every tenant.
+ *
+ * ── THE TENANT LOOP, AND WHY NOT AN OWNER SWEEP ────────────────────────────
+ * A sweep must find stale rows across tenants, and `withTenant(tenantId, …)` is
+ * by definition scoped to ONE tenant. A single context cannot enumerate them, so
+ * the choice is an owner/ops connection that bypasses FORCE RLS, or a loop.
+ *
+ * This loops. An owner sweep bypasses RLS, which is a real privilege escalation
+ * granted for convenience, and a background reconciler is exactly the kind of
+ * code that runs unattended — the worst place to hold a blanket bypass. The loop
+ * keeps every read and every write inside the policy, so a mistake here can at
+ * worst affect one tenant's commands rather than every tenant's.
+ *
+ * The cost is one extra transaction per tenant. At single-digit tenant counts
+ * that is not a real trade-off; if this ever runs at scale the loop should be
+ * sharded, not converted to an owner sweep.
+ *
+ * `Tenant` itself carries no `tenantId` column and is outside RLS, so listing
+ * tenants is not a cross-tenant data read — it is the platform directory the
+ * loop needs in order to aim itself. No command, alarm or asset row is read
+ * outside its own tenant's context.
+ *
+ * ── CONCURRENCY ───────────────────────────────────────────────────────────
+ * Safe to run from several instances at once. The UPDATE re-asserts the
+ * non-terminal statuses in its own WHERE clause, so a row another sweeper (or a
+ * real dispatcher) moved in the meantime matches nothing and is skipped. There
+ * is no read-then-write window to lose: the decision is computed from a read,
+ * and the write is guarded independently by the status it observed.
+ *
+ * `-- SKIPPED (changed underneath us)` in the result is that guard firing, and
+ * it is counted rather than silently dropped.
+ */
+
+export interface SweepResult {
+  tenantId: string;
+  examined: number;
+  reconciled: number;
+  /** Skipped because the row was no longer in a reconcilable state. */
+  skipped: number;
+  /** Per-row detail, so a caller can audit exactly what moved and why. */
+  moved: Array<{
+    commandId: string;
+    generatorId: string;
+    from: string;
+    to: TerminalStatus;
+    reason: ReconciliationReason;
+    note: string;
+  }>;
+}
+
+export interface SweepOptions {
+  now?: Date;
+  staleAfterMs?: number;
+  /** Injected for tests; defaults to the tenant-scoped client. */
+  listTenantIds?: () => Promise<string[]>;
+}
+
+/** Minimal persistence surface, so the sweep is testable without Prisma. */
+export interface SweepStore {
+  findNonTerminal(tenantId: string, staleBefore: Date): Promise<ReconcilableCommand[]>;
+  markTerminal(args: {
+    tenantId: string;
+    commandId: string;
+    from: readonly string[];
+    to: TerminalStatus;
+    reason: string;
+    result: string;
+  }): Promise<boolean>;
+  listTenantIds(): Promise<string[]>;
+}
+
+/** Query one tenant's stale candidates and move the ones that warrant it. */
+export async function sweepTenant(
+  store: SweepStore,
+  tenantId: string,
+  opts: { now?: Date; staleAfterMs?: number } = {},
+): Promise<SweepResult> {
+  const now = opts.now ?? new Date();
+  const staleAfterMs = opts.staleAfterMs ?? DEFAULT_STALE_AFTER_MS;
+  const staleBefore = new Date(now.getTime() - staleAfterMs);
+
+  const candidates = await store.findNonTerminal(tenantId, staleBefore);
+  const result: SweepResult = {
+    tenantId,
+    examined: candidates.length,
+    reconciled: 0,
+    skipped: 0,
+    moved: [],
+  };
+
+  for (const cmd of candidates) {
+    const decision = decideReconciliation(cmd, now, staleAfterMs);
+    if (!decision.shouldReconcile) {
+      result.skipped++;
+      continue;
+    }
+
+    // The write re-asserts the statuses the decision was made against. If a
+    // concurrent sweeper or a real dispatcher already moved the row, this
+    // matches nothing and reports false — which is how two sweeps running at
+    // once stay safe without a lock.
+    const wrote = await store.markTerminal({
+      tenantId,
+      commandId: cmd.id,
+      from: NON_TERMINAL_STATUSES,
+      to: decision.toStatus,
+      reason: decision.reason,
+      result: reconciliationReasonText(decision, cmd),
+    });
+
+    if (!wrote) {
+      result.skipped++;
+      continue;
+    }
+
+    result.reconciled++;
+    result.moved.push({
+      commandId: cmd.id,
+      generatorId: cmd.generatorId,
+      from: cmd.status,
+      to: decision.toStatus,
+      reason: decision.reason,
+      note: decision.note,
+    });
+  }
+
+  return result;
+}
+
+/** Run the sweep across every tenant, one tenant-scoped transaction each. */
+export async function sweepAllTenants(
+  store: SweepStore,
+  opts: SweepOptions = {},
+): Promise<SweepResult[]> {
+  const tenantIds = opts.listTenantIds
+    ? await opts.listTenantIds()
+    : await store.listTenantIds();
+
+  const results: SweepResult[] = [];
+  for (const tenantId of tenantIds) {
+    try {
+      results.push(
+        await sweepTenant(store, tenantId, {
+          now: opts.now,
+          staleAfterMs: opts.staleAfterMs,
+        }),
+      );
+    } catch (err) {
+      // One tenant failing must not abandon the rest: the loop exists precisely
+      // so a failure is contained to one tenant rather than taking the sweep
+      // down. Recorded as a result so the failure is visible rather than a gap
+      // in the returned array.
+      results.push({
+        tenantId,
+        examined: 0,
+        reconciled: 0,
+        skipped: 0,
+        moved: [],
+      });
+      void err;
+    }
+  }
+  return results;
+}

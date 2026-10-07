@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { engine } from "@/lib/fgmp";
 import { withTenant } from "@/lib/fgmp/tenant-context";
+import {
+  decideIdempotency,
+  fingerprintPayload,
+  idempotencyRefusalCode,
+} from "@/lib/fgmp/command-idempotency";
 import { audit } from "@/lib/fgmp/audit";
 import { generatorCommandSchema, validateBody } from "@/lib/fgmp/schemas";
 import {
@@ -58,6 +63,120 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return res;
     }
     const { command, reason } = r.data;
+
+    // ── PHASE 5 IDEMPOTENCY — key lookup and decision ────────────────────────
+    // Runs BEFORE the interlock, because a replay must not consume a second
+    // interlock evaluation, and because a same-key-different-payload is a client
+    // bug that should be refused rather than argued with by a safety system.
+    //
+    // The key comes from the `Idempotency-Key` request header. It is NOT part of
+    // the body: a header is set by the HTTP client as transport metadata and is
+    // never populated by a form post or a JSON deserialiser, so it cannot be
+    // smuggled in with the command payload.
+    const idemKey = req.headers.get("idempotency-key");
+    const fingerprint = fingerprintPayload({ command, generatorId: id, reason });
+    const nowInstant = new Date();
+
+    const existing = idemKey
+      ? await withTenant(me.tenantId, (tx) =>
+          tx.controlCommand.findFirst({
+            where: { idempotencyKey: idemKey, generatorId: id, tenantId: me.tenantId },
+            select: {
+              id: true,
+              status: true,
+              result: true,
+              issuedAt: true,
+              issuedById: true,
+              payloadFingerprint: true,
+            },
+          }),
+        )
+      : null;
+
+    const decision = decideIdempotency({
+      key: idemKey,
+      fingerprint,
+      issuedById: me.id,
+      existing: existing
+        ? {
+            key: existing.idempotencyKey as string,
+            payloadFingerprint: existing.payloadFingerprint ?? "",
+            issuedById: existing.issuedById ?? "",
+            issuedAt: existing.issuedAt,
+            outcome: {
+              commandId: existing.id,
+              status: existing.status,
+              result: existing.result,
+              issuedAt: existing.issuedAt,
+            },
+          }
+        : null,
+      now: nowInstant,
+    });
+
+    // ── Same key, different payload: a client bug. Refuse it. ───────────────
+    // Answering with the first outcome would disguise the bug as a successful
+    // retry, and the operator would believe the second command ran when it did
+    // not. 409 with a stable code so a client can match on it.
+    if (decision.kind === "payload-mismatch") {
+      await audit({
+        userId: me.id,
+        tenantId: me.tenantId,
+        action: "CONTROL_IDEMPOTENCY_CONFLICT",
+        entity: "generator",
+        entityId: id,
+        details: { command, key: idemKey },
+      });
+      const res = NextResponse.json(
+        {
+          error:
+            "This Idempotency-Key was already used for a DIFFERENT command. " +
+            "Reusing one key for two commands is a client bug; the original " +
+            "command was not re-issued and this one was not executed.",
+          code: idempotencyRefusalCode(decision) ?? "IDEMPOTENCY_KEY_CONFLICT",
+        },
+        { status: 409 },
+      );
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
+
+    // ── Replay: return the ORIGINAL outcome, execute nothing ────────────────
+    // The requirement this exists for. An operator retrying a START needs to
+    // know whether the generator actually started — not that their retry was
+    // swallowed, and certainly not a synthesised `ok: true` implying a second
+    // fresh execution.
+    if (decision.kind === "replay") {
+      await audit({
+        userId: me.id,
+        tenantId: me.tenantId,
+        action: "CONTROL_IDEMPOTENT_REPLAY",
+        entity: "generator",
+        entityId: id,
+        details: {
+          command,
+          key: idemKey,
+          originalCommandId: decision.record.outcome.commandId,
+          originalStatus: decision.record.outcome.status,
+        },
+      });
+      const res = NextResponse.json(
+        {
+          replayed: true,
+          idempotent: true,
+          message:
+            `This command was already issued as ${decision.record.outcome.commandId}. ` +
+            `Its outcome is returned unchanged; nothing was re-executed.`,
+          commandId: decision.record.outcome.commandId,
+          status: decision.record.outcome.status,
+          result: decision.record.outcome.result,
+          issuedAt: decision.record.outcome.issuedAt.toISOString(),
+        },
+        { status: 200 },
+      );
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
 
     // ── SAFETY INTERLOCKS (Phase 2) ────────────────────────────────────────
     // Enforced BEFORE the engine is touched. Ordering is the safety property:
@@ -189,6 +308,34 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       applyRateLimitHeaders(res.headers, rl);
       return res;
     }
+    // ── Record the idempotency key against the command it produced ───────────
+    // Only AFTER a successful dispatch, and only when the caller sent a key.
+    // Persisting before the dispatch would record an outcome for a command that
+    // may never have run — the false-record problem again, in a new place.
+    //
+    // The UPDATE targets this exact command by generator + issue instant, and
+    // only touches rows whose key is still NULL, so it cannot steal the key from
+    // another request that won the race with the same value.
+    if ((decision.kind === "execute" || decision.kind === "expired") && result.ok) {
+      try {
+        await withTenant(me.tenantId, (tx) =>
+          tx.controlCommand.updateMany({
+            where: {
+              generatorId: id,
+              tenantId: me.tenantId,
+              issuedAt: nowInstant,
+              idempotencyKey: null,
+            },
+            data: { idempotencyKey: decision.key, payloadFingerprint: fingerprint },
+          }),
+        );
+      } catch {
+        // Must not mask a successful dispatch. The command ran; losing its
+        // idempotency key only degrades future replay detection for this key,
+        // and the CONTROL audit below still records the action.
+      }
+    }
+
     await audit({ userId: me.id, action: "CONTROL", entity: "generator", entityId: id, details: { command, reason, result } });
     const res = NextResponse.json(
       {

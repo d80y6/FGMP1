@@ -14,6 +14,8 @@ import {
   decideReconciliation,
   staleCandidates,
   reconciliationReasonText,
+  sweepTenant,
+  sweepAllTenants,
   TERMINAL_STATUSES,
   NON_TERMINAL_STATUSES,
   DEFAULT_STALE_AFTER_MS,
@@ -215,5 +217,124 @@ describe("purity", () => {
       decideReconciliation(c, NOW),
       decideReconciliation({ ...c }, new Date(NOW.getTime())),
     );
+  });
+});
+// ── The sweep itself ───────────────────────────────────────────────────────
+describe("sweepTenant — moves stale rows and records why", () => {
+  function fakeStore(rows: ReconcilableCommand[]) {
+    const moved: string[] = [];
+    return {
+      moved,
+      store: {
+        listTenantIds: async () => ["t1"],
+        findNonTerminal: async () => rows,
+        markTerminal: async (a: { commandId: string; reason: string; result: string }) => {
+          moved.push(`${a.commandId}:${a.reason}`);
+          const row = rows.find((r) => r.id === a.commandId);
+          if (!row) return false;
+          row.status = "TIMEOUT";
+          row.reason = a.result;
+          return true;
+        },
+      },
+    };
+  }
+
+  test("a stale SENT row is moved to TIMEOUT with a recorded reason", async () => {
+    const { store, moved } = fakeStore([cmd({ id: "c1", status: "SENT" })]);
+    const r = await sweepTenant(store, "t1", { now: NOW });
+    assert.equal(r.reconciled, 1);
+    assert.equal(r.moved[0].to, "TIMEOUT");
+    assert.equal(r.moved[0].reason, "NO_ACKNOWLEDGEMENT");
+    assert.equal(moved.length, 1);
+  });
+
+  test("a fresh row is left alone", async () => {
+    const fresh = cmd({ id: "c2", status: "SENT", issuedAt: new Date(NOW.getTime() - 1000) });
+    const { store } = fakeStore([fresh]);
+    const r = await sweepTenant(store, "t1", { now: NOW });
+    assert.equal(r.reconciled, 0);
+    assert.equal(r.skipped, 1);
+  });
+
+  test("running the sweep twice moves nothing the second time", async () => {
+    const rows = [cmd({ id: "c3", status: "SENT" })];
+    const { store } = fakeStore(rows);
+    const first = await sweepTenant(store, "t1", { now: NOW });
+    const second = await sweepTenant(store, "t1", { now: NOW });
+    assert.equal(first.reconciled, 1, "first sweep moves the row");
+    assert.equal(second.reconciled, 0, "second sweep is a no-op");
+    assert.equal(second.skipped, 1, "the row is seen and skipped, not re-moved");
+  });
+});
+
+describe("sweepTenant — concurrent safety", () => {
+  test("a row moved underneath the sweep is skipped, not double-moved", async () => {
+    const row = cmd({ id: "c4", status: "SENT" });
+    const store = {
+      listTenantIds: async () => ["t1"],
+      findNonTerminal: async () => [row],
+      // Simulates another sweeper/dispatcher winning the race: the guarded
+      // UPDATE matches nothing because the status is no longer what we read.
+      markTerminal: async () => false,
+    };
+    const r = await sweepTenant(store, "t1", { now: NOW });
+    assert.equal(r.reconciled, 0);
+    assert.equal(r.skipped, 1, "the loss is counted, not silently dropped");
+    assert.equal(r.moved.length, 0);
+  });
+
+  test("two sweeps over the same row reconcile it exactly once", async () => {
+    const rows = [cmd({ id: "c5", status: "SENT" })];
+    let writes = 0;
+    const store = {
+      listTenantIds: async () => ["t1"],
+      findNonTerminal: async () => rows,
+      markTerminal: async () => {
+        const row = rows[0];
+        if (row.status !== "SENT") return false;
+        writes++;
+        row.status = "TIMEOUT";
+        return true;
+      },
+    };
+    const [a, b] = await Promise.all([
+      sweepTenant(store, "t1", { now: NOW }),
+      sweepTenant(store, "t1", { now: NOW }),
+    ]);
+    assert.equal(writes, 1, "exactly one write wins the race");
+    assert.equal(a.reconciled + b.reconciled, 1);
+  });
+});
+
+describe("sweepAllTenants — per tenant, never an owner sweep", () => {
+  test("each tenant is swept under its OWN id", async () => {
+    const seen: string[] = [];
+    const store = {
+      listTenantIds: async () => ["t-a", "t-b"],
+      findNonTerminal: async (tenantId: string) => {
+        seen.push(tenantId);
+        return [];
+      },
+      markTerminal: async () => true,
+    };
+    const r = await sweepAllTenants(store, { now: NOW });
+    assert.deepEqual(seen, ["t-a", "t-b"], "each tenant gets its own pass");
+    assert.equal(r.length, 2);
+    assert.deepEqual(r.map((x) => x.tenantId), ["t-a", "t-b"]);
+  });
+
+  test("one tenant failing does not abandon the others", async () => {
+    const store = {
+      listTenantIds: async () => ["t-ok-1", "t-bad", "t-ok-2"],
+      findNonTerminal: async (tenantId: string) => {
+        if (tenantId === "t-bad") throw new Error("boom");
+        return [];
+      },
+      markTerminal: async () => true,
+    };
+    const r = await sweepAllTenants(store, { now: NOW });
+    assert.equal(r.length, 3, "every tenant is reported, including the failure");
+    assert.deepEqual(r.map((x) => x.tenantId), ["t-ok-1", "t-bad", "t-ok-2"]);
   });
 });
