@@ -151,6 +151,9 @@ const RS485_DIAG_ID = `rls-diag-${RUN}`
  * its own chain would be testing a chain nothing else references.
  */
 const chains: Record<string, { region: string; gov: string; dist: string }> = {}
+/** Id of the SolarSite fixture. SolarArray points at it, so the two are
+ *  declared together — an FK mismatch between fixtures is otherwise silent. */
+const SOLAR_SITE_ID = `sol-${SUFFIX}`;
 const REGION_ID = `rls-reg-${RUN}`
 const GOV_ID = `rls-gov-${RUN}`
 const DIST_ID = `rls-dist-${RUN}`
@@ -241,6 +244,37 @@ const TABLES: TableSpec[] = [
       // NOT NULL with no column default in the schema, so it must be supplied.
       // Prisma manages this on every write; raw fixture inserts do not get that
       // for free.
+      "updatedAt": 'now()',
+    },
+  },
+  {
+    // Phase 4 solar. Carries its own tenantId, so the generic fixture applies.
+    // `updatedAt` is supplied explicitly: the column is NOT NULL with no
+    // schema-level default, so a raw insert that omits it fails.
+    table: 'SolarSite',
+    label: 'SolarSite (tier A, phase 4 solar domain)',
+    tenantColumn: 'tenantId',
+    siteScoped: false,
+    columns: {
+      id: idFor('sol'),
+      "siteId": siteRef(),
+      "capacityKwp": '48.5',
+      "updatedAt": 'now()',
+    },
+  },
+  {
+    // SolarArray is tier B in practice (reached through SolarSite), but it
+    // carries its own tenantId and its own RLS policy, so it is exercised
+    // directly rather than through the parent.
+    table: 'SolarArray',
+    label: 'SolarArray (tier A, phase 4 solar domain)',
+    tenantColumn: 'tenantId',
+    siteScoped: false,
+    columns: {
+      id: idFor('sla'),
+      "solarSiteId": `'${SOLAR_SITE_ID}'`,
+      label: idFor('sla'),
+      "ratedKwp": '32',
       "updatedAt": 'now()',
     },
   },
