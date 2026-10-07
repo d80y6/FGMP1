@@ -6,6 +6,7 @@ import {
   READ_LIMIT,
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
+import { render, isExportFormat } from "@/lib/fgmp/export-render";
 import { requireAuth, isSuperAdminUser } from "@/lib/fgmp/auth-helpers";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +17,7 @@ export async function GET(req: NextRequest) {
   const me = auth.user;
   try {
     const { user } = await bootstrap();
-    const rl = rateLimitByUser(req, user.id, READ_LIMIT.limit, READ_LIMIT.windowMs);
+    const rl = await rateLimitByUser(req, user.id, READ_LIMIT.limit, READ_LIMIT.windowMs);
     if (!rl.success) {
       const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
       applyRateLimitHeaders(res.headers, rl);
@@ -91,16 +92,29 @@ export async function GET(req: NextRequest) {
       applyRateLimitHeaders(res.headers, rl);
       return res;
     }
-    const headers = Object.keys(rows[0]);
-    const csv = [
-      headers.join(","),
-      ...rows.map((r) => headers.map((h) => csvEscape(r[h])).join(",")),
-    ].join("\n");
+    // Format is a QUERY parameter, validated against a fixed allowlist. An
+    // unvalidated format string would reach the renderer as an arbitrary
+    // dispatch key; an unknown one is a 400 rather than a silent CSV fallback,
+    // because a caller asking for XLSX and silently receiving CSV is the kind of
+    // thing that gets discovered during an audit.
+    const format = (searchParams.get("format") ?? "csv").toLowerCase();
+    if (!isExportFormat(format)) {
+      const res = NextResponse.json(
+        { error: `Unsupported format "${format}"`, supported: ["csv", "xlsx", "docx"] },
+        { status: 400 },
+      );
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
 
-    const res = new NextResponse(csv, {
+    const title = `FGMP ${type}`;
+    const { body, contentType } = await render(rows, format, { title });
+
+    const res = new NextResponse(body as BodyInit, {
       headers: {
-        "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": `attachment; filename="fgmp-${filename}-${Date.now()}.csv"`,
+        "Content-Type": contentType,
+        "Content-Disposition":
+          `attachment; filename="fgmp-${filename}-${Date.now()}.${format}"`,
       },
     });
     applyRateLimitHeaders(res.headers, rl);
@@ -110,9 +124,3 @@ export async function GET(req: NextRequest) {
   }
 }
 
-function csvEscape(v: unknown): string {
-  if (v === null || v === undefined) return "";
-  const s = String(v);
-  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
-}

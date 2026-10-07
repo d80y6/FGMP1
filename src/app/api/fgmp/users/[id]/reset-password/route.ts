@@ -49,7 +49,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   if ("error" in auth) return auth.error;
   const me = auth.user;
 
-  const rl = rateLimitByUser(req, me.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
+  const rl = await rateLimitByUser(req, me.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
   if (!rl.success) {
     const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
     applyRateLimitHeaders(res.headers, rl);

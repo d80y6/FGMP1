@@ -154,7 +154,7 @@ export async function GET(req: NextRequest) {
   const me = auth.user;
   try {
     const { user } = await bootstrap();
-    const rl = rateLimitByUser(req, user.id, READ_LIMIT.limit, READ_LIMIT.windowMs);
+    const rl = await rateLimitByUser(req, user.id, READ_LIMIT.limit, READ_LIMIT.windowMs);
     if (!rl.success) {
       const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
       applyRateLimitHeaders(res.headers, rl);

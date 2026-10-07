@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
     // Use the session user requireRole() already resolved rather than
     // re-resolving it (and rather than a getCurrentUser() that now fails closed).
     const user = auth.user;
-    const rl = rateLimitByUser(req, user.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
+    const rl = await rateLimitByUser(req, user.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
     if (!rl.success) {
       const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
       applyRateLimitHeaders(res.headers, rl);

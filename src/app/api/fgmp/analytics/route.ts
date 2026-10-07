@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { engine, bootstrap } from "@/lib/fgmp";
 import { asTenant } from "@/lib/fgmp/route-tenant";
 import type { SessionUser } from "@/lib/auth";
+import { projectConsumption } from "@/lib/fgmp/metrics-fuel-projection";
 import {
   rateLimitByUser,
   applyRateLimitHeaders,
@@ -84,7 +85,7 @@ export async function GET(req: NextRequest) {
   const me = auth.user;
   try {
     const { user } = await bootstrap();
-    const rl = rateLimitByUser(req, user.id, READ_LIMIT.limit, READ_LIMIT.windowMs);
+    const rl = await rateLimitByUser(req, user.id, READ_LIMIT.limit, READ_LIMIT.windowMs);
     if (!rl.success) {
       const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
       applyRateLimitHeaders(res.headers, rl);
@@ -286,8 +287,25 @@ export async function GET(req: NextRequest) {
     // Forecast: flat projection of the trailing 24 h consumption over 7 days.
     // The previous version multiplied by `(0.9 + Math.random() * 0.2)`, so the
     // "forecast" redrew ±10% differently on every 15 s poll.
-    const dailyAvg = Math.round(hourBuckets.reduce((a, b) => a + b.litres, 0));
-    const forecast = Array.from({ length: 7 }, (_, i) => ({ day: `D+${i + 1}`, litres: dailyAvg }));
+    const projection = projectConsumption(
+      hourBuckets.map((b, i) => ({
+        hoursAgo: hourBuckets.length - 1 - i,
+        litres: b.litres,
+      })),
+    );
+    const forecast = projection.daily.map((litres, i) => ({ day: `D+${i + 1}`, litres }));
+    const projectionMeta = {
+      slopeLitresPerHour: projection.slopeLitresPerHour,
+      interceptLitresPerHour: projection.interceptLitresPerHour,
+      rSquared: projection.rSquared,
+      samples: projection.samples,
+      // Taken from the module rather than re-derived from the slope sign. The
+      // x axis counts BACKWARDS (hoursAgo = 0 is now), so the raw slope's sign
+      // is the OPPOSITE of the consumption direction. Re-deriving it here is
+      // how the first version of this projection came to report an increasing
+      // trend as decreasing, confidently and with seven plausible-looking days.
+      direction: projection.direction,
+    };
 
     // Region breakdown
     interface RegionRow {
@@ -557,6 +575,7 @@ export async function GET(req: NextRequest) {
       theftEvents,
       refillEvents,
       forecast,
+      projection: projectionMeta,
       regionBreakdown,
       fuelCost,
       siteHealth,

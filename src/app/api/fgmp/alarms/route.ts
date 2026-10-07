@@ -29,7 +29,7 @@ export const GET = withMetrics(async function GET(req: NextRequest) {
   const me = auth.user;
   try {
     const { user } = await bootstrap();
-    const rl = rateLimitByUser(req, user.id, READ_LIMIT.limit, READ_LIMIT.windowMs);
+    const rl = await rateLimitByUser(req, user.id, READ_LIMIT.limit, READ_LIMIT.windowMs);
     if (!rl.success) {
       const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
       applyRateLimitHeaders(res.headers, rl);
@@ -86,7 +86,7 @@ export const POST = withMetrics(async function POST(req: NextRequest) {
   const me = auth.user;
   try {
     const { user } = await bootstrap();
-    const rl = rateLimitByUser(req, user.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
+    const rl = await rateLimitByUser(req, user.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
     if (!rl.success) {
       const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
       applyRateLimitHeaders(res.headers, rl);

@@ -63,7 +63,7 @@ function assertConfigured(): NextResponse | null {
  *
  * `AUTH_LIMIT` existed in rate-limit.ts and was documented as protecting auth
  * endpoints, but had zero call sites, so the advertised protection did not
- * exist. See rateLimitLogin() for why the unknown-IP case uses a looser shared
+ * exist. See await rateLimitLogin() for why the unknown-IP case uses a looser shared
  * budget rather than locking every operator out at once.
  */
 async function loginRateLimited(
@@ -79,7 +79,7 @@ async function loginRateLimited(
   const segments = params.nextauth ?? [];
   if (segments[0] !== "callback") return null;
 
-  const rl = rateLimitLogin(req);
+  const rl = await rateLimitLogin(req);
   if (rl.success) return null;
   const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
   applyRateLimitHeaders(res.headers, rl);

@@ -33,7 +33,7 @@ export const metadata: Metadata = {
     "telecom sites", "alarm management", "predictive maintenance",
   ],
   authors: [{ name: "FGMP Platform" }],
-  icons: { icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg" },
+  icons: { icon: "logo.svg" },
 };
 
 export default function RootLayout({

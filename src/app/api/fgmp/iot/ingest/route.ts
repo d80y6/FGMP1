@@ -187,7 +187,7 @@ export async function POST(req: NextRequest) {
   // Placed AFTER auth so a bad key still costs a 401 rather than consuming a
   // legitimate device's budget. Keyed on the api-key itself, not the client
   // IP, so it is unaffected by the TRUSTED_PROXY change in getClientIp.
-  const rl = rateLimitByApiKey(req, IOT_LIMIT.limit, IOT_LIMIT.windowMs);
+  const rl = await rateLimitByApiKey(req, IOT_LIMIT.limit, IOT_LIMIT.windowMs);
   if (!rl.success) {
     const res = NextResponse.json(
       { error: "Too many requests", code: "RATE_LIMITED" },

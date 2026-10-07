@@ -31,7 +31,7 @@ export const dynamic = "force-dynamic";
  */
 function limitFor(req: NextRequest, me: { id: string }, mutating: boolean) {
   const cfg = mutating ? MUTATION_LIMIT : READ_LIMIT;
-  const rl = rateLimitByUser(req, me.id, cfg.limit, cfg.windowMs);
+  const rl = await rateLimitByUser(req, me.id, cfg.limit, cfg.windowMs);
   if (!rl.success) {
     const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
     applyRateLimitHeaders(res.headers, rl);

@@ -67,7 +67,7 @@ export async function POST(
   if ("error" in auth) return auth.error;
   const me = auth.user;
   try {
-    const rl = rateLimitByUser(
+    const rl = await rateLimitByUser(
       req,
       me.id,
       MUTATION_LIMIT.limit,

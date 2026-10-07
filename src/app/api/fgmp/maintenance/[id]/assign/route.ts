@@ -80,7 +80,7 @@ export async function POST(
   const me = auth.user;
   try {
     const { user } = await bootstrap();
-    const rl = rateLimitByUser(
+    const rl = await rateLimitByUser(
       req,
       user.id,
       MUTATION_LIMIT.limit,

@@ -1,13 +1,23 @@
 /**
- * FGMP in-memory rate limiter.
+ * FGMP rate limiter — public API.
  *
- * Designed for the single-instance Next.js standalone deployment (no Redis
- * available). Uses a `Map<string, Bucket>` keyed by identifier (IP or user
- * id). Each bucket tracks request count + reset timestamp.
+ * The actual counting moved to `rate-limit-store.ts`, which shares state across
+ * processes via Redis. This module keeps the call signatures, the standard limit
+ * presets and `applyRateLimitHeaders` unchanged, because 100 routes depend on
+ * them and on the exact header names the UI reads.
  *
- * A periodic sweep every 60s removes expired buckets to prevent memory
- * leaks from one-off IP/user ids. The sweep is gated behind a module-level
- * `lastSweep` timestamp so the cost is O(buckets) once per minute at most.
+ * ── WHY THE STORE MOVED ──────────────────────────────────────────────────────
+ * Counting used to live in a module-level `Map`, which is per PROCESS. With N
+ * replicas every budget was multiplied by N: five login attempts per IP became
+ * five per replica, and the IoT ingest limiter — which has no database backing
+ * and so no other control at all — was a clean bypass. A rate limit that resets
+ * when traffic moves to another pod is not a rate limit.
+ *
+ * The shared store degrades to an in-process Map when Redis is unreachable, and
+ * every call site declares what that should mean. The declarations are the point:
+ * login FAILS CLOSED (an absent brute-force control is worse than an outage),
+ * ingest and reads FAIL OPEN (dropping telemetry would blind theft detection).
+ * See `rate-limit-store.ts` for the full reasoning.
  *
  * Limits (per task spec):
  *   - Auth endpoints:    5 req / 15 min  per IP    (RATE_LIMIT_AUTH_*)
@@ -20,68 +30,51 @@
 
 import type { NextRequest } from "next/server";
 
-interface Bucket {
-  count: number;
-  resetAt: number; // epoch ms
-}
-
-const buckets = new Map<string, Bucket>();
-let lastSweep = Date.now();
-const SWEEP_INTERVAL_MS = 60_000;
-
-/** Remove expired buckets. Cheap O(n) sweep; called at most once per minute. */
-function sweep(now: number): void {
-  if (now - lastSweep < SWEEP_INTERVAL_MS) return;
-  lastSweep = now;
-  for (const [k, b] of buckets) {
-    if (b.resetAt <= now) buckets.delete(k);
-  }
-}
-
 export interface RateLimitResult {
   success: boolean;
   remaining: number;
   resetAt: number;
   /** Total allowed requests in the window — convenience for X-RateLimit-Limit header. */
   limit: number;
+  /**
+   * True when the shared store was unreachable and the answer came from the
+   * per-process fallback. Surfaced so a silently-degraded limiter is visible
+   * rather than quietly reintroducing the per-replica defect.
+   */
+  degraded: boolean;
 }
 
+import { rateLimitShared, type FailureMode, type RateLimitScope } from "./rate-limit-store";
+
+/** Exposed so the metrics surface can count rejections without importing this. */
+export type { FailureMode, RateLimitScope };
+
 /**
- * Core rate-limit check. Mutates the in-memory bucket for `key`.
+ * Rate-limit a key against the shared, cross-process store.
  *
- * @param key      Stable identifier (IP, user id, API key, …).
- * @param limit    Max requests allowed in the window.
- * @param windowMs Window length in milliseconds.
+ * ASYNC: this was synchronous before and is not any more, because a shared
+ * counter requires a network round trip. Every call site in `src/app/api/**`
+ * is already async, so this is a signature change only where a sync caller
+ * existed. The headers the UI reads are unchanged.
+ *
+ * @param failureMode what to do when the shared store is unreachable. No
+ *                    default — choosing is the caller's job, because login and
+ *                    telemetry ingest fail in opposite directions.
  */
-export function rateLimit(
+export async function rateLimit(
   key: string,
   limit: number,
   windowMs: number,
-): RateLimitResult {
-  const now = Date.now();
-  sweep(now);
-
-  const existing = buckets.get(key);
-  if (!existing || existing.resetAt <= now) {
-    const resetAt = now + windowMs;
-    buckets.set(key, { count: 1, resetAt });
-    return { success: true, remaining: limit - 1, resetAt, limit };
-  }
-
-  existing.count += 1;
-  if (existing.count > limit) {
-    return {
-      success: false,
-      remaining: 0,
-      resetAt: existing.resetAt,
-      limit,
-    };
-  }
+  failureMode: FailureMode,
+  scope: RateLimitScope = "other",
+): Promise<RateLimitResult> {
+  const r = await rateLimitShared(key, limit, windowMs, failureMode, scope);
   return {
-    success: true,
-    remaining: Math.max(0, limit - existing.count),
-    resetAt: existing.resetAt,
-    limit,
+    success: r.allowed,
+    remaining: r.remaining,
+    resetAt: r.resetAt,
+    limit: r.limit,
+    degraded: r.degraded,
   };
 }
 
@@ -134,13 +127,15 @@ export function getClientIp(req: NextRequest | Request): string {
 }
 
 /** Rate limit by client IP — used for unauthenticated endpoints (auth/login). */
-export function rateLimitByIp(
+export async function rateLimitByIp(
   req: NextRequest | Request,
   limit: number,
   windowMs: number,
-): RateLimitResult {
+  failureMode: FailureMode = "open",
+  scope: RateLimitScope = "other",
+): Promise<RateLimitResult> {
   const ip = getClientIp(req);
-  return rateLimit(`ip:${ip}`, limit, windowMs);
+  return rateLimit(`ip:${ip}`, limit, windowMs, failureMode, scope);
 }
 
 /**
@@ -166,40 +161,68 @@ export function rateLimitByIp(
  *     because it is DB-backed and keyed on the target account rather than on
  *     a spoofable or shared IP.
  */
-export function rateLimitLogin(
+export async function rateLimitLogin(
   req: NextRequest | Request,
-): RateLimitResult {
+): Promise<RateLimitResult> {
   const ip = getClientIp(req);
+  // FAILS CLOSED, deliberately. This is the brute-force control. If the shared
+  // store is unreachable an unshared counter cannot enforce it, and "let the
+  // attempts through" is precisely the outcome the limiter exists to prevent. A
+  // login outage is visible and recoverable; a guessed operator credential on a
+  // fuel platform is not. The DB-backed per-account `lockedUntil` lockout in
+  // src/lib/auth.ts is a second layer, but this is the first and it must not fail
+  // open.
   if (ip !== "anon") {
-    return rateLimit(`auth:ip:${ip}`, AUTH_LIMIT.limit, AUTH_LIMIT.windowMs);
+    return rateLimit(`auth:ip:${ip}`, AUTH_LIMIT.limit, AUTH_LIMIT.windowMs, "closed", "login");
   }
   return rateLimit(
     "auth:shared",
     envInt("RATE_LIMIT_AUTH_SHARED_MAX", 200),
     AUTH_LIMIT.windowMs,
+    "closed",
+    "login",
   );
 }
 
 /** Rate limit by authenticated user id (or fall back to IP for anonymous). */
-export function rateLimitByUser(
+/**
+ * Rate limit by authenticated user id (or fall back to IP for anonymous).
+ *
+ * FAILS OPEN: this guards UI traffic against a runaway client. Refusing every
+ * authenticated read because a cache is down would turn a degraded dependency
+ * into a full outage, with no security benefit — the caller is already
+ * authenticated and the RLS backstop still applies.
+ */
+export async function rateLimitByUser(
   req: NextRequest | Request,
   userId: string | null | undefined,
   limit: number,
   windowMs: number,
-): RateLimitResult {
+  scope: RateLimitScope = "read",
+): Promise<RateLimitResult> {
   if (userId) {
-    return rateLimit(`u:${userId}`, limit, windowMs);
+    return rateLimit(`u:${userId}`, limit, windowMs, "open", scope);
   }
-  return rateLimitByIp(req, limit, windowMs);
+  return rateLimitByIp(req, limit, windowMs, "open", scope);
 }
 
 /** Rate limit by API key (header `x-api-key`) — used for IoT bridge ingest. */
-export function rateLimitByApiKey(
+/**
+ * Rate limit by API key (header `x-api-key`) — used for IoT bridge ingest.
+ *
+ * FAILS OPEN, deliberately. Telemetry is the product: if a readings upload is
+ * refused because Redis blinked, tanks stop reporting and a fuel-theft window
+ * can close silently. Dropped telemetry is recoverable and visible; a missed
+ * theft is neither. Exposure is bounded because the caller must already hold a
+ * valid device API key, so this is not an anonymous socket.
+ */
+export async function rateLimitByApiKey(
   req: NextRequest | Request,
   limit: number,
   windowMs: number,
-): RateLimitResult {
-  const key = req.headers.get("x-api-key") ?? "no-key";  return rateLimit(`k:${key}`, limit, windowMs);
+): Promise<RateLimitResult> {
+  const key = req.headers.get("x-api-key") ?? "no-key";
+  return rateLimit(`k:${key}`, limit, windowMs, "open", "ingest");
 }
 
 // ──────────────────────────────────────────────────────────────────────────
