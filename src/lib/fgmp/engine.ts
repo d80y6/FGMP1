@@ -8,7 +8,7 @@ import {
   DEFAULT_SENSOR_ACCURACY,
 } from "./theft-detection";
 import { assertControlScope, assertGeneratorControlScope } from "./control-scope";
-import { toJsonNumber } from "./decimal";
+import { toJsonNumber, toNum } from "./decimal";
 import type {
   TankState, GenState, BattState, SiteState, IoTDeviceState,
   DispenserState, FuelTransactionState, GatewayState,
