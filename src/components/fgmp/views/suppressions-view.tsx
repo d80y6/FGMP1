@@ -33,7 +33,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useFgmp } from "@/lib/fgmp/store";
-import { useApi, apiPost, apiPatch } from "@/lib/fgmp/use-api";
+import { useApi, apiPost, apiPatch, apiDelete } from "@/lib/fgmp/use-api";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -50,6 +50,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogD
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { toast } from "sonner";
+import { ConfirmDestructive, useDestructiveConfirm } from "@/components/fgmp/confirm-destructive";
 import { fmtDateTime } from "@/lib/fgmp/format";
 import { useT, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
@@ -158,6 +159,10 @@ export function SuppressionsView() {
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
   const [createOpen, setCreateOpen] = useState(false);
+
+  // Phase 5 task 4 — confirm dialog state.
+  const confirmDelete = useDestructiveConfirm();
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   // Tick to force re-render of countdowns every 5s without re-fetching.
   const [, setTick] = useState(0);
 
@@ -247,22 +252,41 @@ export function SuppressionsView() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!window.confirm(t("suppressions.deleteConfirm"))) return;
-    const res = await fetch(`/api/fgmp/suppressions/${id}`, {
-      method: "DELETE",
-      credentials: "include",
-    });
+  // Phase 5 task 4 — gated by ConfirmDestructive instead of window.confirm.
+  // Split into perform/ask: a controlled dialog has to be opened by state and
+  // the action has to run from its confirm handler, which the old
+  // "if (!confirm) return; …" shape could not do.
+  const performDelete = async (id: string) => {
+    confirmDelete.setBusy(true);
+    // `apiDelete`, not a raw `fetch`. This handler was reading `res.error`,
+    // which does not exist on a `Response` — the error body is still an
+    // unread stream until something parses it. Every other delete in this
+    // codebase goes through the helper, which parses the JSON body and returns
+    // `{ ok, error, status }`; a raw fetch here would have shown the operator a
+    // generic toast while discarding the server's actual reason.
+    const res = await apiDelete(`/api/fgmp/suppressions/${id}`);
+    confirmDelete.settle();
+    setPendingDeleteId(null);
     if (res.ok) {
       toast.success(t("suppressions.deleted"));
       refetch();
     } else {
-      const j = await res.json().catch(() => ({}));
-      toast.error((j as { error?: string }).error ?? `HTTP ${res.status}`);
+      toast.error(res.error ?? t("common.error"));
     }
   };
 
+  const askDelete = (id: string) => {
+    setPendingDeleteId(id);
+    confirmDelete.ask({
+      title: t("confirm.deleteTitle"),
+      description: t("suppressions.deleteConfirm"),
+      cancelLabel: t("confirm.cancel"),
+      confirmLabel: t("confirm.deleteTitle"),
+    });
+  };
+
   return (
+    <>
     <div className="space-y-4">
       <SectionHeader
         title={t("suppressions.title")}
@@ -329,7 +353,7 @@ export function SuppressionsView() {
                   lang={numLang}
                   onExtend={() => handleExtend(s.id)}
                   onCancel={() => handleCancel(s.id)}
-                  onDelete={() => handleDelete(s.id)}
+                  onDelete={() => askDelete(s.id)}
                   canDelete={me?.role === "ADMIN"}
                 />
               ))}
@@ -398,7 +422,7 @@ export function SuppressionsView() {
                                   variant="ghost"
                                   size="icon"
                                   className="h-7 w-7 text-muted-foreground hover:text-rose-600"
-                                  onClick={() => handleDelete(s.id)}
+                                  onClick={() => askDelete(s.id)}
                                   aria-label={t("common.delete")}
                                 >
                                   <X className="h-3.5 w-3.5" />
@@ -427,6 +451,20 @@ export function SuppressionsView() {
         dir={dir}
       />
     </div>
+
+      {/* Phase 5 task 4 — replaces window.confirm. */}
+      <ConfirmDestructive
+        {...confirmDelete.dialogProps}
+        onCancel={() => {
+          setPendingDeleteId(null);
+          confirmDelete.settle();
+        }}
+        onConfirm={() => {
+          if (pendingDeleteId) void performDelete(pendingDeleteId);
+          setPendingDeleteId(null);
+        }}
+      />
+    </>
   );
 }
 
