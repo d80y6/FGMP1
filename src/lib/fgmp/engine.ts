@@ -1,6 +1,12 @@
 import { Prisma, type FuelType } from "@prisma/client";
 import { db } from "@/lib/db";
 import { withTenant } from "./tenant-context";
+import {
+  detectUnexplainedLoss,
+  expectedConsumption,
+  severityFor,
+  DEFAULT_SENSOR_ACCURACY,
+} from "./theft-detection";
 import { assertControlScope, assertGeneratorControlScope } from "./control-scope";
 import { toJsonNumber } from "./decimal";
 import type {
@@ -179,6 +185,19 @@ class FgmpEngine {
   tanks: TankState[] = [];
   generators: GenState[] = [];
   batteries: BattState[] = [];
+
+  /**
+   * Last-seen generator runtime hours, per generator.
+   *
+   * Fuel-theft detection needs the DELTA in runtime to predict how much fuel
+   * SHOULD have been burned. Absolute runtime since installation would imply the
+   * tank emptied weeks ago, so the previous tick's value is what makes the
+   * prediction mean anything.
+   *
+   * Deliberately in-process and per-tick rather than persisted: it is a
+   * one-step delta, so losing it on restart costs one window, not history.
+   */
+  private lastGenRuntimeHours = new Map<string, number>();
   iotDevices: IoTDeviceState[] = [];
   dispensers: DispenserState[] = [];
   fuelTransactions: FuelTransactionState[] = [];
@@ -762,28 +781,82 @@ class FgmpEngine {
       if (g.history.length > HISTORY_POINTS) g.history.shift();
     }
 
-    // ── Fuel tanks: theft/refill events + thresholds ─────────────────────
+    // ── Fuel tanks: DETECTED losses, then thresholds ─────────────────────
     for (const tk of this.tanks) {
       const site = this.sites.find((s) => s.id === tk.siteId)!;
-      // Random theft event (rare)
-      if (this.rng.tank.float() < 0.0012 && tk.current > tk.critical * 1.5) {
-        const stolen = Math.min(tk.current * (0.1 + this.rng.tank.float() * 0.25), 400);
-        tk.prevLevel = tk.current;
-        tk.current = Math.max(0, tk.current - stolen);
-        this.pushEvent(tk.siteId, "CRITICAL", `Fuel theft detected: -${Math.round(stolen)}L from ${tk.label} at ${site.name}`, { tankId: tk.id, stolen });
-        alarmsCreated += await this.raiseAlarm({
-          siteId: tk.siteId, type: "FUEL_THEFT", severity: "L3",
-          entityKind: "TANK", entityId: tk.id,
-          message: `Fuel theft of ${Math.round(stolen)}L at ${site.name} (${tk.label})`,
-          value: stolen, threshold: 0,
-        });
+
+      // ── FUEL THEFT: DERIVED, NOT INJECTED ─────────────────────────────────
+      // The previous code rolled a dice, subtracted a random volume, and then
+      // announced the subtraction as "theft detected". That is not detection:
+      // the alarm was a restatement of the generator's own random number and
+      // could not disagree with its input. An operator paging on it would be
+      // paging on a fabricated event.
+      //
+      // What replaces it compares the MEASURED level change against fuel
+      // consumption PREDICTED from generator runtime — an independent signal
+      // that comes from the controller, not the level sensor. When they disagree
+      // by more than the combined measurement error, fuel left without burning.
+      //
+      // Nothing is subtracted here. The detector observes; it does not cause.
+      {
+        const gen = this.generators.find((g) => g.siteId === tk.siteId);
+        const startLitres = tk.prevLevel ?? tk.current;
+        const runtimeDeltaHours = gen
+          ? Math.max(0, (gen.runtimeHours ?? 0) - (this.lastGenRuntimeHours.get(gen.id) ?? 0))
+          : 0;
+
+        if (gen && startLitres > 0) {
+          const candidate = detectUnexplainedLoss({
+            tankId: tk.id,
+            siteId: tk.siteId,
+            levelStartLitres: startLitres,
+            levelEndLitres: tk.current,
+            expectedConsumptionLitres: expectedConsumption(gen.ratedPowerKw, runtimeDeltaHours),
+            // One tick is one window. The detector refuses anything under an
+            // hour anyway, so this is a floor, not a measured duration.
+            windowHours: this.tickSeconds / 3600,
+            capacityLitres: tk.capacity,
+            sensorAccuracyFraction: DEFAULT_SENSOR_ACCURACY,
+          });
+          const severity = candidate ? severityFor(candidate) : null;
+          if (candidate && severity) {
+            this.pushEvent(
+              tk.siteId,
+              severity === "CRITICAL" ? "CRITICAL" : "WARN",
+              `Unexplained fuel loss: ${candidate.unexplainedLitres}L from ${tk.label} at ${site.name} ` +
+                `(expected ${candidate.expectedLitres}L burned, ${candidate.measuredLitres}L measured, ` +
+                `${candidate.significance}x tolerance)`,
+              { tankId: tk.id, ...candidate },
+            );
+            alarmsCreated += await this.raiseAlarm({
+              siteId: tk.siteId,
+              type: "FUEL_THEFT",
+              // Severity is DERIVED from significance and volume, not pinned to
+              // L3. A 2x over-budget loss and a 40x one are not the same event,
+              // and collapsing them makes the alert unrankable.
+              severity: severity === "CRITICAL" ? "L3" : "L2",
+              entityKind: "TANK",
+              entityId: tk.id,
+              message:
+                `Unexplained fuel loss of ${candidate.unexplainedLitres}L at ${site.name} (${tk.label}) — ` +
+                `${candidate.significance}x the measurement tolerance`,
+              value: candidate.unexplainedLitres,
+              threshold: 0,
+            });
+          }
+        }
+        if (gen) this.lastGenRuntimeHours.set(gen.id, gen.runtimeHours ?? 0);
       }
-      // Random unexpected refill (rare) — unauthorized top-up
+
+      // An unexplained INCREASE is still simulated. It is retained deliberately
+      // rather than silently dropped: it exercises the FUEL_REFILL alarm path in
+      // demo data, and removing it would remove test coverage of a real alarm
+      // type. It is marked as simulated so nobody mistakes it for detection.
       if (this.rng.site.float() < 0.0008) {
         const added = 80 + this.rng.site.float() * 300;
         tk.prevLevel = tk.current;
         tk.current = Math.min(tk.capacity, tk.current + added);
-        this.pushEvent(tk.siteId, "WARN", `Unexpected fuel increase: +${Math.round(added)}L in ${tk.label} at ${site.name}`, { tankId: tk.id, added });
+        this.pushEvent(tk.siteId, "WARN", `[SIMULATED] Unexpected fuel increase: +${Math.round(added)}L in ${tk.label} at ${site.name}`, { tankId: tk.id, added, simulated: true });
         alarmsCreated += await this.raiseAlarm({
           siteId: tk.siteId, type: "FUEL_REFILL", severity: "L2",
           entityKind: "TANK", entityId: tk.id,
@@ -2138,19 +2211,84 @@ async controlDispenser(
   }
 
   // ── Events ──────────────────────────────────────────────────────────────
+  /**
+   * Record an operational event in the in-memory ring buffer AND in the DB.
+   *
+   * ── PHASE 5: this write was silently failing ───────────────────────────────
+   * It used to run on the bare `db` client:
+   *
+   *     db.siteEvent.create({ data: { tenantId: site.tenantId, ... } })
+   *       .catch(() => {})
+   *
+   * Broken twice over. SiteEvent is RLS-protected, and a query on the global
+   * client runs on a POOLED connection with no `app.tenant_id` set, so the
+   * INSERT was rejected by WITH CHECK on every call — and the bare
+   * `.catch(() => {})` discarded the error, so the failure was invisible.
+   * REMOTE START / REMOTE STOP events existed only in memory until restart.
+   *
+   * Both halves are fixed: the write runs inside withTenant(), and a failure
+   * is LOGGED rather than discarded. This is the third occurrence of the same
+   * silent-success pattern in this codebase (the others: the backup audit
+   * write, and the `NO_TRANSPORT` notification status that no code ever set).
+   * That recurrence is the real finding — a swallowed write on an audit-visible
+   * path is indistinguishable from a working one, which is why the catch is now
+   * loud rather than silent.
+   *
+   * Still deliberately fire-and-forget: pushEvent is called from deep inside
+   * tick() (29 call sites) and making it await would serialise a transaction
+   * behind every alarm. The promise is tracked so it can be flushed by tests
+   * and cannot produce an unhandled rejection.
+   */
   private pushEvent(siteId: string, kind: string, message: string, meta?: Record<string, unknown>) {
     this.events.unshift({ id: uid("ev"), siteId, kind, message, ts: this.now, meta });
     if (this.events.length > MAX_EVENTS) this.events.pop();
-    // also persist to DB siteEvent. Phase 1 step 4 requires tenantId, resolved
-    // from the Site in engine state. This is a best-effort fire-and-forget
-    // write, so an unknown site simply skips the row rather than throwing into
-    // the caller's tick.
+
     const site = this.sites.find((s) => s.id === siteId);
-    if (site) {
-      db.siteEvent
-        .create({ data: { tenantId: site.tenantId, siteId, kind, message, meta: meta ? JSON.stringify(meta) : null } })
-        .catch(() => {});
+    if (!site) {
+      // No site means no tenant to scope the write with, and withTenant refuses
+      // to guess one. Say so rather than dropping the row silently.
+      console.error(
+        `[engine] pushEvent: site ${siteId} not in engine state — "${kind}" event NOT persisted: ${message}`,
+      );
+      return;
     }
+
+    const persist = withTenant(site.tenantId, (tx) =>
+      tx.siteEvent.create({
+        data: {
+          tenantId: site.tenantId,
+          siteId,
+          kind,
+          message,
+          meta: meta ? JSON.stringify(meta) : null,
+        },
+      }),
+    ).catch((err: unknown) => {
+      console.error(
+        `[engine] pushEvent FAILED site=${siteId} tenant=${site.tenantId} kind="${kind}": ${message}`,
+        err,
+      );
+    });
+
+    this.trackBackgroundWrite(persist);
+  }
+
+  /**
+   * In-flight fire-and-forget writes. Tracked so `flushBackgroundWrites()` can
+   * await them (tests, shutdown) and so no write is ever an unobserved promise.
+   */
+  private backgroundWrites = new Set<Promise<void>>();
+
+  private trackBackgroundWrite(p: Promise<void>): void {
+    this.backgroundWrites.add(p);
+    void p.finally(() => this.backgroundWrites.delete(p));
+  }
+
+  /** Await every outstanding fire-and-forget write. Test / shutdown helper. */
+  async flushBackgroundWrites(): Promise<void> {
+    // Snapshot the Set: handlers remove themselves as they settle, so walking
+    // the live Set across an await could skip entries added in the meantime.
+    await Promise.allSettled([...this.backgroundWrites]);
   }
 
   // ── Snapshot ────────────────────────────────────────────────────────────
