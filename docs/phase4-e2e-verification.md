@@ -104,7 +104,7 @@ visible. A wrong-type id produced a 404, which was not. Anything that can fail
 
 ## What the sweep now proves
 
-61/61 routes respond with no server error, against live PostgreSQL 17 and a
+67/67 routes respond with no server error, against live PostgreSQL 17 and a
 real session obtained by a real login.
 
 ```
@@ -161,6 +161,96 @@ Not accepted on the sweep's word. Each was checked against the database:
 | `/tenants/[id]` | Given a site id, correctly refused | — |
 | `/proposal` | Must be generated first | — |
 | `/iot/[siteId]/ota-status` | No OTA record for that site | — |
+
+## Defects only a request could find
+
+Once the harness worked, it earned its keep. Every one of these passed
+`tsc`, `eslint`, a green RLS suite, and `prisma migrate deploy`.
+
+### Geography writes were revoked along with geography reads
+
+`GET /api/fgmp/sites` returned 500 with `permission denied for table
+Governorate`. Migration 20261007000000 had correctly closed a real enumeration
+hole by `REVOKE ALL`ing two tables that carry no `tenantId` — but `ALL` also
+took away the INSERT/UPDATE/DELETE that ten geography handlers legitimately
+need.
+
+The fix was **not** to re-grant. Both tables now carry tenantId-derived RLS
+(ENABLE + FORCE), with tenancy derived through the parent `Region` chain. The
+revocation was never wrong; the routes had simply never been migrated with it.
+
+Measured as `fgmp_app`, before and after:
+
+| | before | after |
+|---|---|---|
+| no tenant context | 36 | **0** |
+| `t-default` | 36 | 35 |
+| `t-platform` | 36 | **0** ← the original defect |
+
+### A missing `updatedAt` DEFAULT survived a migration, a generate and a `tsc`
+
+`POST /api/fgmp/solar-sites` returned 500 — `P2011`, null constraint on
+`updatedAt`. Prisma's `@updatedAt` is applied by the client, so the schema looks
+correct, but the column was `NOT NULL` with no `DEFAULT`, and the raw SQL table
+had to stand on its own.
+
+Nothing static can see this. It is the identical bug the RLS suite had already
+caught once for `InterlockThreshold`, written again from scratch by a different
+agent in a different migration.
+
+### `Promise.allSettled` discarded the database's duplicate verdict
+
+`POST /api/fgmp/iot/ingest` answered **200** even when the write it had just
+attempted had been rejected as a duplicate. The results were collected and
+thrown away. That is the specific thing a durable uniqueness constraint was
+added to prevent: the database adjudicates duplicates, and the handler then
+ignored its answer.
+
+Now a unique violation becomes 409 with `REJECT_DUPLICATE`, matching the
+pre-write verdict so a device sees one answer regardless of which replica served
+its retry. The check is deliberately narrow — a generic failure mislabelled as a
+duplicate would tell a field device to stop retrying while its data was dropped.
+
+### A measurement was collected and thrown away
+
+The Modbus reader parses a signed `cellBalanceMv`, and a threshold module
+consumed it, but nothing stored it: read off the wire, held in a local, gone.
+It could not be trended, alarmed on, or reviewed.
+
+It is now stored twice on purpose — as a `SensorReading` (the trend, because
+imbalance is diagnosed by how it *moves*) and on `BatteryBank.cellBalanceMv`
+(current state, readable without scanning history). Verified over HTTP:
+
+```
+POST /api/fgmp/iot/ingest  {"battCellBalanceMv": -47}  -> 200
+SensorReading  BATT_CELL_BALANCE_MV = -47
+BatteryBank    cellBalanceMv       = -47
+```
+
+Signed, not absolute: the sign is the diagnosis. `+47 mV` and `-47 mV` point at
+different cells to replace.
+
+## Mutations, verified by hand
+
+The sweep is GET-only. The new write surfaces were exercised directly against
+the production build rather than left untested:
+
+| Operation | Result |
+|---|---|
+| `POST /solar-sites` | 201 |
+| `POST /solar-arrays` | 201 |
+| `GET /solar-sites/[id]`, `/solar-arrays/[id]`, `/interlocks/thresholds/[id]` | 200 |
+| `PATCH /solar-sites/[id]` | 200 |
+| `POST /interlocks/thresholds` twice, same key | 201 both, same row id — updates in place |
+| `DELETE /interlocks/thresholds/[id]` | 200 |
+
+RLS on the new tables, as the non-owner app role:
+
+| | no context | `t-default` | `t-platform` |
+|---|---|---|---|
+| `SolarSite` | 0 | 1 | **0** |
+| `SolarArray` | 0 | 1 | **0** |
+| `InterlockThreshold` | 0 | 1 | **0** |
 
 ## Running it
 
