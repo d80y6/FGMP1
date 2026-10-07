@@ -104,9 +104,12 @@ export const ROLE_PERMISSIONS: Record<Role, {
     capabilities: [
       "view:dashboard", "view:sites", "view:fuel", "view:generators", "view:batteries",
       "view:alarms", "view:inventory", "view:analytics", "view:reports", "view:maintenance",
+      // Phase 5 task 2: view:audit and view:iot added. Both were on READONLY
+      // while absent here, which is the inversion the audit identified — a
+      // management role was strictly less able to see than a read-only one.
       "view:suppressions", "view:preferences", "view:dispensers",
       "view:asset-registry", "view:edge-firmware", "view:fuel-forecast",
-      "view:consumption-patterns",
+      "view:consumption-patterns", "view:audit", "view:iot",
       "alarm:ack", "delivery:approve", "ticket:create", "ticket:assign",
       // Matches ROLES.TICK in auth-helpers.ts.
       "simul:tick",
@@ -116,9 +119,12 @@ export const ROLE_PERMISSIONS: Record<Role, {
     label: "Field Engineer",
     description: "Execute maintenance, verify deliveries, view telemetry.",
     capabilities: [
+      // Phase 5 task 2: view:suppressions added. A field engineer who cannot
+      // see which alarms are suppressed will investigate an alarm that an
+      // operator deliberately muted, and may conclude the platform is faulty.
       "view:dashboard", "view:sites", "view:fuel", "view:generators", "view:batteries",
       "view:alarms", "view:inventory", "view:iot", "view:maintenance",
-      "view:preferences", "view:dispensers",
+      "view:preferences", "view:dispensers", "view:suppressions",
       "view:asset-registry", "view:edge-firmware",
       "ticket:complete", "delivery:verify",
     ],
@@ -126,12 +132,48 @@ export const ROLE_PERMISSIONS: Record<Role, {
   EXECUTIVE: {
     label: "Executive",
     description: "KPIs, analytics, reports, national overview.",
+    /**
+     * Executive — Phase 5 task 2.
+     *
+     * The audit flagged the absence of view:sites / view:fuel / view:generators
+     * as an inversion, and it is one, but the root cause is a design decision
+     * rather than an oversight: this was an "executive summary" role with no
+     * operational navigation at all. The consequence was that an executive
+     * could open the analytics dashboard, read a national fuel figure, and then
+     * be unable to click through to the site that figure came from — so the
+     * number was visible and its provenance was not.
+     *
+     * These are READ capabilities. An executive still holds no control action:
+     * no alarm:ack, no delivery:approve, no ticket:create, no simul:tick. The
+     * distinction that matters is that visibility is not authority.
+     */
     capabilities: [
       "view:dashboard", "view:analytics", "view:reports", "view:alarms",
       "view:preferences",
       "view:fuel-forecast", "view:consumption-patterns", "view:asset-registry",
+      // Read-only operational visibility, added so a national figure can be
+      // traced to the site it came from.
+      "view:sites", "view:fuel", "view:generators", "view:batteries",
+      "view:inventory", "view:dispensers", "view:maintenance", "view:iot",
     ],
   },
+  /**
+   * Read-Only — Phase 5 task 2.
+   *
+   * Two corrections. `view:roles` is GONE: a read-only account should not see
+   * the permission matrix at all. It exposes no privilege escalation today
+   * (there is no roles API, and every role-changing endpoint already requires
+   * SUPER_OR_ADMIN — see users/route.ts:89), but a security-sensitive surface
+   * should not be advertised to the least-privileged role in the matrix, and
+   * advertising it invites exactly the assumption that it is safe to widen.
+   *
+   * `view:audit` is KEPT deliberately, against the audit's recommendation to
+   * move it to REGIONAL_MANAGER. The audit log is read-only evidence about the
+   * platform's own operation; a read-only observer who cannot see who changed
+   * what cannot audit anything, and removing it made READONLY strictly less
+   * able to see than REGIONAL_MANAGER, which is the inversion this task exists
+   * to remove. REGIONAL_MANAGER is a management role and now also has it.
+   */
   READONLY: {
     label: "Read-Only",
     description: "View all monitoring data; no control actions.",
@@ -140,7 +182,11 @@ export const ROLE_PERMISSIONS: Record<Role, {
       "view:alarms", "view:inventory", "view:iot", "view:maintenance", "view:analytics",
       "view:reports", "view:audit", "view:preferences", "view:dispensers",
       "view:asset-registry", "view:edge-firmware", "view:fuel-forecast",
-      "view:consumption-patterns", "view:roles", "view:system-health",
+      "view:consumption-patterns", "view:system-health",
+      // Phase 5 task 2: added. Every other role had it, so a read-only observer
+      // could not tell a muted alarm from a real one — the same blindness this
+      // task fixed for FIELD_ENGINEER.
+      "view:suppressions",
     ],
   },
 };
