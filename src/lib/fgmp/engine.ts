@@ -2357,9 +2357,28 @@ async controlDispenser(
    * In-flight fire-and-forget writes. Tracked so `flushBackgroundWrites()` can
    * await them (tests, shutdown) and so no write is ever an unobserved promise.
    */
-  private backgroundWrites = new Set<Promise<void>>();
+  /**
+   * In-flight fire-and-forget writes, tracked so they cannot become unhandled
+   * rejections and so tests/shutdown can await them.
+   *
+   * `Promise<unknown>`, not `Promise<void>`: `pushEvent` resolves to the created
+   * `SiteEvent` row. Typing the set as `Promise<void>` made every such call a
+   * type error even though the resolved value is deliberately discarded — which
+   * is precisely what fire-and-forget means, and a mismatch that would tempt
+   * someone into `.then(() => {})` noise at each call site instead.
+   */
+  private backgroundWrites = new Set<Promise<unknown>>();
 
-  private trackBackgroundWrite(p: Promise<void>): void {
+  /**
+   * Track a fire-and-forget write so it cannot become an unhandled rejection.
+   *
+   * The parameter is `Promise<unknown>`, not `Promise<void>`: `pushEvent`
+   * returns the created SiteEvent row, so `trackBackgroundWrite(pushEvent(...))`
+   * passes `Promise<SiteEvent>`. Narrowing the parameter to `Promise<void>` made
+   * every such call site a type error even though the value is deliberately
+   * discarded — which is what a fire-and-forget call means.
+   */
+  private trackBackgroundWrite(p: Promise<unknown>): void {
     this.backgroundWrites.add(p);
     void p.finally(() => this.backgroundWrites.delete(p));
   }

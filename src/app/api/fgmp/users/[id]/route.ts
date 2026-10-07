@@ -113,7 +113,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   const auth = await requireRole(req, ROLES.SUPER_OR_ADMIN);
   if ("error" in auth) return auth.error;
   const me = auth.user;
-  const limited = limitFor(req, me, false);
+  const limited = await limitFor(req, me, false);
   if (limited) return limited;
   const { id } = await ctx.params;
   // ── Tenant scoping ──────────────────────────────────────────────────────
@@ -148,7 +148,7 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
   const auth = await requireRole(req, ROLES.SUPER_OR_ADMIN);
   if ("error" in auth) return auth.error;
   const me = auth.user;
-  const limited = limitFor(req, me, true);
+  const limited = await limitFor(req, me, true);
   if (limited) return limited;
   const { id } = await ctx.params;
 
@@ -234,7 +234,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   const auth = await requireRole(req, ROLES.SUPER_OR_ADMIN);
   if ("error" in auth) return auth.error;
   const me = auth.user;
-  const limited = limitFor(req, me, true);
+  const limited = await limitFor(req, me, true);
   if (limited) return limited;
   const { id } = await ctx.params;
 
@@ -300,7 +300,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
   const auth = await requireRole(req, ROLES.SUPER_OR_ADMIN);
   if ("error" in auth) return auth.error;
   const me = auth.user;
-  const limited = limitFor(req, me, true);
+  const limited = await limitFor(req, me, true);
   if (limited) return limited;
   const { id } = await ctx.params;
 
