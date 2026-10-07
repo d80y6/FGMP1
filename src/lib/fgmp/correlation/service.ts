@@ -20,9 +20,15 @@
  * guarantee the tables were given.
  */
 
-import type { Prisma, PrismaClient } from "@prisma/client";
+import type { AlarmSeverity, Prisma, PrismaClient } from "@prisma/client";
 import { db } from "@/lib/db";
 import { withTenant } from "../tenant-context";
+import {
+  computeEscalations,
+  outcomeForPlan,
+  escalationAuditDetail,
+  type EscalationPlan,
+} from "./escalation";
 import {
   evaluateRules,
   encodeAlarmIds,
@@ -37,6 +43,72 @@ import {
 
 /** Postgres error code for a unique_violation. */
 const UNIQUE_VIOLATION = "P2002";
+
+/**
+ * Record what the escalation did, on the tenant transaction client.
+ *
+ * Written through `tx`, NOT the module-level `db`, and inside the same
+ * transaction as the severity UPDATE. Two reasons:
+ *
+ *   - the module-level client is a different pooled connection, so an audit
+ *     written outside the transaction could outlive a rollback that undid the
+ *     escalation — an audit trail asserting an action that was then reverted.
+ *   - writing on `tx` means it is tenant-scoped by construction, which RLS
+ *     enforces rather than trusting.
+ *
+ * A failure to audit must NOT roll back the escalation. The severity change is
+ * the safety-relevant action, and losing it because an audit insert failed would
+ * be strictly worse than an unaudated escalation. So the audit is best-effort
+ * and the failure is reported rather than swallowed.
+ */
+async function recordEscalationAudit(
+  tx: Prisma.TransactionClient,
+  args: {
+    tenantId: string;
+    ruleId: string;
+    matchId: string;
+    scopeLabel: string;
+    escalateTo: AlarmSeverity | null;
+    plan: EscalationPlan;
+    evaluatedAt: Date;
+    outcome: string;
+  },
+): Promise<void> {
+  try {
+    await tx.auditLog.create({
+      data: {
+        tenantId: args.tenantId,
+        action: "correlation.escalate",
+        entity: "CorrelationMatch",
+        entityId: args.matchId,
+        // AuditLog.details is `String`, not Json — a JSON column the schema
+        // describes as "JSON string". Passing the object directly failed at
+        // runtime with "Expected String, provided Object", and because this
+        // helper is deliberately best-effort the failure was swallowed into a
+        // console warning. The escalation still applied, so the live proof still
+        // passed — which is precisely how an empty audit trail hides behind a
+        // green test. Serialised here so the row is actually written.
+        details: JSON.stringify(
+          escalationAuditDetail({
+            ruleId: args.ruleId,
+            matchId: args.matchId,
+            scopeLabel: args.scopeLabel,
+            escalateTo: args.escalateTo,
+            plan: args.plan,
+            evaluatedAt: args.evaluatedAt,
+          }),
+        ),
+      } as never,
+    });
+  } catch (err) {
+    // Deliberately not rethrown. See the note above: the escalation is the
+    // action that matters, and the outcome on the match row already states what
+    // happened. Report the gap so it is visible instead of silent.
+    console.warn(
+      `[correlation] escalation applied but its audit row failed: ${(err as Error).message}`,
+    );
+  }
+}
 
 function isUniqueViolation(err: unknown): boolean {
   return (
@@ -73,6 +145,15 @@ export interface EvaluateOutcome {
   deduplicated: number;
   /** Matches newly persisted by this run. */
   inserted: number;
+  /**
+   * Alarms whose severity this run actually RAISED.
+   *
+   * Distinct from `inserted`: a run can persist a match that legitimately
+   * changed nothing (no `escalateTo`, or every alarm already at the target), and
+   * reporting only the match count would hide that. This is the number that
+   * answers "did correlation do anything this tick?".
+   */
+  raisedAlarms: number;
 }
 
 /**
@@ -193,27 +274,97 @@ export async function evaluateAndPersist(
     let inserted = 0;
     let deduplicated = 0;
 
+    // Counters for the ACTION, not just the match row. `raised` is what an
+    // operator needs to know: how many alarms this evaluation actually changed.
+    let raisedTotal = 0;
+
     for (const m of matches) {
+      // ── Phase 5: a match must ACT or record that it did nothing ──────────
+      //
+      // Previously this wrote `outcome: "SUPPRESSED"` and moved on, so a rule
+      // could claim ten alarms were correlated while all ten stayed L2 and kept
+      // paging. The action now happens BEFORE the match row is written, inside
+      // the same transaction, so a failure to act cannot leave a row claiming
+      // the action happened.
+      //
+      // Ordering matters for idempotency. If the match row were written first and
+      // the escalation second, a crash between them would leave a deduplicated
+      // match with un-escalated alarms — and the next run would skip the action
+      // as "already recorded", permanently losing the escalation. Acting first
+      // means a crash rolls the whole transaction back and the next run redoes
+      // it. Raising an already-raised alarm is idempotent in itself, so
+      // re-applying is safe.
+      const candidates = await tx.alarm.findMany({
+        where: { id: { in: m.alarmIds } },
+        select: { id: true, severity: true },
+      });
+
+      const plan = computeEscalations(
+        candidates.map((a) => ({ alarmId: a.id, currentSeverity: a.severity })),
+        m.escalateTo as never,
+      );
+
+      if (plan.entries.length > 0) {
+        // Raise severity in place. Every consumer of Alarm.severity — the NOC
+        // dashboard, the paging integration, the operator's severity-filtered
+        // queues — reads this column, so raising it makes the escalation visible
+        // everywhere at once instead of requiring every consumer to learn about
+        // a parallel escalation record.
+        await tx.alarm.updateMany({
+          where: { id: { in: plan.entries.map((e) => e.alarmId) } },
+          data: { severity: m.escalateTo as never },
+        });
+        raisedTotal += plan.entries.length;
+      }
+
+      // The recorded outcome is DERIVED from what was actually done, so it can
+      // never claim an action that did not occur.
+      const outcome = outcomeForPlan(plan, m.escalateTo as never);
+
       try {
-        await tx.correlationMatch.create({
+        const created = await tx.correlationMatch.create({
           data: {
             tenantId,
             ruleId: m.ruleId,
             scopeKey: m.scopeKey,
             scope: m.scope as never,
             scopeLabel: m.scopeLabel,
-            outcome: "SUPPRESSED",
+            outcome: outcome as never,
             escalateTo: m.escalateTo as never,
             matchCount: m.matchCount,
             alarmIds: encodeAlarmIds(m.alarmIds),
             evaluatedAt: new Date(now),
+            escalatedCount: plan.entries.length,
+            // Preserve the BEFORE severities. The UPDATE above overwrote
+            // Alarm.severity, so without this the original value is gone and the
+            // change could only be asserted, never reconstructed.
+            fromSeverity:
+              plan.entries.length > 0
+                ? (Object.fromEntries(
+                    plan.entries.map((e) => [e.alarmId, e.fromSeverity]),
+                  ) as never)
+                : (undefined as never),
           },
         });
+
+        await recordEscalationAudit(tx, {
+          tenantId,
+          ruleId: m.ruleId,
+          matchId: created.id,
+          scopeLabel: m.scopeLabel,
+          escalateTo: m.escalateTo as never,
+          plan,
+          evaluatedAt: new Date(now),
+          outcome,
+        });
+
         inserted++;
       } catch (err) {
-        // The UNIQUE constraint is the idempotency guarantee. A collision means
-        // this exact (rule, bucket, alarm-set) was already recorded, which is
-        // precisely the "same event evaluated twice" case.
+        // The UNIQUE constraint is the match-row idempotency guarantee. A
+        // collision means this exact (rule, bucket, alarm-set) was already
+        // recorded. The escalation above has ALREADY been applied in this
+        // transaction, which is safe precisely because raising an
+        // already-raised alarm changes nothing.
         if (isUniqueViolation(err)) {
           deduplicated++;
           continue;
@@ -229,6 +380,7 @@ export async function evaluateAndPersist(
       notTriggered,
       deduplicated,
       inserted,
+      raisedAlarms: raisedTotal,
     };
   });
 }
