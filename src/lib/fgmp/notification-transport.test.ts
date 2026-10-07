@@ -52,19 +52,27 @@ describe("transport resolution — NO_TRANSPORT means never attempted", () => {
     const r = await dispatch("EMAIL", MSG);
     // NOT "FAILED": nothing was attempted. An operator told "failed" would go
     // hunting a broken SMTP server that does not exist.
+    //
+    // Narrowed rather than asserted-then-read: `reason` exists only on the
+    // failure branches (a SENT outcome legitimately has none), so reading it
+    // off the bare union was a type error AND would have silently passed for
+    // the wrong reason had the assertion above been removed.
     expect(r.status).toBe("NO_TRANSPORT");
+    if (r.status !== "NO_TRANSPORT") throw new Error("expected NO_TRANSPORT");
     expect(r.reason).toBe("NO_SMTP_HOST_CONFIGURED");
   });
 
   test("SMS with no credentials is NO_TRANSPORT", async () => {
     const r = await dispatch("SMS", MSG);
     expect(r.status).toBe("NO_TRANSPORT");
+    if (r.status !== "NO_TRANSPORT") throw new Error("expected NO_TRANSPORT");
     expect(r.reason).toBe("NO_SMS_CREDENTIALS_CONFIGURED");
   });
 
   test("webhook with no URL is NO_TRANSPORT", async () => {
     const r = await dispatch("WHATSAPP", MSG);
     expect(r.status).toBe("NO_TRANSPORT");
+    if (r.status !== "NO_TRANSPORT") throw new Error("expected NO_TRANSPORT");
     expect(r.reason).toBe("NO_WEBHOOK_URL_CONFIGURED");
   });
 

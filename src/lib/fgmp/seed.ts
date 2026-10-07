@@ -4,6 +4,7 @@ import type { Prisma } from "@prisma/client";
 import { PrismaClient } from "@prisma/client";
 import type { Criticality, PowerSource, IotProtocol, FuelDeliveryStatus } from "@prisma/client";
 import { db } from "@/lib/db";
+import { toNum } from "@/lib/fgmp/decimal";
 import bcrypt from "bcryptjs";
 
 /**
@@ -374,7 +375,14 @@ async function seedTopology(): Promise<{ seeded: boolean; siteCount: number }> {
   const now = Date.now();
   for (let i = 0; i < 8; i++) {
     const tank = pick(tanks);
-    const volume = Math.round(tank.capacityLitres * range(0.3, 0.8));
+    // `capacityLitres` is a Prisma.Decimal. Converting at the boundary with
+    // toNum() rather than relying on Decimal's implicit coercion in `*`: the
+    // coerced result happens to be correct today, but it is a property of the
+    // Decimal implementation rather than of the schema, and the failure mode if
+    // that changes is a NaN written into every seeded delivery — a poisoned
+    // starting state for every environment created from this seed.
+    const capacityLitres = toNum(tank.capacityLitres, { scale: 3, fallback: 0 });
+    const volume = Math.round(capacityLitres * range(0.3, 0.8));
     const status: FuelDeliveryStatus = pick(["SCHEDULED", "SCHEDULED", "IN_TRANSIT", "DELIVERED", "VERIFIED"]);
     const scheduledAt = new Date(now + intRange(-2, 5) * 86400000);
     await db.fuelDelivery.create({
