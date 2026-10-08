@@ -338,3 +338,49 @@ describe("sweepAllTenants — per tenant, never an owner sweep", () => {
     assert.deepEqual(r.map((x) => x.tenantId), ["t-ok-1", "t-bad", "t-ok-2"]);
   });
 });
+
+// ── The reason text must not assert what it cannot observe ──────────────────
+describe("swept rows must not claim the command did nothing", () => {
+  test("an unconfirmed sweep warns the operator to verify physically", () => {
+    const c = cmd({ status: "SENT" });
+    const d = decideReconciliation(c, NOW);
+    const text = reconciliationReasonText(d, c);
+    // Adopted from the engine's own TIMEOUT prefix so both paths grep together.
+    assert.ok(text.includes("UNCONFIRMED_DO_NOT_AUTO_RETRY"), text);
+    // The old wording asserted a negative that cannot be observed: no executedAt
+    // is not the same as the command having been rejected, and for control an
+    // operator acting on that belief would re-send against a running machine.
+    assert.ok(
+      /may or may not have acted|not the same as/i.test(text),
+      `must state the outcome is unknown, was: ${text}`,
+    );
+    assert.ok(!/no device response was ever recorded/i.test(text));
+  });
+
+  test("an acknowledged sweep says the command DID reach the device", () => {
+    const at = new Date(NOW.getTime() - 60_000);
+    const c = cmd({ status: "PENDING", executedAt: at });
+    const d = decideReconciliation(c, NOW);
+    const text = reconciliationReasonText(d, c);
+    assert.ok(text.includes("ACKNOWLEDGED_BUT_STATUS_NEVER_WRITTEN"), text);
+    assert.ok(text.includes("DID reach the device"), text);
+  });
+
+  test("neither sweep reason claims the command was rejected", () => {
+    for (const c of [
+      cmd({ status: "SENT" }),
+      cmd({ status: "PENDING", executedAt: new Date(NOW.getTime() - 60_000) }),
+    ]) {
+      const text = reconciliationReasonText(decideReconciliation(c, NOW), c);
+      // Match an ASSERTION of rejection, not the word appearing inside a
+      // negation. An earlier version of this test used a bare /rejected/ and
+      // failed on the sweep's own disclaimer "NOT the same as the command having
+      // been rejected" — the regex could not tell a claim from its refutation.
+      assert.ok(
+        !/(was|were|has been|had been) (rejected|failed|denied)\b/i.test(text),
+        `sweep must not assert a rejection it cannot observe: ${text}`,
+      );
+      assert.ok(!/\bnever ran\b|\bdid nothing\b|\bno action was taken\b/i.test(text));
+    }
+  });
+});

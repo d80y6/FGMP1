@@ -159,12 +159,36 @@ export function decideReconciliation(
   const { executedAt, status } = cmd;
   const executedButUnrecorded = executedAt !== null;
 
+  //
+  // WORDING, and it is the most important line in this file.
+  //
+  // An earlier version read "No device response was ever recorded for this
+  // command." That asserts a NEGATIVE this code cannot observe. There is no
+  // executedAt and no acknowledgement, which is not the same as the command
+  // having been rejected — a dispatch whose acknowledgement was lost in transit
+  // looks identical from here to one that never arrived.
+  //
+  // For generator control that difference is the whole ballgame: an operator who
+  // reads "no device response" concludes the command did nothing, re-issues it,
+  // and the second START lands on a machine that is already running.
+  //
+  // So the text now says what is actually known — sent, never confirmed, may or
+  // may not have acted, verify before re-sending. The UNCONFIRMED_DO_NOT_AUTO_RETRY
+  // prefix is shared with the engine's own TIMEOUT write so an operator grepping
+  // for it finds both paths together.
   const note = executedButUnrecorded
-    ? `Reconciled by sweep: acknowledged at ${executedAt.toISOString()} but ` +
-      `status was still ${status}. Treated as a timeout for the status ` +
-      `field; the acknowledgement timestamp is preserved.`
-    : `Reconciled by sweep: no acknowledgement ${Math.round(ageMs / 1000)}s after ` +
-      `issuance. No device response was ever recorded for this command.`;
+    ? `ACKNOWLEDGED_BUT_STATUS_NEVER_WRITTEN: the device acknowledged at ` +
+      `${executedAt.toISOString()} but the status write never landed, so the row ` +
+      `was still ${status}. Recorded as a timeout because leaving it non-terminal ` +
+      `blocks the generator, but the acknowledgement timestamp is preserved and ` +
+      `this command DID reach the device.`
+    : `UNCONFIRMED_DO_NOT_AUTO_RETRY: no acknowledgement within ` +
+      `${Math.round(ageMs / 1000)}s of issuance. The command was sent and its ` +
+      `outcome was never confirmed, which is NOT the same as the command having ` +
+      `been rejected — the generator may or may not have acted. Verify its ` +
+      `physical state before re-sending. A lost acknowledgement is ` +
+      `indistinguishable from a lost command, and re-sending blind risks a ` +
+      `second action against a machine that already ran.`;
 
   return {
     shouldReconcile: true,
