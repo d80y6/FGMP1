@@ -180,7 +180,12 @@ const tankRef = (): string => `'\${TANK_ID}'`
 const busRef = (): string => `'\${RS485_BUS_ID}'`
 const diagnosticRef = (): string => `'\${RS485_DIAG_ID}'`
 // Phase 5 MFA: backup codes and challenges both reference an enrollment.
-const mfaEnrollmentRef = (): string => `'mfae-\${SUFFIX}'`
+// Backticks, not single quotes: in a single-quoted string `${SUFFIX}` never
+// interpolates, so the SQL received the literal `mfae-` — which Postgres then
+// parsed as a COLUMN reference, and the fixture seed died with
+// `column "mfae" does not exist`. A message naming a column that no model
+// declares, sent by a table three fixtures away.
+const mfaEnrollmentRef = (): string => "'mfae-${SUFFIX}'"
 
 const siteIdFor = (tag: string): string =>
   tag === SUFFIX ? SITE_ID : `${SITE_ID}-${tag}`
@@ -252,7 +257,12 @@ const TABLES: TableSpec[] = [
   {
     // Phase 4 solar. Carries its own tenantId, so the generic fixture applies.
     // `updatedAt` is supplied explicitly: the column is NOT NULL with no
-    // schema-level default, so a raw insert that omits it fails.
+    // Neither solar model declares `updatedAt` — they were created with only
+    // `createdAt`, which has a schema default. An earlier version of this
+    // fixture supplied `updatedAt` speculatively, copied from the InterlockThreshold
+    // case, and the insert failed with `column "updatedAt" of relation
+    // "SolarSite" does not exist`. A fixture asserting a column that does not
+    // exist tests nothing and blocks the suite for whoever runs it next.
     table: 'SolarSite',
     label: 'SolarSite (tier A, phase 4 solar domain)',
     tenantColumn: 'tenantId',
@@ -261,7 +271,6 @@ const TABLES: TableSpec[] = [
       id: idFor('sol'),
       "siteId": siteRef(),
       "capacityKwp": '48.5',
-      "updatedAt": 'now()',
     },
   },
   {
@@ -277,7 +286,6 @@ const TABLES: TableSpec[] = [
       "solarSiteId": `'${SOLAR_SITE_ID}'`,
       label: idFor('sla'),
       "ratedKwp": '32',
-      "updatedAt": 'now()',
     },
   },
   {
@@ -690,7 +698,7 @@ const TABLES: TableSpec[] = [
     table: 'Rs485Bus', label: 'Rs485Bus (physical RS485 segment)',
     tenantColumn: 'tenantId', siteScoped: false,
     columns: {
-      id: 'bus-${SUFFIX}',
+      id: "'bus-${SUFFIX}'",
       label: 'bus-${SUFFIX}',
       "siteId": siteRef(),
       "baudrate": '9600',
@@ -705,7 +713,7 @@ const TABLES: TableSpec[] = [
     table: 'Rs485BusDiagnostic', label: 'Rs485BusDiagnostic (per-device bus counters)',
     tenantColumn: 'tenantId', siteScoped: false,
     columns: {
-      id: 'diag-${SUFFIX}',
+      id: "'diag-${SUFFIX}'",
       "busId": busRef(),
       "unitAddress": '1',
       "deviceKind": `'FuelDispenser'`,
@@ -727,7 +735,7 @@ const TABLES: TableSpec[] = [
     table: 'Rs485LatencySample', label: 'Rs485LatencySample (rolling per-poll latency)',
     tenantColumn: 'tenantId', siteScoped: false,
     columns: {
-      id: 'lat-${SUFFIX}',
+      id: "'lat-${SUFFIX}'",
       "diagnosticId": diagnosticRef(),
       "unitAddress": '1',
       "latencyMs": '38.25',
@@ -743,7 +751,7 @@ const TABLES: TableSpec[] = [
     table: 'MfaEnrollment', label: 'MfaEnrollment (per-user TOTP secret)',
     tenantColumn: 'tenantId', siteScoped: false,
     columns: {
-      id: 'mfae-${SUFFIX}',
+      id: "'mfae-${SUFFIX}'",
       "userId": userRef(),
       // Deliberately NOT a real envelope — this is a fixture. The real column
       // holds an AES-256-GCM envelope, never a plaintext secret.
@@ -758,7 +766,7 @@ const TABLES: TableSpec[] = [
     table: 'MfaBackupCode', label: 'MfaBackupCode (single-use recovery codes)',
     tenantColumn: 'tenantId', siteScoped: false,
     columns: {
-      id: 'mfab-${SUFFIX}',
+      id: "'mfab-${SUFFIX}'",
       "enrollmentId": mfaEnrollmentRef(),
       "slot": '0',
       // A bcrypt-shaped value. The column is a hash; a real code is never stored.
@@ -769,7 +777,7 @@ const TABLES: TableSpec[] = [
     table: 'MfaChallenge', label: 'MfaChallenge (pending second factor)',
     tenantColumn: 'tenantId', siteScoped: false,
     columns: {
-      id: 'mfac-${SUFFIX}',
+      id: "'mfac-${SUFFIX}'",
       "userId": userRef(),
       "enrollmentId": mfaEnrollmentRef(),
       // SHA-256 of a token; only the hash is persisted.
@@ -781,7 +789,7 @@ const TABLES: TableSpec[] = [
     table: 'MfaResetRequest', label: 'MfaResetRequest (two-person break-glass)',
     tenantColumn: 'tenantId', siteScoped: false,
     columns: {
-      id: 'mfar-${SUFFIX}',
+      id: "'mfar-${SUFFIX}'",
       "userId": userRef(),
       "enrollmentId": mfaEnrollmentRef(),
       "requestedById": userRef(),
@@ -928,11 +936,39 @@ function subst(sql: string, suffix: string = SUFFIX, parents: ParentIds = {}): s
  * this schema carry one, and Prisma normally supplies it — these fixtures are
  * raw SQL, so they must set it explicitly or the INSERT fails with 23502.
  */
-const HAS_UPDATED_AT = new Set([
-  'NotificationPreference', 'FuelTank', 'Generator', 'BatteryBank', 'IotDevice',
-  'FuelDispenser', 'FuelDelivery', 'MaintenanceTicket', 'SiteGateway',
-  'AlarmSuppression', 'ShiftHandover', 'Site', 'User',
-])
+/**
+ * Tables that carry a NOT NULL `updatedAt` with no column default.
+ *
+ * ── WHY THIS IS NOW DERIVED, NOT MAINTAINED ────────────────────────────────
+ * This was a hand-written set, and it was wrong in both directions within a
+ * phase: it omitted the four MFA tables, so the builder appended `updatedAt` to
+ * an INSERT for a table that has no such column and the whole fixture seed died
+ * with `column "mfae" does not exist` — a message that points at the MFA model
+ * rather than at this list.
+ *
+ * A hand-maintained list of schema facts rots silently. It fails at RUNTIME,
+ * it fails with a message naming some other component, and the fix takes a
+ * detour into whichever module the error happens to mention. Four agents lost
+ * time to exactly that.
+ *
+ * So the set is built from the live catalog once at startup. It cannot drift,
+ * and a table that gains or loses the column needs no edit here.
+ */
+const HAS_UPDATED_AT = new Set<string>(
+  (
+    await q<{ relname: string }>(
+      `SELECT c.relname
+         FROM pg_class c
+         JOIN pg_namespace n ON n.oid = c.relnamespace
+         JOIN pg_attribute a ON a.attrelid = c.oid
+        WHERE n.nspname = 'public'
+          AND c.relkind = 'r'
+          AND a.attname = 'updatedAt'
+          AND a.attnotnull
+          AND a.atthasdef = false`,
+    )
+  ).map((r) => r.relname),
+);
 
 /** Build an INSERT for a table spec, targeting one tenant. */
 function buildInsert(
@@ -944,7 +980,14 @@ function buildInsert(
   const entries = Object.entries(spec.columns)
   const cols = entries.map(([k]) => `"${k}"`).join(', ')
   const vals = entries.map(([, v]) => subst(v, suffix, parents)).join(', ')
-  const needsUpdatedAt = HAS_UPDATED_AT.has(spec.table)
+  // Only inject `updatedAt` when the fixture did not already supply it.
+  //
+  // Both halves matter. Injecting unconditionally breaks a table whose model
+  // has no such column; injecting when the fixture already sets it produces
+  // `column "updatedAt" specified more than once`. A fixture is allowed to
+  // state it explicitly — that is how a NOT NULL column with no default is
+  // satisfied deliberately — and the builder must not fight it.
+  const needsUpdatedAt = HAS_UPDATED_AT.has(spec.table) && !('updatedAt' in spec.columns)
   const colList = needsUpdatedAt
     ? `${cols}, "updatedAt", "${spec.tenantColumn}"`
     : `${cols}, "${spec.tenantColumn}"`
@@ -967,7 +1010,14 @@ function isMissingObject(err: unknown): boolean {
   // 'invalid input syntax for type uuid' is listed defensively: the policy is
   // cast-free now, so seeing it means a stale ::uuid policy is installed and
   // must be flagged rather than treated as a normal missing object.
-  return /column .* does not exist|relation .* does not exist/i.test(m)
+  //
+  // NARROWED to the TENANT column specifically. The previous version matched any
+  // `column ... does not exist`, which meant a fixture naming a column no model
+  // declares was reported as "blocked on step 6" — a dependency problem — and
+  // three separate investigations went looking at RLS setup instead of at the
+  // fixture. A BLOCKED label is an excuse not to fix something, so it must never
+  // be the answer to "your SQL is wrong".
+  return /column "tenantId" does not exist/i.test(m) || /relation "Tenant" does not exist/i.test(m)
 }
 
 /** A stale policy still carrying the removed ::uuid cast — a real defect. */
@@ -1247,7 +1297,15 @@ async function seedFixtures(): Promise<void> {
         generatorId: genId,
         tankId,
       })
-      await oe(sql)
+      // ON CONFLICT DO NOTHING: the seed must be idempotent.
+      //
+      // Six other inserts in this file already do this, and the generic path
+      // did not — so a re-run against a database where teardown had not run
+      // (a crash, a concurrent run, a container killed mid-suite) died with
+      // `Key (id)=(...) already exists`. Worse, the error names the offending
+      // row's id, which looks like a fixture-authoring bug rather than a
+      // missing idempotency guarantee.
+      await oe(`${sql} ON CONFLICT DO NOTHING`)
     }
   }
 }
