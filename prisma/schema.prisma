@@ -527,6 +527,12 @@ model Tenant {
   // Phase 4 — Solar
   solarSites              SolarSite[]
   solarArrays             SolarArray[]
+
+  mfaEnrollments    MfaEnrollment[]
+  mfaBackupCodes    MfaBackupCode[]
+  mfaChallenges     MfaChallenge[]
+  mfaResetRequests  MfaResetRequest[]
+
 }
 
 // role: ADMIN | NOC_OPERATOR | REGIONAL_MANAGER | FIELD_ENGINEER | EXECUTIVE | READONLY
@@ -569,6 +575,13 @@ model User {
   thresholdsConfirmed        InterlockThreshold[]   @relation("ThresholdConfirmedBy")
 
   @@index([tenantId])
+
+  mfaEnrollment     MfaEnrollment?
+  mfaChallenges     MfaChallenge[]
+  mfaResetTargets   MfaResetRequest[] @relation("MfaResetTarget")
+  mfaResetRequested MfaResetRequest[] @relation("MfaResetRequested")
+  mfaResetApproved  MfaResetRequest[] @relation("MfaResetApproved")
+
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -1849,4 +1862,170 @@ model SolarArray {
 
   @@index([tenantId])
   @@index([solarSiteId])
+}
+
+// ── MFA (Phase 5) ───────────────────────────────────────────────────────────
+// A TOTP secret is a BEARER credential for the second factor: anyone who reads
+// it can generate valid codes forever. So `secretEnc` stores the AES-256-GCM
+// envelope from src/lib/fgmp/mfa/crypto.ts, never plaintext. A plaintext column
+// would not be "MFA with a weakness" — it would be MFA with the second factor
+// removed, while still appearing enabled.
+//
+// Encryption is worthless without the key, and the key lives in
+// FGMP_MFA_ENCRYPTION_KEY (outside the database). Enrolment refuses to run
+// without it, which is how "never let a half-configured MFA lock anyone out" is
+// enforced in code rather than in a runbook.
+
+/// Per-user MFA enrolment. One row per user who has enrolled.
+model MfaEnrollment {
+  id            String   @id @default(cuid())
+  /// The user's own tenant. This is a per-user CREDENTIAL, so a cross-tenant
+  /// read is a credential leak rather than a data leak — it is protected with
+  /// FORCE RLS for that reason.
+  tenantId      String
+  userId        String   @unique
+
+  /// AES-256-GCM envelope: v1.<iv>.<authTag>.<ciphertext>. Never plaintext.
+  secretEnc     String
+  /// Envelope version, so a future scheme can be rolled out and a value written
+  /// by a newer scheme fails LOUDLY instead of decrypting to nonsense.
+  keyVersion    Int      @default(1)
+  /// Whether the factor is currently required at login. Separate from the row's
+  /// existence so MFA can be temporarily suspended by a break-glass reset
+  /// without destroying the enrolment record and its audit trail.
+  enabled       Boolean  @default(false)
+  /// Totp digits and period are stored rather than assumed, so a change of
+  /// policy later cannot silently invalidate every enrolled user.
+  digits        Int      @default(6)
+  periodSeconds Int      @default(30)
+
+  enrolledAt    DateTime  @default(now())
+  /// Null while disabled: the last moment the factor was actually in force.
+  lastUsedAt    DateTime?
+  /// Set by a break-glass reset. Forces re-enrolment before MFA is required
+  /// again, so a reset cannot quietly leave the account unprotected.
+  disabledAt    DateTime?
+  disabledReason String?
+
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  backupCodes   MfaBackupCode[]
+  resets        MfaResetRequest[]
+  challenges    MfaChallenge[]
+
+  @@index([tenantId])
+}
+
+/// Single-use backup codes, hashed.
+///
+/// Separate rows rather than a hashed blob on the enrolment, because single-use
+/// must be enforced BY THE DATABASE: an `usedAt` column cleared in application
+/// code is bypassable by two concurrent requests both reading "unused".
+model MfaBackupCode {
+  id            String   @id @default(cuid())
+  tenantId      String
+  enrollmentId  String
+  /// Ordinal, so an operator can be told "you have 4 codes left" and a
+  /// particular code identified without exposing any hash.
+  slot          Int
+  /// bcrypt. Backup codes come from a CSPRNG rather than a word list, so this
+  /// cost buys nothing against guessing — it buys key-material unification: one
+  /// hash function governs every credential in the system.
+  codeHash      String
+  /// NULL until consumed. Consumption is a conditional UPDATE, so a replay
+  /// affects zero rows rather than succeeding.
+  usedAt        DateTime?
+  /// When it was used, and against which challenge — so an operator can tell
+  /// their own reuse from someone else's.
+  usedByChallengeId String?
+  createdAt     DateTime @default(now())
+
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  enrollment    MfaEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+
+  @@unique([enrollmentId, slot])
+  @@index([tenantId])
+}
+
+/// The pending second factor, between "password accepted" and "session issued".
+///
+/// NextAuth's Credentials authorize() returns a user or null, so the second
+/// factor cannot live inside it. This row is the boundary: authorize() succeeds,
+/// the client is handed a CHALLENGE TOKEN, and no session exists until
+/// /api/fgmp/mfa/challenge consumes this row and issues one.
+model MfaChallenge {
+  id            String   @id @default(cuid())
+  tenantId      String
+  userId        String
+  enrollmentId  String
+
+  /// SHA-256 of the token. Only the hash is stored, so a read of this table does
+  /// not hand over live challenge tokens.
+  tokenHash     String   @unique
+  /// Short: 5 minutes. A challenge authorises exactly one transition and the
+  /// operator is standing at the login screen with the code in hand.
+  expiresAt     DateTime
+  /// Consumed by a conditional UPDATE (`usedAt IS NULL`), so two concurrent
+  /// verifications cannot both complete.
+  usedAt        DateTime?
+  /// One failed attempt invalidates the challenge, bounding guessing to a
+  /// single try per issued token.
+  attempts      Int      @default(0)
+  failedAt      DateTime?
+
+  createdAt     DateTime @default(now())
+
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  enrollment    MfaEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+/// A two-person request to clear someone's MFA.
+///
+/// Modelled on InterlockOverride, which already requires requestedById +
+/// approvedById + a justification for a safety bypass. A single-operator reset
+/// is exactly the social-engineering attack ("I'm the superadmin and it's
+/// urgent"); a second countersignature turns a convincing conversation into a
+/// logged, attributable request.
+model MfaResetRequest {
+  id            String   @id @default(cuid())
+  tenantId      String
+  /// The account whose factor is being cleared.
+  userId        String
+  enrollmentId  String
+
+  requestedById String
+  /// NULL until a SECOND, different operator approves. Enforced in the service
+  /// layer and again by the approval query.
+  approvedById  String?
+  /// Mandatory. A reset with no stated reason is not actionable later.
+  justification String
+
+  status        MfaResetStatus @default(PENDING)
+  createdAt     DateTime  @default(now())
+  approvedAt    DateTime?
+  appliedAt     DateTime?
+  /// Recorded after the fact so an auditor can see that a reset happened, by
+  /// whom, and whether MFA was subsequently re-established.
+  outcomeNote   String?
+
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  enrollment    MfaEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  user          User          @relation("MfaResetTarget", fields: [userId], references: [id], onDelete: Cascade)
+  requestedBy   User          @relation("MfaResetRequested", fields: [requestedById], references: [id])
+  approvedBy    User?         @relation("MfaResetApproved", fields: [approvedById], references: [id])
+
+  @@index([tenantId, status])
+  @@index([userId])
+}
+
+enum MfaResetStatus {
+  PENDING
+  APPROVED
+  APPLIED
+  REJECTED
 }

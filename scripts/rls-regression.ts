@@ -179,6 +179,8 @@ const tankRef = (): string => `'\${TANK_ID}'`
 // and a latency sample belongs to a diagnostic.
 const busRef = (): string => `'\${RS485_BUS_ID}'`
 const diagnosticRef = (): string => `'\${RS485_DIAG_ID}'`
+// Phase 5 MFA: backup codes and challenges both reference an enrollment.
+const mfaEnrollmentRef = (): string => `'mfae-\${SUFFIX}'`
 
 const siteIdFor = (tag: string): string =>
   tag === SUFFIX ? SITE_ID : `${SITE_ID}-${tag}`
@@ -730,6 +732,61 @@ const TABLES: TableSpec[] = [
       "unitAddress": '1',
       "latencyMs": '38.25',
       ok: 'true',
+    },
+  },
+  // ── Phase 5: MFA (added by the MFA integrator) ────────────────────────────
+  // A per-user CREDENTIAL store, not site data: reading another tenant's
+  // encrypted TOTP envelope or backup-code hashes is materially worse than
+  // reading their fuel levels. Each table gets its own fixture and the full
+  // standard assertion set, not merely a count.
+  {
+    table: 'MfaEnrollment', label: 'MfaEnrollment (per-user TOTP secret)',
+    tenantColumn: 'tenantId', siteScoped: false,
+    columns: {
+      id: 'mfae-${SUFFIX}',
+      "userId": userRef(),
+      // Deliberately NOT a real envelope — this is a fixture. The real column
+      // holds an AES-256-GCM envelope, never a plaintext secret.
+      "secretEnc": `'v1.placeholder.placeholder.placeholder'`,
+      "keyVersion": '1',
+      enabled: 'true',
+      "digits": '6',
+      "periodSeconds": '30',
+    },
+  },
+  {
+    table: 'MfaBackupCode', label: 'MfaBackupCode (single-use recovery codes)',
+    tenantColumn: 'tenantId', siteScoped: false,
+    columns: {
+      id: 'mfab-${SUFFIX}',
+      "enrollmentId": mfaEnrollmentRef(),
+      "slot": '0',
+      // A bcrypt-shaped value. The column is a hash; a real code is never stored.
+      "codeHash": `'$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy'`,
+    },
+  },
+  {
+    table: 'MfaChallenge', label: 'MfaChallenge (pending second factor)',
+    tenantColumn: 'tenantId', siteScoped: false,
+    columns: {
+      id: 'mfac-${SUFFIX}',
+      "userId": userRef(),
+      "enrollmentId": mfaEnrollmentRef(),
+      // SHA-256 of a token; only the hash is persisted.
+      "tokenHash": `'${SUFFIX.replace(/\D/g, "")}${"0".repeat(48)}'`,
+      "expiresAt": 'now() + interval \'5 minutes\'',
+    },
+  },
+  {
+    table: 'MfaResetRequest', label: 'MfaResetRequest (two-person break-glass)',
+    tenantColumn: 'tenantId', siteScoped: false,
+    columns: {
+      id: 'mfar-${SUFFIX}',
+      "userId": userRef(),
+      "enrollmentId": mfaEnrollmentRef(),
+      "requestedById": userRef(),
+      "justification": `'RLS regression fixture ${SUFFIX}'`,
+      status: `'PENDING'::"MfaResetStatus"`,
     },
   },
 ]

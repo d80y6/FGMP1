@@ -99,6 +99,16 @@ declare module "next-auth" {
   }
   interface Session {
     user: SessionUser;
+    /**
+     * TRUE when the password verified but the second factor has not.
+     *
+     * A session in this state carries NO authority: the guard in
+     * src/lib/fgmp/mfa/guard.ts refuses it on every protected route and
+     * allowlists only the MFA completion path. It is deliberately on the session
+     * rather than inferred per-request, so a half-authenticated caller cannot
+     * present as fully authenticated by omitting a field.
+     */
+    mfaPending?: boolean;
   }
 }
 
@@ -107,6 +117,12 @@ declare module "next-auth/jwt" {
     id?: string;
     role?: string;
     tenantId?: string;
+    /**
+     * Carried on the token so the pending state survives a page reload and is
+     * re-evaluated server-side on every request rather than trusted from client
+     * storage.
+     */
+    mfaPending?: boolean;
   }
 }
 
