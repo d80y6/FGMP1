@@ -76,6 +76,26 @@ interface PreviewResponse {
   }>;
   /** Which metrics the rules asked for that do not exist at all. */
   missingMetrics: string[];
+  /**
+   * Which readings produced this evaluation. Present on the success path only;
+   * the failure path returns no evaluation, so it has nothing to describe.
+   *
+   * `live: false` is the important part. `?scenario=<name>` evaluates the rules
+   * against SYNTHETIC readings so an operator can see a rule fire without
+   * causing the condition — so a preview is capable of returning a plausible
+   * firing state that describes nothing about this deployment. Carrying the
+   * marker on the response is what stops that being read as real.
+   */
+  scenario?: {
+    name: string;
+    title: string;
+    describes: string;
+    live: boolean;
+    warning: string;
+    rulesNotCovered: string[];
+  };
+  /** Scenario names this deployment recognises, for UI pickers. */
+  availableScenarios?: Array<{ name: string; title: string; describes: string }>;
   configError?: string;
 }
 
@@ -112,30 +132,6 @@ export async function GET(req: NextRequest) {
         // which is the same reason the success path carries them.
         rulesVersion,
         rulesFile: "config/alerts.json",
-    scenario: scenario
-      ? {
-          name: scenario.name,
-          title: scenario.title,
-          describes: scenario.describes,
-          live: false,
-          warning:
-            "SYNTHETIC READINGS. These are not this deployment's real state and " +
-            "nothing here has been delivered to anybody.",
-          rulesNotCovered: rulesNotInScenario(rules, scenario),
-        }
-      : {
-          name: "live",
-          title: "Live state",
-          describes: "Read from this process's metric registry.",
-          live: true,
-          warning: "",
-          rulesNotCovered: [],
-        },
-    availableScenarios: SCENARIOS.map((x) => ({
-      name: x.name,
-      title: x.title,
-      describes: x.describes,
-    })),
         summary: { firing: 0, unknown: 0, ok: 0, total: 0 },
         evaluations: [],
         absenceNotes: [],
@@ -201,6 +197,34 @@ export async function GET(req: NextRequest) {
     generatedAt: new Date(nowMs).toISOString(),
     rulesVersion,
     rulesFile: "config/alerts.json",
+    // Which readings this evaluation used, and the synthetic marker when it did
+    // not use live ones. A preview that can return plausible firing states
+    // fabricated for demonstration MUST say so on the response, or an operator
+    // reads a scenario's output as this deployment's health.
+    scenario: scenario
+      ? {
+          name: scenario.name,
+          title: scenario.title,
+          describes: scenario.describes,
+          live: false,
+          warning:
+            "SYNTHETIC READINGS. These are not this deployment's real state and " +
+            "nothing here has been delivered to anybody.",
+          rulesNotCovered: rulesNotInScenario(rules, scenario),
+        }
+      : {
+          name: "live",
+          title: "Live state",
+          describes: "Read from this process's metric registry.",
+          live: true,
+          warning: "",
+          rulesNotCovered: [],
+        },
+    availableScenarios: SCENARIOS.map((x) => ({
+      name: x.name,
+      title: x.title,
+      describes: x.describes,
+    })),
     summary: {
       firing: evaluations.filter((e) => e.state === "firing").length,
       unknown: evaluations.filter((e) => e.state === "unknown").length,
