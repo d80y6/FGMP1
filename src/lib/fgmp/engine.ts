@@ -1,6 +1,8 @@
 import { Prisma, type FuelType } from "@prisma/client";
 import { db } from "@/lib/db";
 import { withTenant } from "./tenant-context";
+import { SimulatedGeneratorDispatch } from "./dispatch/simulated";
+import type { GeneratorDispatch } from "./dispatch/types";
 import {
   detectUnexplainedLoss,
   expectedConsumption,
@@ -155,6 +157,29 @@ function isGeneratorOffline(g: GenState, sites: SiteState[]): boolean {
 }
 
 class FgmpEngine {
+  /**
+   * PHASE 5 — the dispatch boundary.
+   *
+   * This is the ONLY thing that decides whether a generator was commanded.
+   * `applyCommand` asks it and records what it reports; it no longer decides
+   * anything for itself.
+   *
+   * Injectable so tests can substitute a dispatch that DOES reach a device. That
+   * is the only way to exercise the EXECUTED path at all — with the shipped
+   * implementations, EXECUTED is unreachable by design, so the branch that marks
+   * a command acknowledged would otherwise never run in any test.
+   */
+  private dispatchImpl: GeneratorDispatch = new SimulatedGeneratorDispatch();
+
+  /** Swap the dispatch implementation. Used by tests and by future transports. */
+  setDispatch(d: GeneratorDispatch): void {
+    this.dispatchImpl = d;
+  }
+
+  private get dispatch(): GeneratorDispatch {
+    return this.dispatchImpl;
+  }
+
   private initialized = false;
   private initializing: Promise<void> | null = null;
   /** Tenants whose state this instance currently holds. Empty = not loaded. */
@@ -2021,62 +2046,168 @@ async controlDispenser(
       return { ok: false, message: "Site communication down — command queued but cannot execute" };
     }
 
-    // ── PHASE 3: this write is RLS-protected, so it MUST run inside withTenant(). ──
+    // ── PHASE 3 + PHASE 5: this write is RLS-protected, so it MUST run inside withTenant(). ──
     // It previously ran on the bare `db` client with no tenant context, which
     // under FORCE RLS is rejected by WITH CHECK — so the create THREW and the
     // whole control path surfaced as a 500 carrying a raw PostgreSQL policy
     // message. It also attributed the row to the ENGINE's tenant rather than
     // the caller's, which would misfile a command if the engine ever held the
     // wrong tenant.
+    //
+    // ── PHASE 5: WRITTEN PENDING, NOT SENT ─────────────────────────────────
+    // The row used to be created SENT with `result: "OK"` and `executedAt` set,
+    // all at issue time — asserting an outcome before anything had happened.
+    //
+    // It is now created PENDING, which is TRUE: the command was accepted and
+    // nothing is known about it yet. The terminal status is written afterwards,
+    // from what the DISPATCH LAYER actually reports. That is the whole point of
+    // the boundary — the engine asks what happened instead of deciding.
+    //
+    // PENDING can genuinely persist now: the simulated dispatch is synchronous,
+    // but a real TCP write with a 400ms budget means a PENDING row exists for
+    // up to that long. If the transition below fails, the row stays PENDING and
+    // the reconciler sweeps it as "unconfirmed, needs a human". That is the
+    // design working, not a bug path.
     const cmd = await withTenant(site.tenantId, (tx) =>
       tx.controlCommand.create({
         data: {
           tenantId: site.tenantId,
           generatorId: genId,
           command,
-          // PHASE 5. `executedAt` and `result: "OK"` are NO LONGER written at
-          // issue time.
-          //
-          // Both were false. Nothing had executed and no outcome had been
-          // observed: the dispatch below is a simulated in-process mutation with
-          // no Modbus, MQTT or serial write anywhere in the path. Recording an
-          // execution timestamp and an OK result at the moment of issue asserted
-          // a hardware event that never happened, and an auditor reading the row
-          // would conclude the engine had been commanded.
-          //
-          // What IS true at this point: the command was accepted and the
-          // simulated dispatch applied. executedAt stays null — leaving it free
-          // to mean "a device actually reported back" once a real dispatcher
-          // exists — and `result` says so in words rather than implying success.
-          status: "SENT",
+          status: "PENDING",
           reason: reason ?? null,
           issuedById: userId,
           executedAt: null,
-          result: "SIMULATED_DISPATCH_APPLIED_NO_HARDWARE",
+          result: null,
         },
       }),
     );
 
+    // ── PHASE 5: THE DISPATCH BOUNDARY ────────────────────────────────────
+    // Everything above is authorisation and bookkeeping. What follows is the
+    // only thing that decides whether a generator was commanded, and it does so
+    // by asking a GeneratorDispatch rather than by asserting.
+    const outcome = await this.dispatch.dispatch({
+      command,
+      generatorId: genId,
+      now: this.now,
+    });
+
+    // EXECUTED is unreachable today: no dispatch implementation contacts a
+    // device, and the simulated one returns NO_TRANSPORT by design. That is
+    // deliberate. A reachable EXECUTED backed by no acknowledgement is the worst
+    // failure this system could have.
+    if (outcome.kind === "EXECUTED") {
+      await withTenant(site.tenantId, (tx) =>
+        tx.controlCommand.update({
+          where: { id: cmd.id },
+          data: {
+            status: "EXECUTED",
+            executedAt: new Date(outcome.acknowledgement?.at ?? this.now),
+            result: JSON.stringify({
+              transport: outcome.acknowledgement?.transport,
+              detail: outcome.acknowledgement?.detail,
+            }),
+          },
+        }),
+      );
+      this.applySimulatedState(g, command, cmd.id);
+      return {
+        ok: true,
+        message: `${command} acknowledged by ${outcome.acknowledgement?.transport ?? "device"}`,
+      };
+    }
+
+    if (outcome.kind === "FAILED") {
+      await withTenant(site.tenantId, (tx) =>
+        tx.controlCommand.update({
+          where: { id: cmd.id },
+          data: { status: "FAILED", result: outcome.reason ?? "FAILED" },
+        }),
+      );
+      // No in-memory mutation on a rejected command: the engine must not claim
+      // the set moved when the device said no.
+      return { ok: false, message: outcome.reason ?? `${command} was rejected` };
+    }
+
+    // TIMEOUT_AMBIGUOUS: we do not know whether it landed. retrySafe is false,
+    // so this is explicitly a "a human must decide" state and the row says so.
+    if (outcome.kind === "TIMEOUT_AMBIGUOUS") {
+      await withTenant(site.tenantId, (tx) =>
+        tx.controlCommand.update({
+          where: { id: cmd.id },
+          data: {
+            status: "TIMEOUT",
+            executedAt: null,
+            result: `UNCONFIRMED_DO_NOT_AUTO_RETRY: ${outcome.reason ?? "no reply"}`,
+          },
+        }),
+      );
+      // Deliberately NO in-memory mutation: we do not know the state, so we must
+      // not assert one. The engine's previous value stands and the operator is
+      // told to check physically.
+      return {
+        ok: false,
+        message:
+          `${command} outcome is UNKNOWN — the generator did not reply. It may ` +
+          `or may not have acted. Check the set physically before re-sending.`,
+      };
+    }
+
+    // NO_TRANSPORT — today, on every deployment.
+    await withTenant(site.tenantId, (tx) =>
+      tx.controlCommand.update({
+        where: { id: cmd.id },
+        data: {
+          status: "FAILED",
+          executedAt: null,
+          result: `NO_TRANSPORT: ${outcome.reason ?? "no generator transport configured"}`,
+        },
+      }),
+    );
+    // The in-memory mutation IS applied here, and only here: when simulation is
+    // explicitly enabled the engine behaves as it always has so dashboards stay
+    // accurate, while the row and the response both state that no device was
+    // contacted. Demo looks right; the API tells the truth.
+    this.applySimulatedState(g, command, cmd.id);
+    return {
+      ok: false,
+      message:
+        `${command} was NOT sent to a generator: ${
+          outcome.reason ?? "no generator transport is configured on this deployment"
+        }`,
+    };
+  }
+
+  /**
+   * Apply the in-memory generator state the simulation has always applied.
+   *
+   * Kept separate from applyCommand so the dispatch decision is visibly the only
+   * thing gating it: every path that reaches this has already recorded what the
+   * dispatch layer reported, so a reader cannot mistake a state change for a
+   * confirmed device command.
+   */
+  private applySimulatedState(g: GenState, command: GenCommand, cmdId: string): void {
+    const genId = g.id;
     if (command === "START") {
       g.status = "RUNNING";
       g.mode = "REMOTE";
       g.lastStartedAt = this.now;
-      this.pushEvent(g.siteId, "CONTROL", `REMOTE START ${g.label} (cmd ${cmd.id.slice(-6)})`, { genId });
+      this.pushEvent(g.siteId, "CONTROL", `REMOTE START ${g.label} (cmd ${cmdId.slice(-6)})`, { genId });
     } else if (command === "STOP") {
       g.status = "STOPPED";
       g.mode = "REMOTE";
       g.lastStoppedAt = this.now;
-      this.pushEvent(g.siteId, "CONTROL", `REMOTE STOP ${g.label} (cmd ${cmd.id.slice(-6)})`, { genId });
+      this.pushEvent(g.siteId, "CONTROL", `REMOTE STOP ${g.label} (cmd ${cmdId.slice(-6)})`, { genId });
     } else if (command === "EMERGENCY_STOP") {
       g.status = "FAULT";
       g.faultUntil = this.now + 30 * 60 * 1000;
-      this.pushEvent(g.siteId, "CRITICAL", `EMERGENCY STOP ${g.label} (cmd ${cmd.id.slice(-6)})`, { genId });
+      this.pushEvent(g.siteId, "CRITICAL", `EMERGENCY STOP ${g.label} (cmd ${cmdId.slice(-6)})`, { genId });
     } else if (command === "RESET") {
       g.status = "STOPPED";
       g.faultUntil = undefined;
-      this.pushEvent(g.siteId, "CONTROL", `RESET ${g.label} (cmd ${cmd.id.slice(-6)})`, { genId });
+      this.pushEvent(g.siteId, "CONTROL", `RESET ${g.label} (cmd ${cmdId.slice(-6)})`, { genId });
     }
-    return { ok: true, message: `${command} executed on ${g.label}` };
   }
 
   // ── Reload (Task 48) ─────────────────────────────────────────────────────

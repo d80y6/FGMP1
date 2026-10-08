@@ -134,8 +134,18 @@ export function evaluateRule(rule: AlertRule, reading: MetricReading): RuleEvalu
   // comparator can accidentally treat it as a number.
   if (!reading.reported || reading.value === null) {
     if (rule.absencePolicy === "ABSENT_IS_ZERO" && !rule.requiresLiveData) {
-      // Continue below and evaluate as 0 — the rule has declared that zero is a
-      // fair reading of "nothing happened".
+      // The series never reported. For a COUNTER, "nothing has happened" and
+      // "nothing has reported" genuinely agree, so the rule has declared that 0
+      // is a fair reading — and it may therefore FIRE on that basis.
+      //
+      // It may never report `ok` on that basis, though, and that distinction is
+      // the whole point. Substituting 0 for a missing counter lets a rule fire
+      // ("there have been errors") but must not let it certify health ("there
+      // have been no errors"), because the latter is a claim about the world
+      // that was never measured. An earlier version let this fall through to the
+      // comparator, so a never-reported error counter evaluated `ok` — a monitor
+      // green because it received nothing, which is the exact failure this
+      // module exists to prevent.
       //
       // requiresLiveData is checked HERE as well as after the comparison: under
       // ABSENT_IS_ZERO a missing series is substituted with 0 before any
@@ -191,6 +201,32 @@ export function evaluateRule(rule: AlertRule, reading: MetricReading): RuleEvalu
         `The rule's condition is met numerically (absent treated as ${observed}), but ` +
         `requiresLiveData is set so absence cannot raise it. Firing here would alert on ` +
         `the very outage this rule exists to detect.`,
+      rationale: rule.rationale,
+      confirmWith: rule.confirmWith,
+      source: rule.source,
+      confirmedBy: rule.confirmedBy ?? null,
+    };
+  }
+
+  // A substituted zero may FIRE but may not certify health. See the branch above.
+  const substituted = !reading.reported && reading.value === null;
+  if (substituted && !firing) {
+    return {
+      ruleId: rule.id,
+      title: rule.title,
+      severity: rule.severity,
+      state: "unknown",
+      observed: null,
+      threshold: rule.threshold,
+      comparator: rule.comparator,
+      comparatorText,
+      unit: rule.unit,
+      message: `${rule.title}: no data reported for ${rule.metric}.`,
+      explanation:
+        `The series ${rule.metric} has never reported. Absence is treated as 0 for ` +
+        `this counter, which is fair for FIRING (nothing has happened) but not for ` +
+        `clearing it: "no data" is not evidence of "no problems". The rule is ` +
+        `reported as unknown rather than healthy.`,
       rationale: rule.rationale,
       confirmWith: rule.confirmWith,
       source: rule.source,

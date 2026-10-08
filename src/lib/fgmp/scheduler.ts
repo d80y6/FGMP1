@@ -398,12 +398,26 @@ export function startScheduler(opts: StartOptions = {}): SchedulerHandle {
   // lock covers cross-process; this covers a slow advance racing its own timer.
   let inFlight: Promise<void> = Promise.resolve();
 
+  // Phase 5 alerting: publish scheduler liveness where it can actually change.
+  // Lazily imported so scheduler.ts does not gain a module-load dependency on
+  // the metrics registry, and so a metrics failure cannot stop the clock.
+  const publishRunning = (running: boolean) => {
+    void import("@/lib/observability/metrics")
+      .then((m) => m.schedulerRunning.set({}, running ? 1 : 0))
+      .catch(() => {
+        // Instrumentation must never be able to stop the scheduler. A metrics
+        // registry failure degrades the alerting view, not the product.
+      });
+  };
+  publishRunning(true);
+
   const handle: SchedulerHandle = {
     get running() {
       return !stopped && timer !== null;
     },
     async stop() {
       stopped = true;
+      publishRunning(false);
       if (timer) {
         clearTimeout(timer);
         timer = null;

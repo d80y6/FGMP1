@@ -146,17 +146,30 @@ describe("absent and zero are distinguishable", () => {
     assert.equal(r.state, "unknown", "absence must not fire a requiresLiveData rule");
   });
 
-  test("ABSENT_IS_ZERO deliberately treats absence as 0", () => {
-    const r = evaluateRule(
+  test("ABSENT_IS_ZERO may FIRE on absence, but never certifies health", () => {
+    // A counter that never reported may legitimately raise an alarm — "no errors
+    // have been recorded" and "nothing is recording errors" both leave the
+    // count at zero, and that is a real operational concern.
+    //
+    // It may NOT clear. "No data" is not evidence of "no problems", so the
+    // non-breaching side of a substituted zero is `unknown`. An earlier version
+    // ran the comparator on the substituted value and reported `ok` here, which
+    // is precisely the monitor-green-because-it-received-nothing failure this
+    // module exists to prevent.
+    const firing = evaluateRule(
+      rule({ absencePolicy: "ABSENT_IS_ZERO", comparator: "GT", threshold: -1 }),
+      ABSENT,
+    );
+    assert.equal(firing.state, "firing", "absence may raise an alarm for a counter");
+
+    const clearing = evaluateRule(
       rule({ absencePolicy: "ABSENT_IS_ZERO", comparator: "GT", threshold: 0 }),
       ABSENT,
     );
-    // 0 > 0 is false, so it is ok — and the explanation must SAY that absence
-    // was treated as zero, not imply the metric was measured.
-    assert.equal(r.state, "ok");
+    assert.equal(clearing.state, "unknown", "absence must never certify health");
     assert.ok(
-      r.explanation.includes("never reported"),
-      `explanation must disclose the substitution, was: ${r.explanation}`,
+      clearing.explanation.includes("never reported"),
+      `explanation must disclose the substitution, was: ${clearing.explanation}`,
     );
   });
 

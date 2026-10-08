@@ -2,7 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole, ROLES } from "@/lib/fgmp/auth-helpers";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { loadAlertRules, AlertConfigError } from "@/lib/fgmp/alerting/config";
-import { currentReadings, readingFor, tickAgeSeconds } from "@/lib/fgmp/alerting/readings";
+import {
+  currentReadings,
+  readingFor,
+  tickAgeSeconds,
+  parseExposition,
+} from "@/lib/fgmp/alerting/readings";
+import {
+  findScenario,
+  scenarioNames,
+  rulesNotInScenario,
+  SCENARIOS,
+  type Scenario,
+} from "@/lib/fgmp/alerting/scenarios";
 import {
   evaluateRule,
   overallPosture,
@@ -100,6 +112,30 @@ export async function GET(req: NextRequest) {
         // which is the same reason the success path carries them.
         rulesVersion,
         rulesFile: "config/alerts.json",
+    scenario: scenario
+      ? {
+          name: scenario.name,
+          title: scenario.title,
+          describes: scenario.describes,
+          live: false,
+          warning:
+            "SYNTHETIC READINGS. These are not this deployment's real state and " +
+            "nothing here has been delivered to anybody.",
+          rulesNotCovered: rulesNotInScenario(rules, scenario),
+        }
+      : {
+          name: "live",
+          title: "Live state",
+          describes: "Read from this process's metric registry.",
+          live: true,
+          warning: "",
+          rulesNotCovered: [],
+        },
+    availableScenarios: SCENARIOS.map((x) => ({
+      name: x.name,
+      title: x.title,
+      describes: x.describes,
+    })),
         summary: { firing: 0, unknown: 0, ok: 0, total: 0 },
         evaluations: [],
         absenceNotes: [],
@@ -110,7 +146,24 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const readings = currentReadings();
+  // ── Scenario mode ─────────────────────────────────────────────────────────
+  // `?scenario=<name>` substitutes synthetic readings so an operator can see a
+  // rule fire without causing the condition. Opt-in, never remembered, and it
+  // never mutates the registry or delivers anything — a scenario is a view over
+  // the rules, not a way to make an alert real.
+  const scenarioParam = req.nextUrl.searchParams.get("scenario");
+  const scenario = scenarioParam ? findScenario(scenarioParam) : undefined;
+  if (scenarioParam && !scenario) {
+    return NextResponse.json(
+      {
+        error: `Unknown scenario "${scenarioParam}".`,
+        available: scenarioNames(),
+      },
+      { status: 400, headers: { "cache-control": "no-store" } },
+    );
+  }
+
+  const readings = scenario ? readingsForScenario(scenario, nowMs) : currentReadings();
 
   const evaluations: RuleEvaluation[] = rules.map((rule) => {
     // The tick-age rules are the one case where the useful value is derived
@@ -124,17 +177,23 @@ export async function GET(req: NextRequest) {
     return evaluateRule(rule, reading);
   });
 
-  const missingMetrics = [
-    ...new Set(
-      rules
-        .filter(
-          (r) =>
-            r.metric !== "fgmp_last_tick_timestamp_seconds" &&
-            !readings.has(r.metric),
-        )
-        .map((r) => r.metric),
-    ),
-  ].sort();
+  // Under a scenario, an unread metric is a scenario that deliberately says
+  // nothing about it — not a missing publisher. Reporting them as missingMetrics
+  // would accuse live instrumentation of being unwired when the real cause is
+  // the scenario's scope.
+  const missingMetrics = scenario
+    ? []
+    : [
+        ...new Set(
+          rules
+            .filter(
+              (r) =>
+                r.metric !== "fgmp_last_tick_timestamp_seconds" &&
+                !readings.has(r.metric),
+            )
+            .map((r) => r.metric),
+        ),
+      ].sort();
 
   const body: PreviewResponse = {
     posture: overallPosture(evaluations),
@@ -169,4 +228,30 @@ export async function GET(req: NextRequest) {
     // because it says the problem has stopped.
     headers: { "cache-control": "no-store" },
   });
+}
+
+/**
+ * Build a reading map for a scenario.
+ *
+ * Renders to exposition text and re-parses it, rather than hand-building a map.
+ * That is deliberate: it exercises the SAME parser the live path uses, so a
+ * scenario cannot appear to work because it bypassed the absent-versus-zero
+ * logic that the live path depends on.
+ */
+function readingsForScenario(
+  scenario: Scenario,
+  nowMs: number,
+): Map<string, MetricReading> {
+  const lines: string[] = [];
+  for (const [key, value] of Object.entries(scenario.values)) {
+    if (key.endsWith("_offset")) continue; // handled below as a timestamp
+    lines.push(`${key} ${value}`);
+  }
+  // The offset key stands in for an absolute tick timestamp, so the same
+  // tickAgeSeconds derivation runs and the age is what the rule compares.
+  for (const [key, value] of Object.entries(scenario.values)) {
+    if (!key.endsWith("_offset")) continue;
+    lines.push(`fgmp_last_tick_timestamp_seconds ${nowMs / 1000 - value}`);
+  }
+  return parseExposition(lines.join("\n"));
 }
