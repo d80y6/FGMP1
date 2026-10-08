@@ -2,6 +2,7 @@ import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
+import { hasMfaEnabled } from "./fgmp/mfa/service";
 import {
   findUserByEmail,
   findUserIdentity,
@@ -84,8 +85,15 @@ export interface SessionUser {
   id: string;
   name: string;
   email: string;
-  role: string;
-  tenantId: string;
+  /**
+   * Optional because a PENDING session has none. It is not "" and not
+   * "PENDING": an absent key is falsy, so every existing
+   * `user.role === X` check already denies it without auditing 80 call sites.
+   */
+  role?: string;
+  tenantId?: string;
+  /** TRUE when the password verified but the second factor has not. */
+  mfaPending?: boolean;
 }
 
 // ── NextAuth type augmentation ──────────────────────────────────────────────
@@ -96,6 +104,8 @@ declare module "next-auth" {
     id: string;
     role?: string;
     tenantId?: string;
+    /** Set by authorize() when MFA is enabled and still outstanding. */
+    mfaPending?: boolean;
   }
   interface Session {
     user: SessionUser;
@@ -277,6 +287,39 @@ export const authOptions: NextAuthOptions = {
           lockedUntil: null,
         });
 
+        // ── MFA gate ────────────────────────────────────────────────────────
+        // A user with an enabled factor does NOT get a normal session. They get
+        // a PENDING session, which the guard in src/lib/fgmp/mfa/guard.ts
+        // refuses on every protected route except /api/fgmp/mfa/* and
+        // /api/auth/*.
+        //
+        // ── WHY role IS OMITTED, NOT MERELY FLAGGED ──────────────────────────
+        // If mfaPending were set while role stayed "ADMIN", every capability
+        // check that runs BEFORE the MFA guard would pass. The result is the
+        // exact failure mode the allowlist exists to prevent: a control that
+        // protects the dashboard but not /api/fgmp/generators/[id]/control.
+        //
+        // So a pending session carries NO role and NO tenantId at all. Defence
+        // in depth: the guard refuses by path, and a pending session also has
+        // nothing to be authorised WITH. An attacker who skips the guard still
+        // finds no capability.
+        //
+        // Absent role/tenantId rather than a sentinel value like "" or
+        // "PENDING" — a missing key is falsy, so every `user.role === X` and
+        // `hasRole(user, X)` check already in the codebase denies it, with no
+        // audit of those 80-odd call sites required.
+        const mfaEnabled = user.tenantId ? await hasMfaEnabled(user.tenantId, user.id) : false;
+
+        if (mfaEnabled) {
+          return {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            // Intentionally NO role, NO tenantId. See above.
+            mfaPending: true,
+          };
+        }
+
         return {
           id: user.id,
           name: user.name,
@@ -294,6 +337,10 @@ export const authOptions: NextAuthOptions = {
         token.id = user.id;
         token.role = user.role;
         token.tenantId = user.tenantId;
+        // Carried on the SIGNED token so the pending state survives a reload
+        // and is re-evaluated server-side on every request rather than trusted
+        // from client storage.
+        token.mfaPending = user.mfaPending === true;
       }
       // Session update (`useSession().update()` in AppShell, after a role
       // switch via PATCH /api/fgmp/me): re-read role + tenant from the DB.
@@ -307,6 +354,22 @@ export const authOptions: NextAuthOptions = {
       // server-derived: PATCH /api/fgmp/me is what authorizes the change, and
       // it rejects self-promotion to SUPERADMIN.
       if (trigger === "update" && token.id) {
+        // ── A PENDING SESSION MUST NOT BE UPGRADED HERE ─────────────────────
+        // This branch re-reads role and tenantId from the database. For a
+        // pending session that would be a privilege ESCALATION: the login
+        // deliberately withheld them, and `useSession().update()` — which any
+        // client can call — would hand them straight back.
+        //
+        // So the pending state is sticky. Completing the MFA challenge issues a
+        // NEW session (re-authentication), which is what clears the flag; nothing
+        // a pending client can send may clear it.
+        if (token.mfaPending) {
+          // Deliberately does NOT read role/tenantId back. Keep them absent.
+          delete token.role;
+          delete token.tenantId;
+          return token;
+        }
+
         // tenantId comes from the SIGNED token, never from client input, so
         // scoping by it is safe: a forged value would fail the token
         // signature before reaching this line.
@@ -325,8 +388,20 @@ export const authOptions: NextAuthOptions = {
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id ?? "";
-        session.user.role = token.role ?? "READONLY";
-        session.user.tenantId = token.tenantId ?? "";
+        // Exposed so the login UI can know a second factor is required. Without
+        // it the operator sees a successful login and no prompt.
+        session.user.mfaPending = token.mfaPending === true;
+
+        if (token.mfaPending) {
+          // Defence in depth: the guard already refuses these paths, but a
+          // pending session should not PRESENT a capability either. Anything
+          // reading the session (a component deciding what to render) sees none.
+          delete session.user.role;
+          delete session.user.tenantId;
+        } else {
+          session.user.role = token.role ?? "READONLY";
+          session.user.tenantId = token.tenantId ?? "";
+        }
       }
       return session;
     },

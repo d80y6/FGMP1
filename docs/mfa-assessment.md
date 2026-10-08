@@ -249,9 +249,62 @@ RLS fixtures | `scripts/rls-regression.ts` | 39/39 tables covered |
 3. **Status route.** No `GET /api/fgmp/mfa/status` for the UI to read enrolment
    state; the routes exist but nothing lists whether MFA is on.
 
-## The honest one-line status
+## Status: ENFORCED
 
-**MFA is implemented and verified but NOT YET ENFORCED.** The primitives, the
-persistence, the guard and the routes are real and tested; the single line that
-sets `mfaPending` during login is missing, so an operator with MFA enrolled is
-not yet asked for a code. Do not treat this as a shipped security control.
+**MFA is enforced at login as of the login-flow commit.** `authorize()` returns a
+PENDING session for an enrolled user, the guard refuses every protected route, and
+completing the challenge issues a new, fully authoritative session.
+
+The test that proves it: `src/lib/fgmp/mfa/mfa-login-flow.test.ts`
+(13 tests / 42 assertions, mutation-confirmed).
+
+### The three traps, and how each is closed
+
+**1. A pending session must carry no capabilities.** If `mfaPending` were set
+while `role` stayed `ADMIN`, every capability check running BEFORE the guard
+would pass — the exact "protects the dashboard but not the control endpoint"
+failure the allowlist exists to prevent.
+
+So `authorize()` returns the user with **no `role` and no `tenantId` at all** —
+absent keys, not empty strings or a sentinel like `"PENDING"`. An absent key is
+falsy, so the ~80 existing `user.role === X` checks already deny it without
+auditing any of them. Defence in depth: the guard refuses by path, and a pending
+session also has nothing to be authorised WITH.
+
+**2. A pending session could otherwise escalate via `useSession().update()`.**
+The jwt callback's `trigger === "update"` branch re-reads role from the database
+— which would hand straight back exactly what the login deliberately withheld,
+to any client that calls `update()`.
+
+The pending state is therefore **sticky**: that branch returns early for a
+pending token and never reads role/tenant back. Only re-authentication after a
+successful challenge (which mints a NEW session) clears the flag. Verified by
+mutation: removing this guard fails the suite.
+
+**3. It must be observable.** The session callback exposes `mfaPending` so the
+login UI can prompt. A flag nobody can read from the client means the operator
+sees a successful login and no prompt — which is the worst outcome, because it
+looks like it worked.
+
+### Still not built
+
+- **UI.** Enrolment, challenge and recovery screens (`src/components/**` is
+  another agent's scope). The API is complete and the session flag is exposed,
+  so the client work is mechanical.
+- **`GET /api/fgmp/mfa/status`** so the UI can read current enrolment state and
+  backup-code count without guessing.
+
+Neither blocks enforcement: an operator cannot be silently unprotected, because
+`enabled` only becomes true after `verify-enrol` succeeds.
+
+### Verified
+
+| Claim | Evidence |
+|---|---|
+TOTP correctness | 6 RFC 6238 Appendix B vectors, fetched from the RFC |
+Pending carries no capability | `mfa-login-flow.test.ts`, mutation-confirmed |
+Cannot escalate via `update()` | mutation-confirmed |
+Pending refuses every protected route | route-file enumeration, >20 asserted |
+Loop closes (pending → completed) | both directions asserted |
+Off costs nothing | non-enrolled user never blocked on any route |
+RLS on all 4 MFA tables | `rls=true force=true`, 39/39 tables covered |
