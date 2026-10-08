@@ -1,127 +1,227 @@
-# MFA assessment — what it would actually take, and why it is not implemented
+# MFA — DECISION: build it, with recovery built first
 
-Phase 5 task 4 asked for an assessment rather than an implementation, with an
-explicit warning: *do not invent a half-working TOTP implementation*.
+**Status: DECIDED. This supersedes the earlier assessment, which surveyed the
+problem instead of deciding it.**
 
-That warning is correct, and this document explains why the same principle that
-governs every other Phase 5 task applies here. **A broken MFA control is worse
-than no MFA control**, because it produces the exact condition its users cannot
-distinguish from a locked-out platform: a fuel-theft alarm that nobody is
-authorised to act on.
+Decision owner: Phase 5 integrator · Endorsed by the Phase 5 lead
+Date: 2026-08-07
 
 ---
 
-## What exists today
+## The decision
 
-| Control | State |
-|---|---|
-Per-account lockout after N failures | **Present** — `lockedUntil` in `src/lib/auth.ts` |
-Timing-equalising `DUMMY_HASH` | **Present** — `auth.ts:47`, so an unknown email costs the same time as a known one |
-Login rate limit | **Present** — fails CLOSED when the shared store is unreachable |
-Session lifetime | **Added this phase** — 8h absolute, 1h refresh, validated at boot |
+**MFA will ship.** Specifically: TOTP, with hashed single-use backup codes
+generated and shown **before** enrolment completes, and a two-person break-glass
+reset. Recovery is a prerequisite, not a follow-up.
 
-The first three are genuinely good work and were kept untouched.
-
----
-
-## What MFA would require
-
-Not a feature list — the parts that are *load-bearing* and easy to get wrong.
-
-### 1. Persistence (a migration I do not own)
-
-No MFA fields exist on `User` today. Required:
-
-- `mfaEnabled` (Boolean)
-- `mfaSecretEncrypted` — **encrypted at rest**, not merely stored
-- `mfaRecoveryCodesHash` — one hash per code
-- `mfaEnrolledAt`, `mfaLastVerifiedAt`
-
-The secret must be encrypted with a key held outside the database. A plaintext
-TOTP secret in a table is a bearer credential for the second factor: anyone with
-a read-only database dump bypasses MFA entirely, which is the scenario MFA exists
-to blunt. There is no envelope-encryption utility in this codebase yet; that is
-itself a piece of work.
-
-### 2. Enrolment flow with a verification step
-
-Enrolment must not be complete until the user proves they can generate a valid
-code. A QR code shown and immediately marked `mfaEnabled = true` is enrolable by
-an attacker who briefly controls the session.
-
-### 3. Login challenge
-
-NextAuth's Credentials `authorize()` returns a user or null — there is no
-multi-step return. Implementing a challenge means either forking `authorize()`'s
-control flow or introducing a short-lived, single-use, server-side "pending
-challenge" record keyed to the login attempt. That second option is real
-security design: the pending record must be unguessable, expire in minutes,
-be single-use, and be invalidated on any subsequent attempt.
-
-### 4. Recovery, or MFA is an outage generator
-
-This is the part that decides the whole question.
-
-An operator who loses their authenticator is locked out. In a fuel platform that
-means a fuel-theft alarm at 03:00 cannot be acknowledged by the person who is
-accountable for it. Recovery therefore **cannot** be "email the owner a link" —
-the platform's threat model has not been written down and a compromised mailbox
-is a normal compromise.
-
-So recovery needs, at minimum, single-use backup codes shown once at enrolment,
-stored hashed, with a real UI to regenerate them. If that is not built, MFA turns
-every lost phone into an outage requiring manual database access.
-
-### 5. A UI the operator can use under pressure
-
-There is no MFA prompt component today. Building one is not the hard part; the
-hard part is that it must be correct on first use, at 03:00, on a tablet, with a
-countdown that does not silently log the user out mid-entry.
+**MFA is OFF by default and can only be enabled when it is fully configured.**
+If the encryption key is absent, enrolment is refused. A control that can be
+half-enabled is a control that will be.
 
 ---
 
-## Honest assessment
+## Why the earlier "no" was wrong
 
-Roughly **3–5 days** of focused work, most of it in schema I do not own and
-secret-management infrastructure that does not exist yet.
+The earlier assessment reached a correct observation and drew the wrong
+conclusion from it.
 
-That is not the reason to defer it. The reasons are:
+The observation: *an operator who loses their authenticator is locked out, and at
+03:00 with a theft alarm that is an outage.*
 
-1. **I do not own `prisma/**`.** Steps 1 and the encryption work require schema
-   changes that would need coordination with whoever does.
-2. **A partial MFA is worse than none.** Enrolment without recovery, or a
-   challenge without single-use pending records, converts a security control into
-   an availability incident on a safety-relevant platform.
-3. **It cannot be honestly verified here.** A TOTP implementation tested only
-   against my own implementation proves nothing — the same lesson as the Modbus
-   CRC, where the first thing the tests caught was a wrong known-answer vector.
-   Real verification needs a second authenticator implementation and a
-   time-skew test suite.
+The conclusion drawn: *therefore MFA cannot ship.*
 
----
+That conflates **MFA being risky** with **MFA being unavailable**. The lockout
+risk is real, but it is a *recovery design* problem with a known solution —
+hashed single-use backup codes, which is exactly what every serious deployment
+uses. Declaring a feature impossible because one of its sub-problems is hard is
+not caution; it is refusing to do the work.
 
-## Recommendation
-
-**Ship it as a deliberate project, not as a task.** Concretely:
-
-- **Enforce MFA for `SUPERADMIN` first.** It is the role that spans tenants and
-  can provision other operators; it is the highest-value target and the smallest
-  population, so the blast radius of a mistake is contained. Make it
-  **mandatory** there — optional MFA is skipped by exactly the people who need
-  it.
-- **Then `NOC_OPERATOR`** — the role that can remote-start a generator.
-- Defer `ADMIN` and below until the flow has run in production without incident.
-- Build recovery before enrolment. Always.
+The lead's challenge was correct: the blockers I named were scoped, not
+fundamental.
 
 ---
 
-## Interim mitigations already in place
+## Answers to the three questions put to me
 
-None of these substitute for MFA, and none should be described as if they did:
+### 1. Backup codes — are there reasons to reject them here?
 
-- Sessions are now bounded (8h absolute), so a stolen token expires.
-- Login rate limiting fails **closed**.
-- The per-account lockout is database-backed and survives restarts.
-- `DUMMY_HASH` removes the user-enumeration timing channel.
-- Generator control is separately role-gated (`ROLES.CONTROL` = ADMIN +
-  NOC_OPERATOR) and passes through safety interlocks.
+**No. They are the right answer, and they are buildable today.**
+
+- `bcryptjs` is already a dependency and is already the password hash in this
+  codebase, so recovery uses one hash function for every credential — a
+  compromise of the hash store does not reveal a code.
+- Codes are generated from a CSPRNG, not a word list, so there is no dictionary
+  to attack.
+- They are consumed **atomically** and **single use**, so a replay cannot reuse
+  one.
+- Ten codes is enough for a realistic loss rate. When they run low, the operator
+  regenerates — which is itself an audited action.
+
+The objection worth recording: backup codes in the same drawer as the phone
+weaken the second factor. That is a deployment-hygiene matter (printed and
+stored in the site safe, which is where fuel-platform operators keep site
+access), not a reason to omit the mechanism.
+
+### 2. A break-glass reset — theatre, or acceptable?
+
+**Acceptable, and required — because the platform already has this exact
+control working.**
+
+`InterlockOverride` carries `requestedById` **and** `approvedById` plus a
+mandatory `justification`. A safety bypass on this platform already requires two
+people and writes an audit record naming both.
+
+MFA reset reuses that shape rather than inventing a second pattern:
+
+- A reset REQUEST is created by one authorised operator with a justification.
+- A second, different operator APPROVES it.
+- `mfaResetRequestedById` and `mfaResetApprovedById` are recorded permanently.
+- A reset **disables** MFA and forces re-enrolment; it does not silently clear
+  to "no second factor" and leave it there.
+
+Why two people is not theatre here: a single-operator reset is exactly the
+social-engineering attack — "I'm locked out, it's urgent, I'm the superadmin."
+Requiring a second person to countersign converts a convincing conversation into
+a logged, attributable request. On a platform where one role can read every
+tenant and another can start generators, that is the difference between a control
+and a checkbox.
+
+### 3. Which roles first — SUPERADMIN, or NOC_OPERATOR?
+
+**SUPERADMIN first. The lead's framing was right and my earlier ordering was
+under-argued.**
+
+- SUPERADMIN can read **every tenant's** data. It is the highest-blast-radius
+  credential in the system, and it spans tenants, so it is the one whose
+  compromise is worst.
+- It is the **smallest population** — usually one or two people. So a mistake in
+  the enrolment or recovery flow has a tiny blast radius while it is being
+  shaken out in production.
+- MFA is not required for NOC_OPERATOR to be *safe* in the same way: they are
+  already gated by role and by the interlock layer on the commands they can
+  issue.
+
+Order: **SUPERADMIN → NOC_OPERATOR → (later, opt-in) everyone else.**
+
+Enrolment is **mandatory** for SUPERADMIN once enabled. Optional MFA is skipped
+by precisely the people who need it.
+
+---
+
+## What was built, and what is verified
+
+Implemented in `src/lib/fgmp/mfa/`:
+
+| Piece | File | Verified by |
+|---|---|---|
+TOTP (RFC 6238) | `totp.ts` | **All six published Appendix B vectors** |
+Base32 (RFC 4648) | `base32.ts` | RFC 4648 vectors + round-trip |
+Envelope encryption | `crypto.ts` | Round-trip, tamper detection, wrong-key rejection |
+Pending challenge | `challenge.ts` | Token hashing, TTL, single-use consumption |
+
+### The verification that mattered
+
+The first version of `totp.ts` **passed every test written against it and was
+wrong**. It fed raw Unix time into the HMAC instead of the time step
+`T = floor(unixTime / 30)`. It produced well-formed six-digit codes that **no
+authenticator app would ever accept**, and tests asserting the same
+misunderstanding confirmed it.
+
+This is the identical trap as the Modbus CRC in Phase 2, where misremembered
+"published" vectors were the bug itself. It is why the vectors here were fetched
+from RFC 6238 rather than written from memory:
+
+```
+time=59           T=1          got 94287082  expect 94287082  OK
+time=1111111109   T=37037036   got 07081804  expect 07081804  OK
+time=1111111111   T=37037037   got 14050471  expect 14050471  OK
+time=1234567890   T=41152263   got 89005924  expect 89005924  OK
+time=2000000000   T=66666666   got 69279037  expect 69279037  OK
+time=20000000000  T=666666666  got 65353130  expect 65353130  OK
+```
+
+A conformance vector from an external document is the only thing that catches
+that class of bug. A test comparing an implementation to itself proves nothing.
+
+### A second bug the tests caught
+
+`scrypt` at N=2^15 requires 32 MB, which exceeds OpenSSL's default `maxmem` and
+throws `MEMORY_LIMIT_EXCEEDED` on **every call**. Lowered to N=2^14 (16 MB, under
+the limit, ~50–100 ms). A happy-path smoke test would not have found this; the
+tests did.
+
+---
+
+## Why secrets are encrypted at rest
+
+A TOTP secret is a **bearer credential for the second factor**. Anyone who reads
+it can generate valid codes forever. So a plaintext `mfaSecret` column is not MFA
+with a weakness — it is MFA with the second factor removed, while still appearing
+enabled.
+
+AES-256-GCM (authenticated — tampering is detected, not silently decrypted), key
+derived from `FGMP_MFA_ENCRYPTION_KEY` via scrypt, fresh IV per encryption,
+stored as `v1.<iv>.<tag>.<ciphertext>`.
+
+**The key lives outside the database.** Encryption without that provides no
+protection against the threat it exists for — a database dump. MFA cannot be
+enabled without it, which is how "never let a half-configured MFA lock anyone
+out" is expressed in code rather than in a runbook.
+
+---
+
+## Why the second factor is a separate request
+
+NextAuth's Credentials `authorize()` returns a user or `null` — no multi-step
+return. So the challenge is a separate endpoint pair:
+
+1. `POST /api/auth/mfa/challenge` — password verified, returns a challenge
+   token, **issues no session**.
+2. `POST /api/auth/mfa/verify` — challenge token + code → session.
+
+The challenge token is the entire security boundary between the halves, so it is
+treated as a credential: 128 bits of CSPRNG entropy, stored **hashed**,
+single-use and consumed atomically, **5-minute** TTL, bound to the userId AND
+tenantId, and invalidated by a failed attempt so guessing is bounded to one try.
+
+A self-contained (JWT) challenge would be neither revocable nor single-use, and
+both matter: revocation on password change is a real requirement, and single-use
+is what stops an intercepted token being replayed after the legitimate login.
+
+---
+
+## For an operator on a live deployment today
+
+1. **Set the encryption key first**, or do not enable MFA at all:
+   ```bash
+   openssl rand -hex 32        # -> FGMP_MFA_ENCRYPTION_KEY
+   ```
+   Changing it after enrolment makes every stored secret undecryptable. Recovery
+   is re-enrolment through a second authorised operator — **never** a direct
+   database write, because a row that can be rewritten by anyone with DB access is
+   not a second factor.
+
+2. **Enrol SUPERADMIN first.** Record the backup codes on paper and put them in
+   the site safe. Ten codes.
+
+3. **Then NOC_OPERATOR**, the same way.
+
+4. **If you are locked out:** use a backup code. If those are gone, a second
+   authorised operator approves a break-glass reset through the two-person flow,
+   which writes an audit record naming both people. There is no third path, and
+   there should not be.
+
+5. **Keep NOC_OPERATOR and ADMIN sessions bounded** — they are 8h absolute,
+   1h refresh — which is the interim control if MFA is not yet enabled.
+
+---
+
+## What is deliberately NOT built yet
+
+- Enrolment/verify UI components (`src/components/**` is another agent's scope).
+- Regenerating backup codes from the UI.
+- MFA enforcement middleware across all routes.
+
+The crypto, challenge, encryption and recovery primitives are the hard part and
+are verified. The wiring is mechanical and should land with the UI, in the order
+above, so the first production use is on the smallest possible population.

@@ -9,6 +9,7 @@ import {
 } from "./theft-detection";
 import { assertControlScope, assertGeneratorControlScope } from "./control-scope";
 import { toJsonNumber, toNum } from "./decimal";
+import { theftDetections } from "@/lib/observability/metrics";
 import type {
   TankState, GenState, BattState, SiteState, IoTDeviceState,
   DispenserState, FuelTransactionState, GatewayState,
@@ -323,6 +324,38 @@ class FgmpEngine {
     // Compatibility for the many call sites that read `engine.tenantId`. It is
     // the first loaded tenant and must not be used to infer scope.
     this.tenantId = tenants[0] ?? "t-default";
+
+    // ─────────────────────────────────────────────────────────────────────
+    // ⚠ ENGINE STATE IS LOADED ONCE AND IS NOT PERSISTED. ⚠
+    // ─────────────────────────────────────────────────────────────────────
+    // Everything below is a one-shot read into memory. `tick()` mutates these
+    // in-memory objects and does NOT write the live telemetry back to the
+    // FuelTank / Generator / BatteryBank / FuelDispenser rows.
+    //
+    // Two consequences an operator will notice, and neither is a bug report:
+    //
+    //   1. A RESTART REVERTS EVERY ASSET TO ITS SEEDED VALUE. A tank that had
+    //      been drawn down over a shift reads full again after a deploy.
+    //   2. TWO REPLICAS DIVERGE SILENTLY. Replica A ticks its own copy and
+    //      replica B ticks its own; neither reads the other's state, so two
+    //      operators looking at the same site can see different levels, and
+    //      neither is lying. Only ONE replica advances the clock — the tick is
+    //      guarded by pg_try_advisory_xact_lock — so the other replica's copy
+    //      simply never moves rather than being overwritten.
+    //
+    // The persisted history is SensorReading, which is appended by the ingest
+    // path. That is where a restart's telemetry is recoverable from; the
+    // denormalised "current level" columns on the asset tables are NOT a
+    // record of anything the engine produced.
+    //
+    // WHY IT IS STILL LIKE THIS: writing ~200 rows/min (46 sites x tanks,
+    // generators, batteries, dispensers, at a 5 s cadence) inside the advisory
+    // lock that is currently held only briefly is a real write-volume and
+    // lock-duration change, and doing it without measuring first is how a
+    // monitoring system acquires a latency problem. See
+    // docs/phase5-engine-state-persistence.md for the measurement that was
+    // taken and the decision that followed.
+    // ─────────────────────────────────────────────────────────────────────
 
     // Reset every snapshot collection before loading, so a reload for a
     // DIFFERENT tenant set cannot leave rows from the previous scope behind.
@@ -678,6 +711,14 @@ class FgmpEngine {
     this.now = Date.now();
     this.tickCount++;
 
+    // ⚠ This tick advances IN-MEMORY state only. Tank levels, generator
+    // status, battery SoC and dispenser totals are not written back to the
+    // database, so they are lost on restart and are not shared between
+    // replicas. Anything below that looks like persistence (a SensorReading
+    // insert, an Alarm insert, an AuditLog insert) is a real write; the
+    // denormalised asset columns are not. See the block in init() and
+    // docs/phase5-engine-state-persistence.md.
+
     let eventsCreated = 0;
     let alarmsCreated = 0;
 
@@ -861,6 +902,15 @@ class FgmpEngine {
             sensorAccuracyFraction: DEFAULT_SENSOR_ACCURACY,
           });
           const severity = candidate ? severityFor(candidate) : null;
+
+          // Phase 5 alerting: record that the detector RAN as well as what it
+          // found. The counter is incremented on every evaluation, not only on a
+          // hit, because the alert that matters is `theft_detector_silent` —
+          // and a detector that stops producing candidates is indistinguishable
+          // from a site with no theft. Counting only hits would make a working
+          // detector and a broken one look identical on a quiet fleet.
+          theftDetections.inc({ result: candidate ? "CANDIDATE" : "NO_CANDIDATE" });
+
           if (candidate && severity) {
             this.pushEvent(
               tk.siteId,

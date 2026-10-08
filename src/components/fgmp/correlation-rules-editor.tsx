@@ -41,6 +41,7 @@ import {
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
+import { ConfirmDestructive } from "@/components/fgmp/confirm-destructive";
 import { cn } from "@/lib/utils";
 import { useFgmp } from "@/lib/fgmp/store";
 import {
@@ -519,6 +520,8 @@ function EditorTab({ rules }: { rules: CorrelationRule[] }) {
   const { canEdit } = useRulePermissions();
   const addRule = useCorrelationRules((s) => s.addRule);
   const hydrate = useCorrelationRules((s) => s.hydrate);
+  // Phase 5 task 4 — confirm dialog for the reset action.
+  const [resetOpen, setResetOpen] = useState(false);
 
   const sorted = useMemo(() => {
     return [...rules].sort((a, b) => {
@@ -546,14 +549,13 @@ function EditorTab({ rules }: { rules: CorrelationRule[] }) {
   // replace, and DEFAULT_RULES was a browser-only concept the evaluator never
   // saw — so "reset" planted rules that could never fire. It now re-reads the
   // tenant's real rules from the API.
-  const handleReset = () => {
-    if (!window.confirm(t("rules.resetConfirm"))) {
-      return;
-    }
+  // Phase 5 task 4 — gated by ConfirmDestructive instead of window.confirm.
+  const performReset = () => {
     void hydrate();
     toast.success(t("rules.resetToast"), {
       description: t("rules.resetToastDesc"),
     });
+    setResetOpen(false);
   };
 
   if (!canEdit) {
@@ -582,7 +584,7 @@ function EditorTab({ rules }: { rules: CorrelationRule[] }) {
           <Plus className="mr-1.5 h-3.5 w-3.5" />
           {t("rules.addRule")}
         </Button>
-        <Button size="sm" variant="outline" onClick={handleReset}>
+        <Button size="sm" variant="outline" onClick={() => setResetOpen(true)}>
           <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
           {t("rules.resetToDefaults")}
         </Button>

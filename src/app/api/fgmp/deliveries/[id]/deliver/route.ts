@@ -12,6 +12,7 @@ import {
 import { errorResponse, ApiError } from "@/lib/fgmp/api-error";
 import { requireRole, ROLES, assertSiteTenantOwned } from "@/lib/fgmp/auth-helpers";
 import { realtime } from "@/lib/fgmp/realtime-emitter";
+import { decimalsToJson } from "@/lib/fgmp/decimal";
 
 export const dynamic = "force-dynamic";
 
@@ -175,7 +176,10 @@ export async function POST(
       /* best-effort — polling fallback covers freshness */
     }
 
-    const res = NextResponse.json(updated);
+    // Phase 5: `updated` is the raw FuelDelivery row, so its volume and unit
+    // price columns are Decimal(12,3). decimalsToJson keeps them numbers on
+    // the wire; without it a client that sums them string-concatenates.
+    const res = NextResponse.json(decimalsToJson(updated));
     applyRateLimitHeaders(res.headers, rl);
     return res;
   } catch (err) {

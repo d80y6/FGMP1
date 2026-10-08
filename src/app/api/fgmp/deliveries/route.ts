@@ -14,6 +14,7 @@ import {
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse, ApiError } from "@/lib/fgmp/api-error";
 import { requireAuth, requireRole, ROLES, assertSiteTenantOwned, siteTenantWhereOrAll } from "@/lib/fgmp/auth-helpers";
+import { decimalsToJson } from "@/lib/fgmp/decimal";
 
 export const dynamic = "force-dynamic";
 
@@ -69,7 +70,12 @@ export async function GET(req: NextRequest) {
         include: { site: { select: { name: true, code: true } }, tank: { select: { label: true } } },
       }),
     );
-    const res = NextResponse.json(deliveries);
+    // Phase 5: volumeOrderedLitres / volumeDeliveredLitres / unitPrice are
+    // Decimal(12,3). Without decimalsToJson the client receives them as JSON
+    // STRINGS, and `fuel-delivery-tracking.tsx` sums them into a number
+    // bucket — which string-concatenates instead of adding. Reproduced:
+    // two 1500.5 L deliveries rendered as "01500.51500.5" rather than 3001.
+    const res = NextResponse.json(decimalsToJson(deliveries));
     applyRateLimitHeaders(res.headers, rl);
     return res;
   } catch (err) {
@@ -169,7 +175,7 @@ export async function POST(req: NextRequest) {
         entityId: data.deliveryId,
         details: { volumeDelivered: data.volumeDelivered, previousStatus: outcome.previousStatus },
       });
-      const res = NextResponse.json(outcome.updated);
+      const res = NextResponse.json(decimalsToJson(outcome.updated));
       applyRateLimitHeaders(res.headers, rl);
       return res;
     }
@@ -216,7 +222,7 @@ export async function POST(req: NextRequest) {
         entityId: data.deliveryId,
         details: { previousStatus: outcome.previousStatus },
       });
-      const res = NextResponse.json(outcome.updated);
+      const res = NextResponse.json(decimalsToJson(outcome.updated));
       applyRateLimitHeaders(res.headers, rl);
       return res;
     }
@@ -265,7 +271,7 @@ export async function POST(req: NextRequest) {
       entityId: created.id,
       details: { siteId: data.siteId, tankId: data.tankId, volumeOrderedLitres: data.volumeOrderedLitres },
     });
-    const res = NextResponse.json(created);
+    const res = NextResponse.json(decimalsToJson(created));
     applyRateLimitHeaders(res.headers, rl);
     return res;
   } catch (err) {

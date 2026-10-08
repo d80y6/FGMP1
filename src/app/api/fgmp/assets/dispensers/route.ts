@@ -10,6 +10,7 @@ import {
   MUTATION_LIMIT,
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
+import { decimalsToJson } from "@/lib/fgmp/decimal";
 
 export const dynamic = "force-dynamic";
 
@@ -153,7 +154,9 @@ export async function POST(req: NextRequest) {
       /* best-effort */
     }
 
-    const res = NextResponse.json(dispenser, { status: 201 });
+        // Phase 5: raw Prisma row — the volume columns are Decimal(12,3), so
+    // decimalsToJson keeps them numbers on the wire instead of JSON strings.
+    const res = NextResponse.json(decimalsToJson(dispenser), { status: 201 });
     applyRateLimitHeaders(res.headers, rl);
     return res;
   } catch (err) {

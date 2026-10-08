@@ -274,6 +274,25 @@ export const interlockEvaluations = registry.counter(
   "Interlock evaluations performed.",
 );
 
+// ── Fuel theft ───────────────────────────────────────────────────────────────
+/**
+ * Unexplained-loss candidates the theft detector has produced.
+ *
+ * Added with Phase 5 alerting, and the metric the `theft_detector_silent` rule
+ * depends on. Without it the platform cannot distinguish a detector that has
+ * stopped working from a site with no theft — both read as zero, and the second
+ * reading is the dangerous one on a platform whose purpose is fuel-theft
+ * detection.
+ *
+ * A counter on purpose: "no detections in six hours" is only meaningful if the
+ * detector demonstrably RAN during those six hours, which the alert rules
+ * establish by also requiring the ingest metric to be live.
+ */
+export const theftDetections = registry.counter(
+  "fgmp_theft_detections_total",
+  "Unexplained-loss candidates produced by the fuel-theft detector. Zero is only meaningful alongside evidence that the detector ran.",
+);
+
 // ── Notifications ────────────────────────────────────────────────────────────
 export const notificationOutcomes = registry.counter(
   "fgmp_notification_outcomes_total",
