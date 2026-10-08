@@ -34,6 +34,25 @@ COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 COPY --from=builder /app/node_modules/@prisma/engines ./node_modules/@prisma/engines
+# `prisma migrate deploy` is driven through @prisma/config, which has its own
+# dependency closure. Copying node_modules/prisma alone is NOT sufficient: the
+# CLI dies at import time with
+#     error: Cannot find package 'effect' from '@prisma/config/dist/index.js'
+# which was found by actually booting the image, not by reading this file.
+#
+# Rather than hand-enumerate packages (which silently rots every time Prisma
+# changes its graph), copy the closure the CLI genuinely resolves. Verified:
+# 9 packages resolve with nothing further missing.
+#
+# The alternative — copying all 1.3 GB of node_modules — would work but would
+# push the image well past its current ~212 MB for no benefit.
+COPY --from=builder /app/node_modules/@prisma/config ./node_modules/@prisma/config
+COPY --from=builder /app/node_modules/effect ./node_modules/effect
+COPY --from=builder /app/node_modules/fast-check ./node_modules/fast-check
+COPY --from=builder /app/node_modules/@standard-schema ./node_modules/@standard-schema
+COPY --from=builder /app/node_modules/c12 ./node_modules/c12
+COPY --from=builder /app/node_modules/deepmerge-ts ./node_modules/deepmerge-ts
+COPY --from=builder /app/node_modules/empathic ./node_modules/empathic
 # Entrypoint: applies pending migrations, then execs the standalone server.
 COPY --from=builder /app/scripts/docker-entrypoint.mjs ./scripts/docker-entrypoint.mjs
 # Schema preflight used when FGMP_SKIP_MIGRATE=1, so a mis-ordered deploy fails
