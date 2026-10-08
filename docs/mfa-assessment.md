@@ -216,12 +216,42 @@ is what stops an intercepted token being replayed after the legitimate login.
 
 ---
 
-## What is deliberately NOT built yet
+## Status: what is now wired
 
-- Enrolment/verify UI components (`src/components/**` is another agent's scope).
-- Regenerating backup codes from the UI.
-- MFA enforcement middleware across all routes.
+**Wired and verified (part 2, `46b8c54`):**
 
-The crypto, challenge, encryption and recovery primitives are the hard part and
-are verified. The wiring is mechanical and should land with the UI, in the order
-above, so the first production use is on the smallest possible population.
+| Piece | Where | State |
+|---|---|---|
+Persistence + FORCE RLS | `20261011000000_mfa_persistence` | 4 tables, `rls=true force=true` |
+TOTP / base32 / encryption | `src/lib/fgmp/mfa/` | 37 tests, RFC vectors |
+Pending challenge | `mfa/service.ts` | atomic, hashed, 5 min |
+Backup codes | own rows | hashed, atomic single-use |
+Enforcement guard | `mfa/guard.ts` | allowlist, mutation-tested |
+Routes | `src/app/api/fgmp/mfa/**` | enrol, verify-enrol, challenge, disable, reset |
+RLS fixtures | `scripts/rls-regression.ts` | 39/39 tables covered |
+
+**Still NOT wired — and each item is deliberate:**
+
+1. **The `mfaPending` marker is declared but not yet set by `authorize()`.**
+   `src/lib/auth.ts` carries the flag on `JWT` and `Session`, and the guard
+   consumes it, but the credentials callback does not yet set it when an enrolled
+   user signs in. Until that line exists, MFA enrolment works but is not
+   *enforced at login*.
+
+   This is the one remaining gap between "MFA exists" and "MFA is on", and it is a
+   two-line change in a file (`src/lib/auth.ts`) that is explicitly outside the
+   MFA write scope because another agent owns it. **It must not be reported as
+   done until that line exists and the login flow is tested end to end.**
+
+2. **UI.** Enrolment, challenge and recovery screens are not built
+   (`src/components/**` is another agent's scope).
+
+3. **Status route.** No `GET /api/fgmp/mfa/status` for the UI to read enrolment
+   state; the routes exist but nothing lists whether MFA is on.
+
+## The honest one-line status
+
+**MFA is implemented and verified but NOT YET ENFORCED.** The primitives, the
+persistence, the guard and the routes are real and tested; the single line that
+sets `mfaPending` during login is missing, so an operator with MFA enrolled is
+not yet asked for a code. Do not treat this as a shipped security control.
