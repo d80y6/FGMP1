@@ -10,6 +10,7 @@ import {
   applyRateLimitHeaders,
   IOT_LIMIT,
 } from "@/lib/fgmp/rate-limit";
+import { resolveReadingTs } from "@/lib/fgmp/ingest-ts";
 import {
   DeviceWatermarkStore,
   parseReadingTs,
@@ -323,7 +324,27 @@ export async function POST(req: NextRequest) {
   // needs a schema migration that is out of this change's scope, so uplink
   // delay is reported in the response instead — an operator debugging a
   // delayed link needs it, and it does not require a column to observe.
-  const readingDate = new Date(deviceTs ?? nowMs);
+  // ── The ts contract ───────────────────────────────────────────────────────
+  // `ts` is the identity of the measurement, and UNIQUE(entityId, metric, ts) is
+  // the replay guarantee. Defaulting an absent `ts` to server time invented an
+  // identity: a retry then landed on a different timestamp, missed the
+  // constraint, and was accepted as new data — duplicate readings, silently,
+  // forever.
+  //
+  // resolveReadingTs() marks instead: an undated reading is stored with tsSource
+  // = SERVER and the dedup guarantee is explicitly NOT claimed for it. See
+  // src/lib/fgmp/ingest-ts.ts for the decision and its provenance (INFERRED).
+  const tsDecision = resolveReadingTs({ deviceTs, nowMs });
+  if (!tsDecision.ok) {
+    const res = NextResponse.json(
+      { error: tsDecision.error, code: tsDecision.code },
+      { status: tsDecision.status },
+    );
+    applyRateLimitHeaders(res.headers, rl);
+    return res;
+  }
+  const readingDate = tsDecision.readingTs;
+  const tsSource = tsDecision.source;
   const receivedDate = new Date(nowMs);
 
   // ── Apply to in-memory engine + persist SensorReading rows ────────────
@@ -349,6 +370,7 @@ export async function POST(req: NextRequest) {
             metric: "FUEL_LEVEL",
             value: tank.current,
             ts: readingDate,
+            tsSource,
           },
         }),
       );
@@ -390,6 +412,7 @@ export async function POST(req: NextRequest) {
             metric: "LOAD_KW",
             value: gen.loadKw,
             ts: readingDate,
+            tsSource,
           },
         }),
       );
@@ -427,6 +450,7 @@ export async function POST(req: NextRequest) {
             metric: "BATT_VOLTAGE",
             value: batt.voltage,
             ts: readingDate,
+            tsSource,
           },
         }),
       );
@@ -440,6 +464,7 @@ export async function POST(req: NextRequest) {
             metric: "BATT_SOC",
             value: batt.stateOfCharge,
             ts: readingDate,
+            tsSource,
           },
         }),
       );
@@ -466,6 +491,7 @@ export async function POST(req: NextRequest) {
               metric: "BATT_CELL_BALANCE_MV",
               value: readings.battCellBalanceMv!,
               ts: readingDate,
+              tsSource,
             },
           }),
         );
@@ -492,6 +518,7 @@ export async function POST(req: NextRequest) {
           metric: "TEMPERATURE",
           value: temp,
           ts: readingDate,
+          tsSource,
         },
       }),
     );

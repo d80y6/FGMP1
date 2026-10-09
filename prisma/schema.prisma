@@ -971,6 +971,17 @@ model SensorReading {
   metric      String
   value       Float
   ts          DateTime @default(now())
+  // WHERE THE IDENTITY OF THIS READING CAME FROM.
+  //
+  // `ts` is the identity of a measurement and UNIQUE(entityId, metric, ts) is
+  // the replay guarantee. A device that omits `ts` gets SERVER time, which is
+  // NOT the reading's identity — a retry then lands on a different timestamp and
+  // is accepted again. Recording the source makes that blind spot visible and
+  // measurable instead of silent, so a device replaying an unsynced clock buffer
+  // can be counted and alarmed on.
+  //
+  // The dedup guarantee is claimed ONLY where this is DEVICE.
+  tsSource    String   @default("DEVICE")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
 
