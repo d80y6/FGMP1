@@ -109,7 +109,7 @@ describe("staged rejection is available per site", () => {
 
   test("a device-stamped reading is accepted under EITHER policy", () => {
     // Rejecting must only ever affect undated readings, never a valid device.
-    for (const policy of [TS_POLICY.MARK, TS_POLICY.REJECT]) {
+    for (const policy of [TS_POLICY.DEFAULT, TS_POLICY.REJECT]) {
       expect(resolveReadingTs({ deviceTs: NOW - 1000, nowMs: NOW, policy }).ok).toBe(true);
     }
   });
