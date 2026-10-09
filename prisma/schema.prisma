@@ -962,6 +962,37 @@ model FuelTransaction {
 
 // metric: FUEL_LEVEL | GEN_TEMP | GEN_RUNTIME | BATT_VOLTAGE | BATT_SOC | LOAD_KW | FUEL_RATE
 // entityKind: TANK | GENERATOR | BATTERY | SITE
+// ─────────────────────────────────────────────────────────────────────────────
+// READ THIS BEFORE REGENERATING THIS MODEL. IT WILL REVERT THE HYPERTABLE.
+//
+// The database primary key for this table is (id, ts) on a server with the
+// TimescaleDB extension — see migration 20261012000000_sensor_reading_hypertable:
+//     ALTER TABLE "SensorReading"
+//       ADD CONSTRAINT "SensorReading_pkey" PRIMARY KEY ("id", "ts");
+//
+// `id @id` below does NOT contradict that; it is the honest declaration for a
+// PostgreSQL server WITHOUT the extension. Prisma cannot express a partition key
+// inside a composite primary key, so this schema can never record what the
+// migration actually did.
+//
+// That gap is a booby trap. `prisma migrate dev` diffs the schema against the
+// migration history, concludes the key should be ("id") alone, and emits:
+//
+//     DROP INDEX "SensorReading_ts_idx";
+//     ALTER TABLE "SensorReading" DROP CONSTRAINT "SensorReading_pkey",
+//       ADD CONSTRAINT "SensorReading_pkey" PRIMARY KEY ("id");
+//
+// On a TimescaleDB server that REVERTS the hypertable conversion. It does not
+// error — it succeeds, the table silently stops being a hypertable, and the
+// dedup guarantee changes shape underneath the ingest path. This fired once
+// while adding the `tsSource` column, and was caught only because the generated
+// SQL was read before applying it.
+//
+// SO: do not accept Prisma-generated SQL for this table. Add the column by hand
+// and leave the primary key alone. `hypertable-pk-invariant.test.ts` enforces
+// this — it reads the migration set and fails if any migration regresses the key
+// to a single column.
+// ─────────────────────────────────────────────────────────────────────────────
 model SensorReading {
   id          String   @id @default(cuid())
   siteId      String
