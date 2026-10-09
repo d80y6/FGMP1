@@ -1083,6 +1083,10 @@ async function purgeStaleFixtures(): Promise<void> {
     CorrelationRule: 'rule-%', CorrelationMatch: 'match-%',
     Rs485Bus: 'bus-%', Rs485BusDiagnostic: 'diag-%',
     Rs485LatencySample: 'lat-%',
+    // Children before parents, or the Tenant delete trips a foreign key.
+    MfaChallenge: 'mfac-%', MfaBackupCode: 'mfab-%',
+    MfaResetRequest: 'mfar-%', MfaEnrollment: 'mfae-%',
+    InterlockThreshold: 'thr-%',
   }
   for (const table of order) {
     const pattern = patterns[table]
