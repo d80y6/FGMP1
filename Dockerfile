@@ -10,6 +10,10 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN bun run db:generate
+# Compute the Prisma CLI's real dependency closure (see the script's header for
+# why this is derived rather than hand-written) and stage it for the runner.
+RUN bun ./scripts/collect-prisma-cli-deps.ts \
+ && test -s /tmp/prisma-cli-deps/packages.txt
 RUN bun run build
 
 # ---- Runner ----
@@ -34,25 +38,39 @@ COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 COPY --from=builder /app/node_modules/@prisma/engines ./node_modules/@prisma/engines
-# `prisma migrate deploy` is driven through @prisma/config, which has its own
-# dependency closure. Copying node_modules/prisma alone is NOT sufficient: the
-# CLI dies at import time with
-#     error: Cannot find package 'effect' from '@prisma/config/dist/index.js'
-# which was found by actually booting the image, not by reading this file.
+# `prisma migrate deploy` is driven through @prisma/config, which pulls in a
+# deep dependency closure of its own. Copying node_modules/prisma alone is NOT
+# sufficient — the CLI dies at import time. Both of these were found by BOOTING
+# the image, not by reading this file:
 #
-# Rather than hand-enumerate packages (which silently rots every time Prisma
-# changes its graph), copy the closure the CLI genuinely resolves. Verified:
-# 9 packages resolve with nothing further missing.
+#   error: Cannot find package 'effect'    from '@prisma/config/dist/index.js'
+#   error: Cannot find package 'pure-rand' from 'fast-check/lib/check/runner/…'
 #
-# The alternative — copying all 1.3 GB of node_modules — would work but would
-# push the image well past its current ~212 MB for no benefit.
-COPY --from=builder /app/node_modules/@prisma/config ./node_modules/@prisma/config
-COPY --from=builder /app/node_modules/effect ./node_modules/effect
-COPY --from=builder /app/node_modules/fast-check ./node_modules/fast-check
-COPY --from=builder /app/node_modules/@standard-schema ./node_modules/@standard-schema
-COPY --from=builder /app/node_modules/c12 ./node_modules/c12
-COPY --from=builder /app/node_modules/deepmerge-ts ./node_modules/deepmerge-ts
-COPY --from=builder /app/node_modules/empathic ./node_modules/empathic
+# A hand-enumerated list is the wrong shape for this: the first attempt listed
+# 7 packages and the CLI still failed, because fast-check's own dependency
+# pure-rand was not among them. Any list written by hand rots the moment Prisma
+# changes its graph, and the failure mode is an image that builds cleanly and
+# then crash-loops on every deploy.
+#
+# So the list is computed from the installed tree at build time by walking
+# `dependencies` out of node_modules/prisma and @prisma/config, and everything
+# found is copied. It cannot drift, because it is derived from what is actually
+# installed rather than from what someone believed was installed.
+#
+# The alternative — copying all 1.3 GB of node_modules — also works but pushes
+# the image well past its current size for no benefit.
+COPY --from=builder /tmp/prisma-cli-deps /tmp/prisma-cli-deps
+RUN set -eu; \
+    cd /app/node_modules; \
+    while read -r pkg; do \
+      [ -n "$pkg" ] || continue; \
+      src="/tmp/prisma-cli-deps/node_modules/${pkg}"; \
+      if [ -d "$src" ]; then \
+        mkdir -p "$(dirname "./${pkg}")"; \
+        cp -R "$src" "./${pkg}"; \
+      fi; \
+    done < /tmp/prisma-cli-deps/packages.txt; \
+    rm -rf /tmp/prisma-cli-deps
 # Entrypoint: applies pending migrations, then execs the standalone server.
 COPY --from=builder /app/scripts/docker-entrypoint.mjs ./scripts/docker-entrypoint.mjs
 # Schema preflight used when FGMP_SKIP_MIGRATE=1, so a mis-ordered deploy fails
