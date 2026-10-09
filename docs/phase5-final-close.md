@@ -72,6 +72,43 @@ guises: an absent metric reading as zero, a bypassed rate limiter, `NaN` from
 `??` on a Decimal, an `as string` hiding a missing select field, and a preflight
 using the wrong credential.
 
+## Verified after the credential fix (fgmp:boot3)
+
+| Check | Result |
+|---|---|
+| Escalation to `fgmp_migrate` | **closed** — `/proc/1/environ` has the credential, the server's does not |
+| Boot with the credential stripped | both branches, no regression; `/api/fgmp/health` → 401 |
+| Preflight refuses for the *right* reason | proven by discrimination, see below |
+| Hypertable ingest | 2 distinct readings persisted; replays refused; PK constraint live on the hypertable |
+
+```
+PID 1  (entrypoint)  FGMP_MIGRATE count: 1   ← for the one migration call
+PID 63 (THE SERVER) FGMP_MIGRATE count: 0   ← gone
+PID 63 DATABASE_URL=postgresql://fgmp_app:***@…
+```
+
+`DATABASE_URL` is deliberately NOT stripped — the app keeps its own credential.
+
+**The preflight test was inverted rather than trusted.** "Refuses on an empty
+database" cannot distinguish the two credentials, because both see no `Tenant`.
+So: `DATABASE_URL` → the working database, `FGMP_MIGRATE_DATABASE_URL` → the
+empty one. It refused. If it had fallen through to `DATABASE_URL` it would have
+started. That is conclusive, and it is the only version of this test that means
+anything.
+
+**Which dedup guarantee is which.** The first replay was refused by the per-site
+watermark (`REJECT_STALE`, older than newest), not by the database. Only the
+second reached the constraint. So the watermark short-circuits an out-of-order
+retry, and the database constraint is the backstop for the case the watermark
+cannot cover — a cross-replica race, two instances accepting the same reading
+simultaneously. That case is **not** exercised; it needs two live replicas.
+
+**Residual, stated rather than hidden.** `/proc/1/environ` is world-readable
+inside the container, so an RCE in the server could still read the owner URL from
+PID 1. Far smaller than before — it requires RCE, and compose never passes the
+variable to the app container — but not zero. Option (a), a separate one-shot
+migration job, closes it entirely and is the right shape for a real deployment.
+
 ## Three more real defects, found by execution
 
 1. **Ambiguous tenant resolution made every control command reload the world.**
