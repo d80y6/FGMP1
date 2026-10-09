@@ -54,6 +54,38 @@ const SERVER = "server.js";
  */
 const SKIP_MIGRATE = process.env.FGMP_SKIP_MIGRATE === "1";
 
+/**
+ * The environment the SERVER runs with.
+ *
+ * `FGMP_MIGRATE_DATABASE_URL` is deleted unconditionally, in BOTH branches.
+ *
+ * ── WHY THIS IS NOT DEFENCE IN DEPTH BUT THE ACTUAL BOUNDARY ────────────────
+ * Verified by p0-impl against the built image: with the migration credential
+ * present in the container environment, application code could read it, connect
+ * as `fgmp_migrate`, and successfully execute DDL —
+ *
+ *     escalate to: {"u":"fgmp_migrate"}
+ *     DDL SUCCEEDED as {"u":"fgmp_migrate"}
+ *
+ * `fgmp_migrate` is the schema owner and a SUPERUSER, so it bypasses RLS
+ * outright. Any injection bug inheriting that credential would make every policy
+ * in this project decorative.
+ *
+ * The honest position before this change: the RLS boundary rested on the
+ * operator NOT passing the owner URL to the app container. Compose documents
+ * that, and the app credential alone cannot do DDL — but "documented" is not
+ * "enforced", and anyone passing it in innocently, exactly as p0-impl did to
+ * test migrations, silently defeats the whole design.
+ *
+ * The credential is needed for exactly one `spawnSync` below. It has no reason
+ * to exist for the lifetime of the process that serves traffic.
+ */
+function serverEnv() {
+  const env = { ...process.env };
+  delete env.FGMP_MIGRATE_DATABASE_URL;
+  return env;
+}
+
 if (SKIP_MIGRATE) {
   if (!process.env.FGMP_MIGRATE_DATABASE_URL) {
     fail(
@@ -71,7 +103,7 @@ if (SKIP_MIGRATE) {
   // least-privilege boundary.
   const { preflight } = await import("./db-preflight.mjs");
   const check = await preflight(
-    process.env.FGAP_MIGRATE_DATABASE_URL || process.env.DATABASE_URL || "",
+    process.env.FGMP_MIGRATE_DATABASE_URL || process.env.DATABASE_URL || "",
     Number(process.env.FGMP_PREFLIGHT_TIMEOUT_MS || 15000),
   );
   if (!check.ok) {
@@ -83,7 +115,7 @@ if (SKIP_MIGRATE) {
   }
   log(`FGMP_SKIP_MIGRATE=1 — schema verified (${check.detail}); starting server`);
 
-  const run = spawnSync("bun", [SERVER], { stdio: "inherit" });
+  const run = spawnSync("bun", [SERVER], { stdio: "inherit", env: serverEnv() });
   fail(`bun ${SERVER} exited with status ${run.status}`);
 }
 
@@ -172,5 +204,5 @@ log("migrations applied (or already current) — starting server");
 
 // exec so the server becomes PID 1 and receives SIGTERM directly, letting
 // Next.js shut down cleanly instead of being killed after the grace period.
-const server = spawnSync("bun", [SERVER], { stdio: "inherit" });
+const server = spawnSync("bun", [SERVER], { stdio: "inherit", env: serverEnv() });
 fail(`bun ${SERVER} exited with status ${server.status}`);
