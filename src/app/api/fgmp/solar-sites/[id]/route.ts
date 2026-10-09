@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { asTenant } from "@/lib/fgmp/route-tenant";
+import { asTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { requireAuth, requireRole, ROLES, assertTenantOwned } from "@/lib/fgmp/auth-helpers";
 import { audit } from "@/lib/fgmp/audit";
 import {
@@ -124,7 +124,7 @@ export async function PATCH(
 
     await audit({
       userId: me.id,
-      tenantId: me.tenantId,
+      tenantId: tenantIdOrThrow(me.tenantId),
       action: "SOLAR_SITE_UPDATE",
       entity: "SolarSite",
       entityId: id,
@@ -178,7 +178,7 @@ export async function DELETE(
 
     await audit({
       userId: me.id,
-      tenantId: me.tenantId,
+      tenantId: tenantIdOrThrow(me.tenantId),
       action: "SOLAR_SITE_DELETE",
       entity: "SolarSite",
       entityId: id,

@@ -9,6 +9,7 @@ import {
 } from "@/lib/fgmp/rate-limit";
 import { confirmEnrol } from "@/lib/fgmp/mfa/service";
 import { audit } from "@/lib/fgmp/audit";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -43,7 +44,7 @@ export async function POST(req: NextRequest) {
       return res;
     }
 
-    if (!auth.user.tenantId) {
+    if (!tenantIdOrThrow(auth.user.tenantId)) {
       return errorResponse(forbidden("MFA enrolment requires a tenant-scoped account"));
     }
 
@@ -58,7 +59,7 @@ export async function POST(req: NextRequest) {
       return errorResponse(badRequest("Validation failed", parsed.error.issues));
     }
 
-    const result = await confirmEnrol(auth.user.tenantId, auth.user.id, parsed.data.code);
+    const result = await confirmEnrol(tenantIdOrThrow(auth.user.tenantId), auth.user.id, parsed.data.code);
     if (!result.ok) {
       const res = NextResponse.json(
         { error: "Verification failed", code: result.reason },
@@ -70,7 +71,7 @@ export async function POST(req: NextRequest) {
 
     await audit({
       userId: auth.user.id,
-      tenantId: auth.user.tenantId,
+      tenantId: tenantIdOrThrow(auth.user.tenantId),
       action: "MFA_ENROL_COMPLETE",
       entity: "MfaEnrollment",
       entityId: auth.user.id,

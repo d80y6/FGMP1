@@ -15,6 +15,7 @@ import {
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireRole, ROLES, assertSiteTenantOwned } from "@/lib/fgmp/auth-helpers";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { enforceInterlock, denialResponseBody } from "@/lib/fgmp/interlock-enforce";
 import { withGeneratorCommandLock } from "@/lib/fgmp/command-lock";
 import type { GenCommand } from "@/lib/fgmp/types";
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // endpoint was unreachable for legitimate operators. With the caller's own
     // tenant in scope the row resolves, and a cross-tenant id still yields
     // null -> 404, which is the intended 404-not-403 behaviour.
-    const gen = await withTenant(me.tenantId, (tx) =>
+    const gen = await withTenant(tenantIdOrThrow(me.tenantId), (tx) =>
       tx.generator.findUnique({
         where: { id },
         select: { id: true, site: { select: { tenantId: true } } },
@@ -84,7 +85,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const nowInstant = new Date();
 
     const existing = idemKey
-      ? await withTenant(me.tenantId, (tx) =>
+      ? await withTenant(tenantIdOrThrow(me.tenantId), (tx) =>
           tx.controlCommand.findFirst({
             where: { idempotencyKey: idemKey, generatorId: id, tenantId: me.tenantId },
             select: {
@@ -141,7 +142,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (decision.kind === "payload-mismatch") {
       await audit({
         userId: me.id,
-        tenantId: me.tenantId,
+        tenantId: tenantIdOrThrow(me.tenantId),
         action: "CONTROL_IDEMPOTENCY_CONFLICT",
         entity: "generator",
         entityId: id,
@@ -169,7 +170,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (decision.kind === "replay") {
       await audit({
         userId: me.id,
-        tenantId: me.tenantId,
+        tenantId: tenantIdOrThrow(me.tenantId),
         action: "CONTROL_IDEMPOTENT_REPLAY",
         entity: "generator",
         entityId: id,
@@ -207,7 +208,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // sees nothing will simply retry, and retrying blindly against a hard
     // interlock is how a transient reading becomes a repeated unsafe action.
     const enforced = await enforceInterlock({
-      tenantId: me.tenantId,
+      tenantId: tenantIdOrThrow(me.tenantId),
       generatorId: id,
       command: command as GenCommand,
       userId: me.id,
@@ -238,7 +239,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (enforced.replay) {
       await audit({
         userId: me.id,
-        tenantId: me.tenantId,
+        tenantId: tenantIdOrThrow(me.tenantId),
         action: "CONTROL_REPLAY_SUPPRESSED",
         entity: "generator",
         entityId: id,
@@ -288,7 +289,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // than left to be discovered as an unexplained unsafe start.
     const { result, revalidated } = await withGeneratorCommandLock(id, async () => {
       const recheck = await enforceInterlock({
-        tenantId: me.tenantId,
+        tenantId: tenantIdOrThrow(me.tenantId),
         generatorId: id,
         command: command as GenCommand,
         userId: me.id,
@@ -318,7 +319,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       // ── PHASE 3: the AUTHENTICATED tenant is passed down so the engine can
       // assert the generator's tenant matches it, before any state mutation.
       return {
-        result: await engine.applyCommand(id, command as GenCommand, me.id, reason, me.tenantId),
+        result: await engine.applyCommand(id, command as GenCommand, me.id, reason, tenantIdOrThrow(me.tenantId)),
         revalidated: null,
       };
     });
@@ -338,11 +339,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // another request that won the race with the same value.
     if ((decision.kind === "execute" || decision.kind === "expired") && result.ok) {
       try {
-        await withTenant(me.tenantId, (tx) =>
+        await withTenant(tenantIdOrThrow(me.tenantId), (tx) =>
           tx.controlCommand.updateMany({
             where: {
               generatorId: id,
-              tenantId: me.tenantId,
+              tenantId: tenantIdOrThrow(me.tenantId),
               issuedAt: nowInstant,
               idempotencyKey: null,
             },

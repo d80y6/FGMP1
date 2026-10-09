@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { bootstrap } from "@/lib/fgmp";
-import { asTenant } from "@/lib/fgmp/route-tenant";
+import { asTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import { notificationPreferenceSchema, validateBody } from "@/lib/fgmp/schemas";
 import {
@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
         tx.notificationPreference.upsert({
           where: { userId: user.id },
           update: {},
-          create: { userId: user.id, tenantId: user.tenantId, ...DEFAULT_PREFS },
+          create: { userId: user.id, tenantId: tenantIdOrThrow(user.tenantId), ...DEFAULT_PREFS },
         }),
       );
     } catch (upsertErr) {
@@ -157,7 +157,7 @@ export async function PUT(req: NextRequest) {
       },
       create: {
         userId: user.id,
-        tenantId: user.tenantId,
+        tenantId: tenantIdOrThrow(user.tenantId),
         inAppEnabled: data.inAppEnabled,
         emailEnabled: data.emailEnabled,
         smsEnabled: data.smsEnabled,
@@ -174,7 +174,7 @@ export async function PUT(req: NextRequest) {
 
     await audit({
       userId: user.id,
-      tenantId: user.tenantId,
+      tenantId: tenantIdOrThrow(user.tenantId),
       action: "PREFERENCES_UPDATE",
       entity: "NotificationPreference",
       entityId: updated.id,

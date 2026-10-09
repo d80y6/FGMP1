@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { engine, bootstrap } from "@/lib/fgmp";
-import { asTenant } from "@/lib/fgmp/route-tenant";
+import { asTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { requireRole, ROLES, assertSiteTenantOwned } from "@/lib/fgmp/auth-helpers";
 import { audit } from "@/lib/fgmp/audit";
 import { updateDispenserSchema, validateBody } from "@/lib/fgmp/schemas";
@@ -134,7 +134,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
     await audit({
       userId: user.id,
-      tenantId: user.tenantId,
+      tenantId: tenantIdOrThrow(user.tenantId),
       action: "DISPENSER_UPDATE",
       entity: "FuelDispenser",
       entityId: id,
@@ -213,7 +213,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
     await audit({
       userId: user.id,
-      tenantId: user.tenantId,
+      tenantId: tenantIdOrThrow(user.tenantId),
       action: "DISPENSER_DELETE",
       entity: "FuelDispenser",
       entityId: id,

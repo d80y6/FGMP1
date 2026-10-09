@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { asTenant } from "@/lib/fgmp/route-tenant";
+import { asTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { requireAuth, requireRole, ROLES, tenantWhere } from "@/lib/fgmp/auth-helpers";
 import { audit } from "@/lib/fgmp/audit";
 import {
@@ -104,7 +104,7 @@ export async function POST(req: NextRequest) {
     const array = await asTenant(me, (tx) =>
       tx.solarArray.create({
         data: {
-          tenantId: me.tenantId,
+          tenantId: tenantIdOrThrow(me.tenantId),
           solarSiteId: v.data.solarSiteId,
           label: v.data.label,
           ratedKwp: v.data.ratedKwp,
@@ -120,7 +120,7 @@ export async function POST(req: NextRequest) {
 
     await audit({
       userId: me.id,
-      tenantId: me.tenantId,
+      tenantId: tenantIdOrThrow(me.tenantId),
       action: "SOLAR_ARRAY_CREATE",
       entity: "SolarArray",
       entityId: array.id,

@@ -7,6 +7,7 @@ import {
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse, ApiError } from "@/lib/fgmp/api-error";
 import { requireRole, ROLES } from "@/lib/fgmp/auth-helpers";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { withTenant } from "@/lib/fgmp/tenant-context";
 
 export const dynamic = "force-dynamic";
@@ -66,7 +67,7 @@ export async function GET(
     // path-param generatorId AND the caller's tenant (via generator.site).
     // findFirst returns null when either guard fails — we surface a 404 to
     // avoid disclosing the existence of cross-tenant/cross-generator records.
-    const cmd = await withTenant(user.tenantId, (tx) => tx.controlCommand.findFirst({
+    const cmd = await withTenant(tenantIdOrThrow(user.tenantId), (tx) => tx.controlCommand.findFirst({
       where: {
         id: commandId,
         generatorId,

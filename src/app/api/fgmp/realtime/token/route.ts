@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/fgmp/auth-helpers";
 import { issueRealtimeToken, REALTIME_TOKEN_TTL_MS } from "@/lib/fgmp/realtime-token";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -24,10 +25,22 @@ export async function GET() {
   if ("error" in auth) return auth.error;
 
   try {
+    // A PENDING MFA session has no role AND no tenant by design, so it must not
+    // be issued a realtime token: the token would carry a role the caller does
+    // not yet hold, and the socket would subscribe on unverified authority.
+    // Refuse rather than issue a degraded one — this is the second way a session
+    // can lack authority, and it has to deny too.
+    if (auth.user.mfaPending || !auth.user.role) {
+      return NextResponse.json(
+        { error: "Multi-factor authentication is required before a realtime token can be issued." },
+        { status: 403 },
+      );
+    }
+
     const token = issueRealtimeToken({
       id: auth.user.id,
       role: auth.user.role,
-      tenantId: auth.user.tenantId,
+      tenantId: tenantIdOrThrow(auth.user.tenantId),
     });
     return NextResponse.json({
       token,

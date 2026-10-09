@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { engine, bootstrap } from "@/lib/fgmp";
-import { asTenant } from "@/lib/fgmp/route-tenant";
+import { asTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { requireRole, ROLES, assertSiteTenantOwned } from "@/lib/fgmp/auth-helpers";
 import { audit } from "@/lib/fgmp/audit";
 import { createDispenserSchema } from "@/lib/fgmp/schemas";
@@ -135,7 +135,7 @@ export async function POST(req: NextRequest) {
 
     await audit({
       userId: user.id,
-      tenantId: user.tenantId,
+      tenantId: tenantIdOrThrow(user.tenantId),
       action: "DISPENSER_CREATE",
       entity: "FuelDispenser",
       entityId: dispenser.id,

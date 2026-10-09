@@ -92,7 +92,38 @@ export function asTenant<T>(
   user: Pick<SessionUser, "tenantId">,
   fn: (tx: TenantScopedClient) => Promise<T>,
 ): Promise<T> {
-  return withTenant(user.tenantId, fn);
+  return withTenant(tenantIdOrThrow(user.tenantId), fn);
+}
+
+/**
+ * Coerce a possibly-absent tenant id to the non-optional form a tenant-scoped
+ * call requires, failing CLOSED if there is none.
+ *
+ * ── WHY NOT `user.tenantId!` ────────────────────────────────────────────────
+ * `SessionUser.tenantId` is optional on purpose: a PENDING MFA session must not
+ * carry a tenant, and an absent key is falsy so the ~80 existing
+ * `user.role === X` checks deny it for free.
+ *
+ * That optionality must be resolved exactly once — here, where a session
+ * becomes a query context. `user.tenantId!` would typecheck while handing
+ * `undefined` to `withTenant`, which sets `app.tenant_id` to a non-string and
+ * leaves RLS filtering on a NULL context: the caller gets an empty result that
+ * reads as "no data" rather than "not allowed".
+ *
+ * This is also defence in depth. The MFA guard refuses these paths by URL, so
+ * if it is ever bypassed or mis-ordered, a tenant-less session still cannot
+ * construct a valid tenant context at all.
+ */
+export function tenantIdOrThrow(tenantId: string | undefined | null): string {
+  if (typeof tenantId === "string" && tenantId.trim() !== "") return tenantId.trim();
+  throw new Error(
+    "[route-tenant] A tenant-scoped call was made without a tenant id. This " +
+      "happens when a session is pending multi-factor authentication: such a " +
+      "session deliberately carries no tenant and must not be able to query " +
+      "anything. Guard the route with the MFA guard, or use the unscoped " +
+      "helpers (tenantWhereOrAll / siteTenantWhereOrAll) if cross-tenant read " +
+      "is genuinely intended.",
+  );
 }
 
 /**
@@ -140,7 +171,11 @@ export function asTenant<T>(
  */
 export function asTenantForAnotherTenant<T>(
   user: Pick<SessionUser, "tenantId" | "role">,
-  targetTenantId: string,
+  // `string | undefined` on purpose: callers pass `me.tenantId`, which is
+  // optional because a PENDING MFA session carries none. Accepting it here and
+  // failing below makes the compiler force the caller through this check rather
+  // than pushing them to `!` at the call site.
+  targetTenantId: string | undefined,
   fn: (tx: TenantScopedClient) => Promise<T>,
 ): Promise<T> {
   // Inside the helper, not beside it. A caller that forgets to check still gets
@@ -150,13 +185,18 @@ export function asTenantForAnotherTenant<T>(
     throw new Error(
       "[route-tenant] asTenantForAnotherTenant() requires SUPERADMIN. " +
         `Caller role is ${JSON.stringify(user.role)} and tenantId is ` +
-        `${JSON.stringify(user.tenantId)}. This helper exists so that a ` +
+        `${JSON.stringify(tenantIdOrThrow(user.tenantId))}. This helper exists so that a ` +
         `cross-tenant context is a named, reviewable capability rather than a ` +
         `string that happens to be in the right variable. Use asTenant(user, …) ` +
         `for work in the caller's own tenant.`,
     );
   }
-  return withTenant(targetTenantId, fn);
+  // A super-admin may legitimately pass their own (absent) tenantId when the
+  // caller means "the tenant named in the body". Resolving it here — after the
+  // capability check, before the transaction — keeps both invariants: the caller
+  // gets a clear error rather than an unconstrained `unknown` result, and the
+  // cross-tenant capability still requires SUPERADMIN.
+  return withTenant(tenantIdOrThrow(targetTenantId), fn);
 }
 
 /**

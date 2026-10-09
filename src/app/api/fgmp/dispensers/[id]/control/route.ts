@@ -10,6 +10,7 @@ import {
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireRole, ROLES, assertSiteTenantOwned } from "@/lib/fgmp/auth-helpers";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -48,7 +49,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // The tenant is the AUTHENTICATED caller's, so the policy's USING clause
     // matches and the row resolves. A cross-tenant id therefore still yields
     // null -> 404, which is the intended 404-not-403 behaviour.
-    const dispenser = await withTenant(me.tenantId, (tx) =>
+    const dispenser = await withTenant(tenantIdOrThrow(me.tenantId), (tx) =>
       tx.fuelDispenser.findUnique({
         where: { id },
         select: { id: true, site: { select: { tenantId: true } } },
@@ -79,7 +80,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       id,
       command,
       presetVolumeLitres,
-      me.tenantId,
+      tenantIdOrThrow(me.tenantId),
     );
     await audit({
       userId: me.id,

@@ -8,6 +8,7 @@ import {
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireAuth, requireRole, ROLES } from "@/lib/fgmp/auth-helpers";
 import { audit } from "@/lib/fgmp/audit";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -53,13 +54,13 @@ export async function POST(req: NextRequest) {
     }
 
     const outcome = await evaluateAndPersist({
-      tenantId: me.tenantId,
+      tenantId: tenantIdOrThrow(me.tenantId),
       now: Date.now(),
     });
 
     await audit({
       userId: me.id,
-      tenantId: me.tenantId,
+      tenantId: tenantIdOrThrow(me.tenantId),
       action: "correlation.evaluate",
       entity: "CorrelationRule",
       details: {

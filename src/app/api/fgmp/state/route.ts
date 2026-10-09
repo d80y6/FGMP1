@@ -8,6 +8,7 @@ import {
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireAuth, isSuperAdminUser } from "@/lib/fgmp/auth-helpers";
 import { withMetrics } from "@/lib/fgmp/with-metrics";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,7 @@ export const GET = withMetrics(async function GET(req: NextRequest) {
     // snapshot (tenantId === null); every other role gets only their own
     // tenant's sites/tanks/generators/batteries/events/transactions/...
     const snap = await engine.snapshotForTenant(
-      isSuperAdminUser(me) ? null : me.tenantId,
+      isSuperAdminUser(me) ? null : tenantIdOrThrow(me.tenantId),
     );
     const res = NextResponse.json(snap);
     applyRateLimitHeaders(res.headers, rl);

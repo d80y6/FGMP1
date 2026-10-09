@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { bootstrap } from "@/lib/fgmp";
-import { asTenant } from "@/lib/fgmp/route-tenant";
+import { asTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import {
   rateLimitByUser,
   applyRateLimitHeaders,
@@ -60,7 +60,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       // Defence in depth: if the relation did not resolve within this tenant,
       // do not return a half-populated alarm. A populated response with a null
       // or foreign site is worse than an empty one, because it looks correct.
-      if (!row.site || row.site.tenantId !== user.tenantId) return null;
+      if (!row.site || row.site.tenantId !== tenantIdOrThrow(user.tenantId)) return null;
       return { ...row, tenantId: user.tenantId };
     });
     const denied = assertTenantOwned(alarm, me);

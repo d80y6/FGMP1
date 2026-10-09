@@ -14,6 +14,7 @@ import {
 import { withTenant } from "@/lib/fgmp/tenant-context";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireAuth, requireRole, ROLES, tenantWhereOrAll } from "@/lib/fgmp/auth-helpers";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -58,12 +59,12 @@ export async function GET(req: NextRequest) {
     }
 
     const [notes, openCount] = await Promise.all([
-            withTenant(user.tenantId, (tx) => tx.shiftHandover.findMany({
+            withTenant(tenantIdOrThrow(user.tenantId), (tx) => tx.shiftHandover.findMany({
         where,
         orderBy: { createdAt: "desc" },
         take: limit,
       })),
-            withTenant(user.tenantId, (tx) => tx.shiftHandover.count({
+            withTenant(tenantIdOrThrow(user.tenantId), (tx) => tx.shiftHandover.count({
         where: { ...tenantWhereOrAll(user), status: "OPEN" },
       })),
     ]);
@@ -135,7 +136,7 @@ export async function POST(req: NextRequest) {
     // Validate flagged site ids belong to the caller's tenant (cheap bulk check).
     let flaggedSiteIds: string | null = null;
     if (data.flaggedSiteIds && data.flaggedSiteIds.length > 0) {
-      const owned = await withTenant(user.tenantId, (tx) => tx.site.findMany({
+      const owned = await withTenant(tenantIdOrThrow(user.tenantId), (tx) => tx.site.findMany({
         where: { id: { in: data.flaggedSiteIds }, ...tenantWhereOrAll(user) },
         select: { id: true },
       }));
@@ -144,9 +145,9 @@ export async function POST(req: NextRequest) {
       if (valid.length > 0) flaggedSiteIds = valid.join(",");
     }
 
-    const created = await withTenant(user.tenantId, (tx) => tx.shiftHandover.create({
+    const created = await withTenant(tenantIdOrThrow(user.tenantId), (tx) => tx.shiftHandover.create({
       data: {
-        tenantId: user.tenantId,
+        tenantId: tenantIdOrThrow(user.tenantId),
         authorId: user.id,
         authorName: user.name,
         authorRole: user.role,
@@ -164,7 +165,7 @@ export async function POST(req: NextRequest) {
 
     await audit({
       userId: user.id,
-      tenantId: user.tenantId,
+      tenantId: tenantIdOrThrow(user.tenantId),
       action: "HANDOVER_CREATE",
       entity: "ShiftHandover",
       entityId: created.id,

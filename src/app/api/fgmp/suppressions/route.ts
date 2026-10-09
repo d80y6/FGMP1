@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { bootstrap } from "@/lib/fgmp";
-import { asTenant } from "@/lib/fgmp/route-tenant";
+import { asTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import {
   createSuppressionSchema,
@@ -139,7 +139,7 @@ export async function POST(req: NextRequest) {
           select: { id: true, tenantId: true },
         }),
       );
-      if (!site || site.tenantId !== user.tenantId) {
+      if (!site || site.tenantId !== tenantIdOrThrow(user.tenantId)) {
         const res = NextResponse.json(
           { error: "Site not found in your tenant" },
           { status: 404 },
@@ -156,7 +156,7 @@ export async function POST(req: NextRequest) {
     const created = await asTenant(user, (tx) =>
       tx.alarmSuppression.create({
       data: {
-        tenantId: user.tenantId,
+        tenantId: tenantIdOrThrow(user.tenantId),
         siteId: data.siteId ?? null,
         alarmType,
         reason: data.reason,
@@ -177,7 +177,7 @@ export async function POST(req: NextRequest) {
 
     await audit({
       userId: user.id,
-      tenantId: user.tenantId,
+      tenantId: tenantIdOrThrow(user.tenantId),
       action: "SUPPRESSION_CREATE",
       entity: "AlarmSuppression",
       entityId: created.id,

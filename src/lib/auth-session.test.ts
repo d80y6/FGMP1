@@ -15,7 +15,22 @@
 
 import { describe, expect, test } from "bun:test";
 
-/** Import the module under a specific session configuration. */
+/**
+ * Import the module under a specific session configuration.
+ *
+ * The restore happens in a `finally`, not in a caller-invoked `restore()`.
+ *
+ * The reason is specific and cost a debugging session: `auth.ts` THROWS for a
+ * nonsensical session configuration, and that throw happens inside the dynamic
+ * `import()`. A `restore()` the caller must remember to invoke is therefore
+ * never invoked on exactly the tests that assert rejection — so those tests
+ * left `FGMP_SESSION_MAX_AGE_MS=3600000` and
+ * `FGMP_SESSION_UPDATE_AGE_MS=3600000` in `process.env` for every LATER test
+ * file in the run, and any module importing `auth.ts` afterwards failed with
+ * `updateAge must be less than maxAge` — an error naming a config nobody set.
+ *
+ * Restoring unconditionally means a rejected configuration cannot escape.
+ */
 async function loadAuth(env: Record<string, string | undefined>) {
   const saved: Record<string, string | undefined> = {};
   for (const [k, v] of Object.entries(env)) {
@@ -23,17 +38,19 @@ async function loadAuth(env: Record<string, string | undefined>) {
     if (v === undefined) delete process.env[k];
     else process.env[k] = v;
   }
-  // Cache-bust so the module re-evaluates with the new configuration.
-  const mod = await import("./auth?cfg=" + Math.random());
-  return {
-    restore() {
-      for (const [k, v] of Object.entries(saved)) {
-        if (v === undefined) delete process.env[k];
-        else process.env[k] = v;
-      }
-    },
-    authOptions: mod.authOptions,
+  const restore = () => {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
   };
+  try {
+    // Cache-bust so the module re-evaluates with the new configuration.
+    const mod = await import("./auth?cfg=" + Math.random());
+    return { restore, authOptions: mod.authOptions };
+  } finally {
+    restore();
+  }
 }
 
 describe("session lifetime", () => {

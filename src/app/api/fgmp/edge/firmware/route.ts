@@ -10,6 +10,7 @@ import {
 import { withTenant } from "@/lib/fgmp/tenant-context";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireAuth, requireRole, ROLES } from "@/lib/fgmp/auth-helpers";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +36,7 @@ export async function GET(req: NextRequest) {
     // binary). So no tenant filter is applied here and SUPERADMIN/ADMIN/all
     // authenticated users see the same list. Cross-tenant isolation is
     // enforced at the *deployment* level (see /edge/firmware/deployments).
-    const releases = await withTenant(user.tenantId, (tx) => tx.espFirmwareRelease.findMany({
+    const releases = await withTenant(tenantIdOrThrow(user.tenantId), (tx) => tx.espFirmwareRelease.findMany({
       orderBy: { releasedAt: "desc" },
       include: {
         _count: { select: { deployments: true } },
@@ -104,7 +105,7 @@ export async function POST(req: NextRequest) {
       return res;
     }
 
-    const release = await withTenant(user.tenantId, (tx) => tx.espFirmwareRelease.create({
+    const release = await withTenant(tenantIdOrThrow(user.tenantId), (tx) => tx.espFirmwareRelease.create({
       data: {
         version,
         channel,
@@ -117,7 +118,7 @@ export async function POST(req: NextRequest) {
 
     await audit({
       userId: user.id,
-      tenantId: user.tenantId,
+      tenantId: tenantIdOrThrow(user.tenantId),
       action: "DISPENSER_CONTROL",
       entity: "EspFirmwareRelease",
       entityId: release.id,

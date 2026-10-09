@@ -11,6 +11,7 @@ import {
 import { withTenant } from "@/lib/fgmp/tenant-context";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireAuth, requireRole, ROLES, assertSiteTenantOwned } from "@/lib/fgmp/auth-helpers";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { decimalsToJson } from "@/lib/fgmp/decimal";
 
 export const dynamic = "force-dynamic";
@@ -32,7 +33,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
       return res;
     }
     const { id } = await ctx.params;
-    const d = await withTenant(user.tenantId, (tx) => tx.fuelDispenser.findUnique({
+    const d = await withTenant(tenantIdOrThrow(user.tenantId), (tx) => tx.fuelDispenser.findUnique({
       where: { id },
       include: { site: { select: { id: true, name: true, code: true, tenantId: true } } },
     }));
@@ -98,7 +99,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     const data = r.data;
 
     // Verify existence + tenant scope
-    const existing = await withTenant(user.tenantId, (tx) => tx.fuelDispenser.findUnique({
+    const existing = await withTenant(tenantIdOrThrow(user.tenantId), (tx) => tx.fuelDispenser.findUnique({
       where: { id },
       include: { site: { select: { tenantId: true } } },
     }));
@@ -111,7 +112,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     const updated = await engine.updateDispenser(id, data);
     await audit({
       userId: user.id,
-      tenantId: user.tenantId,
+      tenantId: tenantIdOrThrow(user.tenantId),
       action: "DISPENSER_UPDATE",
       entity: "FuelDispenser",
       entityId: id,
@@ -144,7 +145,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     }
     const { id } = await ctx.params;
 
-    const existing = await withTenant(user.tenantId, (tx) => tx.fuelDispenser.findUnique({
+    const existing = await withTenant(tenantIdOrThrow(user.tenantId), (tx) => tx.fuelDispenser.findUnique({
       where: { id },
       include: { site: { select: { tenantId: true, name: true } } },
     }));
@@ -162,7 +163,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     await engine.deleteDispenser(id);
     await audit({
       userId: user.id,
-      tenantId: user.tenantId,
+      tenantId: tenantIdOrThrow(user.tenantId),
       action: "DISPENSER_DELETE",
       entity: "FuelDispenser",
       entityId: id,

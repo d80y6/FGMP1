@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { engine, bootstrap } from "@/lib/fgmp";
-import { asTenant } from "@/lib/fgmp/route-tenant";
+import { asTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import {
   rateLimitByUser,
@@ -154,7 +154,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
     await audit({
       userId: user.id,
-      tenantId: user.tenantId,
+      tenantId: tenantIdOrThrow(user.tenantId),
       action: "BATTERY_UPDATE",
       entity: "BatteryBank",
       entityId: id,
@@ -218,7 +218,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
 
     await audit({
       userId: user.id,
-      tenantId: user.tenantId,
+      tenantId: tenantIdOrThrow(user.tenantId),
       action: "BATTERY_DELETE",
       entity: "BatteryBank",
       entityId: id,

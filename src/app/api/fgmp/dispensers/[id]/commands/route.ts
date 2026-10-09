@@ -8,6 +8,7 @@ import {
 import { withTenant } from "@/lib/fgmp/tenant-context";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireAuth, assertSiteTenantOwned } from "@/lib/fgmp/auth-helpers";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +41,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     // Verify the dispenser's site belongs to the caller's tenant before
     // returning its command history.
-    const existing = await withTenant(me.tenantId, (tx) => tx.fuelDispenser.findUnique({
+    const existing = await withTenant(tenantIdOrThrow(me.tenantId), (tx) => tx.fuelDispenser.findUnique({
       where: { id },
       select: { site: { select: { tenantId: true } } },
     }));
@@ -50,7 +51,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       return tenantDenied;
     }
 
-    const logs = await withTenant(me.tenantId, (tx) => tx.auditLog.findMany({
+    const logs = await withTenant(tenantIdOrThrow(me.tenantId), (tx) => tx.auditLog.findMany({
       where: { action: "CONTROL", entity: "dispenser", entityId: id },
       orderBy: { createdAt: "desc" },
       take: limit,

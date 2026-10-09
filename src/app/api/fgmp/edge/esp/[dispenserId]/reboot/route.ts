@@ -9,6 +9,7 @@ import {
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireRole, ROLES, assertSiteTenantOwned } from "@/lib/fgmp/auth-helpers";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +42,7 @@ export const dynamic = "force-dynamic";
     // PHASE 3: scoped to the caller's tenant. Unscoped this returned null under
     // FORCE RLS for every id, so the 404 was unreachable-but-safe; now the
     // row resolves and only a genuinely foreign id 404s.
-    const dispenser = await withTenant(me.tenantId, (tx) =>
+    const dispenser = await withTenant(tenantIdOrThrow(me.tenantId), (tx) =>
       tx.fuelDispenser.findUnique({
         where: { id: dispenserId },
         select: { id: true, site: { select: { tenantId: true } } },
@@ -55,14 +56,14 @@ export const dynamic = "force-dynamic";
 
     // PHASE 3: pass the authenticated tenant so the engine asserts the
     // dispenser's tenant matches before touching state or the database.
-    const result = await engine.applyEspReboot(dispenserId, me.id, me.tenantId);
+    const result = await engine.applyEspReboot(dispenserId, me.id, tenantIdOrThrow(me.tenantId));
 
     // Audit at the API layer too (in addition to the engine's own audit) so
     // the action is searchable by the audit-view's dispenser-control filter.
     if (result.ok) {
       await audit({
         userId: me.id,
-        tenantId: me.tenantId,
+        tenantId: tenantIdOrThrow(me.tenantId),
         action: "DISPENSER_CONTROL",
         entity: "FuelDispenser",
         entityId: dispenserId,

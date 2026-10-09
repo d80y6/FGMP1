@@ -9,6 +9,7 @@ import {
 } from "@/lib/fgmp/rate-limit";
 import { requestMfaReset, approveMfaReset } from "@/lib/fgmp/mfa/service";
 import { audit } from "@/lib/fgmp/audit";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -52,7 +53,7 @@ export async function POST(req: NextRequest) {
       return res;
     }
 
-    if (!auth.user.tenantId) {
+    if (!tenantIdOrThrow(auth.user.tenantId)) {
       return errorResponse(forbidden("MFA reset requires a tenant-scoped account"));
     }
 
@@ -69,7 +70,7 @@ export async function POST(req: NextRequest) {
       const parsed = approveSchema.safeParse(raw);
       if (!parsed.success) return errorResponse(badRequest("Validation failed", parsed.error.issues));
 
-      const result = await approveMfaReset(auth.user.tenantId, parsed.data.resetId, auth.user.id);
+      const result = await approveMfaReset(tenantIdOrThrow(auth.user.tenantId), parsed.data.resetId, auth.user.id);
       if (!result.ok) {
         const res = NextResponse.json(
           { error: "Reset could not be approved", code: result.reason },
@@ -82,7 +83,7 @@ export async function POST(req: NextRequest) {
       // Both identities are recorded permanently, with the reason.
       await audit({
         userId: auth.user.id,
-        tenantId: auth.user.tenantId,
+        tenantId: tenantIdOrThrow(auth.user.tenantId),
         action: "MFA_RESET_APPROVED",
         entity: "MfaResetRequest",
         entityId: parsed.data.resetId,
@@ -106,7 +107,7 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await requestMfaReset(
-      auth.user.tenantId,
+      tenantIdOrThrow(auth.user.tenantId),
       parsed.data.userId,
       auth.user.id,
       parsed.data.justification,
@@ -119,7 +120,7 @@ export async function POST(req: NextRequest) {
 
     await audit({
       userId: auth.user.id,
-      tenantId: auth.user.tenantId,
+      tenantId: tenantIdOrThrow(auth.user.tenantId),
       action: "MFA_RESET_REQUESTED",
       entity: "MfaResetRequest",
       entityId: result.id,

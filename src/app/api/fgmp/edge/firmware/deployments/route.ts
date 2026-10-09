@@ -10,6 +10,7 @@ import {
 import { withTenant } from "@/lib/fgmp/tenant-context";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireAuth, isSuperAdminUser } from "@/lib/fgmp/auth-helpers";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -70,7 +71,7 @@ export async function GET(req: NextRequest) {
     }
 
     const [deployments, total] = await Promise.all([
-            withTenant(user.tenantId, (tx) => tx.espFirmwareDeployment.findMany({
+            withTenant(tenantIdOrThrow(user.tenantId), (tx) => tx.espFirmwareDeployment.findMany({
         where,
         orderBy: { startedAt: "desc" },
         take: limit,
@@ -92,7 +93,7 @@ export async function GET(req: NextRequest) {
           },
         },
       })),
-            withTenant(user.tenantId, (tx) => tx.espFirmwareDeployment.count({ where })),
+            withTenant(tenantIdOrThrow(user.tenantId), (tx) => tx.espFirmwareDeployment.count({ where })),
     ]);
 
     const res = NextResponse.json({ deployments, total, limit, offset });

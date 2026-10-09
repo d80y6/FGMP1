@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { bootstrap } from "@/lib/fgmp";
-import { asTenant } from "@/lib/fgmp/route-tenant";
+import { asTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import {
   rateLimitByUser,
@@ -162,7 +162,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
     await audit({
       userId: user.id,
-      tenantId: user.tenantId,
+      tenantId: tenantIdOrThrow(user.tenantId),
       action: "CONTROL",
       entity: "ApiKey",
       entityId: id,

@@ -7,7 +7,9 @@ import {
   type SessionUser,
 } from "@/lib/auth";
 import { hasCapability, isSuperAdmin } from "@/lib/fgmp/rbac";
+import { ApiError } from "@/lib/fgmp/api-error";
 import type { Role } from "@/lib/fgmp/types";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 /**
  * Server-side auth helpers (Task 31-A)
@@ -241,9 +243,49 @@ export function isSuperAdminUser(user: { role?: string } | null | undefined): bo
 // to avoid cross-tenant existence disclosure) if the record belongs to a
 // different tenant, or `null` if access is allowed.
 
+/**
+ * The tenant a request is scoped to, or a hard failure.
+ *
+ * ── WHY THIS THROWS RATHER THAN RETURNING `undefined` ────────────────────────
+ * `SessionUser.tenantId` is OPTIONAL, and deliberately so: a PENDING MFA session
+ * must not carry one, and an absent key is falsy so the ~80 existing
+ * `user.role === X` checks deny it without auditing any of them.
+ *
+ * That optionality has to be resolved exactly once, at the boundary where a
+ * tenant becomes a query filter. Every tenant-scoping helper below calls this,
+ * so "this request has no tenant, therefore it must not proceed" is decided in
+ * one place.
+ *
+ * The alternative — `as string`, or `?? ""` — would typecheck and be WRONG. An
+ * empty-string tenantId builds a filter that matches NOTHING while looking
+ * perfectly valid, and a caller who reads `me.tenantId!` directly gets no error
+ * at all. Failing closed converts a silent empty result (or, worse, a missing
+ * filter) into a loud 403 with a code the client can act on.
+ *
+ * This is also defence in depth: the MFA guard already refuses these paths by
+ * URL, so if that guard is ever bypassed or mis-ordered, a tenant-less session
+ * still cannot construct a valid tenant filter at all.
+ */
+export function requireTenantId(me: SessionUser): string {
+  // Narrow here rather than delegating to tenantIdOrThrow: this must RETURN the
+  // tenant when one exists and THROW when it does not, and the compiler has to
+  // be able to see that.
+  if (typeof me.tenantId === "string" && me.tenantId.trim() !== "") return me.tenantId;
+  // Super-admin carries no single tenant by design. Asking for a scoped filter
+  // is a category error — `tenantWhereOrAll` exists for that case — so it fails
+  // loudly rather than silently returning an unscoped filter.
+  throw new ApiError(
+    403,
+    isSuperAdminUser(me)
+      ? "A super-admin has no single tenant. Use tenantWhereOrAll() for an unscoped read, " +
+          "or supply an explicit tenantId."
+      : "This request is not scoped to a tenant. Complete multi-factor authentication first.",
+  );
+}
+
 /** Build a `{ tenantId }` filter for models that carry a direct tenantId column. */
 export function tenantWhere(me: SessionUser): { tenantId: string } {
-  return { tenantId: me.tenantId };
+  return { tenantId: requireTenantId(me) };
 }
 
 /**
@@ -266,7 +308,7 @@ export function tenantWhereOrAll(me: SessionUser): { tenantId?: string } {
  * maintenance tickets, sensor readings, site events).
  */
 export function siteTenantWhere(me: SessionUser): { site: { tenantId: string } } {
-  return { site: { tenantId: me.tenantId } };
+  return { site: { tenantId: requireTenantId(me) } };
 }
 
 /**
@@ -283,7 +325,7 @@ export function siteTenantWhere(me: SessionUser): { site: { tenantId: string } }
  */
 export function siteTenantWhereOrAll(me: SessionUser): { site?: { tenantId: string } } {
   if (isSuperAdminUser(me)) return {};
-  return { site: { tenantId: me.tenantId } };
+  return { site: { tenantId: requireTenantId(me) } };
 }
 
 /**
@@ -305,7 +347,7 @@ export function assertTenantOwned(
   me: SessionUser,
 ): NextResponse | null {
   if (isSuperAdminUser(me)) return null;
-  if (!record || record.tenantId !== me.tenantId) {
+  if (!record || record.tenantId !== tenantIdOrThrow(me.tenantId)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   return null;

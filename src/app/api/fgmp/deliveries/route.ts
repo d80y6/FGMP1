@@ -1,6 +1,6 @@
 import type { FuelDeliveryStatus } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
-import { asTenant } from "@/lib/fgmp/route-tenant";
+import { asTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import {
   deliveryActionSchema,
@@ -169,7 +169,7 @@ export async function POST(req: NextRequest) {
 
       await audit({
         userId: me.id,
-        tenantId: me.tenantId,
+        tenantId: tenantIdOrThrow(me.tenantId),
         action: "DELIVERY_VERIFY",
         entity: "delivery",
         entityId: data.deliveryId,
@@ -216,7 +216,7 @@ export async function POST(req: NextRequest) {
 
       await audit({
         userId: me.id,
-        tenantId: me.tenantId,
+        tenantId: tenantIdOrThrow(me.tenantId),
         action: "DELIVERY_DISPATCH",
         entity: "delivery",
         entityId: data.deliveryId,
@@ -265,7 +265,7 @@ export async function POST(req: NextRequest) {
     });
     await audit({
       userId: me.id,
-      tenantId: me.tenantId,
+      tenantId: tenantIdOrThrow(me.tenantId),
       action: "DELIVERY_CREATE",
       entity: "delivery",
       entityId: created.id,

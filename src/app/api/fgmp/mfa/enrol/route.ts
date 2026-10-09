@@ -8,6 +8,7 @@ import {
 } from "@/lib/fgmp/rate-limit";
 import { beginEnrol } from "@/lib/fgmp/mfa/service";
 import { audit } from "@/lib/fgmp/audit";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -40,11 +41,11 @@ export async function POST(req: NextRequest) {
       return res;
     }
 
-    if (!auth.user.tenantId) {
+    if (!tenantIdOrThrow(auth.user.tenantId)) {
       return errorResponse(forbidden("MFA enrolment requires a tenant-scoped account"));
     }
 
-    const result = await beginEnrol(auth.user.tenantId, auth.user.id, auth.user.email ?? auth.user.id);
+    const result = await beginEnrol(tenantIdOrThrow(auth.user.tenantId), auth.user.id, auth.user.email ?? auth.user.id);
     if (!result.ok) {
       // 400 rather than 503: the cause is an environment misconfiguration the
       // OPERATOR must fix, and the message says exactly what is missing.
@@ -53,7 +54,7 @@ export async function POST(req: NextRequest) {
 
     await audit({
       userId: auth.user.id,
-      tenantId: auth.user.tenantId,
+      tenantId: tenantIdOrThrow(auth.user.tenantId),
       action: "MFA_ENROL_BEGIN",
       entity: "MfaEnrollment",
       entityId: auth.user.id,

@@ -7,6 +7,7 @@ import {
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireAuth, isSuperAdminUser } from "@/lib/fgmp/auth-helpers";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -67,7 +68,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ enti
     // silently restricted to its own tenant here.
     const tenantSiteIds = isSuperAdminUser(user)
       ? null
-      : new Set(engine.sites.filter((s) => s.tenantId === user.tenantId).map((s) => s.id));
+      : new Set(engine.sites.filter((s) => s.tenantId === tenantIdOrThrow(user.tenantId)).map((s) => s.id));
     const owns = (siteId: string) => tenantSiteIds === null || tenantSiteIds.has(siteId);
     const notFound = () => {
       const res = NextResponse.json({ error: "not found" }, { status: 404 });

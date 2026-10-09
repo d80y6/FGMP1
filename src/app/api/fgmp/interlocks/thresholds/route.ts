@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { asTenant } from "@/lib/fgmp/route-tenant";
+import { asTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { requireAuth, requireRole, ROLES, tenantWhere } from "@/lib/fgmp/auth-helpers";
 import { audit } from "@/lib/fgmp/audit";
 import {
@@ -113,7 +113,7 @@ export async function POST(req: NextRequest) {
     const threshold = await asTenant(me, async (tx) => {
       const existing = await tx.interlockThreshold.findFirst({
         where: {
-          tenantId: me.tenantId,
+          tenantId: tenantIdOrThrow(me.tenantId),
           thresholdKey: v.data.thresholdKey,
           siteId: v.data.siteId ?? null,
         },
@@ -132,7 +132,7 @@ export async function POST(req: NextRequest) {
       }
       return tx.interlockThreshold.create({
         data: {
-          tenantId: me.tenantId,
+          tenantId: tenantIdOrThrow(me.tenantId),
           thresholdKey: v.data.thresholdKey,
           value: v.data.value,
           unit: v.data.unit as import("@/lib/fgmp/interlock-thresholds").ThresholdUnit,
@@ -145,7 +145,7 @@ export async function POST(req: NextRequest) {
 
     await audit({
       userId: me.id,
-      tenantId: me.tenantId,
+      tenantId: tenantIdOrThrow(me.tenantId),
       action: "INTERLOCK_THRESHOLD_UPSERT",
       entity: "InterlockThreshold",
       entityId: threshold.id,

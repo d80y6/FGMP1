@@ -8,6 +8,7 @@ import {
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireAuth, siteTenantWhereOrAll } from "@/lib/fgmp/auth-helpers";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +37,7 @@ export async function GET(req: NextRequest) {
     // USING clause is ANDed with it and current_setting is NULL, so the row is
     // dropped regardless. The tenant context IS the filter; the explicit where
     // is kept only for the superadmin case where no single tenant applies.
-    const gateways = await withTenant(me.tenantId, (tx) =>
+    const gateways = await withTenant(tenantIdOrThrow(me.tenantId), (tx) =>
       tx.siteGateway.findMany({
         where: siteTenantWhereOrAll(auth.user),
         orderBy: { hostname: "asc" },

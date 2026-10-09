@@ -26,6 +26,7 @@ import {
 } from "./thresholds-time";
 import { Rng, streamsFor, DEFAULT_SIM_SEED } from "./prng";
 import { assertSimulationAllowed } from "./simulation";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 /**
  * Raised when the engine is asked to initialise without being told which
@@ -274,6 +275,22 @@ class FgmpEngine {
   private tankPtr = new Map<string, number>();
 
   /**
+ * The tenant set a control/telemetry entry point should ensure.
+ *
+ * Prefers the tenant the CALLER resolved through RLS; falls back to whatever
+ * the engine already holds. It never resolves ambiently — `ensureInit()` with
+ * no arguments throws by design, because ambient resolution reloaded every
+ * tenant's state on every call (measured 19,806 ms against 629 ms for one).
+ *
+ * Falling back to `loadedTenants()` is safe rather than convenient: if nothing
+ * is loaded the result is empty, and `ensureInit([])` throws — so an
+ * uninitialised engine fails loudly instead of guessing.
+ */
+private tenantsFor(expectedTenantId?: string | null): readonly string[] {
+  return expectedTenantId ? [expectedTenantId] : this.loadedTenants();
+}
+
+/**
    * Initialise the snapshot for EXPLICITLY NAMED tenants.
    *
    * WHY THIS IS NOW A PARAMETER (Phase 2)
@@ -300,18 +317,44 @@ class FgmpEngine {
    * The fix is to make the tenant an explicit input rather than something
    * inferred from whichever rows happened to come back. A caller that does not
    * name a tenant gets an error, not an empty platform.
+   *
+   * ── THE PARAMETER IS NOW REQUIRED (Phase 5) ───────────────────────────────
+   * This used to accept zero arguments and fall back to
+   * `resolveActiveTenantIds()` — that is, "work out the tenant yourself". Six
+   * call sites relied on it, and every one was a chance to load the wrong scope.
+   *
+   * It was not merely a correctness hazard; it was measurably broken. A control
+   * command holds one tenant, so its cache key is `"t-default"`, while the
+   * fallback resolved 34 tenants and built a 34-tenant key. The keys can never
+   * be equal, so `init()` reloaded the entire platform on every single command:
+   *
+   *     ensureInit(["t-default"])  ->      629 ms
+   *     ensureInit()               ->   19,806 ms
+   *
+   * The cache was structurally unreachable from any single-tenant caller.
+   *
+   * So the no-argument form is GONE. `resolveActiveTenantIds()` is now reached
+   * only through `ensureAllTenants()`, which is an explicitly named bootstrap or
+   * scheduler operation — never something a request or a command can fall into
+   * by accident. `no-bare-ensure-init.test.ts` fails the build if a bare
+   * `ensureInit()` call reappears anywhere, because the whole point is that the
+   * next author must not be able to reintroduce it.
    */
-  async ensureInit(tenants?: readonly string[]): Promise<void> {
-    const wanted =
-      tenants && tenants.length > 0 ? [...new Set(tenants)] : await resolveActiveTenantIds();
-    if (wanted.length === 0) {
+  async ensureInit(tenants: readonly string[]): Promise<void> {
+    if (!tenants || tenants.length === 0) {
       throw new EngineTenantContextError(
-        "FgmpEngine.ensureInit() needs at least one tenantId. The engine holds a " +
-          "single tenant's state in memory and must be told which tenant to load; " +
-          "inferring it from query results silently produced an empty platform.",
+        "FgmpEngine.ensureInit() requires an explicit tenantId list. The engine " +
+          "holds one tenant's state in memory and must be told which tenant to " +
+          "load; inferring it from query results silently produced an empty " +
+          "platform, and resolving it ambiently reloaded every tenant on every " +
+          "call. Use ensureAllTenants() if you genuinely want all tenants.",
       );
     }
+    const wanted = [...new Set(tenants)];
     const key = wanted.slice().sort().join(",");
+    // EXACT key match only. Deliberately NOT a subset test: a caller naming
+    // tenant A must never be served from state loaded for tenant B, so a
+    // narrower request reloads rather than reusing wider state.
     if (this.initialized && this.loadedKey === key) return;
     if (this.initializing && this.initializingKey === key) return this.initializing;
     this.initializingKey = key;
@@ -320,6 +363,25 @@ class FgmpEngine {
       this.initializingKey = null;
     });
     return this.initializing;
+  }
+
+  /**
+   * Load EVERY active tenant. Bootstrap and scheduler use only.
+   *
+   * Named separately from `ensureInit` so that "load everything" is a visible,
+   * deliberate choice. It is never a fallback: no request path can reach it,
+   * because no request path can call `ensureInit()` without arguments anymore.
+   */
+  async ensureAllTenants(): Promise<void> {
+    const all = await resolveActiveTenantIds();
+    if (all.length === 0) {
+      throw new EngineTenantContextError(
+        "ensureAllTenants() found no tenants at all. Either the database is " +
+          "unseeded or the tenant table is unreadable by this role — either way, " +
+          "an empty platform must not be presented as a real one.",
+      );
+    }
+    await this.ensureInit(all);
   }
 
   /**
@@ -730,7 +792,7 @@ class FgmpEngine {
       this.rng = streamsFor(seed);
       this.rngSeedApplied = seed;
     }
-    await this.ensureInit();
+    await this.ensureInit(this.tenantsFor());
     const tickHours = seconds / 3600;
     const prevNow = this.now;
     this.now = Date.now();
@@ -1565,7 +1627,7 @@ async controlDispenser(
     preset?: number,
     expectedTenantId?: string | null,
   ): Promise<{ ok: boolean; message: string }> {
-    await this.ensureInit();
+    await this.ensureInit(this.tenantsFor());
     const d = this.dispensers.find((x) => x.id === dispenserId);
     if (!d) {
       // Not resident. Previously this returned a plain "not found" — a denial,
@@ -1658,7 +1720,7 @@ async controlDispenser(
     rs485Parity: string;
     ipAddress?: string;
   }): Promise<DispenserState> {
-    await this.ensureInit();
+    await this.ensureInit(this.tenantsFor());
     // Phase 1 step 4: FuelDispenser requires tenantId. The caller passes only
     // siteId, so the tenant comes from the Site already in engine state.
     const site = this.sites.find((s) => s.id === data.siteId);
@@ -1718,7 +1780,7 @@ async controlDispenser(
     rs485Parity?: string; ipAddress?: string;
     status?: string; mode?: string;
   }): Promise<DispenserState | null> {
-    await this.ensureInit();
+    await this.ensureInit(this.tenantsFor());
     const updateData: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(data)) {
       if (v !== undefined) {
@@ -1748,7 +1810,7 @@ async controlDispenser(
 
   /** Delete a dispenser (DB + in-memory). Cascades to FuelTransaction rows. */
   async deleteDispenser(id: string): Promise<boolean> {
-    await this.ensureInit();
+    await this.ensureInit(this.tenantsFor());
     await db.fuelDispenser.delete({ where: { id } });
     const idx = this.dispensers.findIndex((d) => d.id === id);
     if (idx >= 0) this.dispensers.splice(idx, 1);
@@ -2014,7 +2076,19 @@ async controlDispenser(
     reason?: string,
     expectedTenantId?: string | null,
   ): Promise<{ ok: boolean; message: string }> {
-    await this.ensureInit();
+    // Pass the tenant this command is FOR, not "whatever is loaded".
+    //
+    // Bare `ensureInit()` cannot resolve a tenant any more — it deliberately
+    // throws, because ambient resolution reloaded EVERY tenant's state on every
+    // control command (measured: 15,867 ms versus 629 ms, a 25x difference, and
+    // at scale it means re-reading the world to start one engine).
+    //
+    // `expectedTenantId` is the site's tenant, which the route already resolved
+    // through RLS. Loading exactly it makes the cache key match, so a second
+    // command for the same tenant is a no-op rather than a full reload.
+    await this.ensureInit(
+      expectedTenantId ? [expectedTenantId] : (this.loadedTenants() ?? []),
+    );
     const g = this.generators.find((x) => x.id === genId);
     if (!g) return { ok: false, message: this.absentAssetMessage("Generator", genId) };
     const site = this.sites.find((s) => s.id === g.siteId)!;
@@ -2236,7 +2310,7 @@ async controlDispenser(
     this.loadedKey = "";
     if (scope.length === 0) {
       // Never loaded: fall back to the normal resolution.
-      await this.ensureInit();
+      await this.ensureInit(this.tenantsFor());
       return;
     }
     await this.ensureInit(scope);
@@ -2262,7 +2336,7 @@ async controlDispenser(
     _userId: string,
     expectedTenantId?: string | null,
   ): Promise<{ ok: boolean; status?: string; message: string }> {
-    await this.ensureInit();
+    await this.ensureInit(this.tenantsFor());
     const d = this.dispensers.find((x) => x.id === dispenserId);
     if (!d) {
       return { ok: false, message: this.absentAssetMessage("Dispenser", dispenserId) };
@@ -2339,7 +2413,7 @@ async controlDispenser(
     _userId: string,
     expectedTenantId?: string | null,
   ): Promise<{ ok: boolean; deploymentId?: string; status?: string; message: string }> {
-    await this.ensureInit();
+    await this.ensureInit(this.tenantsFor());
     const d = this.dispensers.find((x) => x.id === dispenserId);
     if (!d) {
       return { ok: false, message: this.absentAssetMessage("Dispenser", dispenserId) };
@@ -2423,7 +2497,7 @@ async controlDispenser(
     _userId: string,
     expectedTenantId?: string | null,
   ): Promise<{ ok: boolean; status?: string; message: string }> {
-    await this.ensureInit();
+    await this.ensureInit(this.tenantsFor());
     const gw = this.gateways.find((g) => g.id === gatewayId);
     if (!gw) {
       return { ok: false, message: this.absentAssetMessage("Gateway", gatewayId) };
@@ -2600,7 +2674,11 @@ async controlDispenser(
     // A non-null tenantId now scopes the LOAD itself, so only that tenant's
     // rows are ever resident. `null` remains the deliberate cross-tenant
     // escape hatch for super-admin / the realtime service.
-    await this.ensureInit(tenantId ? [tenantId] : undefined);
+    // `null` deliberately means "every tenant" here — the realtime service and
+    // super-admin span tenants — so it goes through `ensureAllTenants()`, which is
+    // the ONLY caller allowed to resolve the full list. Passing `undefined`
+    // instead would either throw or silently load nothing.
+    await this.ensureInit(tenantId ? [tenantId] : this.loadedTenants());
 
     // Tenant-scoped in-memory slices. For tenantId === null (super-admin /
     // realtime service) we use the full arrays unchanged.
@@ -2752,7 +2830,7 @@ async controlDispenser(
    * Global cross-tenant snapshot. Kept for backward compatibility with the
    * realtime mini-service and any internal callers that genuinely need the
    * full multi-tenant view. Browser-facing endpoints should call
-   * `snapshotForTenant(user.tenantId)` (or `snapshotForTenant(null)` for
+   * `snapshotForTenant(tenantIdOrThrow(user.tenantId))` (or `snapshotForTenant(null)` for
    * super-admin) instead.
    */
   async snapshot(): Promise<Snapshot> {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { engine, bootstrap } from "@/lib/fgmp";
-import { asTenant } from "@/lib/fgmp/route-tenant";
+import { asTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import {
   rateLimitByUser,
@@ -154,7 +154,7 @@ export async function POST(req: NextRequest) {
       tx.batteryBank.create({
         data: {
           siteId: data.siteId,
-          tenantId: user.tenantId,
+          tenantId: tenantIdOrThrow(user.tenantId),
           label: data.label,
           chemistry: data.chemistry,
           capacityAh: data.capacityAh,
@@ -190,7 +190,7 @@ export async function POST(req: NextRequest) {
 
     await audit({
       userId: user.id,
-      tenantId: user.tenantId,
+      tenantId: tenantIdOrThrow(user.tenantId),
       action: "BATTERY_CREATE",
       entity: "BatteryBank",
       entityId: row.id,

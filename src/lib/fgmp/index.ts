@@ -26,7 +26,9 @@ import { getCurrentUser, getSystemUser } from "./rbac";
 // Non-request contexts (seed/CLI jobs) that legitimately have no session must
 // call getSystemUser() explicitly instead of relying on bootstrap().user.
 export async function bootstrap() {
-  await engine.ensureInit();
+  // Bootstrap has no session and no tenant — it is explicitly the non-request
+  // path, so all tenants is the honest scope. Named rather than ambient.
+  await engine.ensureAllTenants();
   const user = await getCurrentUser();
   return { user };
 }

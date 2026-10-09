@@ -7,6 +7,7 @@ import {
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireAuth } from "@/lib/fgmp/auth-helpers";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +18,7 @@ export const dynamic = "force-dynamic";
  * already evaluated and persisted; nothing here recomputes a decision, and the
  * browser has no code path that could produce a match.
  *
- * `listMatches` runs inside `withTenant(me.tenantId, …)` internally, so a
+ * `listMatches` runs inside `withTenant(tenantIdOrThrow(me.tenantId), …)` internally, so a
  * cross-tenant match is unreachable at the database level rather than filtered
  * in application code. An operator on tenant A cannot see tenant B's
  * correlations even by guessing a match id.
@@ -47,7 +48,7 @@ export async function GET(req: NextRequest) {
       ? Math.min(Math.max(rawLimit, 1), 200)
       : 50;
 
-    const matches = await listMatches(me.tenantId, limit);
+    const matches = await listMatches(tenantIdOrThrow(me.tenantId), limit);
 
     // evaluatedAt is a Date; NextResponse.json serialises it to an ISO string,
     // which is what the UI expects.

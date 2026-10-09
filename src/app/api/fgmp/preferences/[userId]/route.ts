@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { bootstrap } from "@/lib/fgmp";
-import { asTenant } from "@/lib/fgmp/route-tenant";
+import { asTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import { notificationPreferenceSchema, validateBody } from "@/lib/fgmp/schemas";
 import {
@@ -197,7 +197,7 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ userId: str
 
     await audit({
       userId: user.id,
-      tenantId: user.tenantId,
+      tenantId: tenantIdOrThrow(user.tenantId),
       action: "PREFERENCES_ADMIN_UPDATE",
       entity: "NotificationPreference",
       entityId: updated.id,

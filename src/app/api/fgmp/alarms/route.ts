@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { bootstrap } from "@/lib/fgmp";
-import { asTenant } from "@/lib/fgmp/route-tenant";
+import { asTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import {
   alarmActionSchema,
@@ -70,7 +70,7 @@ export const GET = withMetrics(async function GET(req: NextRequest) {
       });
       // Defence in depth: drop any row whose site did not resolve inside this
       // tenant rather than emitting a half-populated alarm.
-      return rows.filter((a) => !a.site || a.site.tenantId === me.tenantId);
+      return rows.filter((a) => !a.site || a.site.tenantId === tenantIdOrThrow(me.tenantId));
     });
     const res = NextResponse.json(alarms);
     applyRateLimitHeaders(res.headers, rl);
@@ -112,7 +112,7 @@ export const POST = withMetrics(async function POST(req: NextRequest) {
       // that silently affected nothing and reported success.
       const result = await asTenant(me, (tx) =>
         tx.alarm.updateMany({
-        where: { id: { in: data.alarmIds }, tenantId: me.tenantId, status: { in: ["OPEN", "ESCALATED"] } },
+        where: { id: { in: data.alarmIds }, tenantId: tenantIdOrThrow(me.tenantId), status: { in: ["OPEN", "ESCALATED"] } },
         data: { status: "ACKNOWLEDGED", acknowledgedAt: new Date(), acknowledgedById: user.id },
       }),
       );
@@ -124,7 +124,7 @@ export const POST = withMetrics(async function POST(req: NextRequest) {
     if (data.action === "bulkResolve") {
       const result = await asTenant(me, (tx) =>
         tx.alarm.updateMany({
-        where: { id: { in: data.alarmIds }, tenantId: me.tenantId, status: { in: ["OPEN", "ACKNOWLEDGED", "ESCALATED"] } },
+        where: { id: { in: data.alarmIds }, tenantId: tenantIdOrThrow(me.tenantId), status: { in: ["OPEN", "ACKNOWLEDGED", "ESCALATED"] } },
         data: { status: "RESOLVED", resolvedAt: new Date(), resolvedById: user.id, resolution: data.resolution ?? "Bulk resolved by operator" },
       }),
       );

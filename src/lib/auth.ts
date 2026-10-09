@@ -3,6 +3,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { hasMfaEnabled } from "./fgmp/mfa/service";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import {
   findUserByEmail,
   findUserIdentity,
@@ -308,7 +309,7 @@ export const authOptions: NextAuthOptions = {
         // "PENDING" — a missing key is falsy, so every `user.role === X` and
         // `hasRole(user, X)` check already in the codebase denies it, with no
         // audit of those 80-odd call sites required.
-        const mfaEnabled = user.tenantId ? await hasMfaEnabled(user.tenantId, user.id) : false;
+        const mfaEnabled = user.tenantId ? await hasMfaEnabled(tenantIdOrThrow(user.tenantId), user.id) : false;
 
         if (mfaEnabled) {
           return {
@@ -325,7 +326,7 @@ export const authOptions: NextAuthOptions = {
           name: user.name,
           email: user.email,
           role: user.role,
-          tenantId: user.tenantId,
+          tenantId: tenantIdOrThrow(user.tenantId),
         };
       },
     }),

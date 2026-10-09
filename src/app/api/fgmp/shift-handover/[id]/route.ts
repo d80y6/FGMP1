@@ -14,6 +14,7 @@ import {
 import { withTenant } from "@/lib/fgmp/tenant-context";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireAuth, requireRole, ROLES, assertTenantOwned } from "@/lib/fgmp/auth-helpers";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +37,7 @@ export async function GET(
       return res;
     }
     const { id } = await ctx.params;
-    const note = await withTenant(user.tenantId, (tx) => tx.shiftHandover.findUnique({ where: { id } }));
+    const note = await withTenant(tenantIdOrThrow(user.tenantId), (tx) => tx.shiftHandover.findUnique({ where: { id } }));
     const denied = assertTenantOwned(note, user);
     if (denied) return denied;
 
@@ -92,7 +93,7 @@ export async function PATCH(
     const data = r.data;
 
     const { id } = await ctx.params;
-    const note = await withTenant(user.tenantId, (tx) => tx.shiftHandover.findUnique({ where: { id } }));
+    const note = await withTenant(tenantIdOrThrow(user.tenantId), (tx) => tx.shiftHandover.findUnique({ where: { id } }));
     const denied = assertTenantOwned(note, user);
     if (denied) return denied;
     // assertTenantOwned() 404s a null record for every role EXCEPT super-admin
@@ -121,7 +122,7 @@ export async function PATCH(
       return res;
     }
 
-    const updated = await withTenant(user.tenantId, (tx) => tx.shiftHandover.update({
+    const updated = await withTenant(tenantIdOrThrow(user.tenantId), (tx) => tx.shiftHandover.update({
       where: { id },
       data: {
         status: "ACKNOWLEDGED",
@@ -133,7 +134,7 @@ export async function PATCH(
 
     await audit({
       userId: user.id,
-      tenantId: user.tenantId,
+      tenantId: tenantIdOrThrow(user.tenantId),
       action: "HANDOVER_ACK",
       entity: "ShiftHandover",
       entityId: id,
@@ -172,7 +173,7 @@ export async function DELETE(
     }
 
     const { id } = await ctx.params;
-    const note = await withTenant(user.tenantId, (tx) => tx.shiftHandover.findUnique({ where: { id } }));
+    const note = await withTenant(tenantIdOrThrow(user.tenantId), (tx) => tx.shiftHandover.findUnique({ where: { id } }));
     const denied = assertTenantOwned(note, user);
     if (denied) return denied;
     // Super-admin bypass in assertTenantOwned() means a missing note is not
@@ -183,11 +184,11 @@ export async function DELETE(
       return res;
     }
 
-    await withTenant(user.tenantId, (tx) => tx.shiftHandover.delete({ where: { id } }));
+    await withTenant(tenantIdOrThrow(user.tenantId), (tx) => tx.shiftHandover.delete({ where: { id } }));
 
     await audit({
       userId: user.id,
-      tenantId: user.tenantId,
+      tenantId: tenantIdOrThrow(user.tenantId),
       action: "HANDOVER_DELETE",
       entity: "ShiftHandover",
       entityId: id,

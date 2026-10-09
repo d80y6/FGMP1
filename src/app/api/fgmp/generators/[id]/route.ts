@@ -11,6 +11,7 @@ import {
 import { withTenant } from "@/lib/fgmp/tenant-context";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireAuth, requireRole, ROLES, assertSiteTenantOwned } from "@/lib/fgmp/auth-helpers";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -57,7 +58,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
       return res;
     }
     const { id } = await ctx.params;
-    const g = await withTenant(user.tenantId, (tx) => tx.generator.findUnique({
+    const g = await withTenant(tenantIdOrThrow(user.tenantId), (tx) => tx.generator.findUnique({
       where: { id },
       include: { site: { select: { id: true, name: true, code: true, tenantId: true } } },
     }));
@@ -121,7 +122,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     const data = r.data;
 
     // Verify existence + tenant scope.
-    const existing = await withTenant(user.tenantId, (tx) => tx.generator.findUnique({
+    const existing = await withTenant(tenantIdOrThrow(user.tenantId), (tx) => tx.generator.findUnique({
       where: { id },
       include: { site: { select: { tenantId: true } } },
     }));
@@ -140,7 +141,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       if (k === "maintenanceDueHours") updateData.nextMaintenanceHrs = v;
       else updateData[k] = v;
     }
-    const row = await withTenant(user.tenantId, (tx) => tx.generator.update({
+    const row = await withTenant(tenantIdOrThrow(user.tenantId), (tx) => tx.generator.update({
       where: { id },
       data: updateData,
       include: { site: { select: { id: true, name: true, code: true } } },
@@ -166,7 +167,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
     await audit({
       userId: user.id,
-      tenantId: user.tenantId,
+      tenantId: tenantIdOrThrow(user.tenantId),
       action: "GENERATOR_UPDATE",
       entity: "Generator",
       entityId: id,
@@ -199,7 +200,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     }
     const { id } = await ctx.params;
 
-    const existing = await withTenant(user.tenantId, (tx) => tx.generator.findUnique({
+    const existing = await withTenant(tenantIdOrThrow(user.tenantId), (tx) => tx.generator.findUnique({
       where: { id },
       include: { site: { select: { tenantId: true, name: true } } },
     }));
@@ -214,7 +215,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
       return res;
     }
 
-    await withTenant(user.tenantId, (tx) => tx.generator.delete({ where: { id } }));
+    await withTenant(tenantIdOrThrow(user.tenantId), (tx) => tx.generator.delete({ where: { id } }));
 
     // Remove from the engine's in-memory array.
     const idx = engine.generators.findIndex((g) => g.id === id);
@@ -222,7 +223,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
 
     await audit({
       userId: user.id,
-      tenantId: user.tenantId,
+      tenantId: tenantIdOrThrow(user.tenantId),
       action: "GENERATOR_DELETE",
       entity: "Generator",
       entityId: id,

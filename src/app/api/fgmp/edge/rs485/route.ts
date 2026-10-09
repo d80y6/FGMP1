@@ -7,6 +7,7 @@ import {
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse, forbidden } from "@/lib/fgmp/api-error";
 import { requireAuth, siteTenantWhere } from "@/lib/fgmp/auth-helpers";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { withTenant } from "@/lib/fgmp/tenant-context";
 
 export const dynamic = "force-dynamic";
@@ -50,13 +51,13 @@ export async function GET(req: NextRequest) {
 
     // Every database read here must run INSIDE withTenant().
     //
-    // RLS is FORCE-enabled, so a `withTenant(user.tenantId, (tx) => tx.*` query with no tenant context in scope
+    // RLS is FORCE-enabled, so a `withTenant(tenantIdOrThrow(user.tenantId), (tx) => tx.*` query with no tenant context in scope
     // returns ZERO rows — including a query with an explicit tenantId filter,
     // because the policy's USING clause is ANDed with it and `current_setting`
     // is still NULL:
     //
-    //     withTenant(user.tenantId, (tx) => tx.fuelDispenser.count()))                                      -> 0
-    //     withTenant(user.tenantId, (tx) => tx.fuelDispenser.count({ where: { tenantId: "t-default" } }))  -> 0
+    //     withTenant(tenantIdOrThrow(user.tenantId), (tx) => tx.fuelDispenser.count()))                                      -> 0
+    //     withTenant(tenantIdOrThrow(user.tenantId), (tx) => tx.fuelDispenser.count({ where: { tenantId: "t-default" } }))  -> 0
     //     withTenant("t-default", tx => tx.fuelDispenser.count())       -> 24
     //
     // The explicit filter looks like it should work and does not. Verified
@@ -181,13 +182,14 @@ type DiagnosticRow = {
  * error the caller can act on.
  */
 function requireTenant(user: { tenantId?: string | null }): string {
-  if (!user.tenantId) {
+  const tenantId = tenantIdOrThrow(user.tenantId);
+  if (!tenantId) {
     // SUPERADMIN spans tenants and has no single tenantId. It cannot use this
     // route; attempting to guess a tenant would be exactly the cross-tenant
     // read the backstop exists to prevent.
     throw forbidden("This endpoint requires a tenant-scoped account");
   }
-  return user.tenantId;
+  return tenantId;
 }
 
 /** Index diagnostics by Modbus unit address. */

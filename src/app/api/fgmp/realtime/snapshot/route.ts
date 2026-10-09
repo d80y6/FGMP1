@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { engine } from "@/lib/fgmp";
 import { errorResponse } from "@/lib/fgmp/api-error";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +18,7 @@ export const dynamic = "force-dynamic";
  * mini-service and the IoT bridge. The realtime service partitions this
  * snapshot per tenant and pushes each socket only its own slice over
  * `tenant:<id>` rooms. Browser-facing endpoints use /api/fgmp/state, which
- * calls engine.snapshotForTenant(user.tenantId) for proper isolation.
+ * calls engine.snapshotForTenant(tenantIdOrThrow(user.tenantId)) for proper isolation.
  *
  * Authentication: requests MUST include the `x-service-token` header
  * matching the `REALTIME_SERVICE_TOKEN` env var. There is no default — the
@@ -86,7 +87,10 @@ export async function GET(req: NextRequest) {
     // engine.snapshot() is deliberately GLOBAL: this is the service-to-service
     // endpoint, and the realtime service partitions the payload per tenant
     // before pushing each socket only its own slice. See the header note.
-    await engine.ensureInit();
+    // Service-to-service: no session, deliberately global (the realtime
+    // service partitions per tenant before pushing). `ensureAllTenants()`
+    // rather than a bare `ensureInit()`, which now throws by design.
+    await engine.ensureAllTenants();
     const snap = await engine.snapshot();
     return NextResponse.json(snap);
   } catch (err) {

@@ -8,6 +8,7 @@ import {
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireRole, ROLES, assertSiteTenantOwned } from "@/lib/fgmp/auth-helpers";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +47,7 @@ export async function POST(req: NextRequest) {
 
     // PHASE 3: scoped to the caller's tenant. Unscoped this returned null under
     // FORCE RLS for every id, making a firmware deploy impossible to launch.
-    const dispenser = await withTenant(me.tenantId, (tx) =>
+    const dispenser = await withTenant(tenantIdOrThrow(me.tenantId), (tx) =>
       tx.fuelDispenser.findUnique({
         where: { id: dispenserId },
         select: { id: true, site: { select: { tenantId: true } } },
@@ -64,7 +65,7 @@ export async function POST(req: NextRequest) {
       dispenserId,
       releaseId,
       me.id,
-      me.tenantId,
+      tenantIdOrThrow(me.tenantId),
     );
     const res = NextResponse.json(
       result,

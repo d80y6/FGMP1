@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { bootstrap } from "@/lib/fgmp";
-import { asTenant } from "@/lib/fgmp/route-tenant";
+import { asTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import {
   rateLimitByUser,
@@ -72,7 +72,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     // 404 branch below it was unreachable. The actor is `me` (from the
     // session), and it must stay `me`: this is the authorisation check that
     // decides whether a SUPERADMIN sees another tenant's counts.
-    if (!isSuperAdminUser(me) && (!tenant || tenant.id !== me.tenantId)) {
+    if (!isSuperAdminUser(me) && (!tenant || tenant.id !== tenantIdOrThrow(me.tenantId))) {
       const res = NextResponse.json({ error: "Tenant not found" }, { status: 404 });
       applyRateLimitHeaders(res.headers, rl);
       return res;
@@ -178,7 +178,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
     await audit({
       userId: me.id,
-      tenantId: me.tenantId,
+      tenantId: tenantIdOrThrow(me.tenantId),
       action: "TENANT_UPDATE",
       entity: "Tenant",
       entityId: id,
@@ -296,7 +296,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
 
     await audit({
       userId: me.id,
-      tenantId: me.tenantId,
+      tenantId: tenantIdOrThrow(me.tenantId),
       action: "TENANT_DELETE",
       entity: "Tenant",
       entityId: id,

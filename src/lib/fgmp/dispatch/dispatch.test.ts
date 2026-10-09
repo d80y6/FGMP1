@@ -5,11 +5,32 @@
  * else exists to keep that property from being satisfied by accident.
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { selfTest, OUTCOME_SEMANTICS, assertNoExecutedWithoutAck } from "./dispatch-safety.contract";
 import { requireExecuted } from "./types";
 import { SimulatedGeneratorDispatch, simulatedControlEnabled, SIMULATED_FLAG } from "./simulated";
 import type { DispatchOutcome } from "./types";
+
+/**
+ * Set the simulation flag on the REAL process.env and restore it afterwards.
+ *
+ * The previous version of this file cast object literals to `NodeJS.ProcessEnv`,
+ * which TypeScript correctly flagged. Widening the cast to
+ * `as unknown as ProcessEnv` would silence it while proving nothing — a
+ * fabricated env object is not the one production reads.
+ *
+ * Mutating the real thing is both honest and more faithful: `simulatedControl`
+ * reads `process.env`, so this exercises the same path a deployment does.
+ */
+const ORIGINAL = process.env[SIMULATED_FLAG];
+function setFlag(value: string | undefined): void {
+  if (value === undefined) delete process.env[SIMULATED_FLAG];
+  else process.env[SIMULATED_FLAG] = value;
+}
+afterEach(() => {
+  if (ORIGINAL === undefined) delete process.env[SIMULATED_FLAG];
+  else process.env[SIMULATED_FLAG] = ORIGINAL;
+});
 
 const req = { command: "START" as const, generatorId: "gen-1" };
 
@@ -32,7 +53,8 @@ describe("the safety invariant harness", () => {
 
 describe("SimulatedGeneratorDispatch", () => {
   test("DEFAULT OFF — returns NO_TRANSPORT, never EXECUTED", async () => {
-    const d = new SimulatedGeneratorDispatch({ env: {} as NodeJS.ProcessEnv });
+    setFlag(undefined);
+    const d = new SimulatedGeneratorDispatch();
     const o = await d.dispatch(req);
     expect(o.kind).toBe("NO_TRANSPORT");
     expect(o.acknowledgement).toBeUndefined();
@@ -44,10 +66,8 @@ describe("SimulatedGeneratorDispatch", () => {
     // in-memory state so existing behaviour is preserved, but there is no
     // device behind it, so the honest outcome is NO_TRANSPORT.
     let applied = 0;
-    const d = new SimulatedGeneratorDispatch({
-      env: { [SIMULATED_FLAG]: "1" } as NodeJS.ProcessEnv,
-      applyInMemory: () => { applied += 1; },
-    });
+    setFlag("1");
+    const d = new SimulatedGeneratorDispatch({ applyInMemory: () => { applied += 1; } });
     const o = await d.dispatch(req);
     expect(applied).toBe(1);          // in-memory behaviour preserved
     expect(o.kind).toBe("NO_TRANSPORT"); // but no false success
@@ -57,16 +77,20 @@ describe("SimulatedGeneratorDispatch", () => {
 
   test("flag parsing is strict — a typo does not enable control", () => {
     for (const v of ["true", "yes", "on", "", "0", " 1", "1 "]) {
-      expect(simulatedControlEnabled({ [SIMULATED_FLAG]: v } as NodeJS.ProcessEnv)).toBe(false);
+      setFlag(v);
+      expect(simulatedControlEnabled()).toBe(false);
     }
-    expect(simulatedControlEnabled({ [SIMULATED_FLAG]: "1" } as NodeJS.ProcessEnv)).toBe(true);
-    expect(simulatedControlEnabled({} as NodeJS.ProcessEnv)).toBe(false);
+    setFlag("1");
+    expect(simulatedControlEnabled()).toBe(true);
+    setFlag(undefined);
+    expect(simulatedControlEnabled()).toBe(false);
   });
 
   test("NEVER produces EXECUTED under any configuration", async () => {
     // The property, tested against the real implementation rather than a model.
-    for (const env of [{}, { [SIMULATED_FLAG]: "1" }, { [SIMULATED_FLAG]: "0" }]) {
-      const d = new SimulatedGeneratorDispatch({ env: env as NodeJS.ProcessEnv });
+    for (const value of [undefined, "1", "0"]) {
+      setFlag(value);
+      const d = new SimulatedGeneratorDispatch();
       for (const command of ["START", "STOP", "EMERGENCY_STOP", "RESET"] as const) {
         const o = await d.dispatch({ ...req, command });
         expect(o.kind).not.toBe("EXECUTED");

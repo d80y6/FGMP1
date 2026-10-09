@@ -10,6 +10,7 @@ import {
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse, ApiError } from "@/lib/fgmp/api-error";
 import { requireRole, ROLES, assertSiteTenantOwned } from "@/lib/fgmp/auth-helpers";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { withTenant } from "@/lib/fgmp/tenant-context";
 import { emitToRealtime } from "@/lib/fgmp/realtime-emitter";
 
@@ -39,7 +40,7 @@ export const dynamic = "force-dynamic";
  * IN_PROGRESS — resurrecting a DONE / CANCELLED ticket. The guard is now the
  * WHERE clause of a conditional `updateMany`, so the check and the write are
  * one atomic statement; `count === 0` means the race was lost → 409.
- * The ticket update and its audit row are written in one `withTenant(me.tenantId, (tx) => tx.$transaction`.
+ * The ticket update and its audit row are written in one `withTenant(tenantIdOrThrow(me.tenantId), (tx) => tx.$transaction`.
  *
  * This endpoint is ADDITIVE — the existing POST /api/fgmp/maintenance
  * (action: "create" | "complete")) and the generic PUT on
@@ -96,7 +97,7 @@ export async function POST(
     }
     const data = r.data;
 
-    const ticket = await withTenant(me.tenantId, (tx) => tx.maintenanceTicket.findUnique({
+    const ticket = await withTenant(tenantIdOrThrow(me.tenantId), (tx) => tx.maintenanceTicket.findUnique({
       where: { id },
       select: { id: true, status: true, siteId: true, site: { select: { tenantId: true } } },
     }));
@@ -118,7 +119,7 @@ export async function POST(
 
     // Conditional write — the allowed source statuses live in the WHERE clause
     // so the guard and the mutation cannot interleave with another transition.
-    const updated = await withTenant(me.tenantId, async (tx) => {
+    const updated = await withTenant(tenantIdOrThrow(me.tenantId), async (tx) => {
       const { count } = await tx.maintenanceTicket.updateMany({
         where: { id, status: { in: PROGRESS_FROM } },
         data: update,

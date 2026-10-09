@@ -8,6 +8,7 @@ import {
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { render, isExportFormat } from "@/lib/fgmp/export-render";
 import { requireAuth, isSuperAdminUser } from "@/lib/fgmp/auth-helpers";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +33,7 @@ export async function GET(req: NextRequest) {
     // not leak cross-tenant data.
     const tenantSiteIds = isSuperAdminUser(me)
       ? null
-      : new Set(engine.sites.filter((s) => s.tenantId === me.tenantId).map((s) => s.id));
+      : new Set(engine.sites.filter((s) => s.tenantId === tenantIdOrThrow(me.tenantId)).map((s) => s.id));
     const sites = tenantSiteIds === null
       ? engine.sites
       : engine.sites.filter((s) => tenantSiteIds.has(s.id));

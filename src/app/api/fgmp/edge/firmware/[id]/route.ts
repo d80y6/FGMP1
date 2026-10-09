@@ -9,6 +9,7 @@ import {
 import { withTenant } from "@/lib/fgmp/tenant-context";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireRole, ROLES } from "@/lib/fgmp/auth-helpers";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -50,7 +51,7 @@ export async function DELETE(
     }
 
     const { id } = await params;
-    const existing = await withTenant(user.tenantId, (tx) => tx.espFirmwareRelease.findUnique({
+    const existing = await withTenant(tenantIdOrThrow(user.tenantId), (tx) => tx.espFirmwareRelease.findUnique({
       where: { id },
       select: { id: true, version: true, _count: { select: { deployments: true } } },
     }));
@@ -68,11 +69,11 @@ export async function DELETE(
       return res;
     }
 
-    await withTenant(user.tenantId, (tx) => tx.espFirmwareRelease.delete({ where: { id } }));
+    await withTenant(tenantIdOrThrow(user.tenantId), (tx) => tx.espFirmwareRelease.delete({ where: { id } }));
 
     await audit({
       userId: user.id,
-      tenantId: user.tenantId,
+      tenantId: tenantIdOrThrow(user.tenantId),
       action: "DISPENSER_CONTROL",
       entity: "EspFirmwareRelease",
       entityId: id,

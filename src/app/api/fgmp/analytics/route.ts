@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { engine, bootstrap } from "@/lib/fgmp";
-import { asTenant } from "@/lib/fgmp/route-tenant";
+import { asTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { toNum } from "@/lib/fgmp/decimal";
 import { SITE_HEALTH_WEIGHTS, alarmScore } from "@/lib/health/site-health-score";
 import type { SessionUser } from "@/lib/auth";
@@ -105,7 +105,7 @@ export async function GET(req: NextRequest) {
     // the in-memory engine arrays below.
     const tenantSiteIds = isSuperAdminUser(me)
       ? null
-      : new Set(engine.sites.filter((s) => s.tenantId === me.tenantId).map((s) => s.id));
+      : new Set(engine.sites.filter((s) => s.tenantId === tenantIdOrThrow(me.tenantId)).map((s) => s.id));
 
     const sites = tenantSiteIds === null
       ? engine.sites

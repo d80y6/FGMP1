@@ -34,7 +34,7 @@ import {
 // Aliased: the gauge and the exported FUNCTION that reports scheduler state are
 // both called schedulerRunning, and importing both under one name silently
 // shadows the function the gauge is supposed to be derived from.
-import { schedulerRunning } from "./scheduler";
+import { schedulerRunning } from "@/lib/fgmp/scheduler";
 
 /**
  * Publish whether the process-level scheduler is running.

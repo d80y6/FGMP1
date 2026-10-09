@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { bootstrap } from "@/lib/fgmp";
-import { asTenant } from "@/lib/fgmp/route-tenant";
+import { asTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import {
   requireRole,
   ROLES,
@@ -141,7 +141,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
   await audit({
     userId: me.id,
-    tenantId: me.tenantId,
+    tenantId: tenantIdOrThrow(me.tenantId),
     action: "USER_RESET_PASSWORD",
     entity: "User",
     entityId: id,

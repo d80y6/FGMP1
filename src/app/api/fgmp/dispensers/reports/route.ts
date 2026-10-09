@@ -9,6 +9,7 @@ import {
 import { withTenant } from "@/lib/fgmp/tenant-context";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireAuth, siteTenantWhere } from "@/lib/fgmp/auth-helpers";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -55,7 +56,7 @@ export async function GET(req: NextRequest) {
 
     // Run all queries in parallel
     const [txns, totalAgg, faultCount, bySiteRaw, byDispenserRaw, byVehicleRaw, byStatusRaw, hourlyRaw, dailyRaw] = await Promise.all([
-            withTenant(me.tenantId, (tx) => tx.fuelTransaction.findMany({
+            withTenant(tenantIdOrThrow(me.tenantId), (tx) => tx.fuelTransaction.findMany({
         where,
         orderBy: { startedAt: "desc" },
         take: 5000, // cap for safety
@@ -72,44 +73,44 @@ export async function GET(req: NextRequest) {
           vehiclePlate: true,
         },
       })),
-            withTenant(me.tenantId, (tx) => tx.fuelTransaction.aggregate({
+            withTenant(tenantIdOrThrow(me.tenantId), (tx) => tx.fuelTransaction.aggregate({
         where,
         _sum: { volumeLitres: true, amountYer: true },
         _avg: { volumeLitres: true, durationSec: true },
         _count: true,
       })),
-            withTenant(me.tenantId, (tx) => tx.fuelTransaction.count({ where: { ...where, status: "FAILED" } })),
-            withTenant(me.tenantId, (tx) => tx.fuelTransaction.groupBy({
+            withTenant(tenantIdOrThrow(me.tenantId), (tx) => tx.fuelTransaction.count({ where: { ...where, status: "FAILED" } })),
+            withTenant(tenantIdOrThrow(me.tenantId), (tx) => tx.fuelTransaction.groupBy({
         by: ["siteId"],
         where,
         _count: true,
         _sum: { volumeLitres: true, amountYer: true },
       })),
-            withTenant(me.tenantId, (tx) => tx.fuelTransaction.groupBy({
+            withTenant(tenantIdOrThrow(me.tenantId), (tx) => tx.fuelTransaction.groupBy({
         by: ["dispenserId"],
         where,
         _count: true,
         _sum: { volumeLitres: true, amountYer: true },
       })),
-            withTenant(me.tenantId, (tx) => tx.fuelTransaction.groupBy({
+            withTenant(tenantIdOrThrow(me.tenantId), (tx) => tx.fuelTransaction.groupBy({
         by: ["vehiclePlate"],
         where,
         _count: true,
         _sum: { volumeLitres: true, amountYer: true },
       })),
-            withTenant(me.tenantId, (tx) => tx.fuelTransaction.groupBy({
+            withTenant(tenantIdOrThrow(me.tenantId), (tx) => tx.fuelTransaction.groupBy({
         by: ["status"],
         where,
         _count: true,
         _sum: { volumeLitres: true },
       })),
       // hourly: group by hour-of-day. SQLite has no EXTRACT; we do it in JS.
-            withTenant(me.tenantId, (tx) => tx.fuelTransaction.findMany({
+            withTenant(tenantIdOrThrow(me.tenantId), (tx) => tx.fuelTransaction.findMany({
         where,
         select: { startedAt: true, volumeLitres: true },
         take: 5000,
       })),
-            withTenant(me.tenantId, (tx) => tx.fuelTransaction.findMany({
+            withTenant(tenantIdOrThrow(me.tenantId), (tx) => tx.fuelTransaction.findMany({
         where,
         select: { startedAt: true, volumeLitres: true, amountYer: true },
         take: 5000,
@@ -120,8 +121,8 @@ export async function GET(req: NextRequest) {
     const siteIds = [...new Set(bySiteRaw.map((s) => s.siteId))];
     const dispenserIds = [...new Set(byDispenserRaw.map((d) => d.dispenserId))];
     const [sites, dispensers] = await Promise.all([
-            withTenant(me.tenantId, (tx) => tx.site.findMany({ where: { id: { in: siteIds } }, select: { id: true, name: true, code: true } })),
-            withTenant(me.tenantId, (tx) => tx.fuelDispenser.findMany({
+            withTenant(tenantIdOrThrow(me.tenantId), (tx) => tx.site.findMany({ where: { id: { in: siteIds } }, select: { id: true, name: true, code: true } })),
+            withTenant(tenantIdOrThrow(me.tenantId), (tx) => tx.fuelDispenser.findMany({
         where: { id: { in: dispenserIds } },
         select: { id: true, label: true, pumpNumber: true, siteId: true, site: { select: { name: true } } },
       })),

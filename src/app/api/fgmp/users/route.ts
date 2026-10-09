@@ -7,8 +7,7 @@ import {
   requireRole,
   ROLES,
   tenantWhereOrAll,
-  isSuperAdminUser,
-} from "@/lib/fgmp/auth-helpers";
+  isSuperAdminUser, requireTenantId } from "@/lib/fgmp/auth-helpers";
 import { audit } from "@/lib/fgmp/audit";
 import {
   rateLimitByUser,
@@ -229,7 +228,9 @@ export async function POST(req: NextRequest) {
       tenantId = clientTenantId;
     }
   } else {
-    tenantId = me.tenantId;
+    // Not a super-admin, so the only legal tenant is the caller's own. Fail
+    // closed rather than building a filter from a possibly-absent tenant.
+    tenantId = requireTenantId(me);
   }
 
   // bcrypt.hash costs ~100ms of blocking CPU, so it is computed BEFORE any

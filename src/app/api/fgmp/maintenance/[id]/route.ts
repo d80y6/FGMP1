@@ -8,6 +8,7 @@ import {
 import { withTenant } from "@/lib/fgmp/tenant-context";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireAuth, assertSiteTenantOwned } from "@/lib/fgmp/auth-helpers";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       return res;
     }
     const { id } = await params;
-    const t = await withTenant(me.tenantId, (tx) => tx.maintenanceTicket.findUnique({ where: { id }, include: { site: true } }));
+    const t = await withTenant(tenantIdOrThrow(me.tenantId), (tx) => tx.maintenanceTicket.findUnique({ where: { id }, include: { site: true } }));
     const denied = assertSiteTenantOwned(t?.site ?? null, me);
     if (denied) return denied;
     const res = NextResponse.json(t);

@@ -9,6 +9,7 @@ import {
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireRole, ROLES, assertSiteTenantOwned } from "@/lib/fgmp/auth-helpers";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +41,7 @@ export async function PATCH(
     if (typeof body.model === "string" && body.model.trim()) data.model = body.model.trim().slice(0, 60);
     if (typeof body.ipAddress === "string") data.ipAddress = body.ipAddress.trim().slice(0, 60) || null;
 
-    const existing = await withTenant(me.tenantId, (tx) =>
+    const existing = await withTenant(tenantIdOrThrow(me.tenantId), (tx) =>
       tx.siteGateway.findUnique({
         where: { id },
         select: { id: true, hostname: true, site: { select: { tenantId: true } } },
@@ -57,7 +58,7 @@ export async function PATCH(
       return denied;
     }
 
-    const updated = await withTenant(me.tenantId, (tx) =>
+    const updated = await withTenant(tenantIdOrThrow(me.tenantId), (tx) =>
       tx.siteGateway.update({
         where: { id },
         data,
@@ -76,7 +77,7 @@ export async function PATCH(
 
     await audit({
       userId: me.id,
-      tenantId: me.tenantId,
+      tenantId: tenantIdOrThrow(me.tenantId),
       action: "DISPENSER_CONTROL",
       entity: "SiteGateway",
       entityId: id,
@@ -113,7 +114,7 @@ export async function DELETE(
     }
 
     const { id } = await params;
-    const existing = await withTenant(me.tenantId, (tx) =>
+    const existing = await withTenant(tenantIdOrThrow(me.tenantId), (tx) =>
       tx.siteGateway.findUnique({
         where: { id },
         select: { id: true, hostname: true, site: { select: { tenantId: true } } },
@@ -130,11 +131,11 @@ export async function DELETE(
       return denied;
     }
 
-    await withTenant(me.tenantId, (tx) => tx.siteGateway.delete({ where: { id } }));
+    await withTenant(tenantIdOrThrow(me.tenantId), (tx) => tx.siteGateway.delete({ where: { id } }));
 
     await audit({
       userId: me.id,
-      tenantId: me.tenantId,
+      tenantId: tenantIdOrThrow(me.tenantId),
       action: "DISPENSER_CONTROL",
       entity: "SiteGateway",
       entityId: id,
@@ -184,7 +185,7 @@ export async function POST(
 
     // Tenant guard: verify the gateway belongs to the caller's tenant before
     // dispatching the reboot through the engine.
-    const existing = await withTenant(me.tenantId, (tx) =>
+    const existing = await withTenant(tenantIdOrThrow(me.tenantId), (tx) =>
       tx.siteGateway.findUnique({
         where: { id },
         select: { id: true, site: { select: { tenantId: true } } },
@@ -204,7 +205,7 @@ export async function POST(
     // Phase 3: the authenticated tenant is required. Without it the engine's
     // scope assertion refuses every reboot (fail-closed, but the feature is
     // then broken rather than protected).
-    const result = await engine.applyGatewayReboot(id, me.id, me.tenantId);
+    const result = await engine.applyGatewayReboot(id, me.id, tenantIdOrThrow(me.tenantId));
     const res = NextResponse.json(result, { status: result.ok ? 202 : 404 });
     applyRateLimitHeaders(res.headers, rl);
     return res;

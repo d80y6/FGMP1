@@ -27,6 +27,7 @@
  */
 
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 export interface RealtimeTokenPayload {
   /** Subject — the user id. */
@@ -92,7 +93,7 @@ export function issueRealtimeToken(user: {
 }): string {
   return signRealtimeToken({
     sub: user.id,
-    tid: user.tenantId,
+    tid: tenantIdOrThrow(user.tenantId),
     role: user.role,
     exp: Date.now() + REALTIME_TOKEN_TTL_MS,
   });

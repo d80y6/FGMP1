@@ -157,7 +157,11 @@ export async function POST(req: NextRequest) {
   // even checked, so the device path returned 500 for all traffic.
   //
   // Only engine state is wanted here; the handler never reads `user`.
-  await engine.ensureInit();
+  // Device ingest carries an API key, not a session, so there is no tenant to
+  // scope to here — and this endpoint only wants engine state, never `user`.
+  // That makes it a genuine "load everything" case, so it uses the one named
+  // entry point that is allowed to resolve all tenants.
+  await engine.ensureAllTenants();
 
   // ── API-key auth (edge-device authentication) ──────────────────────────
   const apiKey = req.headers.get("x-api-key");

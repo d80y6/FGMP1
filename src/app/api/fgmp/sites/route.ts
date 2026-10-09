@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { engine, bootstrap } from "@/lib/fgmp";
-import { asTenant, asTenantForAnotherTenant } from "@/lib/fgmp/route-tenant";
+import { asTenant, asTenantForAnotherTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { resolveGeographyPath, attachGeographyNames } from "@/lib/fgmp/geography";
 import { requireAuth, requireRole, ROLES, tenantWhere } from "@/lib/fgmp/auth-helpers";
 import { audit } from "@/lib/fgmp/audit";
@@ -147,7 +147,9 @@ export async function POST(req: NextRequest) {
     }
     const data = parsed.data;
 
-    const tenantId = me.tenantId;
+    // Fail closed at the boundary rather than letting `string | undefined` flow
+    // through the file: a tenant-less session must not build a site filter.
+    const tenantId = tenantIdOrThrow(me.tenantId);
 
     // ── Tenant scoping ────────────────────────────────────────────────────
     // Site, Region, Governorate and District are all FORCE-RLS protected, so

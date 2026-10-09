@@ -11,6 +11,7 @@ import {
 import { withTenant } from "@/lib/fgmp/tenant-context";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireAuth, requireRole, ROLES, siteTenantWhereOrAll, assertTenantOwned } from "@/lib/fgmp/auth-helpers";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { decimalsToJson } from "@/lib/fgmp/decimal";
 
 export const dynamic = "force-dynamic";
@@ -40,7 +41,7 @@ export async function GET(req: NextRequest) {
     const siteId = searchParams.get("siteId");
     const where: Record<string, unknown> = { ...siteTenantWhereOrAll(user) };
     if (siteId) where.siteId = siteId;
-    const dispensers = await withTenant(user.tenantId, (tx) => tx.fuelDispenser.findMany({
+    const dispensers = await withTenant(tenantIdOrThrow(user.tenantId), (tx) => tx.fuelDispenser.findMany({
       where,
       orderBy: { label: "asc" },
       include: { site: { select: { id: true, name: true, code: true } } },
@@ -107,7 +108,7 @@ export async function POST(req: NextRequest) {
 
     // Verify the site exists in the acting admin's tenant
     // (SUPERADMIN bypasses for cross-tenant asset creation).
-    const site = await withTenant(user.tenantId, (tx) => tx.site.findUnique({
+    const site = await withTenant(tenantIdOrThrow(user.tenantId), (tx) => tx.site.findUnique({
       where: { id: data.siteId },
       select: { id: true, tenantId: true, name: true },
     }));
@@ -126,7 +127,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Enforce unique espDeviceId
-    const existingEsp = await withTenant(user.tenantId, (tx) => tx.fuelDispenser.findUnique({
+    const existingEsp = await withTenant(tenantIdOrThrow(user.tenantId), (tx) => tx.fuelDispenser.findUnique({
       where: { espDeviceId: data.espDeviceId },
       select: { id: true },
     }));
@@ -157,7 +158,7 @@ export async function POST(req: NextRequest) {
 
     await audit({
       userId: user.id,
-      tenantId: user.tenantId,
+      tenantId: tenantIdOrThrow(user.tenantId),
       action: "DISPENSER_CREATE",
       entity: "FuelDispenser",
       entityId: created.id,

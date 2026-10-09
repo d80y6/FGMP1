@@ -263,6 +263,7 @@ export function canView(role: Role, viewKey: string): boolean {
 
 import { db } from "@/lib/db";
 import { PrismaClient } from "@prisma/client";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 /**
  * Owner/ops client for SYSTEM-level identity work.
@@ -329,12 +330,19 @@ export async function getCurrentUser(): Promise<FgmpUser> {
   const { authOptions } = await import("@/lib/auth");
   const session = await getServerSession(authOptions);
   if (session?.user?.id) {
+    // `Me` declares tenantId as a plain string because that is what every
+    // AUTHENTICATED user has. A PENDING MFA session has none — it is not yet
+    // authorised — so this is the one place the two meet.
+    //
+    // requireTenantId THROWS rather than defaulting to "". An empty-string
+    // tenant would build a filter matching nothing while looking perfectly
+    // valid, which reads as "no data" instead of "not allowed".
     return {
       id: session.user.id,
       name: session.user.name,
       email: session.user.email,
       role: session.user.role as Role,
-      tenantId: session.user.tenantId,
+      tenantId: tenantIdOrThrow(session.user.tenantId),
     };
   }
   throw new Error(

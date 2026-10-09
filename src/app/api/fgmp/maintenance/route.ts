@@ -14,6 +14,7 @@ import {
 import { withTenant } from "@/lib/fgmp/tenant-context";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireAuth, requireRole, ROLES, assertSiteTenantOwned, siteTenantWhereOrAll } from "@/lib/fgmp/auth-helpers";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +33,7 @@ export async function GET(req: NextRequest) {
     const status = searchParams.get("status");
     const where: Record<string, unknown> = { ...siteTenantWhereOrAll(me) };
     if (status) where.status = { in: status.split(",") };
-    const tickets = await withTenant(me.tenantId, (tx) => tx.maintenanceTicket.findMany({
+    const tickets = await withTenant(tenantIdOrThrow(me.tenantId), (tx) => tx.maintenanceTicket.findMany({
       where,
       orderBy: [{ priority: "asc" }, { scheduledFor: "asc" }],
       take: 200,
@@ -71,13 +72,13 @@ export async function POST(req: NextRequest) {
     const data = r.data;
 
     if (data.action === "complete") {
-      const existing = await withTenant(me.tenantId, (tx) => tx.maintenanceTicket.findUnique({
+      const existing = await withTenant(tenantIdOrThrow(me.tenantId), (tx) => tx.maintenanceTicket.findUnique({
         where: { id: data.ticketId },
         select: { site: { select: { tenantId: true } } },
       }));
       const denied = assertSiteTenantOwned(existing?.site ?? null, me);
       if (denied) return denied;
-      const updated = await withTenant(me.tenantId, (tx) => tx.maintenanceTicket.update({
+      const updated = await withTenant(tenantIdOrThrow(me.tenantId), (tx) => tx.maintenanceTicket.update({
         where: { id: data.ticketId },
         data: { status: "DONE", completedAt: new Date() },
       }));
@@ -87,7 +88,7 @@ export async function POST(req: NextRequest) {
       return res;
     }
     // create — verify the referenced site belongs to the caller's tenant
-    const site = await withTenant(me.tenantId, (tx) => tx.site.findUnique({
+    const site = await withTenant(tenantIdOrThrow(me.tenantId), (tx) => tx.site.findUnique({
       where: { id: data.siteId },
       select: { tenantId: true },
     }));
@@ -99,7 +100,7 @@ export async function POST(req: NextRequest) {
     if (!site) {
       return NextResponse.json({ error: "Site not found" }, { status: 404 });
     }
-    const created = await withTenant(me.tenantId, (tx) => tx.maintenanceTicket.create({
+    const created = await withTenant(tenantIdOrThrow(me.tenantId), (tx) => tx.maintenanceTicket.create({
       data: {
         siteId: data.siteId,
         tenantId: site.tenantId,

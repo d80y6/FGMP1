@@ -9,6 +9,7 @@ import {
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireAuth, requireRole, ROLES } from "@/lib/fgmp/auth-helpers";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +20,7 @@ export const dynamic = "force-dynamic";
  *
  * ── CROSS-TENANT SAFETY ON `id` ─────────────────────────────────────────────
  * The ruleId comes from the URL and is therefore attacker-controlled. The
- * service passes it to Prisma inside `withTenant(me.tenantId, …)`, so RLS makes
+ * service passes it to Prisma inside `withTenant(tenantIdOrThrow(me.tenantId), …)`, so RLS makes
  * another tenant's row unreachable and Prisma raises P2025 rather than
  * mutating it. That is defence in depth, not the primary guard — the primary
  * guard is that the query runs under this tenant's RLS context.
@@ -66,7 +67,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
 
     let rule: unknown;
     try {
-      rule = await updateRule(me.tenantId, id, v.data);
+      rule = await updateRule(tenantIdOrThrow(me.tenantId), id, v.data);
     } catch (err) {
       if (isNotFound(err)) {
         return NextResponse.json({ error: "Rule not found" }, { status: 404 });
@@ -76,7 +77,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
 
     await audit({
       userId: me.id,
-      tenantId: me.tenantId,
+      tenantId: tenantIdOrThrow(me.tenantId),
       action: "correlation.rule.update",
       entity: "CorrelationRule",
       entityId: id,
@@ -109,7 +110,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
 
     const { id } = await ctx.params;
     try {
-      await deleteRule(me.tenantId, id);
+      await deleteRule(tenantIdOrThrow(me.tenantId), id);
     } catch (err) {
       if (isNotFound(err)) {
         return NextResponse.json({ error: "Rule not found" }, { status: 404 });
@@ -119,7 +120,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
 
     await audit({
       userId: me.id,
-      tenantId: me.tenantId,
+      tenantId: tenantIdOrThrow(me.tenantId),
       action: "correlation.rule.delete",
       entity: "CorrelationRule",
       entityId: id,

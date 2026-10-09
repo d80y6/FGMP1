@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { bootstrap } from "@/lib/fgmp";
-import { asTenant } from "@/lib/fgmp/route-tenant";
+import { asTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import {
   rateLimitByUser,
@@ -226,7 +226,7 @@ export async function POST(req: NextRequest) {
     const created = await asTenant(user, (tx) =>
       tx.apiKey.create({
       data: {
-        tenantId: user.tenantId,
+        tenantId: tenantIdOrThrow(user.tenantId),
         name,
         keyPrefix: prefix,
         keyHash: hash,
@@ -239,7 +239,7 @@ export async function POST(req: NextRequest) {
 
     await audit({
       userId: user.id,
-      tenantId: user.tenantId,
+      tenantId: tenantIdOrThrow(user.tenantId),
       action: "CREATE",
       entity: "ApiKey",
       entityId: created.id,

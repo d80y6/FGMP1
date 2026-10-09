@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { engine, bootstrap } from "@/lib/fgmp";
-import { asTenant } from "@/lib/fgmp/route-tenant";
+import { asTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import {
   rateLimitByUser,
   applyRateLimitHeaders,
@@ -146,7 +146,7 @@ export async function GET(req: NextRequest) {
     const tenantSiteIds = isSuperAdminUser(me)
       ? null
       : engine.sites
-          .filter((s) => s.tenantId === me.tenantId)
+          .filter((s) => s.tenantId === tenantIdOrThrow(me.tenantId))
           .map((s) => s.id);
     const cutoff = new Date(Date.now() - WINDOW_DAYS * 86400000);
     // Both reads inside one transaction. The FuelTank query has a nested

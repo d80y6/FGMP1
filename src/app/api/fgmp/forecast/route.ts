@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { engine, bootstrap } from "@/lib/fgmp";
-import { asTenant } from "@/lib/fgmp/route-tenant";
+import { asTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import {
   rateLimitByUser,
   applyRateLimitHeaders,
@@ -177,7 +177,7 @@ export async function GET(req: NextRequest) {
     // resolved once and used to filter engine.tanks / engine.sites below.
     const tenantSiteIds = isSuperAdminUser(me)
       ? null
-      : new Set(engine.sites.filter((s) => s.tenantId === me.tenantId).map((s) => s.id));
+      : new Set(engine.sites.filter((s) => s.tenantId === tenantIdOrThrow(me.tenantId)).map((s) => s.id));
 
     const now = Date.now();
     const cutoff = now - HOURS_24_MS;
@@ -209,7 +209,7 @@ export async function GET(req: NextRequest) {
     // the wrong tenant the day that state is populated again.
     //
     // For a SUPERADMIN, siteTenantWhereOrAll(me) returns {} (no tenant filter)
-    // and withTenant(me.tenantId) scopes the query to the super-admin's own
+    // and withTenant(tenantIdOrThrow(me.tenantId)) scopes the query to the super-admin's own
     // tenant — which is the safe direction: an empty result rather than a
     // cross-tenant read. `siteTenantWhereOrAll` is deliberately KEPT so the
     // non-superadmin filter is unchanged.

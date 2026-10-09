@@ -11,6 +11,7 @@ import {
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireAuth, requireRole, ROLES } from "@/lib/fgmp/auth-helpers";
 import { audit } from "@/lib/fgmp/audit";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -56,7 +57,7 @@ export async function GET(req: NextRequest) {
       return res;
     }
 
-    const rules = await listRules(me.tenantId);
+    const rules = await listRules(tenantIdOrThrow(me.tenantId));
     const res = NextResponse.json(rules);
     applyRateLimitHeaders(res.headers, rl);
     return res;
@@ -89,7 +90,7 @@ export async function POST(req: NextRequest) {
       return res;
     }
 
-    const rule = await createRule(me.tenantId, {
+    const rule = await createRule(tenantIdOrThrow(me.tenantId), {
       name: v.data.name,
       description: v.data.description,
       alarmType: v.data.alarmType,
@@ -101,7 +102,7 @@ export async function POST(req: NextRequest) {
 
     await audit({
       userId: me.id,
-      tenantId: me.tenantId,
+      tenantId: tenantIdOrThrow(me.tenantId),
       action: "correlation.rule.create",
       entity: "CorrelationRule",
       details: {

@@ -577,6 +577,7 @@ function EditorTab({ rules }: { rules: CorrelationRule[] }) {
   }
 
   return (
+    <>
     <div className="space-y-3">
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2">
@@ -609,6 +610,22 @@ function EditorTab({ rules }: { rules: CorrelationRule[] }) {
         </div>
       )}
     </div>
+      {/* Phase 5 task 4 — replaces window.confirm for the reset action. */}
+      <ConfirmDestructive
+        target={
+          resetOpen
+            ? {
+                title: t("confirm.resetTitle"),
+                description: t("rules.resetConfirm"),
+                cancelLabel: t("confirm.cancel"),
+                confirmLabel: t("rules.reset"),
+              }
+            : null
+        }
+        onCancel={() => setResetOpen(false)}
+        onConfirm={performReset}
+      />
+    </>
   );
 }
 
@@ -645,7 +662,9 @@ function ReadOnlyRuleCard({ rule }: { rule: CorrelationRule }) {
 
 /** Editable card — ADMIN only. Local draft, Save/Delete buttons. */
 function RuleEditorCard({ rule, index }: { rule: CorrelationRule; index: number }) {
-  const t = useT();
+    // Phase 5 task 4 — confirm dialog for deleting this rule.
+  const [deleteOpen, setDeleteOpen] = useState(false);
+const t = useT();
   const updateRule = useCorrelationRules((s) => s.updateRule);
   const deleteRule = useCorrelationRules((s) => s.deleteRule);
   const toggleRule = useCorrelationRules((s) => s.toggleRule);
@@ -729,13 +748,15 @@ function RuleEditorCard({ rule, index }: { rule: CorrelationRule; index: number 
     toast.success(t("rules.ruleSaved"), { description: nameTrimmed });
   };
 
-  const handleDelete = () => {
-    if (!window.confirm(`${t("rules.deleteConfirm")} "${rule.name}"${t("rules.deleteConfirmSuffix")}`)) return;
+  // Phase 5 task 4 — gated by ConfirmDestructive instead of window.confirm.
+  const performDelete = () => {
     deleteRule(rule.id);
     toast.success(t("rules.ruleDeleted"), { description: rule.name });
+    setDeleteOpen(false);
   };
 
   return (
+    <>
     <div
       className={cn(
         "animate-slide-in-up rounded-lg border p-3 transition-all",
@@ -946,7 +967,7 @@ function RuleEditorCard({ rule, index }: { rule: CorrelationRule; index: number 
         <Button
           size="sm"
           variant="outline"
-          onClick={handleDelete}
+          onClick={() => setDeleteOpen(true)}
           className="ml-auto h-7 border-rose-500/30 text-rose-600 hover:bg-rose-500/10 hover:text-rose-700 dark:text-rose-400"
         >
           <Trash2 className="mr-1.5 h-3.5 w-3.5" />
@@ -954,6 +975,22 @@ function RuleEditorCard({ rule, index }: { rule: CorrelationRule; index: number 
         </Button>
       </div>
     </div>
+      {/* Phase 5 task 4 — replaces window.confirm for rule deletion. */}
+      <ConfirmDestructive
+        target={
+          deleteOpen
+            ? {
+                title: t("confirm.deleteTitle"),
+                description: `${t("rules.deleteConfirm")} "${rule.name}"${t("rules.deleteConfirmSuffix")}`,
+                cancelLabel: t("confirm.cancel"),
+                confirmLabel: t("confirm.deleteTitle"),
+              }
+            : null
+        }
+        onCancel={() => setDeleteOpen(false)}
+        onConfirm={performDelete}
+      />
+    </>
   );
 }
 

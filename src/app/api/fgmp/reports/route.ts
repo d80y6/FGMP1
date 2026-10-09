@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { engine, bootstrap } from "@/lib/fgmp";
-import { asTenant } from "@/lib/fgmp/route-tenant";
+import { asTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import {
   rateLimitByUser,
   applyRateLimitHeaders,
@@ -62,7 +62,7 @@ export async function GET(req: NextRequest) {
     // totals. (Task TI-2c)
     const tenantSites = isSuperAdminUser(me)
       ? engine.sites
-      : engine.sites.filter((s) => s.tenantId === me.tenantId);
+      : engine.sites.filter((s) => s.tenantId === tenantIdOrThrow(me.tenantId));
     const tenantSiteIds = isSuperAdminUser(me)
       ? null
       : new Set(tenantSites.map((s) => s.id));

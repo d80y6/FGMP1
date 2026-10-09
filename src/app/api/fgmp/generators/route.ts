@@ -11,6 +11,7 @@ import {
 import { withTenant } from "@/lib/fgmp/tenant-context";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { requireAuth, requireRole, ROLES, siteTenantWhereOrAll, assertTenantOwned } from "@/lib/fgmp/auth-helpers";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -50,7 +51,7 @@ export async function GET(req: NextRequest) {
     const siteId = searchParams.get("siteId");
     const where: Record<string, unknown> = { ...siteTenantWhereOrAll(user) };
     if (siteId) where.siteId = siteId;
-    const generators = await withTenant(user.tenantId, (tx) => tx.generator.findMany({
+    const generators = await withTenant(tenantIdOrThrow(user.tenantId), (tx) => tx.generator.findMany({
       where,
       orderBy: { label: "asc" },
       include: { site: { select: { id: true, name: true, code: true } } },
@@ -114,7 +115,7 @@ export async function POST(req: NextRequest) {
 
     // Verify the site exists in the acting admin's tenant
     // (SUPERADMIN bypasses for cross-tenant asset creation).
-    const site = await withTenant(user.tenantId, (tx) => tx.site.findUnique({
+    const site = await withTenant(tenantIdOrThrow(user.tenantId), (tx) => tx.site.findUnique({
       where: { id: data.siteId },
       select: { id: true, tenantId: true, name: true },
     }));
@@ -133,7 +134,7 @@ export async function POST(req: NextRequest) {
     }
 
     const oilInterval = data.oilChangeIntervalHrs ?? 250;
-    const row = await withTenant(user.tenantId, (tx) => tx.generator.create({
+    const row = await withTenant(tenantIdOrThrow(user.tenantId), (tx) => tx.generator.create({
       data: {
         siteId: data.siteId,
         tenantId: site.tenantId,
@@ -177,7 +178,7 @@ export async function POST(req: NextRequest) {
 
     await audit({
       userId: user.id,
-      tenantId: user.tenantId,
+      tenantId: tenantIdOrThrow(user.tenantId),
       action: "GENERATOR_CREATE",
       entity: "Generator",
       entityId: row.id,

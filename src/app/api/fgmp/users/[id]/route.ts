@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { bootstrap } from "@/lib/fgmp";
-import { asTenant } from "@/lib/fgmp/route-tenant";
+import { asTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import {
   requireRole,
   ROLES,
@@ -213,7 +213,7 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
 
   await audit({
     userId: me.id,
-    tenantId: me.tenantId,
+    tenantId: tenantIdOrThrow(me.tenantId),
     action: "USER_UPDATE",
     entity: "User",
     entityId: id,
@@ -279,7 +279,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
   await audit({
     userId: me.id,
-    tenantId: me.tenantId,
+    tenantId: tenantIdOrThrow(me.tenantId),
     action: body.active ? "USER_ACTIVATE" : "USER_DEACTIVATE",
     entity: "User",
     entityId: id,
@@ -335,7 +335,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
 
   await audit({
     userId: me.id,
-    tenantId: me.tenantId,
+    tenantId: tenantIdOrThrow(me.tenantId),
     action: "USER_DEACTIVATE",
     entity: "User",
     entityId: id,

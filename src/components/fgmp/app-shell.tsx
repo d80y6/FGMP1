@@ -219,7 +219,11 @@ export function AppShell() {
       name: sessionUser.name,
       email: sessionUser.email,
       role,
-      tenantId: sessionUser.tenantId,
+      // A PENDING MFA session deliberately carries no tenant. Rather than
+      // fabricating "" — which would produce a `Me` that LOOKS scoped and
+      // matches no rows — leave it unset and let the guard refuse the request.
+      // The client is redirected to the challenge anyway.
+      ...(sessionUser.tenantId ? { tenantId: sessionUser.tenantId } : { tenantId: undefined as unknown as string }),
       // ADMIN and SUPERADMIN can switch roles (PATCH /api/fgmp/me accepts
       // both). For everyone else we expose just their own role so the
       // switcher renders as a read-only badge rather than a misleading

@@ -1,7 +1,7 @@
 import type { Prisma, SystemSettingCategory } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { withTenant } from "@/lib/fgmp/tenant-context";
-import { asTenant } from "@/lib/fgmp/route-tenant";
+import { asTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import {
   rateLimitByUser,
@@ -166,13 +166,13 @@ export async function GET(req: NextRequest) {
 
     // Auto-seed defaults for the requested category (or all of them).
     if (category) {
-      await seedCategoryDefaults(me.tenantId, category);
+      await seedCategoryDefaults(tenantIdOrThrow(me.tenantId), category);
     } else {
-      for (const cat of VALID_CATEGORIES) await seedCategoryDefaults(me.tenantId, cat);
+      for (const cat of VALID_CATEGORIES) await seedCategoryDefaults(tenantIdOrThrow(me.tenantId), cat);
     }
 
     const where: Prisma.SystemSettingWhereInput = category ? { category } : {};
-    const rows = await withTenant(me.tenantId, (tx) =>
+    const rows = await withTenant(tenantIdOrThrow(me.tenantId), (tx) =>
       tx.systemSetting.findMany({
         where,
         orderBy: { key: "asc" },
@@ -272,7 +272,7 @@ export async function PATCH(req: NextRequest) {
       else if (typeof op.value === "boolean") stored = op.value ? "true" : "false";
       else stored = JSON.stringify(op.value);
 
-      await withTenant(me.tenantId, (tx) =>
+      await withTenant(tenantIdOrThrow(me.tenantId), (tx) =>
         tx.systemSetting.upsert({
           where: { key: op.key },
           update: { value: stored, category: def.category, type: def.type },
@@ -286,7 +286,7 @@ export async function PATCH(req: NextRequest) {
     if (updatedKeys.length > 0) {
       await audit({
         userId: me.id,
-        tenantId: me.tenantId,
+        tenantId: tenantIdOrThrow(me.tenantId),
         action: "CONFIG",
         entity: "SystemSetting",
         entityId: updatedKeys[0],

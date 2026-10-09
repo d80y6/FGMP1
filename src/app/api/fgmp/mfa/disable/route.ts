@@ -9,6 +9,7 @@ import {
 } from "@/lib/fgmp/rate-limit";
 import { disableMfa, backupCodesRemaining } from "@/lib/fgmp/mfa/service";
 import { audit } from "@/lib/fgmp/audit";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +42,7 @@ export async function POST(req: NextRequest) {
       return res;
     }
 
-    if (!auth.user.tenantId) {
+    if (!tenantIdOrThrow(auth.user.tenantId)) {
       return errorResponse(forbidden("MFA requires a tenant-scoped account"));
     }
 
@@ -57,7 +58,7 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await disableMfa(
-      auth.user.tenantId,
+      tenantIdOrThrow(auth.user.tenantId),
       auth.user.id,
       parsed.data.code,
       parsed.data.reason,
@@ -70,14 +71,14 @@ export async function POST(req: NextRequest) {
 
     await audit({
       userId: auth.user.id,
-      tenantId: auth.user.tenantId,
+      tenantId: tenantIdOrThrow(auth.user.tenantId),
       action: "MFA_DISABLED",
       entity: "MfaEnrollment",
       entityId: auth.user.id,
       details: { reason: parsed.data.reason, selfService: true },
     });
 
-    const remaining = await backupCodesRemaining(auth.user.tenantId, auth.user.id);
+    const remaining = await backupCodesRemaining(tenantIdOrThrow(auth.user.tenantId), auth.user.id);
     const res = NextResponse.json({
       disabled: true,
       backupCodesRemaining: remaining,
