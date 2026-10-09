@@ -490,3 +490,65 @@ export async function approveMfaReset(
     return { ok: true as const };
   });
 }
+// ── Status (for the UI) ──────────────────────────────────────────────────────
+
+export type OwnEnrollmentView = {
+  enrollment: {
+    id: string;
+    enabled: boolean;
+    enrolledAt: Date | null;
+    lastUsedAt: Date | null;
+    disabledAt: Date | null;
+    disabledReason: string | null;
+    digits: number;
+    periodSeconds: number;
+  } | null;
+  backupCodesRemaining: number;
+};
+
+/**
+ * Describe the CALLER'S OWN enrolment, for the UI.
+ *
+ * ── WHY THIS NEEDS ITS OWN PATH ─────────────────────────────────────────────
+ * Every other function here is tenant-scoped through `withTenant`. A PENDING MFA
+ * session deliberately carries NO tenant, so it cannot open a tenant-scoped
+ * transaction at all — and `GET /api/fgmp/mfa/status` is precisely what a user
+ * who has just been asked for a code needs to read.
+ *
+ * So this lookup is keyed on the caller's own `userId` and touches only their own
+ * row. It grants nothing: a tenant-less session learns only its own enrolment
+ * state, which is what it is already being asked about, and the response carries
+ * a COUNT of unused backup codes rather than the codes themselves.
+ *
+ * The backup-code COUNT is a separate tenant-scoped query, so it is only counted
+ * when the session genuinely has a tenant. A pending session sees 0 remaining
+ * rather than opening a transaction it is not entitled to.
+ */
+export async function describeOwnEnrollment(
+  userId: string,
+  tenantId: string | undefined,
+): Promise<OwnEnrollmentView> {
+  const row = await db.mfaEnrollment.findUnique({
+    where: { userId },
+    select: {
+      id: true,
+      enabled: true,
+      enrolledAt: true,
+      lastUsedAt: true,
+      disabledAt: true,
+      disabledReason: true,
+      digits: true,
+      periodSeconds: true,
+    },
+  });
+
+  if (!row) return { enrollment: null, backupCodesRemaining: 0 };
+
+  const backupCodesRemaining = tenantId
+    ? await withTenant(tenantId, (tx) =>
+        tx.mfaBackupCode.count({ where: { enrollmentId: row.id, usedAt: null } }),
+      )
+    : 0;
+
+  return { enrollment: row, backupCodesRemaining };
+}
