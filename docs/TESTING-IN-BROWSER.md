@@ -95,27 +95,41 @@ That is the trap this project kept falling into, held correctly. A green monitor
 here would mean theft detection is being reported as working when nothing has
 reported.
 
-### D. MFA — enrolment works; the LOGIN challenge is still broken
-**Enrolment now completes.** `POST /api/fgmp/mfa/enrol` issues a secret and
-`POST /api/fgmp/mfa/verify-enrol` accepts a correct code, returning **ten
-one-time backup codes**. That was fixed — `totp.ts` was passing the Base32
-secret to HMAC un-decoded, so no code ever validated. It now passes all six
-RFC 6238 SHA-1 vectors including the year-2038 and year-2603 rows.
+### D. MFA — the whole flow works now, and it was broken in two places
 
-**You cannot then log in with it.** `POST /api/fgmp/mfa/challenge` answers
-`CHALLENGE_INVALID` / 401 for every token, *including with a correct code*.
-`MfaChallenge` is `FORCE ROW LEVEL SECURITY`, and the tenant lookup in
-`src/lib/fgmp/mfa/service.ts` is an unscoped `db.$queryRaw`, so it returns zero
-rows and the route declares every challenge invalid. A comment above that
-function describes exactly this bug and claims it was fixed; the escape it
-describes was never written. Being fixed now.
+**Verified end to end against a production build:**
 
-So: enrol succeeds, then the account is unreachable. **Do not enrol on any
-account you still need to sign in with** until the challenge path is fixed, or
-you will lock yourself out.
+| Step | Result |
+|---|---|
+| `POST /api/fgmp/mfa/enrol` | 200, returns a secret |
+| `POST /api/fgmp/mfa/verify-enrol` (correct code) | 200, ten one-time backup codes |
+| `POST /api/fgmp/mfa/challenge-request` | 200, returns a challenge token |
+| `POST /api/fgmp/mfa/challenge` (correct code) | 200 `{"verified":true,"method":"totp"}` |
+| `POST /api/fgmp/mfa/challenge` (wrong code) | 401 `INVALID_CODE` |
 
-`FGMP_MFA_ENCRYPTION_KEY` must be set for any of this to run. Without it
-enrolment is refused deliberately:
+**Both halves were broken, and neither was visible to the type checker.**
+
+1. `totp.ts` passed the Base32 secret to HMAC un-decoded, so it hashed the ASCII
+   of the base32 *text* rather than the key. **No code ever validated** — nobody
+   could enrol at all. Now passes all six RFC 6238 SHA-1 vectors, including the
+   year-2038 and year-2603 rows.
+2. `MfaChallenge` is `FORCE ROW LEVEL SECURITY`, and the tenant lookup read it
+   with an unscoped `db.$queryRaw`. That returns zero rows for every token, so
+   the challenge route answered `CHALLENGE_INVALID` — *even with a correct code*.
+   Enrolment worked; logging in was impossible. The second factor was welded
+   shut. Now resolved through `fgmp_resolve_mfa_challenge`, a SECURITY DEFINER
+   function owned by `fgmp_migrate`.
+
+That second one is worth remembering: a comment above the broken function
+described exactly this bug and stated it had been fixed. The escape it described
+was never written, so the code looked correct and the comment confirmed it.
+
+One thing still being fixed: MFA audit rows are written through the owner
+fallback rather than the tenant connection (`42501` on `AuditLog`). The rows do
+land with the right tenant, but the security audit trail is bypassing the
+boundary it exists to record. Known and in progress.
+
+`FGMP_MFA_ENCRYPTION_KEY` must be set for any of this to run:
 
 ```bash
 curl -s http://127.0.0.1:3210/api/fgmp/mfa/status -H "cookie: $COOKIE"
@@ -124,6 +138,12 @@ curl -s http://127.0.0.1:3210/api/fgmp/mfa/status -H "cookie: $COOKIE"
 
 Correct: with no encryption key a TOTP secret would sit in the database as a
 bearer credential with no protection.
+
+**Keep the key stable.** Changing `FGMP_MFA_ENCRYPTION_KEY` after enrolment makes
+the stored secret undecryptable, and the challenge route then returns 500 rather
+than a usable message. That is deliberate — silently re-enrolling would let
+anyone who can write the row bypass the second factor. Recovery needs a
+second authorised operator.
 
 ## 3. Things that will look wrong and are not
 
