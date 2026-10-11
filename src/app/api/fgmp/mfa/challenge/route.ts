@@ -139,6 +139,7 @@ async function resolveChallengeTenant(
   // is deliberately scoped: find the tenant, and return ONLY the columns needed
   // to decide whether the challenge is live. It reads a hash, never a secret.
   const { findChallengeTenantByToken } = await import("@/lib/fgmp/mfa/service");
+  const tokenHash = hashChallengeToken(challengeToken);
   const row = await findChallengeTenantByToken(tokenHash);
   if (!row) return { ok: false, reason: "CHALLENGE_INVALID" };
   if (row.usedAt || row.failedAt) return { ok: false, reason: "CHALLENGE_SPENT" };
