@@ -202,16 +202,31 @@ export async function findChallengeTenantByToken(
   tenantId: string;
   userId: string;
   enrollmentId: string;
-  usedAt: Date | null;
-  failedAt: Date | null;
   expiresAt: Date;
 } | null> {
-  const rows = await db.$queryRaw<
-    { tenantId: string; userId: string; enrollmentId: string; usedAt: Date | null; failedAt: Date | null; expiresAt: Date }[]
-  >`SELECT "tenantId", "userId", "enrollmentId", "usedAt", "failedAt", "expiresAt"
-    FROM "MfaChallenge"
-    WHERE "tokenHash" = ${tokenHash}
-    LIMIT 1`;
+  // Calls the SECURITY DEFINER SQL function from migration
+  // 20261014000000_mfa_challenge_resolver — NOT a bare `$queryRaw` over
+  // MfaChallenge.
+  //
+  // That distinction is the whole point. A `$queryRaw` still runs on the
+  // `fgmp_app` connection where FORCE RLS applies and no tenant context is set,
+  // so it returns zero rows for every token. The first version of this fix was
+  // exactly that, while the comment above it described a SECURITY DEFINER
+  // escape that did not exist. tsc was green; every challenge returned
+  // CHALLENGE_INVALID, so the second factor was welded shut.
+  //
+  // The SQL function returns only LIVE rows (not used, not failed, not expired,
+  // under the attempt limit), so a spent token is indistinguishable from an
+  // unknown one and cannot be used to probe whether a challenge existed. It
+  // reads a hash, never a secret or the code.
+  const rows = await db.$queryRaw<{
+    tenantId: string;
+    userId: string;
+    enrollmentId: string;
+    expiresAt: Date;
+  }[]>`
+    SELECT * FROM fgmp_resolve_mfa_challenge(${tokenHash}::text)
+  `;
   return rows[0] ?? null;
 }
 
@@ -226,15 +241,15 @@ export type VerifyResult =
  * the same token cannot both consume it, because only one UPDATE will match
  * `usedAt IS NULL`.
  */
-async function consumeChallenge(
+async function loadLiveChallenge(
   tenantId: string,
   token: string,
 ): Promise<{ ok: true; challenge: { id: string; userId: string; enrollmentId: string } } | { ok: false; reason: string }> {
   const tokenHash = hashChallengeToken(token);
   const now = new Date();
 
-  return withTenant(tenantId, async (tx) => {
-    const claimed = await tx.mfaChallenge.updateMany({
+  const row = await withTenant(tenantId, (tx) =>
+    tx.mfaChallenge.findFirst({
       where: {
         tokenHash,
         usedAt: null,
@@ -242,17 +257,34 @@ async function consumeChallenge(
         expiresAt: { gt: now },
         attempts: { lt: CHALLENGE_MAX_ATTEMPTS },
       },
-      data: { usedAt: now },
-    });
-    if (claimed.count === 0) return { ok: false as const, reason: "CHALLENGE_INVALID" };
+      select: { id: true, userId: true, enrollmentId: true },
+    }),
+  );
+  if (!row) return { ok: false, reason: "CHALLENGE_INVALID" };
+  return { ok: true, challenge: row };
+}
 
-    const row = await tx.mfaChallenge.findUnique({ where: { tokenHash } });
-    if (!row) return { ok: false as const, reason: "CHALLENGE_INVALID" };
-    return {
-      ok: true as const,
-      challenge: { id: row.id, userId: row.userId, enrollmentId: row.enrollmentId },
-    };
-  });
+/**
+ * Consume a challenge AFTER the code has been verified.
+ *
+ * The conditional UPDATE is what makes single-use real: two concurrent
+ * verifications carrying the same token both load the row, both check their
+ * code, and then exactly ONE of them matches `usedAt IS NULL` here. The loser
+ * gets CHALLENGE_INVALID. Without the conditional update, both would succeed and
+ * one session would be issued twice.
+ */
+async function consumeChallenge(
+  tenantId: string,
+  token: string,
+  expectedId: string,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const claimed = await withTenant(tenantId, (tx) =>
+    tx.mfaChallenge.updateMany({
+      where: { id: expectedId, usedAt: null, failedAt: null },
+      data: { usedAt: new Date() },
+    }),
+  );
+  return claimed.count === 1 ? { ok: true } : { ok: false, reason: "CHALLENGE_INVALID" };
 }
 
 /** Invalidate a challenge after a failed attempt, so guessing is bounded. */
@@ -285,11 +317,22 @@ export async function verifyChallenge(
   const available = mfaAvailable();
   if (!available.ok) return available;
 
-  const consumed = await consumeChallenge(tenantId, token);
-  if (!consumed.ok) return consumed;
+  // ── ORDER MATTERS, AND IT WAS WRONG ───────────────────────────────────────
+  // This used to CONSUME the challenge (set usedAt) BEFORE checking the code.
+  // So a single wrong code burned the token, and the operator's next CORRECT
+  // code was rejected as CHALLENGE_INVALID — the second factor could never be
+  // completed, and it presented as "your code is wrong" when it was the token
+  // that was spent. Verified live: one wrong code set usedAt, and the following
+  // correct code was refused.
+  //
+  // Now: LOAD the live challenge, verify the code, and only then CONSUME it.
+  // A failed attempt burns the token via failChallenge() instead, which bounds
+  // guessing to one try per issued token without punishing a typo.
+  const loaded = await loadLiveChallenge(tenantId, token);
+  if (!loaded.ok) return loaded;
 
   const enrollment = await withTenant(tenantId, (tx) =>
-    tx.mfaEnrollment.findUnique({ where: { id: consumed.challenge.enrollmentId } }),
+    tx.mfaEnrollment.findUnique({ where: { id: loaded.challenge.enrollmentId } }),
   );
   if (!enrollment || !enrollment.enabled) {
     return { ok: false, reason: "MFA_NOT_ENABLED" };
@@ -299,6 +342,10 @@ export async function verifyChallenge(
   const secret = decryptSecret(enrollment.secretEnc);
   const step = Math.floor(Math.floor(Date.now() / 1000) / enrollment.periodSeconds);
   if (verifyTotp(secret, code, step, 1, enrollment.digits)) {
+    // Consume BEFORE issuing the session, so two concurrent requests carrying
+    // the same token and code cannot both complete.
+    const consumed = await consumeChallenge(tenantId, token, loaded.challenge.id);
+    if (!consumed.ok) return consumed;
     await withTenant(tenantId, (tx) =>
       tx.mfaEnrollment.update({
         where: { id: enrollment.id },
@@ -325,10 +372,13 @@ export async function verifyChallenge(
     const used = await withTenant(tenantId, (tx) =>
       tx.mfaBackupCode.updateMany({
         where: { id: candidate.id, usedAt: null },
-        data: { usedAt: new Date(), usedByChallengeId: consumed.challenge.id },
+        data: { usedAt: new Date(), usedByChallengeId: loaded.challenge.id },
       }),
     );
     if (used.count === 0) return { ok: false, reason: "BACKUP_CODE_ALREADY_USED" };
+
+    const consumedChallenge = await consumeChallenge(tenantId, token, loaded.challenge.id);
+    if (!consumedChallenge.ok) return consumedChallenge;
 
     await withTenant(tenantId, (tx) =>
       tx.mfaEnrollment.update({
@@ -606,4 +656,53 @@ export async function describeOwnEnrollment(
   });
 
   return { enrollment: row, backupCodesRemaining: remaining };
+}
+
+// ── Audit (tenant-scoped) ────────────────────────────────────────────────────
+
+/**
+ * Write an MFA audit row through the TENANT-SCOPED connection.
+ *
+ * ── WHY NOT THE AMBIENT `audit()` HELPER ────────────────────────────────────
+ * `audit()` prefers the ambient `db` client, which is tenant-scoped only when
+ * the caller has already opened a tenant context. `GET /challenge` runs OUTSIDE
+ * any context — it resolves the tenant FROM the token — so the ambient write is
+ * rejected by RLS and the helper silently falls back to the OWNER connection.
+ *
+ * That fallback writes the row correctly, but it is exactly the failure the
+ * audit helper warns about: an owner-connection write proves nothing about the
+ * caller's tenant scope, and it is indistinguishable from the 300+ route
+ * queries that silently return zero rows for the same reason. It was observed
+ * in the live log on every MFA_CHALLENGE_VERIFIED and MFA_CHALLENGE_ISSUED.
+ *
+ * So MFA audit rows are written INSIDE `withTenant`, where the tenant context is
+ * established by the code rather than assumed from an ambient connection.
+ */
+export async function auditMfa(params: {
+  tenantId: string;
+  userId: string;
+  action: string;
+  entity: string;
+  entityId: string;
+  details?: Record<string, unknown>;
+}): Promise<void> {
+  const data = {
+    tenantId: params.tenantId,
+    userId: params.userId,
+    action: params.action,
+    entity: params.entity,
+    entityId: params.entityId,
+    details: JSON.stringify(params.details ?? {}),
+    ip: null,
+  };
+  try {
+    await withTenant(params.tenantId, (tx) => tx.auditLog.create({ data }));
+  } catch (err) {
+    // Never throw: the verification has already happened, and failing the
+    // request here would invite a retry that consumes a second backup code.
+    console.error(
+      `[mfa] audit write failed for ${params.action} (tenant ${params.tenantId})`,
+      err,
+    );
+  }
 }

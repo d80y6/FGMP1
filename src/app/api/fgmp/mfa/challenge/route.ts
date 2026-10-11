@@ -122,7 +122,6 @@ async function resolveChallengeTenant(
   | { ok: false; reason: string }
 > {
   const { hashChallengeToken } = await import("@/lib/fgmp/mfa/challenge");
-  const { db } = await import("@/lib/db");
   // ── WHY THIS LOOKUP NEEDS A TENANT ─────────────────────────────────────────
   // A challenge token is presented by an UNAUTHENTICATED caller (a pending
   // session has no usable authority), so the tenant cannot come from the
@@ -142,7 +141,11 @@ async function resolveChallengeTenant(
   const tokenHash = hashChallengeToken(challengeToken);
   const row = await findChallengeTenantByToken(tokenHash);
   if (!row) return { ok: false, reason: "CHALLENGE_INVALID" };
-  if (row.usedAt || row.failedAt) return { ok: false, reason: "CHALLENGE_SPENT" };
-  if (row.expiresAt.getTime() <= Date.now()) return { ok: false, reason: "CHALLENGE_EXPIRED" };
+
+  // No spent/expired checks here, and that is deliberate: the SQL function
+  // returns ONLY live rows (not used, not failed, not expired, under the
+  // attempt limit), so it cannot be used to probe whether a challenge once
+  // existed. Doing the liveness filtering here instead would mean selecting
+  // those columns across tenants, which is the wider surface this avoids.
   return { ok: true, tenantId: row.tenantId, userId: row.userId };
 }
