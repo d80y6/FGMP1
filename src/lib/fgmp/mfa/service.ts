@@ -698,11 +698,28 @@ export async function auditMfa(params: {
   try {
     await withTenant(params.tenantId, (tx) => tx.auditLog.create({ data }));
   } catch (err) {
-    // Never throw: the verification has already happened, and failing the
-    // request here would invite a retry that consumes a second backup code.
+    // ── WHY THIS THROWS RATHER THAN FALLING BACK ─────────────────────────────
+    // The ambient `audit()` helper falls back to the OWNER connection so the
+    // business operation still succeeds. That is right for a write where the
+    // tenant may genuinely be unknowable, and wrong here.
+    //
+    // For every MFA event the tenant IS known at the call site — it is an
+    // explicit parameter. So a failure here can only mean the tenant context did
+    // not reach the INSERT, which is the SAME defect that makes 300+ route
+    // queries silently return zero rows. Silently writing the row through the
+    // owner connection would destroy the only signal that the boundary failed:
+    // the row would look identical to a correctly-scoped one, and the audit
+    // trail — the thing relied on to PROVE the boundary held — would attest to
+    // nothing.
+    //
+    // It throws, and the route surfaces a 500. An MFA security event that cannot
+    // be recorded under the tenant that produced it is a failure, not a detail.
     console.error(
-      `[mfa] audit write failed for ${params.action} (tenant ${params.tenantId})`,
+      `[mfa] TENANT-SCOPED AUDIT WRITE FAILED for ${params.action} ` +
+        `(tenant ${params.tenantId}). This is NOT falling back to the owner ` +
+        `connection: doing so would hide the very defect it indicates.`,
       err,
     );
+    throw err;
   }
 }

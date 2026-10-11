@@ -155,3 +155,67 @@ describe("a failed attempt must not consume the challenge", () => {
     expect(await findChallengeTenantByToken(hash("aa-never-existed"))).toBeNull();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MFA audit rows must be written INSIDE the tenant context.
+//
+// ── THE DEFECT THIS PINS ─────────────────────────────────────────────────────
+// Every MFA route called the ambient `audit()` helper, which prefers the
+// ambient `db` client. No MFA route had an ambient tenant context, so the
+// AuditLog INSERT was rejected by RLS (42501) and the helper fell back to the
+// OWNER connection.
+//
+// Observed live on every event:
+//   [audit] primary write rejected for MFA_CHALLENGE_ISSUED on MfaChallenge
+//   [audit] MFA_CHALLENGE_ISSUED ... recorded via the OWNER fallback
+//
+// The rows DID land with the right tenantId, which is what made this easy to
+// miss. But an owner-connection write proves nothing about the caller's tenant
+// scope, and it is indistinguishable from the 300+ route queries that silently
+// return zero rows for the same reason. On the SECURITY audit trail that is the
+// worst place for it: the trail exists to prove the boundary held.
+//
+// ── THE PROPERTY ─────────────────────────────────────────────────────────────
+// An MFA audit row is invisible without a tenant context and visible with one.
+// If it were written through the owner fallback, it would be visible BOTH ways —
+// which is precisely the tell.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("MFA audit rows are tenant-scoped, not owner-written", () => {
+  test("an auditMfa row is invisible without a tenant context", async () => {
+    await ensureRow();
+    const { auditMfa } = await import("@/lib/fgmp/mfa/service");
+    await auditMfa({
+      tenantId: TENANT,
+      userId: USER,
+      action: "PROBE_TENANT_SCOPED_AUDIT",
+      entity: "MfaChallenge",
+      entityId: "probe",
+    });
+
+    // No tenant context: RLS hides it. An owner-written row would leak here.
+    const unscoped = await db.auditLog.findMany({
+      where: { action: "PROBE_TENANT_SCOPED_AUDIT" },
+      select: { tenantId: true },
+    });
+    expect(unscoped).toEqual([]);
+  });
+
+  test("the same row IS visible inside its tenant", async () => {
+    const scoped = await withTenant(TENANT, (tx) =>
+      tx.auditLog.findMany({
+        where: { action: "PROBE_TENANT_SCOPED_AUDIT" },
+        select: { tenantId: true },
+      }),
+    );
+    expect(scoped.length).toBeGreaterThan(0);
+    expect(scoped[0]!.tenantId).toBe(TENANT);
+  });
+
+  test("and invisible from a DIFFERENT tenant", async () => {
+    // The part that owner-written rows could never satisfy.
+    const other = await withTenant("t-other-tenant", (tx) =>
+      tx.auditLog.count({ where: { action: "PROBE_TENANT_SCOPED_AUDIT" } }),
+    );
+    expect(other).toBe(0);
+  });
+});

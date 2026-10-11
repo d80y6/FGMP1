@@ -7,7 +7,7 @@ import {
   MUTATION_LIMIT,
 } from "@/lib/fgmp/rate-limit";
 import { beginEnrol } from "@/lib/fgmp/mfa/service";
-import { audit } from "@/lib/fgmp/audit";
+import { auditMfa } from "@/lib/fgmp/mfa/service";
 import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 export const dynamic = "force-dynamic";
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
       return errorResponse(badRequest(result.problem ?? result.reason));
     }
 
-    await audit({
+    await auditMfa({
       userId: auth.user.id,
       tenantId: tenantIdOrThrow(auth.user.tenantId),
       action: "MFA_ENROL_BEGIN",
