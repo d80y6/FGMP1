@@ -95,6 +95,8 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 -- 1. DETECT — before any DDL.
 -- ═══════════════════════════════════════════════════════════════════════════
+CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;
+
 DO $$
 DECLARE
   ext_available BOOLEAN := EXISTS (

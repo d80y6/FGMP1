@@ -7,7 +7,7 @@ import {
   AUTH_LIMIT,
 } from "@/lib/fgmp/rate-limit";
 import { issueChallenge } from "@/lib/fgmp/mfa/service";
-import { audit } from "@/lib/fgmp/audit";
+import { auditMfa } from "@/lib/fgmp/mfa/service";
 
 export const dynamic = "force-dynamic";
 
@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
       return res;
     }
 
-    await audit({
+    await auditMfa({
       userId: auth.user.id,
       tenantId: auth.user.tenantId,
       action: "MFA_CHALLENGE_ISSUED",

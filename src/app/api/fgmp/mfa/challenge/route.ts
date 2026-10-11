@@ -7,7 +7,7 @@ import {
   AUTH_LIMIT,
 } from "@/lib/fgmp/rate-limit";
 import { issueChallenge, verifyChallenge } from "@/lib/fgmp/mfa/service";
-import { audit } from "@/lib/fgmp/audit";
+import { auditMfa } from "@/lib/fgmp/mfa/service";
 
 export const dynamic = "force-dynamic";
 
@@ -90,7 +90,9 @@ export async function POST(req: NextRequest) {
       return res;
     }
 
-    await audit({
+    // Tenant-scoped, not the ambient audit() helper: this route runs outside
+    // any ambient context, so audit() would fall back to the OWNER connection.
+    await auditMfa({
       userId: resolved.userId,
       tenantId: resolved.tenantId,
       action: "MFA_CHALLENGE_VERIFIED",
