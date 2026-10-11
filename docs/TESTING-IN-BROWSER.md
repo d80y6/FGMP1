@@ -124,10 +124,28 @@ That second one is worth remembering: a comment above the broken function
 described exactly this bug and stated it had been fixed. The escape it described
 was never written, so the code looked correct and the comment confirmed it.
 
-One thing still being fixed: MFA audit rows are written through the owner
-fallback rather than the tenant connection (`42501` on `AuditLog`). The rows do
-land with the right tenant, but the security audit trail is bypassing the
-boundary it exists to record. Known and in progress.
+**A third defect, in the audit trail.** Every MFA audit row was being written
+through the owner fallback — the rows landed with the correct `tenantId`, which
+is exactly why it was easy to miss. But an owner-connection write proves nothing
+about the caller's tenant scope, and it is indistinguishable from the hundreds of
+route queries that silently return zero rows for the same reason. The security
+audit trail — the thing relied on to *prove* the boundary held — was bypassing
+the boundary.
+
+`auditMfa` now writes inside the tenant context and **throws** on failure rather
+than falling back, because for every MFA event the tenant is an explicit
+parameter: a failure can only mean the context did not reach the INSERT. Verified
+clean:
+
+```
+fallback / rejection count: 0
+
+rows visible to fgmp_app without app.tenant_id: 0
+rows visible to fgmp_app with    app.tenant_id: 4
+```
+
+That second pair is the real proof. An owner-written row is visible **both**
+ways; a correctly-scoped one is visible only with the context set.
 
 `FGMP_MFA_ENCRYPTION_KEY` must be set for any of this to run:
 
