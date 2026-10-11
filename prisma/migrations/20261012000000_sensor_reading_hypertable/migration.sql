@@ -163,7 +163,7 @@ BEGIN
     migrate_data => true
   );
 
-  PERFORM add_retention_policy('"SensorReading"', INTERVAL '400 days');
+  -- PERFORM add_retention_policy('"SensorReading"', INTERVAL '400 days');
 
   -- Assert the dedup guarantee survived, rather than assuming it.
   IF NOT EXISTS (

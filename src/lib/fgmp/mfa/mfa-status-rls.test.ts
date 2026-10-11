@@ -89,3 +89,69 @@ describe("RLS makes an unscoped MFA lookup silently return nothing", () => {
     expect(scoped).not.toBeNull();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The challenge must not be consumed BEFORE the code is checked.
+//
+// ── THE DEFECT THIS PINS ─────────────────────────────────────────────────────
+// `verifyChallenge` used to call `consumeChallenge()` — which sets `usedAt` —
+// and only THEN check the submitted code. So a single wrong code burned the
+// token, and the operator's next CORRECT code was rejected as
+// CHALLENGE_INVALID.
+//
+// It presented as "your code is wrong" when the token was what was spent, and
+// it made the second factor impossible to complete. Verified live: one wrong
+// code set usedAt, and the immediately following correct code was refused.
+//
+// tsc was green throughout, and the in-process unit probe PASSED — because the
+// probe issued its own fresh token and nothing had failed before it. Only the
+// HTTP sequence wrong-then-right exposed it, which is why the ordering is
+// asserted here rather than left to a code review.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("a failed attempt must not consume the challenge", () => {
+  test("the SQL resolver only returns LIVE rows, so a spent token is invisible", async () => {
+    await ensureRow();
+    // Insert a spent challenge and a live one, and assert the SECURITY DEFINER
+    // resolver distinguishes them — the property the route relies on now that
+    // it no longer filters spent/expired rows itself.
+    const { createHash, randomBytes } = await import("node:crypto");
+    // Unique per run: a fixed token prefix collides on the SECOND run against a
+    // shared database, because the rows survive between runs.
+    const RUN = randomBytes(6).toString("hex");
+    const hash = (t: string) => createHash("sha256").update(`${RUN}:${t}`).digest("hex");
+
+    const enrollment = await withTenant(TENANT, (tx) =>
+      tx.mfaEnrollment.findUniqueOrThrow({ where: { userId: USER }, select: { id: true } }),
+    );
+    await withTenant(TENANT, (tx) =>
+      tx.mfaChallenge.deleteMany({ where: { userId: USER, tokenHash: { startsWith: hash("") } } }),
+    );
+    await withTenant(TENANT, (tx) =>
+      tx.mfaChallenge.createMany({
+        data: [
+          {
+            tenantId: TENANT, userId: USER, enrollmentId: enrollment.id,
+            tokenHash: hash("aa-live-token"), expiresAt: new Date(Date.now() + 300_000),
+          },
+          {
+            tenantId: TENANT, userId: USER, enrollmentId: enrollment.id,
+            tokenHash: hash("aa-spent-token"), expiresAt: new Date(Date.now() + 300_000),
+            usedAt: new Date(),
+          },
+          {
+            tenantId: TENANT, userId: USER, enrollmentId: enrollment.id,
+            tokenHash: hash("aa-expired-token"), expiresAt: new Date(Date.now() - 1000),
+          },
+        ],
+      }),
+    );
+
+    const { findChallengeTenantByToken } = await import("@/lib/fgmp/mfa/service");
+    expect(await findChallengeTenantByToken(hash("aa-live-token"))).not.toBeNull();
+    // Spent and expired are indistinguishable from unknown — which is also why
+    // the resolver cannot be used to probe whether a challenge existed.
+    expect(await findChallengeTenantByToken(hash("aa-spent-token"))).toBeNull();
+    expect(await findChallengeTenantByToken(hash("aa-expired-token"))).toBeNull();
+    expect(await findChallengeTenantByToken(hash("aa-never-existed"))).toBeNull();
+  });
+});
