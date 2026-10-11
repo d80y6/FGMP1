@@ -95,21 +95,35 @@ That is the trap this project kept falling into, held correctly. A green monitor
 here would mean theft detection is being reported as working when nothing has
 reported.
 
-### D. MFA — **currently broken, do not judge the product by it**
-**As of this commit, MFA enrolment cannot complete.** `POST /api/fgmp/mfa/enrol`
-returns a valid secret, but `verify-enrol` then rejects correct codes with
-`INVALID_CODE`. The cause is in `src/lib/fgmp/mfa/totp.ts`: the Base32 secret is
-passed to HMAC un-decoded, so codes never validate. Tracked and being fixed.
+### D. MFA — enrolment works; the LOGIN challenge is still broken
+**Enrolment now completes.** `POST /api/fgmp/mfa/enrol` issues a secret and
+`POST /api/fgmp/mfa/verify-enrol` accepts a correct code, returning **ten
+one-time backup codes**. That was fixed — `totp.ts` was passing the Base32
+secret to HMAC un-decoded, so no code ever validated. It now passes all six
+RFC 6238 SHA-1 vectors including the year-2038 and year-2603 rows.
 
-What you *can* verify today:
+**You cannot then log in with it.** `POST /api/fgmp/mfa/challenge` answers
+`CHALLENGE_INVALID` / 401 for every token, *including with a correct code*.
+`MfaChallenge` is `FORCE ROW LEVEL SECURITY`, and the tenant lookup in
+`src/lib/fgmp/mfa/service.ts` is an unscoped `db.$queryRaw`, so it returns zero
+rows and the route declares every challenge invalid. A comment above that
+function describes exactly this bug and claims it was fixed; the escape it
+describes was never written. Being fixed now.
+
+So: enrol succeeds, then the account is unreachable. **Do not enrol on any
+account you still need to sign in with** until the challenge path is fixed, or
+you will lock yourself out.
+
+`FGMP_MFA_ENCRYPTION_KEY` must be set for any of this to run. Without it
+enrolment is refused deliberately:
 
 ```bash
 curl -s http://127.0.0.1:3210/api/fgmp/mfa/status -H "cookie: $COOKIE"
+# {"error":"FGMP_MFA_ENCRYPTION_KEY is not set…"}
 ```
 
-Returns `{"configured":false, …, "problem":"FGMP_MFA_ENCRYPTION_KEY is not set…"}`
-— correct: with no encryption key a TOTP secret would be stored as a bearer
-credential with no protection, so enrolment is refused.
+Correct: with no encryption key a TOTP secret would sit in the database as a
+bearer credential with no protection.
 
 ## 3. Things that will look wrong and are not
 
