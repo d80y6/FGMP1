@@ -19,6 +19,7 @@
  */
 
 import { createHmac } from "node:crypto";
+import { base32Decode } from "./base32";
 
 /** RFC 6238 §5.2 recommends 30 s as the balance of security and usability. */
 export const DEFAULT_PERIOD_SECONDS = 30;
@@ -28,6 +29,66 @@ export const DEFAULT_WINDOW = 1;
 
 /** Six digits is what every mainstream authenticator app displays. */
 export const DEFAULT_DIGITS = 6;
+
+/** Thrown when a TOTP secret is not usable base32 key material. */
+export class InvalidSecretError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidSecretError";
+  }
+}
+
+/**
+ * Resolve a TOTP secret to the RAW KEY BYTES the HMAC is computed over.
+ *
+ * ── WHY THIS EXISTS (and why the first version was wrong) ───────────────────
+ * The first version passed the secret STRING straight to `createHmac`, so it
+ * HMACed the ASCII bytes of the base32 text rather than the decoded key. Every
+ * downstream step — dynamic truncation, the modulo — was correct, operating on
+ * the wrong key.
+ *
+ * It produced well-formed six-digit codes that NO authenticator app would ever
+ * accept, so enrolment completed and then NO user could ever verify a code.
+ *
+ * It passed its own RFC 6238 conformance vectors, and that is the part worth
+ * remembering: RFC 6238 Appendix B's secret, "12345678901234567890", is not
+ * base32 at all — it is an ASCII key used verbatim. So the vectors exercised a
+ * RAW-ASCII secret while production passed a BASE32 one. Same function, two
+ * different argument conventions, and the tests only ever used the convention
+ * that happened to work.
+ *
+ * A conformance test must call the production entry point with the production
+ * argument type. This function is the single place that convention is decided,
+ * so there is now no way to reach the HMAC without going through it.
+ *
+ * ── WHY IT FAILS LOUDLY ─────────────────────────────────────────────────────
+ * A malformed secret throws here rather than silently HMACing nonsense. A
+ * wrong-length key must fail at ENROLMENT, where the operator can act on it,
+ * not at login, where it presents as "wrong code" forever with no way to
+ * diagnose it.
+ */
+function totpKeyBytes(secret: string): Buffer {
+  if (typeof secret !== "string" || secret.trim() === "") {
+    throw new InvalidSecretError("TOTP secret is empty");
+  }
+  let decoded: Buffer;
+  try {
+    decoded = base32Decode(secret);
+  } catch (e) {
+    throw new InvalidSecretError(
+      `TOTP secret is not valid base32: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
+  if (decoded.length < 10) {
+    // RFC 4226 §5.1 requires a key at least as long as the HMAC output (160 bits
+    // for SHA-1). Shorter key material is not a valid shared secret.
+    throw new InvalidSecretError(
+      `TOTP secret decodes to ${decoded.length} bytes; at least 10 are required. ` +
+        `This secret was almost certainly HMACed as text rather than decoded.`,
+    );
+  }
+  return decoded;
+}
 
 /**
  * Generate a TOTP code for an explicit time STEP counter.
@@ -47,7 +108,7 @@ export function totpForStep(
   const counter = Buffer.alloc(8);
   counter.writeBigUInt64BE(BigInt(Math.floor(step)));
 
-  const hmac = createHmac("sha1", secret).update(counter).digest();
+  const hmac = createHmac("sha1", totpKeyBytes(secret)).update(counter).digest();
 
   // Dynamic truncation (RFC 4226 §5.4): the low nibble of the LAST byte selects
   // the 4-byte window. Getting the offset wrong yields plausible numbers that

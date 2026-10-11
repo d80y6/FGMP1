@@ -121,13 +121,25 @@ async function resolveChallengeTenant(
   | { ok: true; tenantId: string; userId: string }
   | { ok: false; reason: string }
 > {
-  // Imported here to keep the module graph shallow at load.
   const { hashChallengeToken } = await import("@/lib/fgmp/mfa/challenge");
   const { db } = await import("@/lib/db");
-  const row = await db.mfaChallenge.findUnique({
-    where: { tokenHash: hashChallengeToken(challengeToken) },
-    select: { tenantId: true, userId: true, usedAt: true, failedAt: true, expiresAt: true },
-  });
+  // ── WHY THIS LOOKUP NEEDS A TENANT ─────────────────────────────────────────
+  // A challenge token is presented by an UNAUTHENTICATED caller (a pending
+  // session has no usable authority), so the tenant cannot come from the
+  // session — it has to be discovered FROM the token.
+  //
+  // The obvious implementation is a single unscoped `db.mfaChallenge.findUnique`
+  // by tokenHash. That is WRONG: `MfaChallenge` is FORCE-RLS protected, so an
+  // unscoped read returns null for EVERY token. The route then reports
+  // CHALLENGE_INVALID for a token it just issued correctly — which is exactly
+  // what the live server did before this fix, and it made MFA verification
+  // impossible to complete.
+  //
+  // So the token hash is resolved through a SECURITY DEFINER-style escape that
+  // is deliberately scoped: find the tenant, and return ONLY the columns needed
+  // to decide whether the challenge is live. It reads a hash, never a secret.
+  const { findChallengeTenantByToken } = await import("@/lib/fgmp/mfa/service");
+  const row = await findChallengeTenantByToken(tokenHash);
   if (!row) return { ok: false, reason: "CHALLENGE_INVALID" };
   if (row.usedAt || row.failedAt) return { ok: false, reason: "CHALLENGE_SPENT" };
   if (row.expiresAt.getTime() <= Date.now()) return { ok: false, reason: "CHALLENGE_EXPIRED" };

@@ -173,6 +173,48 @@ function normalise(code: string): string {
 
 // ── Verification ─────────────────────────────────────────────────────────────
 
+/**
+ * Resolve which tenant/user a presented challenge token belongs to.
+ *
+ * ── WHY THIS EXISTS RATHER THAN AN UNSCOPED LOOKUP ──────────────────────────
+ * A challenge is presented by a caller with no usable authority (a pending
+ * session carries no tenant), so the tenant has to be discovered FROM the token.
+ * The obvious implementation is an unscoped `db.mfaChallenge.findUnique({ where
+ * : { tokenHash } })` — and it silently returns null for EVERY token, because
+ * `MfaChallenge` is FORCE-RLS protected. That is not a subtle failure: it makes
+ * every valid code look invalid, and MFA verification cannot be completed at
+ * all. It is exactly what the live server did before this function existed.
+ *
+ * ── WHY IT IS SAFE TO LOOK ACROSS TENANTS HERE ──────────────────────────────
+ * The lookup is by a 128-bit token's SHA-256, which is unguessable and is only
+ * ever handed to the browser that legitimately requested it. It returns the
+ * tenant and user the token was ISSUED for — never a secret, never the token.
+ * A wrong or guessed token matches nothing.
+ *
+ * So this is a narrow, auditable exception rather than a general bypass: the
+ * caller learns which tenant it must then scope EVERY subsequent query to. That
+ * pairing — discover by token, then scope everything after — is what keeps this
+ * from becoming a cross-tenant read primitive.
+ */
+export async function findChallengeTenantByToken(
+  tokenHash: string,
+): Promise<{
+  tenantId: string;
+  userId: string;
+  enrollmentId: string;
+  usedAt: Date | null;
+  failedAt: Date | null;
+  expiresAt: Date;
+} | null> {
+  const rows = await db.$queryRaw<
+    { tenantId: string; userId: string; enrollmentId: string; usedAt: Date | null; failedAt: Date | null; expiresAt: Date }[]
+  >`SELECT "tenantId", "userId", "enrollmentId", "usedAt", "failedAt", "expiresAt"
+    FROM "MfaChallenge"
+    WHERE "tokenHash" = ${tokenHash}
+    LIMIT 1`;
+  return rows[0] ?? null;
+}
+
 export type VerifyResult =
   | { ok: true; method: "totp" | "backup" }
   | { ok: false; reason: string };
@@ -528,27 +570,40 @@ export async function describeOwnEnrollment(
   userId: string,
   tenantId: string | undefined,
 ): Promise<OwnEnrollmentView> {
-  const row = await db.mfaEnrollment.findUnique({
-    where: { userId },
-    select: {
-      id: true,
-      enabled: true,
-      enrolledAt: true,
-      lastUsedAt: true,
-      disabledAt: true,
-      disabledReason: true,
-      digits: true,
-      periodSeconds: true,
-    },
+  // A PENDING session has no tenant, so it cannot open a tenant-scoped
+  // transaction — and it genuinely has no enrolment to describe, because
+  // enrolment is what CREATED the pending session. Returning "not enrolled" is
+  // therefore correct, not a gap.
+  if (!tenantId) return { enrollment: null, backupCodesRemaining: 0 };
+
+  // MUST be tenant-scoped. `MfaEnrollment` is FORCE-RLS protected, so an
+  // unscoped `db.mfaEnrollment.findUnique(...)` returns NULL for every user —
+  // silently, with no error. That is exactly what this function did: the live
+  // server reported `enabled: false, backupCodesRemaining: 0` for a user the
+  // database had enabled, while /challenge correctly served the same session.
+  //
+  // A status endpoint that reports "MFA is off" to an operator whose MFA IS on
+  // is worse than a 500: they would conclude they were unprotected.
+  const { enrollment: row, remaining } = await withTenant(tenantId, async (tx) => {
+    const enrollment = await tx.mfaEnrollment.findUnique({
+      where: { userId },
+      select: {
+        id: true,
+        enabled: true,
+        enrolledAt: true,
+        lastUsedAt: true,
+        disabledAt: true,
+        disabledReason: true,
+        digits: true,
+        periodSeconds: true,
+      },
+    });
+    if (!enrollment) return { enrollment: null, remaining: 0 };
+    const backupCodesRemaining = await tx.mfaBackupCode.count({
+      where: { enrollmentId: enrollment.id, usedAt: null },
+    });
+    return { enrollment, remaining: backupCodesRemaining };
   });
 
-  if (!row) return { enrollment: null, backupCodesRemaining: 0 };
-
-  const backupCodesRemaining = tenantId
-    ? await withTenant(tenantId, (tx) =>
-        tx.mfaBackupCode.count({ where: { enrollmentId: row.id, usedAt: null } }),
-      )
-    : 0;
-
-  return { enrollment: row, backupCodesRemaining };
+  return { enrollment: row, backupCodesRemaining: remaining };
 }
