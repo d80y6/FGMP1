@@ -10,8 +10,8 @@ services:
     dockerContext: .
     plan: free
     healthCheckPath: /api/fgmp/health
-    envGroup: fgmp1  # Replace with your actual Render Environment Group name
     envVars:
+      - fromGroup: fgmp1  # Pulls all variables from your existing environment group
       - key: DATABASE_URL
         sync: false
       - key: FGMP_MIGRATE_DATABASE_URL
@@ -31,8 +31,8 @@ services:
     dockerContext: mini-services/realtime
     plan: free
     healthCheckPath: /health
-    envGroup: fgmp1  # Replace with your actual Render Environment Group name
     envVars:
+      - fromGroup: fgmp1
       - key: NEXT_API_BASE
         sync: false
       - key: REALTIME_ORIGIN
@@ -45,7 +45,7 @@ services:
     dockerfilePath: mini-services/iot-bridge/Dockerfile
     dockerContext: mini-services/iot-bridge
     plan: free
-    envGroup: fgmp1 # Replace with your actual Render Environment Group name
     envVars:
+      - fromGroup: fgmp1
       - key: NEXT_API_BASE
         sync: false
