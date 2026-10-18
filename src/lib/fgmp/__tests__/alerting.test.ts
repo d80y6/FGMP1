@@ -12,6 +12,7 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   evaluateRule,
@@ -380,7 +381,7 @@ describe("config validation rejects rather than defaults", () => {
 
 describe("the shipped config is valid and self-documenting", () => {
   const shipped = parseAlertRules(
-    require("node:fs").readFileSync("config/alerts.json", "utf8"),
+    readFileSync("config/alerts.json", "utf8"),
   );
 
   test("it parses", () => {

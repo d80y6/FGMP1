@@ -31,6 +31,7 @@
  */
 
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 
 const log = (msg) => console.log(`[entrypoint] ${msg}`);
 const fail = (msg) => {
@@ -133,7 +134,7 @@ const CLI_CANDIDATES = [
 function resolveCli() {
   for (const p of CLI_CANDIDATES) {
     try {
-      if (require("node:fs").existsSync(p)) return p;
+      if (existsSync(p)) return p;
     } catch {
       /* keep looking */
     }
