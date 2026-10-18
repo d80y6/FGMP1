@@ -9,7 +9,7 @@ services:
     dockerfilePath: Dockerfile
     dockerContext: .
     plan: free
-    healthCheckPath: /api/fgmp/health
+    # healthCheckPath: /api/fgmp/health
     envVars:
       - fromGroup: fgmp1  # Pulls all variables from your existing environment group
       - key: DATABASE_URL
