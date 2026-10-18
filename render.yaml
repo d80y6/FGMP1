@@ -80,7 +80,7 @@ services:
           envVarKey: REALTIME_TOKEN_SECRET
 
   # ── IoT Telemetry Bridge ───────────────────────────────────────────────────
-  - type: pserv
+  - type: web
     name: fgmp-iot-bridge
     env: docker
     dockerfilePath: mini-services/iot-bridge/Dockerfile
