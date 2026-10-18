@@ -10,33 +10,18 @@ services:
     dockerContext: .
     plan: free
     healthCheckPath: /api/fgmp/health
+    envGroup: fgmp1  # Replace with your actual Render Environment Group name
     envVars:
-      # Use your Aiven.io external connection string here
       - key: DATABASE_URL
         sync: false
       - key: FGMP_MIGRATE_DATABASE_URL
         sync: false
-      # Set FGMP_REQUIRE_RLS to 0 on managed database setups where custom Postgres
-      # multi-role setup (fgmp_app vs fgmp_ops vs fgmp_migrate) is not applied.
       - key: FGMP_REQUIRE_RLS
         value: "0"
-      - key: NEXTAUTH_SECRET
-        generateValue: true
       - key: NEXTAUTH_URL
         sync: false
-      - key: IOT_API_KEY
-        generateValue: true
-      # On Render free tier, cross-service environment variables using 'fromService'
-      # can cause circular or missing reference issues during initial deploy. 
-      # We define them here with sync: false so you can supply or map them safely.
       - key: REALTIME_URL
         sync: false
-      - key: REALTIME_SERVER_SECRET
-        generateValue: true
-      - key: REALTIME_SERVICE_TOKEN
-        generateValue: true
-      - key: REALTIME_TOKEN_SECRET
-        generateValue: true
 
   # ── Realtime Socket.io Service ─────────────────────────────────────────────
   - type: web
@@ -46,16 +31,11 @@ services:
     dockerContext: mini-services/realtime
     plan: free
     healthCheckPath: /health
+    envGroup: fgmp1  # Replace with your actual Render Environment Group name
     envVars:
       - key: NEXT_API_BASE
         sync: false
       - key: REALTIME_ORIGIN
-        sync: false
-      - key: REALTIME_SERVER_SECRET
-        sync: false
-      - key: REALTIME_SERVICE_TOKEN
-        sync: false
-      - key: REALTIME_TOKEN_SECRET
         sync: false
 
   # ── IoT Telemetry Bridge ───────────────────────────────────────────────────
@@ -65,10 +45,7 @@ services:
     dockerfilePath: mini-services/iot-bridge/Dockerfile
     dockerContext: mini-services/iot-bridge
     plan: free
+    envGroup: fgmp1 # Replace with your actual Render Environment Group name
     envVars:
       - key: NEXT_API_BASE
-        sync: false
-      - key: IOT_API_KEY
-        sync: false
-      - key: REALTIME_SERVER_SECRET
         sync: false
