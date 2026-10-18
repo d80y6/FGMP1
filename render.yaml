@@ -5,7 +5,7 @@ databases:
   - name: fgmp-db
     databaseName: fgmp
     user: fgmp
-    plan: starter
+    plan: free
 
 services:
   # ── Main Next.js Web Application ───────────────────────────────────────────
@@ -14,7 +14,7 @@ services:
     env: docker
     dockerfilePath: Dockerfile
     dockerContext: .
-    plan: starter
+    plan: free
     healthCheckPath: /api/fgmp/health
     envVars:
       - key: DATABASE_URL
@@ -53,7 +53,7 @@ services:
     env: docker
     dockerfilePath: mini-services/realtime/Dockerfile
     dockerContext: mini-services/realtime
-    plan: starter
+    plan: free
     healthCheckPath: /health
     envVars:
       - key: NEXT_API_BASE
@@ -85,7 +85,7 @@ services:
     env: docker
     dockerfilePath: mini-services/iot-bridge/Dockerfile
     dockerContext: mini-services/iot-bridge
-    plan: starter
+    plan: free
     envVars:
       - key: NEXT_API_BASE
         fromService:
