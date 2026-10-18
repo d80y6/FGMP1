@@ -1,0 +1,104 @@
+# FGMP — Render Blueprint Specification
+# https://render.com/docs/blueprint-spec
+
+databases:
+  - name: fgmp-db
+    databaseName: fgmp
+    user: fgmp
+    plan: starter
+
+services:
+  # ── Main Next.js Web Application ───────────────────────────────────────────
+  - type: web
+    name: fgmp-app
+    env: docker
+    dockerfilePath: Dockerfile
+    dockerContext: .
+    plan: starter
+    healthCheckPath: /api/fgmp/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: fgmp-db
+          property: connectionString
+      - key: FGMP_MIGRATE_DATABASE_URL
+        fromDatabase:
+          name: fgmp-db
+          property: connectionString
+      # Set FGMP_REQUIRE_RLS to 0 on managed database setups where custom Postgres
+      # multi-role setup (fgmp_app vs fgmp_ops vs fgmp_migrate) is not applied.
+      - key: FGMP_REQUIRE_RLS
+        value: "0"
+      - key: NEXTAUTH_SECRET
+        generateValue: true
+      - key: NEXTAUTH_URL
+        sync: false
+      - key: IOT_API_KEY
+        generateValue: true
+      - key: REALTIME_URL
+        fromService:
+          type: web
+          name: fgmp-realtime
+          property: host
+      - key: REALTIME_SERVER_SECRET
+        generateValue: true
+      - key: REALTIME_SERVICE_TOKEN
+        generateValue: true
+      - key: REALTIME_TOKEN_SECRET
+        generateValue: true
+
+  # ── Realtime Socket.io Service ─────────────────────────────────────────────
+  - type: web
+    name: fgmp-realtime
+    env: docker
+    dockerfilePath: mini-services/realtime/Dockerfile
+    dockerContext: mini-services/realtime
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: NEXT_API_BASE
+        fromService:
+          type: web
+          name: fgmp-app
+          property: host
+      - key: REALTIME_ORIGIN
+        sync: false
+      - key: REALTIME_SERVER_SECRET
+        fromService:
+          type: web
+          name: fgmp-app
+          envVarKey: REALTIME_SERVER_SECRET
+      - key: REALTIME_SERVICE_TOKEN
+        fromService:
+          type: web
+          name: fgmp-app
+          envVarKey: REALTIME_SERVICE_TOKEN
+      - key: REALTIME_TOKEN_SECRET
+        fromService:
+          type: web
+          name: fgmp-app
+          envVarKey: REALTIME_TOKEN_SECRET
+
+  # ── IoT Telemetry Bridge ───────────────────────────────────────────────────
+  - type: pserv
+    name: fgmp-iot-bridge
+    env: docker
+    dockerfilePath: mini-services/iot-bridge/Dockerfile
+    dockerContext: mini-services/iot-bridge
+    plan: starter
+    envVars:
+      - key: NEXT_API_BASE
+        fromService:
+          type: web
+          name: fgmp-app
+          property: host
+      - key: IOT_API_KEY
+        fromService:
+          type: web
+          name: fgmp-app
+          envVarKey: IOT_API_KEY
+      - key: REALTIME_SERVER_SECRET
+        fromService:
+          type: web
+          name: fgmp-app
+          envVarKey: REALTIME_SERVER_SECRET

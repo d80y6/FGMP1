@@ -482,32 +482,21 @@ export function AppShell() {
             <Keyboard className="h-4 w-4" />
           </Button>
 
-          {/* Role switcher (ADMIN + SUPERADMIN — PATCH /api/fgmp/me
-              accepts both). Non-admins still see a read-only role badge so
-              they know their current role, but the dropdown is disabled. */}
+          {/* Read-only current user role display */}
           {me && (
-            <Select
-              value={role}
-              disabled={role !== "ADMIN" && role !== "SUPERADMIN"}
-              onValueChange={(v) => {
-                switchRole(v as typeof role).catch(() => {
-                  toast.error(t("auth.invalidCredentials"));
-                });
-              }}
+            <div
+              className="flex h-9 items-center gap-1.5 rounded-md border bg-muted/30 px-3 text-xs font-medium text-foreground"
+              title={t(`role.${role.toLowerCase()}`)}
             >
-              <SelectTrigger className="h-9 w-[170px] gap-1 text-xs" aria-label={t("common.switchRole")}>
-                <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {me.roles.map((r) => {
-                  const roleKey = `role.${r.toLowerCase()}`;
+              <ShieldCheck className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+              <span>
+                {(() => {
+                  const roleKey = `role.${role.toLowerCase()}`;
                   const roleTr = t(roleKey);
-                  const label = roleTr === roleKey ? r.replace(/_/g, " ") : roleTr;
-                  return <SelectItem key={r} value={r} className="text-xs">{label}</SelectItem>;
-                })}
-              </SelectContent>
-            </Select>
+                  return roleTr === roleKey ? role.replace(/_/g, " ") : roleTr;
+                })()}
+              </span>
+            </div>
           )}
 
           {/* Sign out (Task 31-A) */}
