@@ -92,6 +92,17 @@ export interface SessionUser {
    * `user.role === X` check already denies it without auditing 80 call sites.
    */
   role?: string;
+  /**
+   * Role-preview overlay markers (proposal §8.16). When a valid
+   * preview token is presented, `role` carries the PREVIEWED role
+   * and these two fields record where it came from:
+   *   - permanentRole — the user's real, DB-backed role
+   *   - previewRole   — the temporary overlay role
+   * Absent on every non-previewed request, so existing checks
+   * (`user.role === X`) behave exactly as before.
+   */
+  permanentRole?: string;
+  previewRole?: string;
   tenantId?: string;
   /** TRUE when the password verified but the second factor has not. */
   mfaPending?: boolean;

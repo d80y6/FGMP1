@@ -97,3 +97,6 @@ server.log
 /heatmap-filter-active.png
 # Harness/agent tooling state (not project source)
 .mimosa/
+
+# mTLS material (scripts/generate-mtls-certs.sh) — never commit keys
+/certs/

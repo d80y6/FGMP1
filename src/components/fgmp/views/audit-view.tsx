@@ -124,6 +124,7 @@ export function AuditView() {
                     <TableHead className="w-[120px]">{t("audit.entity")}</TableHead>
                     <TableHead>{t("audit.details")}</TableHead>
                     <TableHead className="hidden md:table-cell w-[150px]">{t("audit.user")}</TableHead>
+                    <TableHead className="hidden lg:table-cell w-[130px]">{t("audit.ip")}</TableHead>
                     <TableHead className="w-[130px]">{t("audit.when")}</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -134,12 +135,13 @@ export function AuditView() {
                       <TableCell><span className="text-xs font-medium">{l.entity}</span>{l.entityId && <p className="font-mono text-[9px] text-muted-foreground">{formatNumber(l.entityId.slice(-8), numLang)}</p>}</TableCell>
                       <TableCell className="text-[11px] text-muted-foreground"><pre className="max-w-md truncate font-mono">{typeof l.details === "string" ? l.details : JSON.stringify(l.details)}</pre></TableCell>
                       <TableCell className="hidden md:table-cell"><div className="flex items-center gap-1.5 text-[11px]"><User className="h-3 w-3 text-muted-foreground" />{l.user?.name ?? t("cmdHistory.system")}<Badge variant="outline" className="h-4 px-1 text-[8px]">{roleLabel(l.user?.role ?? "", numLang)}</Badge></div></TableCell>
+                      <TableCell className="hidden lg:table-cell font-mono text-[10px] text-muted-foreground tabular-nums" dir="ltr">{l.ip ?? "—"}</TableCell>
                       <TableCell className="text-[10px] text-muted-foreground"><p>{timeAgo(l.createdAt, numLang)}</p><p className="text-[9px]">{fmtDateTime(l.createdAt, numLang).slice(5, 16)}</p></TableCell>
                     </TableRow>
                   ))}
                   {filtered.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={5} className="p-0">
+                      <TableCell colSpan={6} className="p-0">
                         <EmptyState
                           icon={FileQuestion}
                           title={t("audit.noMatch")}

@@ -14,7 +14,7 @@ import { toJsonNumber, toNum } from "./decimal";
 import { theftDetections } from "@/lib/observability/metrics";
 import type {
   TankState, GenState, BattState, SiteState, IoTDeviceState,
-  DispenserState, FuelTransactionState, GatewayState,
+  DispenserCommand, DispenserState, FuelTransactionState, GatewayState,
   EventItem, Kpis, Snapshot, GenCommand, GenStatus,
   AlarmType, Severity,
 } from "./types";
@@ -124,6 +124,16 @@ function splitAlarmKey(key: string): [AlarmType, Severity | "", string] {
   ];
 }
 const DISPENSER_COMM_STALE_MS = 90 * 1000; // > 90s since lastCommAt → OFFLINE
+// Cooldown between remote control commands on one pump (proposal
+// feature 23, safety guarantee 4 — فترة تبريد). 2 s is far above the
+// RS485 round-trip, so it never blocks a legitimate operator; it only
+// stops a command storm from toggling the pump faster than the
+// fieldbus can honour.
+const DISPENSER_COMMAND_COOLDOWN_MS = 2_000;
+// A dispenser whose heartbeat is older than this is treated as link
+// lost for control purposes (safety guarantee 2), even before the
+// tick loop has flipped it to OFFLINE.
+const DISPENSER_COMMAND_LINK_STALE_MS = DISPENSER_COMM_STALE_MS;
 const UNIT_PRICE_YER_PER_L = 520;        // Yemeni Rial per litre (diesel, ~2024)
 
 /**
@@ -645,6 +655,7 @@ private tenantsFor(expectedTenantId?: string | null): readonly string[] {
       rs485Baudrate: d.rs485Baudrate, rs485Address: d.rs485Address,
       rs485Parity: d.rs485Parity, wifiRssi: d.wifiRssi,
       ipAddress: d.ipAddress ?? undefined,
+      macAddress: d.macAddress ?? undefined,
       lastCommAt: d.lastCommAt?.getTime() ?? Date.now(),
       // Phase 5 task 1: volume columns are Decimal(12,3) — see the mapping note
       // in init(). toNum at scale 3 matches the stored precision exactly.
@@ -676,6 +687,7 @@ private tenantsFor(expectedTenantId?: string | null): readonly string[] {
               startedAt: tx.startedAt.getTime(),
               completedAt: tx.completedAt?.getTime(),
               durationSec: tx.durationSec,
+              totalizerLitres: tx.totalizerLitres,
             })),
           ),
         )
@@ -1419,6 +1431,11 @@ private tenantsFor(expectedTenantId?: string | null): readonly string[] {
     // Phase 1 step 4: FuelTransaction requires tenantId. Resolved from the
     // parent Site already loaded in engine state.
     const site = this.sites.find((s) => s.id === d.siteId)!;
+    // The counter (عدّاد) the proposal's fill-operations table shows is
+    // the pump's cumulative totalizer AT COMPLETION — computed BEFORE
+    // the in-memory accumulator is advanced, so the row and the
+    // dispenser agree on the same number.
+    const totalizerAtCompletion = toNum(d.totalizerLitres + volume, { scale: 3 });
 
     // Persist the FuelTransaction row (single source of truth).
     let txRow;
@@ -1438,6 +1455,7 @@ private tenantsFor(expectedTenantId?: string | null): readonly string[] {
           startedAt: new Date(startedAt),
           completedAt: new Date(this.now),
           durationSec,
+          totalizerLitres: new Prisma.Decimal(toJsonNumber(totalizerAtCompletion, { scale: 3 })),
         },
       });
     } catch {
@@ -1465,6 +1483,7 @@ private tenantsFor(expectedTenantId?: string | null): readonly string[] {
       startedAt,
       completedAt: this.now,
       durationSec,
+      totalizerLitres: txRow?.totalizerLitres ?? new Prisma.Decimal(toJsonNumber(totalizerAtCompletion, { scale: 3 })),
     };
     this.fuelTransactions.unshift(txn);
     if (this.fuelTransactions.length > MAX_RECENT_TXN_SNAPSHOT) this.fuelTransactions.pop();
@@ -1478,7 +1497,8 @@ private tenantsFor(expectedTenantId?: string | null): readonly string[] {
     // months of dispensing that quantisation is exactly the drift that reads as
     // theft. toNum({scale:3}) keeps the in-memory value on the stored scale so
     // the persisted total and the in-memory total are the same number.
-    d.totalizerLitres = toNum(d.totalizerLitres + volume, { scale: 3 });
+    // totalizerAtCompletion above already holds this exact value.
+    d.totalizerLitres = totalizerAtCompletion;
     d.lastTransactionAt = this.now;
 
     // Persist totalizer + reset state to DB occasionally (every ~5 txns)
@@ -1621,9 +1641,31 @@ private tenantsFor(expectedTenantId?: string | null): readonly string[] {
   return { site };
 }
 
+/**
+   * Remote control of a fuel dispenser — the ten commands of proposal
+   * feature 23 (ترخيص / إلغاء ترخيص / تشغيل / إيقاف / إيقاف طارئ /
+   * قفل / فتح / إعادة ضبط / ضبط حد / تصفير العدّاد), each guarded by the
+   * four safety guarantees the proposal promises:
+   *
+   *   1. وجود      — presence: the asset must be resident and its site
+   *                  owned by the caller's tenant (resolveControlSite +
+   *                  assertControlScope below).
+   *   2. فقد اتصال — link loss: a site under a communication-loss window
+   *                  (or a dispenser whose own heartbeat is stale) cannot
+   *                  execute commands — they are refused, not queued onto
+   *                  a dead bus.
+   *   3. حالة      — state: every command declares the states it is valid
+   *                  from; anything else is refused with the reason.
+   *   4. فترة تبريد — cooldown: state-changing commands are rate-limited
+   *                  per dispenser (DISPENSER_COMMAND_COOLDOWN_MS) so a
+   *                  command storm cannot toggle the pump faster than the
+   *                  RS485 bus can honour. EMERGENCY_STOP deliberately
+   *                  bypasses the cooldown: a safety command must never be
+   *                  delayed by the guard that exists to stop abuse.
+   */
 async controlDispenser(
     dispenserId: string,
-    command: "AUTHORIZE" | "STOP" | "RESET" | "LOCK" | "UNLOCK",
+    command: DispenserCommand,
     preset?: number,
     expectedTenantId?: string | null,
   ): Promise<{ ok: boolean; message: string }> {
@@ -1652,22 +1694,84 @@ async controlDispenser(
     const resolved = this.resolveControlSite(d.siteId, `Dispenser ${dispenserId}`);
     if (resolved.denied || !resolved.site) return { ok: false, message: resolved.denied ?? "Site unavailable" };
     const site = resolved.site;
+
+    // Guarantee 2 — link loss. The site-level window covers the uplink; the
+    // dispenser-level stale check covers the RS485 segment to the pump
+    // controller itself (a gateway can be up while the pump bus is down).
     if (site.commLossUntil && this.now <= site.commLossUntil) {
-      return { ok: false, message: "Site communication down — command queued but cannot execute" };
+      return { ok: false, message: "Site communication down — command refused until link restored" };
     }
-    if (command === "AUTHORIZE") {
-      if (d.mode === "LOCKED") return { ok: false, message: "Dispenser is LOCKED — unlock first" };
-      if (d.status === "DISPENSING") return { ok: false, message: "Dispenser is already dispensing" };
-      d.status = "AUTHORIZED";
-      d.mode = "AUTO";
-      if (preset && preset > 0) {
-        d.presetVolumeLitres = Math.round(preset * 100) / 100;
-      } else {
-        d.presetVolumeLitres = undefined;
+    if (d.status === "OFFLINE" || d.lastCommAt < this.now - DISPENSER_COMMAND_LINK_STALE_MS) {
+      return { ok: false, message: "Dispenser link lost — command refused until heartbeat returns" };
+    }
+
+    // Guarantee 4 — cooldown. Rate-limit state changes per pump; the
+    // emergency stop is the deliberate exception (safety first).
+    if (command !== "EMERGENCY_STOP" && d.lastCommandAt !== undefined) {
+      const remainingMs = DISPENSER_COMMAND_COOLDOWN_MS - (this.now - d.lastCommandAt);
+      if (remainingMs > 0) {
+        return { ok: false, message: `Command cooldown active — retry in ${Math.ceil(remainingMs / 1000)}s` };
       }
-      this.pushEvent(d.siteId, "CONTROL", `REMOTE AUTHORIZE ${d.label} (preset=${d.presetVolumeLitres ?? "none"} L)`, { dispenserId: d.id });
-    } else if (command === "STOP") {
-      if (d.status === "DISPENSING" || d.status === "AUTHORIZED") {
+    }
+
+    const commit = async (persistTotalizer = false) => {
+      d.lastCommandAt = this.now;
+      // Persist mode/status (and totalizer when a command changed it)
+      db.fuelDispenser.update({
+        where: { id: d.id },
+        data: {
+          mode: d.mode,
+          status: d.status,
+          presetVolumeLitres: d.presetVolumeLitres ?? null,
+          ...(persistTotalizer ? { totalizerLitres: d.totalizerLitres } : {}),
+        },
+      }).catch(() => {});
+    };
+
+    // Guarantee 3 — state. Each branch below enumerates the states the
+    // command is valid from and refuses anything else with the reason.
+    switch (command) {
+      case "AUTHORIZE": {
+        if (d.mode === "LOCKED") return { ok: false, message: "Dispenser is LOCKED — unlock first" };
+        if (d.emergencyLatched || d.status === "FAULT") return { ok: false, message: "Dispenser is in FAULT latch — reset first" };
+        if (d.status === "DISPENSING") return { ok: false, message: "Dispenser is already dispensing" };
+        if (d.status === "AUTHORIZED") return { ok: false, message: "Dispenser is already authorized" };
+        d.status = "AUTHORIZED";
+        d.mode = "AUTO";
+        d.presetVolumeLitres = preset && preset > 0 ? Math.round(preset * 100) / 100 : undefined;
+        this.pushEvent(d.siteId, "CONTROL", `REMOTE AUTHORIZE ${d.label} (preset=${d.presetVolumeLitres ?? "none"} L)`, { dispenserId: d.id });
+        await commit();
+        break;
+      }
+      case "DEAUTHORIZE": {
+        // AUTHORIZED is the only state with an armed nozzle and
+        // no fuel moving, so the single guard covers both the
+        // "not armed" and the "fuel moving" refusals.
+        if (d.status !== "AUTHORIZED") {
+          return { ok: false, message: d.status === "DISPENSING"
+            ? "Cannot deauthorize while dispensing — stop first"
+            : "Dispenser is not authorized — nothing to deauthorize" };
+        }
+        d.status = "IDLE";
+        d.presetVolumeLitres = undefined;
+        this.pushEvent(d.siteId, "CONTROL", `REMOTE DEAUTHORIZE ${d.label}`, { dispenserId: d.id });
+        await commit();
+        break;
+      }
+      case "START": {
+        if (d.mode === "LOCKED") return { ok: false, message: "Dispenser is LOCKED — unlock first" };
+        if (d.emergencyLatched || d.status === "FAULT") return { ok: false, message: "Dispenser is in FAULT latch — reset first" };
+        if (d.status === "DISPENSING") return { ok: false, message: "Dispenser is already dispensing" };
+        if (d.status !== "AUTHORIZED") return { ok: false, message: "Dispenser is not authorized — authorize first" };
+        this.startDispense(d);
+        this.pushEvent(d.siteId, "CONTROL", `REMOTE START ${d.label}`, { dispenserId: d.id });
+        await commit();
+        break;
+      }
+      case "STOP": {
+        if (d.status !== "DISPENSING" && d.status !== "AUTHORIZED") {
+          return { ok: false, message: "Dispenser is not dispensing" };
+        }
         if (d.status === "DISPENSING" && d.currentVolumeLitres > 0.5) {
           await this.completeDispense(d, true);
         } else {
@@ -1675,31 +1779,77 @@ async controlDispenser(
           d.flowRateLpm = 0;
         }
         this.pushEvent(d.siteId, "CONTROL", `REMOTE STOP ${d.label}`, { dispenserId: d.id });
-      } else {
-        return { ok: false, message: "Dispenser is not dispensing" };
+        await commit();
+        break;
       }
-    } else if (command === "RESET") {
-      if (d.status !== "FAULT") return { ok: false, message: "Dispenser is not in FAULT state" };
-      d.status = "IDLE";
-      d.flowRateLpm = 0;
-      d.currentVolumeLitres = 0;
-      d.currentTransactionId = undefined;
-      this.pushEvent(d.siteId, "CONTROL", `REMOTE RESET ${d.label} (fault cleared)`, { dispenserId: d.id });
-    } else if (command === "LOCK") {
-      d.mode = "LOCKED";
-      d.status = "STOPPED";
-      d.flowRateLpm = 0;
-      this.pushEvent(d.siteId, "CONTROL", `REMOTE LOCK ${d.label}`, { dispenserId: d.id });
-    } else if (command === "UNLOCK") {
-      d.mode = "AUTO";
-      d.status = "IDLE";
-      this.pushEvent(d.siteId, "CONTROL", `REMOTE UNLOCK ${d.label}`, { dispenserId: d.id });
+      case "EMERGENCY_STOP": {
+        // The safety command: valid whenever fuel is moving or armed,
+        // bypasses the cooldown (see above), and LATCHES a fault so the
+        // pump cannot be re-armed until an operator inspects and RESETs.
+        if (d.status !== "DISPENSING" && d.status !== "AUTHORIZED") {
+          return { ok: false, message: "Dispenser is not dispensing or armed — nothing to emergency-stop" };
+        }
+        if (d.status === "DISPENSING" && d.currentVolumeLitres > 0.5) {
+          await this.completeDispense(d, true);
+        }
+        d.status = "FAULT";
+        d.flowRateLpm = 0;
+        d.emergencyLatched = true;
+        this.pushEvent(d.siteId, "CRITICAL", `REMOTE EMERGENCY STOP ${d.label} — fault latched, reset required`, { dispenserId: d.id });
+        await this.raiseAlarm({
+          siteId: d.siteId, type: "DISPENSER_FAULT", severity: "L3",
+          entityKind: "DISPENSER", entityId: d.id,
+          message: `Dispenser ${d.label} emergency-stopped remotely at ${site.name}`,
+        });
+        await commit();
+        break;
+      }
+      case "RESET": {
+        if (d.status !== "FAULT") return { ok: false, message: "Dispenser is not in FAULT state" };
+        d.status = "IDLE";
+        d.flowRateLpm = 0;
+        d.currentVolumeLitres = 0;
+        d.currentTransactionId = undefined;
+        d.emergencyLatched = false;
+        this.pushEvent(d.siteId, "CONTROL", `REMOTE RESET ${d.label} (fault cleared)`, { dispenserId: d.id });
+        await commit();
+        break;
+      }
+      case "LOCK": {
+        if (d.status === "DISPENSING") return { ok: false, message: "Cannot lock while dispensing — stop first" };
+        if (d.emergencyLatched) return { ok: false, message: "Emergency-stop latch active — reset first" };
+        d.mode = "LOCKED";
+        d.status = "STOPPED";
+        d.flowRateLpm = 0;
+        this.pushEvent(d.siteId, "CONTROL", `REMOTE LOCK ${d.label}`, { dispenserId: d.id });
+        await commit();
+        break;
+      }
+      case "UNLOCK": {
+        if (d.mode !== "LOCKED") return { ok: false, message: "Dispenser is not locked" };
+        d.mode = "AUTO";
+        d.status = "IDLE";
+        this.pushEvent(d.siteId, "CONTROL", `REMOTE UNLOCK ${d.label}`, { dispenserId: d.id });
+        await commit();
+        break;
+      }
+      case "SET_LIMIT": {
+        if (d.status === "DISPENSING") return { ok: false, message: "Cannot set limit while dispensing" };
+        if (!preset || preset <= 0) return { ok: false, message: "SET_LIMIT requires a positive presetVolumeLitres" };
+        d.presetVolumeLitres = Math.round(preset * 100) / 100;
+        this.pushEvent(d.siteId, "CONTROL", `REMOTE SET_LIMIT ${d.label} → ${d.presetVolumeLitres} L`, { dispenserId: d.id });
+        await commit();
+        break;
+      }
+      case "RESET_COUNTER": {
+        if (d.status === "DISPENSING") return { ok: false, message: "Cannot reset counter while dispensing" };
+        const previous = d.totalizerLitres;
+        d.totalizerLitres = 0;
+        this.pushEvent(d.siteId, "CONTROL", `REMOTE RESET_COUNTER ${d.label} (${previous} L → 0 L)`, { dispenserId: d.id });
+        await commit(true);
+        break;
+      }
     }
-    // Persist mode/status change
-    db.fuelDispenser.update({
-      where: { id: d.id },
-      data: { mode: d.mode, status: d.status, presetVolumeLitres: d.presetVolumeLitres ?? null },
-    }).catch(() => {});
     return { ok: true, message: `${command} executed on ${d.label}` };
   }
 
@@ -1719,6 +1869,7 @@ async controlDispenser(
     rs485Address: number;
     rs485Parity: string;
     ipAddress?: string;
+    macAddress?: string;
   }): Promise<DispenserState> {
     await this.ensureInit(this.tenantsFor());
     // Phase 1 step 4: FuelDispenser requires tenantId. The caller passes only
@@ -1743,6 +1894,7 @@ async controlDispenser(
         rs485Address: data.rs485Address,
         rs485Parity: data.rs485Parity,
         ipAddress: data.ipAddress || null,
+        macAddress: data.macAddress || null,
         status: "IDLE",
         mode: "AUTO",
       },
@@ -1758,6 +1910,7 @@ async controlDispenser(
       rs485Baudrate: row.rs485Baudrate, rs485Address: row.rs485Address,
       rs485Parity: row.rs485Parity, wifiRssi: row.wifiRssi,
       ipAddress: row.ipAddress ?? undefined,
+      macAddress: row.macAddress ?? undefined,
       lastCommAt: row.lastCommAt?.getTime() ?? Date.now(),
       // Phase 5 task 1: Decimal(12,3) -> number at the DB boundary.
       currentVolumeLitres: toNum(row.currentVolumeLitres, { scale: 3 }),
@@ -1777,7 +1930,7 @@ async controlDispenser(
     label?: string; manufacturer?: string; model?: string;
     nozzleCount?: number; fuelType?: string; maxFlowLpm?: number;
     espFirmware?: string; rs485Baudrate?: number; rs485Address?: number;
-    rs485Parity?: string; ipAddress?: string;
+    rs485Parity?: string; ipAddress?: string; macAddress?: string;
     status?: string; mode?: string;
   }): Promise<DispenserState | null> {
     await this.ensureInit(this.tenantsFor());
@@ -1802,6 +1955,7 @@ async controlDispenser(
       if (data.rs485Address !== undefined) live.rs485Address = data.rs485Address;
       if (data.rs485Parity !== undefined) live.rs485Parity = data.rs485Parity;
       if (data.ipAddress !== undefined) live.ipAddress = data.ipAddress || undefined;
+      if (data.macAddress !== undefined) live.macAddress = data.macAddress || undefined;
       if (data.status !== undefined) live.status = data.status as DispenserState["status"];
       if (data.mode !== undefined) live.mode = data.mode as DispenserState["mode"];
     }

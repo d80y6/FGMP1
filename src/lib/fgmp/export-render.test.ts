@@ -212,14 +212,15 @@ describe("renderDocx", () => {
 });
 
 describe("isExportFormat", () => {
-  test("accepts the three supported formats", () => {
+  test("accepts the four supported formats", () => {
     expect(isExportFormat("csv")).toBe(true);
     expect(isExportFormat("xlsx")).toBe(true);
     expect(isExportFormat("docx")).toBe(true);
+    expect(isExportFormat("pdf")).toBe(true);
   });
 
   test("rejects anything else rather than defaulting silently", () => {
-    for (const bad of ["pdf", "", "csv; DROP TABLE", "CSV ", "xls"]) {
+    for (const bad of ["", "csv; DROP TABLE", "CSV ", "xls"]) {
       expect(isExportFormat(bad)).toBe(false);
     }
   });
@@ -230,6 +231,7 @@ describe("CONTENT_TYPES", () => {
     expect(CONTENT_TYPES.csv).toContain("text/csv");
     expect(CONTENT_TYPES.xlsx).toContain("spreadsheetml");
     expect(CONTENT_TYPES.docx).toContain("wordprocessingml");
-    expect(new Set(Object.values(CONTENT_TYPES)).size).toBe(3);
+    expect(CONTENT_TYPES.pdf).toContain("application/pdf");
+    expect(new Set(Object.values(CONTENT_TYPES)).size).toBe(4);
   });
 });

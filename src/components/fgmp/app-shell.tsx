@@ -20,7 +20,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useTheme } from "next-themes";
 import { useState } from "react";
-import { hasCapability, ALL_ROLES, ROLE_PERMISSIONS } from "@/lib/fgmp/rbac";
+import { hasCapability, ROLE_PERMISSIONS } from "@/lib/fgmp/rbac";
+import { PREVIEW_ROLES } from "@/lib/fgmp/role-preview";
 import type { Role } from "@/lib/fgmp/types";
 import dynamic from "next/dynamic";
 
@@ -182,6 +183,7 @@ export function AppShell() {
   const livePaused = useFgmp((s) => s.livePaused);
   const toggleLive = useFgmp((s) => s.toggleLive);
   const switchRole = useFgmp((s) => s.switchRole);
+  const returnToPermanentRole = useFgmp((s) => s.returnToPermanentRole);
   const lastTickAt = useFgmp((s) => s.lastTickAt);
   // Realtime push (socket.io). When livePaused, suspend the socket so
   // "Pause live" halts BOTH the polling tick and the realtime push.
@@ -224,27 +226,27 @@ export function AppShell() {
       // matches no rows — leave it unset and let the guard refuse the request.
       // The client is redirected to the challenge anyway.
       ...(sessionUser.tenantId ? { tenantId: sessionUser.tenantId } : { tenantId: undefined as unknown as string }),
-      // ADMIN and SUPERADMIN can switch roles (PATCH /api/fgmp/me accepts
-      // both). For everyone else we expose just their own role so the
-      // switcher renders as a read-only badge rather than a misleading
-      // dropdown.
-      roles: (role === "ADMIN" || role === "SUPERADMIN") ? ALL_ROLES : [role],
+      // ADMIN and SUPERADMIN can preview the six tenant roles of
+      // the proposal's switcher (§8.16). For everyone else we
+      // expose just their own role so the switcher renders as a
+      // read-only badge rather than a misleading dropdown.
+      roles: (role === "ADMIN" || role === "SUPERADMIN") ? PREVIEW_ROLES : [role],
       permissions: ROLE_PERMISSIONS[role],
     };
     setMe(derivedMe);
+    // Reconcile with the server envelope: a role preview
+    // survives a reload via its cookie, and the effective
+    // role/permissions must match what the API enforces.
+    fetch("/api/fgmp/me", { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((serverMe) => { if (serverMe) setMe(serverMe); })
+      .catch(() => { /* keep the session-derived envelope */ });
   }, [sessionUser, status, setMe]);
 
-  // Keep the JWT role in sync with the store's role after a role switch.
-  // The store's switchRole() PATCHes the DB and updates `me` locally; this
-  // effect calls useSession().update() so the JWT (and therefore API auth
-  // via requireRole) reflects the new role without a re-login.
-  const storeRole = me?.role;
-  useEffect(() => {
-    if (!update || !sessionRole || !storeRole) return;
-    if (storeRole !== sessionRole) {
-      void update({ role: storeRole });
-    }
-  }, [storeRole, sessionRole, update]);
+  // Role preview (proposal §8.16): the overlay lives in a
+  // signed httpOnly cookie read by requireAuth() on the server.
+  // The session/JWT role is the PERMANENT role and is never
+  // rewritten, so a re-login automatically returns to it.
 
   // Data refresh — READ ONLY.
   //
@@ -482,32 +484,59 @@ export function AppShell() {
             <Keyboard className="h-4 w-4" />
           </Button>
 
-          {/* Role switcher (ADMIN + SUPERADMIN — PATCH /api/fgmp/me
-              accepts both). Non-admins still see a read-only role badge so
-              they know their current role, but the dropdown is disabled. */}
+          {/* Role preview switcher (proposal §8.16 — معاينة الأدوار
+              وإعادة الضبط). ADMIN + SUPERADMIN may preview any of
+              the six tenant roles. The preview is SESSION-SCOPED:
+              it is served from a signed cookie overlay, the DB row
+              is never written, and a re-login returns to the
+              permanent role automatically. Non-admins see a
+              read-only role badge (dropdown disabled). */}
           {me && (
-            <Select
-              value={role}
-              disabled={role !== "ADMIN" && role !== "SUPERADMIN"}
-              onValueChange={(v) => {
-                switchRole(v as typeof role).catch(() => {
-                  toast.error(t("auth.invalidCredentials"));
-                });
-              }}
-            >
-              <SelectTrigger className="h-9 w-[170px] gap-1 text-xs" aria-label={t("common.switchRole")}>
-                <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {me.roles.map((r) => {
-                  const roleKey = `role.${r.toLowerCase()}`;
-                  const roleTr = t(roleKey);
-                  const label = roleTr === roleKey ? r.replace(/_/g, " ") : roleTr;
-                  return <SelectItem key={r} value={r} className="text-xs">{label}</SelectItem>;
-                })}
-              </SelectContent>
-            </Select>
+            <>
+              {/* العودة إلى مدير — Return to Admin. Amber, and
+                  visible exactly while the effective role differs
+                  from the permanent one. One click ends the
+                  preview; no re-login is required. */}
+              {me.previewRole && me.permanentRole && me.previewRole !== me.permanentRole && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9 gap-1.5 border-amber-500/40 bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-400"
+                  onClick={() => {
+                    returnToPermanentRole().catch(() => {
+                      toast.error(t("auth.invalidCredentials"));
+                    });
+                  }}
+                  aria-label={t("auth.returnToAdmin")}
+                  title={t("auth.returnToAdminHint")}
+                >
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  {t("auth.returnToAdmin")}
+                </Button>
+              )}
+              <Select
+                value={role}
+                disabled={role !== "ADMIN" && role !== "SUPERADMIN" && !me.previewRole}
+                onValueChange={(v) => {
+                  switchRole(v as typeof role).catch(() => {
+                    toast.error(t("auth.invalidCredentials"));
+                  });
+                }}
+              >
+                <SelectTrigger className="h-9 w-[170px] gap-1 text-xs" aria-label={t("common.switchRole")}>
+                  <ShieldCheck className={`h-3.5 w-3.5 ${me.previewRole ? "text-amber-500" : "text-emerald-500"}`} />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {me.roles.map((r) => {
+                    const roleKey = `role.${r.toLowerCase()}`;
+                    const roleTr = t(roleKey);
+                    const label = roleTr === roleKey ? r.replace(/_/g, " ") : roleTr;
+                    return <SelectItem key={r} value={r} className="text-xs">{label}</SelectItem>;
+                  })}
+                </SelectContent>
+              </Select>
+            </>
           )}
 
           {/* Sign out (Task 31-A) */}

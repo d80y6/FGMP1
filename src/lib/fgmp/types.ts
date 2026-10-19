@@ -142,8 +142,6 @@ export interface IoTDeviceState {
 
 export type DispenserStatus = "IDLE" | "AUTHORIZED" | "DISPENSING" | "STOPPED" | "FAULT" | "MAINTENANCE" | "OFFLINE";
 export type DispenserMode = "AUTO" | "MANUAL" | "LOCKED";
-export type DispenserCommand = "AUTHORIZE" | "STOP" | "RESET" | "LOCK" | "UNLOCK";
-
 export interface DispenserState {
   id: string;
   siteId: string;
@@ -163,6 +161,8 @@ export interface DispenserState {
   rs485Parity: string;
   wifiRssi: number;
   ipAddress?: string;
+  // MAC of the industrial controller (proposal §8.17 pump card).
+  macAddress?: string;
   lastCommAt: number;
   // Live telemetry
   currentVolumeLitres: number;
@@ -175,12 +175,37 @@ export interface DispenserState {
   // Internal
   startedAt?: number;          // epoch ms when current in-progress txn started
   targetVolumeLitres?: number; // internal: target volume for current txn
+  // Internal: epoch ms of the last accepted control command. Enforces
+  // the cooldown safety guarantee (proposal feature 23) so a command
+  // storm cannot toggle the pump faster than the fieldbus can honour.
+  lastCommandAt?: number;
+  // Internal: true after EMERGENCY_STOP until an operator RESETs the
+  // unit. While latched the pump refuses AUTHORIZE/START — the
+  // emergency stop is not a plain stop, it is a fault latch.
+  emergencyLatched?: boolean;
   // Internal: transient flag set by applyEspReboot() to model an ESP
   // controller restart. While set the dispenser reads OFFLINE; the tick
   // clears it (mirrors GatewayState.rebootingUntil).
   rebootingUntil?: number;
   history: { t: number; flow: number; vol: number }[];
 }
+
+/**
+ * The ten remote control commands of proposal feature 23.
+ * Mirrored by the Zod enum in lib/fgmp/schemas.ts and the
+ * button set in the dispensers view.
+ */
+export type DispenserCommand =
+  | "AUTHORIZE"
+  | "DEAUTHORIZE"
+  | "START"
+  | "STOP"
+  | "EMERGENCY_STOP"
+  | "RESET"
+  | "LOCK"
+  | "UNLOCK"
+  | "SET_LIMIT"
+  | "RESET_COUNTER";
 
 export type FuelTransactionStatus = "IN_PROGRESS" | "COMPLETED" | "CANCELLED" | "FAILED";
 
@@ -205,6 +230,12 @@ export interface FuelTransactionState {
   startedAt: number;
   completedAt?: number;
   durationSec: number;
+  /**
+   * Cumulative pump counter (totalizer) at completion — the
+   * عدّاد column of the proposal's fill-operations table.
+   * Decimal like the other money/volume columns.
+   */
+  totalizerLitres?: Prisma.Decimal;
 }
 
 export interface EventItem {

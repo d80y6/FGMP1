@@ -84,6 +84,7 @@
  */
 
 import { io as ioc, type Socket } from "socket.io-client";
+import { mtlsFetch } from "./mtls";
 
 const NEXT_API_BASE = process.env.NEXT_API_BASE ?? "http://localhost:3000";
 const REALTIME_URL = process.env.REALTIME_URL ?? "http://localhost:3003";
@@ -149,7 +150,7 @@ let sites: SiteInfo[] = [];
 
 async function refreshSites(): Promise<void> {
   try {
-    const res = await fetch(`${NEXT_API_BASE}${SNAPSHOT_PATH}`, {
+    const res = await mtlsFetch(`${NEXT_API_BASE}${SNAPSHOT_PATH}`, {
       headers: {
         accept: "application/json",
         "x-service-token": SERVICE_TOKEN,
@@ -232,7 +233,7 @@ async function ingestOnce(): Promise<void> {
 
     // 1. POST to Next.js ingest endpoint (persisted as SensorReading rows)
     try {
-      const res = await fetch(`${NEXT_API_BASE}/api/fgmp/iot/ingest`, {
+      const res = await mtlsFetch(`${NEXT_API_BASE}/api/fgmp/iot/ingest`, {
         method: "POST",
         headers: {
           "content-type": "application/json",

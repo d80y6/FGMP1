@@ -120,6 +120,7 @@ export async function POST(req: NextRequest) {
         espDeviceId: data.espDeviceId,
         espFirmware: data.espFirmware,
         ipAddress: data.ipAddress || null,
+        macAddress: data.macAddress || null,
         // rs485Address carries the Modbus unit address (prisma/schema.prisma).
         rs485Address: data.rs485Address,
         rs485Baudrate: data.rs485Baudrate,

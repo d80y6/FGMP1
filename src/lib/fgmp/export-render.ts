@@ -32,6 +32,10 @@
 
 import type { DecimalLike } from "@/lib/fgmp/decimal";
 import { Document, Packer, Paragraph, Table, TableCell, TableRow, TextRun, WidthType } from "docx";
+import PDFDocument from "pdfkit";
+import arabicReshaper from "arabic-reshaper";
+import bidiFactory from "bidi-js";
+import { PDF_FONTS } from "./pdf-fonts";
 
 export type ExportRow = Record<string, unknown>;
 
@@ -309,31 +313,6 @@ function sheetName(title: string): string {
   return title.replace(/[:\\/?*[\]]/g, " ").slice(0, 31) || "Export";
 }
 
-/** MIME types per format. */
-export const CONTENT_TYPES = {
-  csv: "text/csv; charset=utf-8",
-  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-} as const;
-
-export type ExportFormat = keyof typeof CONTENT_TYPES;
-
-/** Render in the requested format. */
-export async function render(
-  rows: readonly ExportRow[],
-  format: ExportFormat,
-  opts: RenderOptions,
-): Promise<{ body: Uint8Array | string; contentType: string }> {
-  switch (format) {
-    case "csv":
-      return { body: renderCsv(rows, opts), contentType: CONTENT_TYPES.csv };
-    case "xlsx":
-      return { body: await renderXlsx(rows, opts), contentType: CONTENT_TYPES.xlsx };
-    case "docx":
-      return { body: await renderDocx(rows, opts), contentType: CONTENT_TYPES.docx };
-  }
-}
-
 /**
  * `jszip` loaded once and cached.
  *
@@ -352,7 +331,139 @@ function loadJsZip(): Promise<JSZipCtor> {
   return jszipPromise;
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// PDF
+// ──────────────────────────────────────────────────────────────────────────
+
+const bidi = bidiFactory();
+
+/**
+ * Shape mixed Arabic/Latin text for PDF.
+ *
+ * PDF has no text-shaping engine: it draws glyphs in the order
+ * they appear. Arabic needs each letter in its contextual form
+ * (initial/medial/final) and the whole RTL run reversed, or the
+ * document renders disconnected letters in the wrong order —
+ * worse than no export at all for an Arabic-speaking operator.
+ * arabic-reshaper applies the presentation forms, bidi-js the
+ * Unicode Bidirectional Algorithm. The fast path leaves pure
+ * Latin/number strings untouched so EN exports stay byte-identical.
+ */
+function shapeText(text: string): string {
+  // U+0600..U+06FF Arabic, U+0750..U+077F supplement, U+FB50..U+FDFF
+  // and U+FE70..U+FEFF presentation forms.
+  if (!/[\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]/.test(text)) return text;
+  const reshaped = arabicReshaper.reshape(text);
+  const levels = bidi.getEmbeddingLevels(reshaped, "rtl");
+  return bidi.getReorderedString(reshaped, levels);
+}
+
+/** Registered font names inside the PDF document. */
+const PDF_FONT_REGULAR = "FGMPArabic";
+const PDF_FONT_BOLD = "FGMPArabic-Bold";
+
+/** Row height budget: wrapped cells grow the row. */
+const PDF_ROW_HEIGHT = 16;
+const PDF_PAGE_MARGIN = 40;
+
+/**
+ * Render the row set as a PDF document with the embedded
+ * Noto Naskh Arabic face — the proposal's "PDF" export format
+ * (§7 التقارير: تصدير CSV, PDF, Excel).
+ */
+export async function renderPdf(
+  rows: readonly ExportRow[],
+  opts: RenderOptions,
+): Promise<Uint8Array> {
+  const headers = opts.headers ?? Object.keys(rows[0] ?? {});
+  const doc = new PDFDocument({ size: "landscape", margin: PDF_PAGE_MARGIN });
+  const chunks: Buffer[] = [];
+  doc.on("data", (c: Buffer) => chunks.push(c));
+  const done = new Promise<void>((resolve) => doc.on("end", () => resolve()));
+
+  // Embedded Arabic faces — the only fonts in the document, so
+  // Latin and Arabic text share one typeface family.
+  doc.registerFont(PDF_FONT_REGULAR, Buffer.from(PDF_FONTS["NotoNaskhArabic-Regular"], "base64"));
+  doc.registerFont(PDF_FONT_BOLD, Buffer.from(PDF_FONTS["NotoNaskhArabic-Bold"], "base64"));
+
+  // Title
+  doc.font(PDF_FONT_BOLD).fontSize(14).text(shapeText(opts.title), { align: "center" });
+  doc.moveDown();
+
+  // Table geometry: the page is landscape A4; columns share the
+  // width equally and wrap to at most two lines.
+  const usableWidth = doc.page.width - 2 * PDF_PAGE_MARGIN;
+  const colWidth = usableWidth / Math.max(headers.length, 1);
+  const tableTop = doc.y;
+  const pageHeight = doc.page.height;
+
+  const drawHeader = () => {
+    doc.font(PDF_FONT_BOLD).fontSize(8);
+    let x = PDF_PAGE_MARGIN;
+    for (const h of headers) {
+      doc.text(shapeText(String(h)), x, tableTop, { width: colWidth - 4, height: PDF_ROW_HEIGHT, ellipsis: true });
+      x += colWidth;
+    }
+    doc.moveTo(PDF_PAGE_MARGIN, tableTop + PDF_ROW_HEIGHT).lineTo(doc.page.width - PDF_PAGE_MARGIN, tableTop + PDF_ROW_HEIGHT).stroke();
+  };
+  drawHeader();
+
+  // Rows, paginated
+  doc.font(PDF_FONT_REGULAR).fontSize(8);
+  let y = tableTop + PDF_ROW_HEIGHT;
+  for (const row of rows) {
+    if (y + PDF_ROW_HEIGHT > pageHeight - PDF_PAGE_MARGIN) {
+      doc.addPage();
+      y = PDF_PAGE_MARGIN;
+      drawHeader();
+      y = tableTop + PDF_ROW_HEIGHT;
+      doc.font(PDF_FONT_REGULAR).fontSize(8);
+    }
+    let x = PDF_PAGE_MARGIN;
+    for (const h of headers) {
+      doc.text(shapeText(renderCell(row[h])), x, y, { width: colWidth - 4, height: PDF_ROW_HEIGHT, ellipsis: true });
+      x += colWidth;
+    }
+    y += PDF_ROW_HEIGHT;
+    doc.moveTo(PDF_PAGE_MARGIN, y).lineTo(doc.page.width - PDF_PAGE_MARGIN, y)
+      .strokeColor("#e2e8f0").strokeOpacity(0.6).stroke();
+    doc.strokeColor("#000000").strokeOpacity(1);
+  }
+
+  doc.end();
+  await done;
+  return Buffer.concat(chunks);
+}
+
+/** MIME types per format. */
+export const CONTENT_TYPES = {
+  csv: "text/csv; charset=utf-8",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  pdf: "application/pdf",
+} as const;
+
+export type ExportFormat = keyof typeof CONTENT_TYPES;
+
+/** Render in the requested format. */
+export async function render(
+  rows: readonly ExportRow[],
+  format: ExportFormat,
+  opts: RenderOptions,
+): Promise<{ body: Uint8Array | string; contentType: string }> {
+  switch (format) {
+    case "csv":
+      return { body: renderCsv(rows, opts), contentType: CONTENT_TYPES.csv };
+    case "xlsx":
+      return { body: await renderXlsx(rows, opts), contentType: CONTENT_TYPES.xlsx };
+    case "docx":
+      return { body: await renderDocx(rows, opts), contentType: CONTENT_TYPES.docx };
+    case "pdf":
+      return { body: await renderPdf(rows, opts), contentType: CONTENT_TYPES.pdf };
+  }
+}
+
 /** Narrow an untrusted string to a known format. Used at the route boundary. */
 export function isExportFormat(v: string): v is ExportFormat {
-  return v === "csv" || v === "xlsx" || v === "docx";
+  return v === "csv" || v === "xlsx" || v === "docx" || v === "pdf";
 }

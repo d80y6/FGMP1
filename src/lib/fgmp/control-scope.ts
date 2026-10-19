@@ -50,7 +50,13 @@ export type ControlAction =
   | "UNLOCK"
   | "ESP_REBOOT"
   | "FIRMWARE_DEPLOY"
-  | "GATEWAY_REBOOT";
+  | "GATEWAY_REBOOT"
+  // Dispenser commands (proposal feature 23) — the same
+  // control-scope assertion covers them, so they belong in
+  // the union the messages are typed against.
+  | "DEAUTHORIZE"
+  | "SET_LIMIT"
+  | "RESET_COUNTER";
 
 export type ScopeVerdict =
   | { allowed: true }

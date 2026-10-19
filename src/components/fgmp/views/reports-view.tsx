@@ -47,6 +47,9 @@ const PERIODS = [
 
 export function ReportsView() {
   const [period, setPeriod] = useState("daily");
+  // Export format for the server-rendered reports
+  // (proposal §7: CSV / PDF / Excel).
+  const [exportFormat, setExportFormat] = useState<"csv" | "xlsx" | "pdf">("csv");
   const t = useT();
   const dir = useDir();
   const useArabicNums = useArabicNumerals();
@@ -106,11 +109,19 @@ export function ReportsView() {
                 <p className="text-sm font-semibold capitalize">{period} {t("reports.operationsReport")}</p>
                 <p className="text-xs text-muted-foreground">{fmtDateTime(s.from, numLang)} → {fmtDateTime(s.to, numLang)}</p>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <Button variant="outline" size="sm" onClick={() => window.open("/api/fgmp/export?type=sites", "_blank")}><FileType2 className="mr-1.5 h-4 w-4" />{t("reports.sitesCsv")}</Button>
-                <Button variant="outline" size="sm" onClick={() => window.open("/api/fgmp/export?type=tanks", "_blank")}><FileType2 className="mr-1.5 h-4 w-4" />{t("reports.tanksCsv")}</Button>
-                <Button variant="outline" size="sm" onClick={() => window.open("/api/fgmp/export?type=generators", "_blank")}><FileType2 className="mr-1.5 h-4 w-4" />{t("reports.generatorsCsv")}</Button>
-                <Button variant="outline" size="sm" onClick={() => window.open("/api/fgmp/export?type=batteries", "_blank")}><FileType2 className="mr-1.5 h-4 w-4" />{t("reports.batteriesCsv")}</Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Select value={exportFormat} onValueChange={(v) => setExportFormat(v as "csv" | "xlsx" | "pdf")}>
+                  <SelectTrigger className="h-8 w-[110px] text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="csv">CSV</SelectItem>
+                    <SelectItem value="xlsx">Excel</SelectItem>
+                    <SelectItem value="pdf">PDF</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button variant="outline" size="sm" onClick={() => window.open(`/api/fgmp/export?type=sites&format=${exportFormat}`, "_blank")}><FileType2 className="mr-1.5 h-4 w-4" />{t("reports.sitesCsv")}</Button>
+                <Button variant="outline" size="sm" onClick={() => window.open(`/api/fgmp/export?type=tanks&format=${exportFormat}`, "_blank")}><FileType2 className="mr-1.5 h-4 w-4" />{t("reports.tanksCsv")}</Button>
+                <Button variant="outline" size="sm" onClick={() => window.open(`/api/fgmp/export?type=generators&format=${exportFormat}`, "_blank")}><FileType2 className="mr-1.5 h-4 w-4" />{t("reports.generatorsCsv")}</Button>
+                <Button variant="outline" size="sm" onClick={() => window.open(`/api/fgmp/export?type=batteries&format=${exportFormat}`, "_blank")}><FileType2 className="mr-1.5 h-4 w-4" />{t("reports.batteriesCsv")}</Button>
                 <ExportButton
                   filename={csvFilename(`report-${period}`)}
                   rows={summaryExportRows}
