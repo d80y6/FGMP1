@@ -101,7 +101,7 @@ export async function GET(req: NextRequest) {
     const format = (searchParams.get("format") ?? "csv").toLowerCase();
     if (!isExportFormat(format)) {
       const res = NextResponse.json(
-        { error: `Unsupported format "${format}"`, supported: ["csv", "xlsx", "docx"] },
+        { error: `Unsupported format "${format}"`, supported: ["csv", "xlsx", "docx", "pdf"] },
         { status: 400 },
       );
       applyRateLimitHeaders(res.headers, rl);

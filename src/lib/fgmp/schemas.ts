@@ -429,12 +429,22 @@ const dispenserStatusEnum = z.enum([
   "OFFLINE",
 ]);
 const dispenserModeEnum = z.enum(["AUTO", "MANUAL", "LOCKED"]);
+// Feature 23 of the technical proposal: ten control commands per pump.
+// AUTHORIZE / DEAUTHORIZE arm and disarm the nozzle; START / STOP /
+// EMERGENCY_STOP drive the flow; LOCK / UNLOCK gate the whole unit;
+// RESET clears a fault latch; SET_LIMIT arms a volume preset;
+// RESET_COUNTER zeroes the cumulative totalizer (audited).
 const dispenserCommandEnum = z.enum([
   "AUTHORIZE",
+  "DEAUTHORIZE",
+  "START",
   "STOP",
+  "EMERGENCY_STOP",
   "RESET",
   "LOCK",
   "UNLOCK",
+  "SET_LIMIT",
+  "RESET_COUNTER",
 ]);
 
 /** POST /api/fgmp/dispensers — create a dispenser. ADMIN-only. */
@@ -446,7 +456,7 @@ export const createDispenserSchema = z.object({
   label: z.string().trim().min(1).max(200),
   manufacturer: z.string().trim().min(1).max(200),
   model: z.string().trim().min(1).max(200),
-  nozzleCount: z.coerce.number().int().min(1).max(4),
+  nozzleCount: z.coerce.number().int().min(1).max(8), // proposal §5.4: 1–8 nozzles
   fuelType: dispenserFuelTypeEnum.default("DIESEL"),
   maxFlowLpm: z.coerce.number().positive().max(200),
   espDeviceId: z.string().trim().min(1).max(120),
@@ -455,6 +465,8 @@ export const createDispenserSchema = z.object({
   rs485Address: z.coerce.number().int().min(1).max(247).default(1),
   rs485Parity: z.string().trim().min(1).max(8).default("8N1"),
   ipAddress: z.string().trim().max(60).optional().or(z.literal("")),
+  // MAC of the industrial controller (proposal §8.17 pump card identity).
+  macAddress: z.string().trim().max(30).optional(),
   mode: dispenserModeEnum.default("AUTO"),
   presetVolumeLitres: z.coerce.number().nonnegative().max(10000).optional(),
 });
@@ -465,7 +477,7 @@ export const updateDispenserSchema = z.object({
   label: z.string().trim().min(1).max(200).optional(),
   manufacturer: z.string().trim().min(1).max(200).optional(),
   model: z.string().trim().min(1).max(200).optional(),
-  nozzleCount: z.coerce.number().int().min(1).max(4).optional(),
+  nozzleCount: z.coerce.number().int().min(1).max(8).optional(),
   fuelType: dispenserFuelTypeEnum.optional(),
   maxFlowLpm: z.coerce.number().positive().max(200).optional(),
   espFirmware: z.string().trim().min(1).max(60).optional(),
@@ -473,16 +485,23 @@ export const updateDispenserSchema = z.object({
   rs485Address: z.coerce.number().int().min(1).max(247).optional(),
   rs485Parity: z.string().trim().min(1).max(8).optional(),
   ipAddress: z.string().trim().max(60).optional().or(z.literal("")),
+  macAddress: z.string().trim().max(30).optional(),
   status: dispenserStatusEnum.optional(),
   mode: dispenserModeEnum.optional(),
   presetVolumeLitres: z.coerce.number().nonnegative().max(10000).optional(),
 });
 export type UpdateDispenserInput = z.infer<typeof updateDispenserSchema>;
 
-/** POST /api/fgmp/dispensers/[id]/control — authorize / stop / reset / lock / unlock. */
+/**
+ * POST /api/fgmp/dispensers/[id]/control
+ *
+ * The ten commands of proposal feature 23: AUTHORIZE, DEAUTHORIZE,
+ * START, STOP, EMERGENCY_STOP, RESET, LOCK, UNLOCK, SET_LIMIT
+ * (via `presetVolumeLitres`), RESET_COUNTER.
+ */
 export const dispenserControlSchema = z.object({
   command: dispenserCommandEnum,
-  presetVolumeLitres: z.coerce.number().positive().max(10000).optional(),
+  presetVolumeLitres: z.coerce.number().nonnegative().max(10000).optional(),
 });
 export type DispenserControlInput = z.infer<typeof dispenserControlSchema>;
 

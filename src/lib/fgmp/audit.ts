@@ -36,6 +36,7 @@
  */
 
 import { PrismaClient } from "@prisma/client";
+import { headers } from "next/headers";
 import { db } from "@/lib/db";
 
 export interface AuditParams {
@@ -96,6 +97,32 @@ function fallbackDb(): PrismaClient {
   return fallbackClient;
 }
 
+/**
+ * Resolve the caller's IP for the audit trail (proposal §8.12,
+ * Figure 21 — the audit screen shows عنوان IP per action).
+ *
+ * Next.js exposes the request headers through `headers()`
+ * anywhere inside the request scope, so audit() can resolve
+ * the IP WITHOUT a request parameter — which is why none of
+ * the ~80 call sites change. Outside a request scope (tests,
+ * scripts, the scheduler) this throws and resolves to null,
+ * which is the honest answer.
+ *
+ * x-forwarded-for is trusted because the gateway (Caddyfile)
+ * REWRITES it to the TCP peer on every proxied request, so a
+ * client-supplied value never reaches the app.
+ */
+async function resolveCallerIp(): Promise<string | null> {
+  try {
+    const h = await headers();
+    const fwd = h.get("x-forwarded-for");
+    if (fwd) return fwd.split(",")[0].trim();
+    return h.get("x-real-ip");
+  } catch {
+    return null;
+  }
+}
+
 export async function audit(params: AuditParams): Promise<void> {
   const data = {
     tenantId: params.tenantId ?? "t-default",
@@ -104,7 +131,9 @@ export async function audit(params: AuditParams): Promise<void> {
     entity: params.entity,
     entityId: params.entityId ?? null,
     details: JSON.stringify(params.details ?? {}),
-    ip: params.ip ?? null,
+    // An explicit ip (edge ingest paths that already parsed
+    // it) wins; otherwise resolve it from the request scope.
+    ip: params.ip ?? (await resolveCallerIp()),
   };
 
   try {

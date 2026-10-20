@@ -443,6 +443,20 @@ async function seedTopology(): Promise<{ seeded: boolean; siteCount: number }> {
  * fuel/transport hubs. Skipped silently if any dispenser already exists so
  * this can be called on every bootstrap() without duplicating data.
  */
+/**
+ * Idempotent dispenser + transaction + RS485-bus seeder.
+ *
+ * The technical proposal's statistics table (Figure 6) states the
+ * demo fleet as 45 pumps, 29 site gateways and 45 RS485 buses, so
+ * the seeder reproduces exactly those counts: 29 fuel-hub sites,
+ * the first 16 with two pumps and the remaining 13 with one
+ * (16×2 + 13×1 = 45), one RS485 bus per pump (45), and one site
+ * gateway per fuel-hub site (29 — see seedGateways, which derives
+ * from the same dispenser sites).
+ *
+ * Skipped silently if any dispenser already exists so this can be
+ * called on every bootstrap() without duplicating data.
+ */
 async function seedDispensers(db: PrismaClient): Promise<void> {
   const existingDispensers = await db.fuelDispenser.count();
   if (existingDispensers > 0) return;
@@ -468,8 +482,13 @@ async function seedDispensers(db: PrismaClient): Promise<void> {
       });
     }
   }
-  // Pick the first ~12 sites (deterministic — first 12 in insertion order)
-  const dispenserSites = Array.from(sitesWithDiesel.values()).slice(0, 12);
+  // The fleet's fuel/transport hubs: 29 sites (Figure 6 — 29 gateways).
+  const dispenserSites = Array.from(sitesWithDiesel.values()).slice(0, 29);
+  if (dispenserSites.length < 29) {
+    console.warn(
+      `[seed] only ${dispenserSites.length} diesel-tank sites available; the proposal's fleet statistics (45 pumps / 29 gateways) need at least 29.`,
+    );
+  }
   const FIRMWARES = ["v1.0.0", "v1.0.1", "v1.1.0", "v1.2.0", "v1.2.1"];
   const MANUFACTURERS = [
     { m: "Tatsuno", models: ["CR-200", "NRA-45"] },
@@ -483,14 +502,27 @@ async function seedDispensers(db: PrismaClient): Promise<void> {
   const now = Date.now();
   let dispIdx = 0;
   let txnCount = 0;
+  let busCount = 0;
   const UNIT_PRICE_YER = 520; // ~520 YER per litre of diesel (2024)
+
+  // Deterministic MAC derived from the pump index — the controller
+  // identity the proposal's pump card shows next to IP/Modbus/baud.
+  const macFor = (i: number) =>
+    `02:00:0A:${String(Math.floor(i / 65536) % 256).padStart(2, "0")}:${String(Math.floor(i / 256) % 256).padStart(2, "0")}:${String(i % 256).padStart(2, "0")}`.toUpperCase();
+
   for (const ds of dispenserSites) {
-    // 2 dispensers per site (so ~24 total across 12 sites)
-    for (let n = 0; n < 2; n++) {
+    // 2 pumps at the 16 largest hubs, 1 at the rest → 16×2+13×1 = 45.
+    const pumpsAtSite = dispIdx < 32 ? 2 : 1;
+    for (let n = 0; n < pumpsAtSite; n++) {
       dispIdx++;
       const maker = pick(MANUFACTURERS);
-      const nozzleCount = pick([1, 1, 2, 2, 4]);
+      const nozzleCount = pick([1, 1, 2, 2, 4, 4, 6, 8]); // proposal §5.4: 1–8
       const status = n === 0 && dispIdx % 7 === 0 ? "DISPENSING" : "IDLE";
+      // Cumulative counter this pump starts from; the seeded
+      // transactions then advance it so the عدّاد column of the
+      // fill-operations table is internally consistent.
+      const totalizerBase = Math.round(range(5000, 50000));
+      let totalizer = totalizerBase;
       const dispenser = await db.fuelDispenser.create({
         data: {
           tenantId: ds.tenantId,
@@ -503,32 +535,89 @@ async function seedDispensers(db: PrismaClient): Promise<void> {
           maxFlowLpm: pick([40, 50, 60]),
           status,
           mode: "AUTO",
-          // Task 48 — 1-based pump number per site (n is 0..1, so pumpNumber is 1..2).
+          // Task 48 — 1-based pump number per site.
           pumpNumber: n + 1,
           espDeviceId: `ESP32-DISP-${String(dispIdx).padStart(3, "0")}`,
           espFirmware: pick(FIRMWARES),
-          rs485Baudrate: pick([9600, 19200]),
-          rs485Address: (n % 4) + 1,
+          rs485Baudrate: pick([9600, 19200, 115200]),
+          // Unique Modbus unit address per bus (1–247). The
+          // Rs485Bus model enforces tenant-wide uniqueness, so the
+          // demo fleet uses 1..45 — one address per pump bus.
+          rs485Address: dispIdx,
           rs485Parity: "8N1",
           wifiRssi: -intRange(45, 80),
           ipAddress: `10.${intRange(0, 60)}.${intRange(0, 255)}.${intRange(2, 254)}`,
+          macAddress: macFor(dispIdx),
           lastCommAt: new Date(),
           currentVolumeLitres: status === "DISPENSING" ? Math.round(range(5, 40)) : 0,
           flowRateLpm: status === "DISPENSING" ? Math.round(range(30, 50)) : 0,
-          totalizerLitres: Math.round(range(5000, 50000)),
+          totalizerLitres: totalizerBase,
           lastTransactionAt: new Date(now - intRange(5, 240) * 60000),
           tempC: Math.round(range(28, 42)),
         },
       });
 
-      // Seed ~7 historical transactions per dispenser (≈ 80 total)
+      // One RS485 bus per pump (Figure 6 — 45 buses). The bus row
+      // carries the wiring configuration the diagnostic tab reports.
+      const bus = await db.rs485Bus.create({
+        data: {
+          tenantId: ds.tenantId,
+          label: `RS485-${ds.siteCode}-${String.fromCharCode(65 + n)}`,
+          siteId: ds.siteId,
+          baudrate: dispenser.rs485Baudrate,
+          unitAddress: dispenser.rs485Address,
+          parity: dispenser.rs485Parity,
+          // Seeded pumps are only ever IDLE/DISPENSING here,
+          // so their bus segment is online by construction.
+          online: true,
+          lastPollAt: new Date(now - intRange(1, 30) * 1000),
+        },
+      });
+      busCount++;
+
+      // Per-device measured counters for the diagnostics tab. Most
+      // buses are healthy; a handful carry CRC/timeout history so
+      // the "worst 15 by poll time" chart and the link-loss counter
+      // have something real to show.
+      const unhealthy = dispIdx % 11 === 0;
+      const crcErrors = unhealthy ? intRange(3, 40) : intRange(0, 2);
+      const timeouts = unhealthy ? intRange(1, 12) : intRange(0, 1);
+      const successfulReads = intRange(8000, 90000);
+      const failedReads = crcErrors + timeouts;
+      const avgLatency = unhealthy ? range(90, 240) : range(8, 45);
+      await db.rs485BusDiagnostic.create({
+        data: {
+          tenantId: ds.tenantId,
+          busId: bus.id,
+          unitAddress: dispenser.rs485Address,
+          deviceKind: "FuelDispenser",
+          deviceId: dispenser.id,
+          crcErrors,
+          timeouts,
+          retries: intRange(0, unhealthy ? 30 : 4),
+          retriesExhausted: unhealthy ? intRange(0, 3) : 0,
+          exceptionResponses: intRange(0, 2),
+          successfulReads,
+          failedReads,
+          lastLatencyMs: Math.round(avgLatency),
+          averageLatencyMs: Math.round(avgLatency * 10) / 10,
+          lastPollAt: new Date(now - intRange(1, 10) * 1000),
+          lastError: unhealthy ? "CRC mismatch on function 0x03 response" : null,
+          lastErrorKind: unhealthy ? "crc-mismatch" : null,
+        },
+      });
+
+      // Seed ~7 historical transactions per dispenser (~315 total)
       // spread over the last 7 days, with realistic volumes 15–75 L.
+      // Each row advances the pump's totalizer so the عدّاد column
+      // matches the counter the fleet would actually show.
       for (let tx = 0; tx < 7; tx++) {
         const startedAt = new Date(now - intRange(0, 7 * 24 * 60) * 60000);
         const volume = Math.round(range(15, 75) * 10) / 10;
         const amount = Math.round(volume * UNIT_PRICE_YER);
         const duration = Math.round((volume / pick([35, 40, 45, 50])) * 60);
         const completed = new Date(startedAt.getTime() + duration * 1000);
+        totalizer = Math.round((totalizer + volume) * 10) / 10;
         await db.fuelTransaction.create({
           data: {
             tenantId: ds.tenantId,
@@ -544,13 +633,20 @@ async function seedDispensers(db: PrismaClient): Promise<void> {
             startedAt,
             completedAt: completed,
             durationSec: duration,
+            totalizerLitres: totalizer,
           },
         });
         txnCount++;
       }
+      // Keep the stored lifetime counter consistent with the seeded
+      // transaction history.
+      await db.fuelDispenser.update({
+        where: { id: dispenser.id },
+        data: { totalizerLitres: totalizer },
+      });
     }
   }
-  console.log(`[seed] dispensers: ${dispIdx}, transactions: ${txnCount}`);
+  console.log(`[seed] dispensers: ${dispIdx}, rs485 buses: ${busCount}, transactions: ${txnCount}`);
 }
 
 /**

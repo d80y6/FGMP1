@@ -90,6 +90,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if (data.presetVolumeLitres !== undefined) updateData.presetVolumeLitres = data.presetVolumeLitres;
     if (data.espFirmware !== undefined) updateData.espFirmware = data.espFirmware;
     if (data.ipAddress !== undefined) updateData.ipAddress = data.ipAddress || null;
+    if (data.macAddress !== undefined) updateData.macAddress = data.macAddress || null;
     // rs485Address carries the Modbus unit address (prisma/schema.prisma).
     if (data.rs485Address !== undefined) updateData.rs485Address = data.rs485Address;
     if (data.rs485Baudrate !== undefined) updateData.rs485Baudrate = data.rs485Baudrate;
@@ -126,6 +127,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       if (data.presetVolumeLitres !== undefined) live.presetVolumeLitres = data.presetVolumeLitres;
       if (data.espFirmware !== undefined) live.espFirmware = data.espFirmware;
       if (data.ipAddress !== undefined) live.ipAddress = data.ipAddress || undefined;
+      if (data.macAddress !== undefined) live.macAddress = data.macAddress || undefined;
       if (data.rs485Address !== undefined) live.rs485Address = data.rs485Address;
       if (data.rs485Baudrate !== undefined) live.rs485Baudrate = data.rs485Baudrate;
       if (data.rs485Parity !== undefined) live.rs485Parity = data.rs485Parity;

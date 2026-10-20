@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+import { cookies } from "next/headers";
 import {
   authOptions,
   assertAuthConfigured,
@@ -10,6 +11,7 @@ import { hasCapability, isSuperAdmin } from "@/lib/fgmp/rbac";
 import { ApiError } from "@/lib/fgmp/api-error";
 import type { Role } from "@/lib/fgmp/types";
 import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
+import { PREVIEW_COOKIE, verifyPreviewToken } from "@/lib/fgmp/role-preview";
 
 /**
  * Server-side auth helpers (Task 31-A)
@@ -69,7 +71,48 @@ export async function requireAuth(_request?: Request): Promise<AuthResult> {
       ),
     };
   }
+
+  // ── Role preview overlay (proposal §8.16) ──────────────────────
+  // A valid preview token temporarily overlays the session role.
+  // It is signed, expiry-bound and user-bound, and it NEVER writes
+  // the User row — so the permanent role is preserved and a fresh
+  // login automatically returns to it. verifyPreviewToken fails
+  // closed (null) on any inconsistency, leaving the permanent role
+  // in charge.
+  const overlayRole = await applyRolePreview(session.user);
+  if (overlayRole) return { user: overlayRole };
+
   return { user: session.user };
+}
+
+/**
+ * Apply the session-scoped role-preview overlay, if one is active.
+ *
+ * Returns the session user with `role` replaced by the previewed
+ * role plus `permanentRole`/`previewRole` markers, or null when no
+ * valid overlay exists. Reading the cookie can only happen inside a
+ * request scope; outside one (unit tests, scripts) there is simply
+ * no overlay, which is the correct answer.
+ */
+async function applyRolePreview(sessionUser: SessionUser): Promise<SessionUser | null> {
+  if (!sessionUser.id || !sessionUser.role) return null;
+  let token: string | undefined;
+  try {
+    const store = await cookies();
+    token = store.get(PREVIEW_COOKIE)?.value;
+  } catch {
+    // Called outside a request scope — no cookie, no overlay.
+    return null;
+  }
+  if (!token) return null;
+  const previewRole = verifyPreviewToken(token, sessionUser.id);
+  if (!previewRole) return null;
+  return {
+    ...sessionUser,
+    role: previewRole,
+    permanentRole: sessionUser.role,
+    previewRole,
+  };
 }
 
 /**

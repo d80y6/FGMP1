@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Fuel, Search, Plus, Pencil, Play, Square, RotateCcw, Lock, Unlock,
   Trash2, Download, Droplet, Zap, AlertTriangle, Receipt, Wallet,
-  TrendingUp, Gauge, Wifi, CircuitBoard, type LucideIcon,
+  TrendingUp, Gauge, Wifi, CircuitBoard, XCircle, TriangleAlert,
+  Hash, type LucideIcon,
 } from "lucide-react";
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell,
@@ -60,6 +61,7 @@ interface DispenserRow {
   rs485Address: number;
   rs485Parity: string;
   ipAddress?: string | null;
+  macAddress?: string | null;
   site?: { id: string; name: string; code: string };
   // live (merged from engine)
   liveStatus: string;
@@ -99,6 +101,7 @@ interface TransactionRow {
   startedAt: string;
   completedAt?: string | null;
   durationSec: number;
+  totalizerLitres?: number | null;
   dispenser?: { id: string; label: string; espDeviceId: string };
   site?: { id: string; name: string; code: string };
 }
@@ -189,6 +192,7 @@ export function DispensersView() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<DispenserRow | null>(null);
   const [authorizeTarget, setAuthorizeTarget] = useState<DispenserRow | null>(null);
+  const [limitTarget, setLimitTarget] = useState<DispenserRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DispenserRow | null>(null);
 
   // Data
@@ -248,11 +252,20 @@ export function DispensersView() {
   );
 
   // ── Reports data (computed from transactions) ────────────────────────
+  // Proposal §8.17 Figure 31: aggregated statistics with a
+  // 24h / 7d / 30d period picker.
+  const [reportPeriod, setReportPeriod] = useState<"24h" | "7d" | "30d">("7d");
+  const periodMs = reportPeriod === "24h" ? 24 * 3600_000 : reportPeriod === "7d" ? 7 * 86400_000 : 30 * 86400_000;
+  const periodStartMs = Date.now() - periodMs;
+
+  const periodTxns = useMemo(
+    () => transactions.filter((t2) => t2.status === "COMPLETED" && new Date(t2.startedAt).getTime() >= periodStartMs),
+    [transactions, periodStartMs],
+  );
+
   const topDispensers = useMemo(() => {
     const m = new Map<string, { label: string; volume: number; amount: number }>();
-    for (const t2 of transactions) {
-      if (t2.status !== "COMPLETED") continue;
-      if (new Date(t2.startedAt).getTime() < todayMs) continue;
+    for (const t2 of periodTxns) {
       const key = t2.dispenserId;
       const prev = m.get(key) ?? { label: t2.dispenser?.label ?? "—", volume: 0, amount: 0 };
       prev.volume += t2.volumeLitres;
@@ -260,36 +273,33 @@ export function DispensersView() {
       m.set(key, prev);
     }
     return Array.from(m.values()).sort((a, b) => b.volume - a.volume).slice(0, 5);
-  }, [transactions, todayMs]);
+  }, [periodTxns]);
 
   const volumeTrend = useMemo(() => {
     const days: { day: string; volume: number; amount: number }[] = [];
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setHours(0, 0, 0, 0);
-      d.setDate(d.getDate() - i);
-      const start = d.getTime();
-      const end = start + 86400000;
-      const dayTxns = transactions.filter((t2) => {
+    const buckets = reportPeriod === "24h" ? 24 : reportPeriod === "7d" ? 7 : 30;
+    for (let i = buckets - 1; i >= 0; i--) {
+      const start = reportPeriod === "24h"
+        ? Date.now() - (i + 1) * 3600_000
+        : (() => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - i); return d.getTime(); })();
+      const end = reportPeriod === "24h" ? start + 3600_000 : start + 86400000;
+      const bucketTxns = periodTxns.filter((t2) => {
         const ts = new Date(t2.startedAt).getTime();
-        return ts >= start && ts < end && t2.status === "COMPLETED";
+        return ts >= start && ts < end;
       });
-      const volume = dayTxns.reduce((a, t2) => a + t2.volumeLitres, 0);
-      const amount = dayTxns.reduce((a, t2) => a + t2.amountYer, 0);
-      days.push({
-        day: d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric" }),
-        volume: Math.round(volume * 10) / 10,
-        amount,
-      });
+      const volume = bucketTxns.reduce((a, t2) => a + t2.volumeLitres, 0);
+      const amount = bucketTxns.reduce((a, t2) => a + t2.amountYer, 0);
+      const label = reportPeriod === "24h"
+        ? new Date(start).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
+        : new Date(start).toLocaleDateString("en-GB", { weekday: "short", day: "numeric" });
+      days.push({ day: label, volume: Math.round(volume * 10) / 10, amount });
     }
     return days;
-  }, [transactions]);
+  }, [periodTxns, reportPeriod]);
 
   const revenueBySite = useMemo(() => {
     const m = new Map<string, { name: string; amount: number; volume: number }>();
-    for (const t2 of transactions) {
-      if (t2.status !== "COMPLETED") continue;
-      if (new Date(t2.startedAt).getTime() < todayMs) continue;
+    for (const t2 of periodTxns) {
       const key = t2.siteId;
       const prev = m.get(key) ?? { name: t2.site?.name ?? "—", amount: 0, volume: 0 };
       prev.amount += t2.amountYer;
@@ -297,12 +307,40 @@ export function DispensersView() {
       m.set(key, prev);
     }
     return Array.from(m.values()).sort((a, b) => b.amount - a.amount).slice(0, 8);
-  }, [transactions, todayMs]);
+  }, [periodTxns]);
+
+  const volumeByVehicle = useMemo(() => {
+    const m = new Map<string, { plate: string; volume: number; amount: number; txns: number }>();
+    for (const t2 of periodTxns) {
+      const key = t2.vehiclePlate ?? "—";
+      const prev = m.get(key) ?? { plate: key, volume: 0, amount: 0, txns: 0 };
+      prev.volume += t2.volumeLitres;
+      prev.amount += t2.amountYer;
+      prev.txns += 1;
+      m.set(key, prev);
+    }
+    return Array.from(m.values()).sort((a, b) => b.volume - a.volume).slice(0, 8);
+  }, [periodTxns]);
+
+  const volumeByStatus = useMemo(() => {
+    const m = new Map<string, { status: string; volume: number; txns: number }>();
+    for (const t2 of transactions) {
+      if (new Date(t2.startedAt).getTime() < periodStartMs) continue;
+      const key = t2.status;
+      const prev = m.get(key) ?? { status: key, volume: 0, txns: 0 };
+      prev.volume += t2.volumeLitres;
+      prev.txns += 1;
+      m.set(key, prev);
+    }
+    return Array.from(m.values()).sort((a, b) => b.volume - a.volume);
+  }, [transactions, periodStartMs]);
 
   // ── Actions ──────────────────────────────────────────────────────────
   const sendControl = async (
     d: DispenserRow,
-    command: "AUTHORIZE" | "STOP" | "RESET" | "LOCK" | "UNLOCK",
+    command:
+      | "AUTHORIZE" | "DEAUTHORIZE" | "START" | "STOP" | "EMERGENCY_STOP"
+      | "RESET" | "LOCK" | "UNLOCK" | "SET_LIMIT" | "RESET_COUNTER",
     preset?: number,
   ) => {
     const res = await apiPost(`/api/fgmp/dispensers/${d.id}/control`, {
@@ -446,6 +484,9 @@ export function DispensersView() {
                               <div className="flex flex-col">
                                 <span className="text-sm font-medium">{d.label}</span>
                                 <span className="font-mono text-[10px] text-muted-foreground" dir="ltr">{d.espDeviceId}</span>
+                                {d.macAddress && (
+                                  <span className="font-mono text-[10px] text-muted-foreground" dir="ltr">MAC {d.macAddress}</span>
+                                )}
                                 <span className="text-[10px] text-muted-foreground">{d.manufacturer} {d.model}</span>
                               </div>
                             </TableCell>
@@ -495,10 +536,27 @@ export function DispensersView() {
                               <div className="text-[9px] text-muted-foreground mt-0.5">{modeLabel(d.liveMode, numLang)}</div>
                             </TableCell>
                             <TableCell className="text-right">
+                              {/* The ten control commands of proposal feature
+                                  23, shown contextually by pump state so the
+                                  row stays readable: authorize/limit when
+                                  idle, start/deauthorize when armed, stop and
+                                  emergency-stop while fuel is moving, reset
+                                  on a fault latch, lock/unlock always, and
+                                  the metrological counter reset for admins. */}
                               <div className="flex justify-end flex-wrap gap-1">
-                                {canControl && (status === "IDLE" || status === "STOPPED" || status === "AUTHORIZED") && (
+                                {canControl && (status === "IDLE" || status === "STOPPED") && d.liveMode !== "LOCKED" && (
                                   <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => setAuthorizeTarget(d)}>
                                     <Play className="mr-1 h-3 w-3" />{t("dispenser.cmdAuthorize")}
+                                  </Button>
+                                )}
+                                {canControl && status === "AUTHORIZED" && (
+                                  <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => sendControl(d, "START")}>
+                                    <Play className="mr-1 h-3 w-3" />{t("dispenser.cmdStart")}
+                                  </Button>
+                                )}
+                                {canControl && status === "AUTHORIZED" && (
+                                  <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => sendControl(d, "DEAUTHORIZE")}>
+                                    <XCircle className="mr-1 h-3 w-3" />{t("dispenser.cmdDeauthorize")}
                                   </Button>
                                 )}
                                 {canControl && (status === "DISPENSING" || status === "AUTHORIZED") && (
@@ -506,12 +564,22 @@ export function DispensersView() {
                                     <Square className="mr-1 h-3 w-3" />{t("dispenser.cmdStop")}
                                   </Button>
                                 )}
+                                {canControl && (status === "DISPENSING" || status === "AUTHORIZED") && (
+                                  <Button size="sm" variant="destructive" className="h-6 px-2 text-[10px]" onClick={() => sendControl(d, "EMERGENCY_STOP")}>
+                                    <TriangleAlert className="mr-1 h-3 w-3" />{t("dispenser.cmdEmergencyStop")}
+                                  </Button>
+                                )}
                                 {canControl && status === "FAULT" && (
                                   <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => sendControl(d, "RESET")}>
                                     <RotateCcw className="mr-1 h-3 w-3" />{t("dispenser.cmdReset")}
                                   </Button>
                                 )}
-                                {canControl && d.liveMode !== "LOCKED" && status !== "DISPENSING" && (
+                                {canControl && status !== "DISPENSING" && status !== "FAULT" && (
+                                  <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px]" onClick={() => setLimitTarget(d)} title={t("dispenser.cmdSetLimit")}>
+                                    <Gauge className="h-3 w-3" />{t("dispenser.cmdSetLimit")}
+                                  </Button>
+                                )}
+                                {canControl && d.liveMode !== "LOCKED" && status !== "DISPENSING" && status !== "FAULT" && (
                                   <Button size="sm" variant="ghost" className="h-6 px-1 text-[10px]" onClick={() => sendControl(d, "LOCK")} title={t("dispenser.cmdLock")}>
                                     <Lock className="h-3 w-3" />
                                   </Button>
@@ -519,6 +587,11 @@ export function DispensersView() {
                                 {canControl && d.liveMode === "LOCKED" && (
                                   <Button size="sm" variant="ghost" className="h-6 px-1 text-[10px]" onClick={() => sendControl(d, "UNLOCK")} title={t("dispenser.cmdUnlock")}>
                                     <Unlock className="h-3 w-3" />
+                                  </Button>
+                                )}
+                                {isAdmin && canControl && status !== "DISPENSING" && (
+                                  <Button size="sm" variant="ghost" className="h-6 px-1 text-[10px]" onClick={() => sendControl(d, "RESET_COUNTER")} title={t("dispenser.cmdResetCounter")}>
+                                    <Hash className="h-3 w-3" />
                                   </Button>
                                 )}
                                 {isAdmin && (
@@ -575,41 +648,53 @@ export function DispensersView() {
                   <Table>
                     <TableHeader className="sticky top-0 bg-card">
                       <TableRow>
-                        <TableHead className="w-[140px]">{t("dispenser.colTime")}</TableHead>
-                        <TableHead>{t("dispenser.colTransaction")}</TableHead>
+                        <TableHead className="w-[130px]">{t("dispenser.colTime")}</TableHead>
+                        <TableHead>{t("dispenser.colPump")}</TableHead>
                         <TableHead className="hidden md:table-cell">{t("dispenser.colSite")}</TableHead>
-                        <TableHead className="w-[60px] text-center">{t("dispenser.colNozzle")}</TableHead>
-                        <TableHead className="w-[90px] text-right">{t("dispenser.colVolume")}</TableHead>
-                        <TableHead className="w-[120px] text-right">{t("dispenser.colAmount")}</TableHead>
                         <TableHead className="hidden lg:table-cell">{t("dispenser.colPlate")}</TableHead>
                         <TableHead className="hidden xl:table-cell">{t("dispenser.colOperator")}</TableHead>
-                        <TableHead className="w-[90px]">{t("dispenser.colStatus")}</TableHead>
+                        <TableHead className="w-[90px] text-right">{t("dispenser.colVolume")}</TableHead>
                         <TableHead className="hidden md:table-cell w-[80px] text-right">{t("dispenser.colDuration")}</TableHead>
+                        <TableHead className="hidden lg:table-cell w-[90px] text-right">{t("dispenser.colFlowRate")}</TableHead>
+                        <TableHead className="hidden xl:table-cell w-[110px] text-right">{t("dispenser.colCounter")}</TableHead>
+                        <TableHead className="hidden lg:table-cell w-[90px] text-right">{t("dispenser.colUnitPrice")}</TableHead>
+                        <TableHead className="w-[110px] text-right">{t("dispenser.colAmount")}</TableHead>
+                        <TableHead className="w-[90px]">{t("dispenser.colStatus")}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {filteredTxns.slice(0, 200).map((tx) => {
                         const inProgress = tx.status === "IN_PROGRESS";
+                        // Flow rate L/min over the fill's duration.
+                        const flowLpm = tx.durationSec > 0
+                          ? Math.round((tx.volumeLitres / (tx.durationSec / 60)) * 10) / 10
+                          : 0;
                         return (
                           <TableRow key={tx.id} className={inProgress ? "bg-emerald-500/5" : "transition-colors hover:bg-muted/30"}>
                             <TableCell className="text-[10px] text-muted-foreground tabular-nums" dir="ltr">
                               {fmtDateTime(tx.startedAt, numLang).slice(0, 16)}
                             </TableCell>
                             <TableCell>
-                              <div className="flex items-center gap-1.5">
-                                {inProgress && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />}
-                                <div className="flex flex-col">
-                                  <span className="text-xs font-medium">{tx.dispenser?.label ?? "—"}</span>
-                                  <span className="font-mono text-[10px] text-muted-foreground" dir="ltr">{tx.dispenser?.espDeviceId ?? ""}</span>
-                                </div>
+                              <div className="flex flex-col">
+                                <span className="text-xs font-medium">{tx.dispenser?.label ?? "—"}</span>
+                                <span className="font-mono text-[9px] text-muted-foreground" dir="ltr">{tx.dispenser?.espDeviceId ?? ""}</span>
                               </div>
                             </TableCell>
                             <TableCell className="hidden md:table-cell text-xs">{tx.site?.name ?? "—"}</TableCell>
-                            <TableCell className="text-center text-xs tabular-nums">{formatNumber(tx.nozzle, numLang)}</TableCell>
-                            <TableCell className="text-right text-xs tabular-nums">{formatNumber(tx.volumeLitres.toFixed(1), numLang)}</TableCell>
-                            <TableCell className="text-right text-xs tabular-nums">{formatYer(tx.amountYer, numLang)}</TableCell>
-                            <TableCell className="hidden lg:table-cell text-[10px] font-mono" dir="ltr">{tx.vehiclePlate ?? "—"}</TableCell>
+                            <TableCell className="hidden lg:table-cell text-xs font-mono" dir="ltr">{tx.vehiclePlate ?? "—"}</TableCell>
                             <TableCell className="hidden xl:table-cell text-xs">{tx.operatorName ?? "—"}</TableCell>
+                            <TableCell className="text-right text-xs tabular-nums">{formatNumber(tx.volumeLitres.toFixed(1), numLang)}</TableCell>
+                            <TableCell className="hidden md:table-cell text-right text-xs tabular-nums">{formatDuration(tx.durationSec, numLang)}</TableCell>
+                            <TableCell className="hidden lg:table-cell text-right text-xs tabular-nums">{formatNumber(flowLpm.toFixed(1), numLang)} {t("dispenser.lpm")}</TableCell>
+                            <TableCell className="hidden xl:table-cell text-right text-xs tabular-nums">
+                              {tx.totalizerLitres != null
+                                ? `${formatNumber(Number(tx.totalizerLitres).toLocaleString("en-US"), numLang)} ${t("dispenser.litres")}`
+                                : "—"}
+                            </TableCell>
+                            <TableCell className="hidden lg:table-cell text-right text-xs tabular-nums">
+                              {formatYer(tx.unitPriceYer, numLang)}/{t("dispenser.litres")}
+                            </TableCell>
+                            <TableCell className="text-right text-xs tabular-nums">{formatYer(tx.amountYer, numLang)}</TableCell>
                             <TableCell>
                               <Badge variant="outline" className={
                                 tx.status === "COMPLETED" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[9px]" :
@@ -618,7 +703,6 @@ export function DispensersView() {
                                 "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400 text-[9px]"
                               }>{txnStatusLabel(tx.status, numLang)}</Badge>
                             </TableCell>
-                            <TableCell className="hidden md:table-cell text-right text-[10px] tabular-nums">{formatDuration(tx.durationSec, numLang)}</TableCell>
                           </TableRow>
                         );
                       })}
@@ -630,8 +714,45 @@ export function DispensersView() {
           </Card>
         </TabsContent>
 
-        {/* ── Tab 3: Reports ─────────────────────────────────────────────── */}
+        {/* ── Tab 3: Reports ───────────────────────────────────────
+             Proposal §8.17 Figure 31: aggregated statistics
+             (totals, by site, by pump, by vehicle, by status)
+             with a 24h chart and a 24h / 7d / 30d picker. */}
         <TabsContent value="reports" className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground">{t("dispenser.reportPeriod")}</span>
+            {(["24h", "7d", "30d"] as const).map((p) => (
+              <Button
+                key={p}
+                size="sm"
+                variant={reportPeriod === p ? "default" : "outline"}
+                className="h-7 px-2 text-[10px]"
+                onClick={() => setReportPeriod(p)}
+              >
+                {p === "24h" ? t("dispenser.period24h") : p === "7d" ? t("dispenser.period7d") : t("dispenser.period30d")}
+              </Button>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <Card className="col-span-2 lg:col-span-1">
+              <CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">{t("dispenser.colVolume")}</CardTitle></CardHeader>
+              <CardContent><p className="text-xl font-semibold tabular-nums">{formatNumber(Math.round(periodTxns.reduce((a, t2) => a + t2.volumeLitres, 0)), numLang)} L</p></CardContent>
+            </Card>
+            <Card className="col-span-2 lg:col-span-1">
+              <CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">{t("dispenser.colAmount")}</CardTitle></CardHeader>
+              <CardContent><p className="text-xl font-semibold tabular-nums">{formatYer(Math.round(periodTxns.reduce((a, t2) => a + t2.amountYer, 0)), numLang)}</p></CardContent>
+            </Card>
+            <Card className="col-span-2 lg:col-span-1">
+              <CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">{t("dispenser.reportTxns")}</CardTitle></CardHeader>
+              <CardContent><p className="text-xl font-semibold tabular-nums">{formatNumber(periodTxns.length, numLang)}</p></CardContent>
+            </Card>
+            <Card className="col-span-2 lg:col-span-1">
+              <CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">{t("dispenser.reportAvgFlow")}</CardTitle></CardHeader>
+              <CardContent><p className="text-xl font-semibold tabular-nums">
+                {formatNumber(periodTxns.length === 0 ? 0 : periodTxns.reduce((a, t2) => a + (t2.durationSec > 0 ? t2.volumeLitres / (t2.durationSec / 60) : 0), 0) / periodTxns.length, numLang)} L/min
+              </p></CardContent>
+            </Card>
+          </div>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <Card>
               <CardHeader className="pb-2">
@@ -706,6 +827,72 @@ export function DispensersView() {
               )}
             </CardContent>
           </Card>
+
+          {/* By vehicle + by status — the two breakdowns the
+              proposal's pump-reports screen aggregates. */}
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm"><Fuel className="h-4 w-4 text-sky-500" />{t("dispenser.reportByVehicle")}</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                {volumeByVehicle.length === 0 ? (
+                  <EmptyState icon={Fuel} title={t("dispenser.noChartData")} />
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[110px]">{t("dispenser.colPlate")}</TableHead>
+                        <TableHead className="w-[70px] text-right">{t("dispenser.reportTxns")}</TableHead>
+                        <TableHead className="text-right">{t("dispenser.colVolume")}</TableHead>
+                        <TableHead className="text-right">{t("dispenser.colAmount")}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {volumeByVehicle.map((v) => (
+                        <TableRow key={v.plate}>
+                          <TableCell className="text-xs font-mono" dir="ltr">{v.plate}</TableCell>
+                          <TableCell className="text-right text-xs tabular-nums">{formatNumber(v.txns, numLang)}</TableCell>
+                          <TableCell className="text-right text-xs tabular-nums">{formatNumber(Math.round(v.volume * 10) / 10, numLang)} L</TableCell>
+                          <TableCell className="text-right text-xs tabular-nums">{formatYer(Math.round(v.amount), numLang)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm"><Receipt className="h-4 w-4 text-violet-500" />{t("dispenser.reportByStatus")}</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                {volumeByStatus.length === 0 ? (
+                  <EmptyState icon={Receipt} title={t("dispenser.noChartData")} />
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[120px]">{t("dispenser.colStatus")}</TableHead>
+                        <TableHead className="w-[70px] text-right">{t("dispenser.reportTxns")}</TableHead>
+                        <TableHead className="text-right">{t("dispenser.colVolume")}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {volumeByStatus.map((v) => (
+                        <TableRow key={v.status}>
+                          <TableCell><Badge variant="outline" className="h-5 text-[9px]">{txnStatusLabel(v.status, numLang)}</Badge></TableCell>
+                          <TableCell className="text-right text-xs tabular-nums">{formatNumber(v.txns, numLang)}</TableCell>
+                          <TableCell className="text-right text-xs tabular-nums">{formatNumber(Math.round(v.volume * 10) / 10, numLang)} L</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
 
@@ -727,6 +914,13 @@ export function DispensersView() {
         onOpenChange={(o) => !o && setAuthorizeTarget(null)}
         onConfirm={(d, preset) => { sendControl(d, "AUTHORIZE", preset); setAuthorizeTarget(null); }}
         lang={numLang}
+      />
+      <AuthorizeDialog
+        target={limitTarget}
+        onOpenChange={(o) => !o && setLimitTarget(null)}
+        onConfirm={(d, preset) => { sendControl(d, "SET_LIMIT", preset); setLimitTarget(null); }}
+        lang={numLang}
+        limitMode
       />
       <DeleteConfirmDialog
         target={deleteTarget}
@@ -773,6 +967,7 @@ function DispenserFormFields({
     rs485Address: number; setRs485Address: (v: number) => void;
     rs485Parity: string; setRs485Parity: (v: string) => void;
     ipAddress: string; setIpAddress: (v: string) => void;
+    macAddress: string; setMacAddress: (v: string) => void;
   };
   lang: Language;
   sites: SiteOption[];
@@ -799,7 +994,7 @@ function DispenserFormFields({
           <Select value={String(form.nozzleCount)} onValueChange={(v) => form.setNozzleCount(Number(v))}>
             <SelectTrigger className="h-9 w-full"><SelectValue /></SelectTrigger>
             <SelectContent>
-              {[1, 2, 3, 4].map((n) => <SelectItem key={n} value={String(n)}>{String(n)}</SelectItem>)}
+              {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => <SelectItem key={n} value={String(n)}>{String(n)}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
@@ -867,6 +1062,10 @@ function DispenserFormFields({
         <Label className="text-xs">{t("dispenser.lblIpAddress")}</Label>
         <Input value={form.ipAddress} onChange={(e) => form.setIpAddress(e.target.value)} className="h-9 font-mono text-xs" dir="ltr" placeholder="10.0.0.10" />
       </div>
+      <div className="space-y-1.5">
+        <Label className="text-xs">{t("dispenser.lblMacAddress")}</Label>
+        <Input value={form.macAddress} onChange={(e) => form.setMacAddress(e.target.value)} className="h-9 font-mono text-xs" dir="ltr" placeholder="02:00:0A:00:00:01" />
+      </div>
     </div>
   );
 }
@@ -894,7 +1093,7 @@ function CreateDispenserDialog({ open, onOpenChange, onCreated, lang }: {
     nozzleCount: 1, fuelType: "DIESEL", maxFlowLpm: 40,
     espDeviceId: "", espFirmware: "v1.0.0",
     rs485Baudrate: 9600, rs485Address: 1, rs485Parity: "8N1",
-    ipAddress: "",
+    ipAddress: "", macAddress: "",
   });
 
   useEffect(() => {
@@ -926,6 +1125,7 @@ function CreateDispenserDialog({ open, onOpenChange, onCreated, lang }: {
         rs485Address: form.rs485Address,
         rs485Parity: form.rs485Parity,
         ipAddress: form.ipAddress || undefined,
+        macAddress: form.macAddress || undefined,
       });
       if (res.ok) {
         toast.success(t("dispenser.created"));
@@ -934,7 +1134,7 @@ function CreateDispenserDialog({ open, onOpenChange, onCreated, lang }: {
           nozzleCount: 1, fuelType: "DIESEL", maxFlowLpm: 40,
           espDeviceId: "", espFirmware: "v1.0.0",
           rs485Baudrate: 9600, rs485Address: 1, rs485Parity: "8N1",
-          ipAddress: "",
+          ipAddress: "", macAddress: "",
         });
         onCreated();
       } else {
@@ -951,7 +1151,7 @@ function CreateDispenserDialog({ open, onOpenChange, onCreated, lang }: {
   };
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) setForm((f) => ({ ...f, label: "", espDeviceId: "", ipAddress: "" })); }}>
+    <Dialog open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) setForm((f) => ({ ...f, label: "", espDeviceId: "", ipAddress: "", macAddress: "" })); }}>
       <DialogContent className="sm:max-w-[520px]">
         <DialogHeader>
           <DialogTitle>{t("dispenser.createTitle")}</DialogTitle>
@@ -971,6 +1171,7 @@ function CreateDispenserDialog({ open, onOpenChange, onCreated, lang }: {
           rs485Address: form.rs485Address, setRs485Address: (v) => update("rs485Address", v),
           rs485Parity: form.rs485Parity, setRs485Parity: (v) => update("rs485Parity", v),
           ipAddress: form.ipAddress, setIpAddress: (v) => update("ipAddress", v),
+          macAddress: form.macAddress, setMacAddress: (v) => update("macAddress", v),
         }} lang={lang} sites={sites} />
         <DialogFooter className="pt-2">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>{t("common.cancel")}</Button>
@@ -997,7 +1198,7 @@ function EditDispenserDialog({ target, onOpenChange, onSaved, lang }: {
     nozzleCount: 1, fuelType: "DIESEL", maxFlowLpm: 40,
     espDeviceId: "", espFirmware: "v1.0.0",
     rs485Baudrate: 9600, rs485Address: 1, rs485Parity: "8N1",
-    ipAddress: "",
+    ipAddress: "", macAddress: "",
   });
 
   useEffect(() => {
@@ -1008,6 +1209,7 @@ function EditDispenserDialog({ target, onOpenChange, onSaved, lang }: {
         espDeviceId: target.espDeviceId, espFirmware: target.espFirmware,
         rs485Baudrate: target.rs485Baudrate, rs485Address: target.rs485Address, rs485Parity: target.rs485Parity,
         ipAddress: target.ipAddress ?? "",
+    macAddress: target.macAddress ?? "",
       });
     }
   }, [target]);
@@ -1031,6 +1233,7 @@ function EditDispenserDialog({ target, onOpenChange, onSaved, lang }: {
         rs485Address: form.rs485Address,
         rs485Parity: form.rs485Parity,
         ipAddress: form.ipAddress || undefined,
+        macAddress: form.macAddress || undefined,
       });
       if (res.ok) {
         toast.success(t("dispenser.updated"));
@@ -1065,6 +1268,7 @@ function EditDispenserDialog({ target, onOpenChange, onSaved, lang }: {
           rs485Address: form.rs485Address, setRs485Address: (v) => update("rs485Address", v),
           rs485Parity: form.rs485Parity, setRs485Parity: (v) => update("rs485Parity", v),
           ipAddress: form.ipAddress, setIpAddress: (v) => update("ipAddress", v),
+          macAddress: form.macAddress, setMacAddress: (v) => update("macAddress", v),
         }} lang={lang} sites={sites} />
         <DialogFooter className="pt-2">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>{t("common.cancel")}</Button>
@@ -1075,11 +1279,13 @@ function EditDispenserDialog({ target, onOpenChange, onSaved, lang }: {
   );
 }
 
-function AuthorizeDialog({ target, onOpenChange, onConfirm, lang }: {
+function AuthorizeDialog({ target, onOpenChange, onConfirm, lang, limitMode = false }: {
   target: DispenserRow | null;
   onOpenChange: (o: boolean) => void;
   onConfirm: (d: DispenserRow, preset?: number) => void;
   lang: Language;
+  /** SET_LIMIT reuses this dialog with a limit-specific title. */
+  limitMode?: boolean;
 }) {
   const t = useT();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -1092,12 +1298,15 @@ function AuthorizeDialog({ target, onOpenChange, onConfirm, lang }: {
       <DialogContent className="sm:max-w-[400px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Play className="h-4 w-4 text-emerald-500" />{t("dispenser.authorizeTitle")}
+            <Play className="h-4 w-4 text-emerald-500" />
+            {limitMode ? t("dispenser.setLimitTitle") : t("dispenser.authorizeTitle")}
           </DialogTitle>
           <DialogDescription>{target?.label} · {target?.site?.name}</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
-          <p className="text-xs text-muted-foreground" dir={lang === "ar" ? "rtl" : undefined}>{t("dispenser.authorizeDesc")}</p>
+          <p className="text-xs text-muted-foreground" dir={lang === "ar" ? "rtl" : undefined}>
+            {limitMode ? t("dispenser.setLimitDesc") : t("dispenser.authorizeDesc")}
+          </p>
           <div className="space-y-1.5">
             <Label className="text-xs">{t("dispenser.presetVolume")}</Label>
             <Input

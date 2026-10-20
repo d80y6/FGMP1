@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Droplet, Search, AlertTriangle, TrendingDown, TrendingUp, Download } from "lucide-react";
-import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useFgmp } from "@/lib/fgmp/store";
 import { useApi } from "@/lib/fgmp/use-api";
 import { useChartColors } from "@/lib/fgmp/use-chart-colors";
@@ -10,6 +10,7 @@ import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { BarGauge, Gauge } from "@/components/fgmp/gauge";
 import { StatusBadge } from "@/components/fgmp/status-badge";
+import { EmptyState } from "@/components/fgmp/empty-state";
 import { Sparkline } from "@/components/fgmp/sparkline";
 import { FuelDeliveryTracking } from "@/components/fgmp/fuel-delivery-tracking";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -50,6 +51,28 @@ export function FuelView() {
     return list;
   }, [snapshot, q, sort]);
 
+  // Fill-percentage distribution for the donut (proposal §8.3,
+  // Figure 12 — "المخطط الدائري لنسب الامتلاء"): tanks grouped
+  // into the five bands the platform already alarms on.
+  // NB: declared BEFORE the `if (!snapshot) return null` guard so
+  // the hook order stays stable across loading/loaded renders.
+  const fillBands = useMemo(() => {
+    const bands = [
+      { key: "fuel.bandCritical", min: 0, max: 12, color: "#f43f5e" },
+      { key: "fuel.bandLow", min: 12, max: 25, color: "#f59e0b" },
+      { key: "fuel.bandAdequate", min: 25, max: 60, color: "#0ea5e9" },
+      { key: "fuel.bandHigh", min: 60, max: 85, color: "#10b981" },
+      { key: "fuel.bandFull", min: 85, max: 101, color: "#059669" },
+    ];
+    return bands
+      .map((b) => ({
+        ...b,
+        name: t(b.key),
+        value: tanks.filter((tk) => tk.pct >= b.min && tk.pct < b.max).length,
+      }))
+      .filter((b) => b.value > 0);
+  }, [tanks, t]);
+
   if (!snapshot) return null;
   const k = snapshot.kpis;
   const critical = tanks.filter((t) => t.pct <= 12);
@@ -87,6 +110,46 @@ export function FuelView() {
           <CardHeader className="pb-2"><CardTitle className="text-sm">{t("fuel.nationalInventory")}</CardTitle></CardHeader>
           <CardContent className="flex flex-col items-center pt-2">
             <Gauge value={k.fuelPct} size={180} label={`${fmtLitres(k.totalFuelLitres, numLang)}`} sublabel={`${t("fuel.ofCapacity")} ${fmtLitres(k.totalFuelCapacity, numLang)}`} />
+          </CardContent>
+        </Card>
+
+        {/* Fill-percentage donut (proposal §8.3, Figure 12) */}
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm">{t("fuel.fillDistribution")}</CardTitle></CardHeader>
+          <CardContent>
+            {fillBands.length === 0 ? (
+              <EmptyState icon={Droplet} title={t("fuel.noTanks")} />
+            ) : (
+              <ResponsiveContainer width="100%" height={200}>
+                <PieChart>
+                  <Pie
+                    data={fillBands}
+                    dataKey="value"
+                    nameKey="name"
+                    innerRadius={55}
+                    outerRadius={80}
+                    paddingAngle={2}
+                    strokeWidth={0}
+                  >
+                    {fillBands.map((b) => (
+                      <Cell key={b.key} fill={b.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{ fontSize: 12 }}
+                    formatter={(v: number, name: string) => [formatNumber(v, numLang), name]}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+            <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 pt-1">
+              {fillBands.map((b) => (
+                <span key={b.key} className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: b.color }} />
+                  {b.name} · {formatNumber(b.value, numLang)}
+                </span>
+              ))}
+            </div>
           </CardContent>
         </Card>
 

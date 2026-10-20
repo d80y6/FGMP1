@@ -870,7 +870,7 @@ model FuelDispenser {
   label         String
   manufacturer  String
   model         String
-  nozzleCount   Int      @default(1)   // 1–4 nozzles
+  nozzleCount    Int      @default(1)   // 1–8 nozzles (proposal §5.4)
   fuelType      FuelType   @default(DIESEL) // DIESEL | PETROL
   maxFlowLpm    Float    @default(40)  // max litres/min
   status        DispenserStatus   @default(IDLE)
@@ -889,6 +889,10 @@ model FuelDispenser {
   rs485Parity     String  @default("8N1")
   wifiRssi        Int     @default(-65)
   ipAddress       String?
+  /// MAC of the industrial controller's network interface. The
+  /// proposal's pump card (§8.17) shows it next to the IP, Modbus
+  /// address and baud rate as the controller identity.
+  macAddress      String?
   lastCommAt      DateTime?
 
   // ── Live telemetry (updated by engine tick) ───────────────────────────
@@ -943,6 +947,11 @@ model FuelTransaction {
   startedAt     DateTime  @default(now())
   completedAt   DateTime?
   durationSec   Int       @default(0)
+  /// Cumulative pump counter (totalizer) at the moment the
+  /// transaction completed — the "عدّاد" column of the proposal's
+  /// fill-operations table (§8.17). Null on rows written before
+  /// the column existed; those are historical seed rows only.
+  totalizerLitres Decimal?  @db.Decimal(12, 3)
   createdAt     DateTime  @default(now())
 
   dispenser FuelDispenser @relation(fields: [dispenserId], references: [id], onDelete: Cascade)
