@@ -25,6 +25,7 @@ import { readFileSync } from "node:fs";
 
 import { evaluateRule, type AlertRule, type MetricReading } from "../alerting/rules";
 import { parseAlertRules } from "../alerting/config";
+import { theftDetections, registry, schedulerRunning } from "@/lib/observability/metrics";
 
 const SHIPPED = parseAlertRules(readFileSync("config/alerts.json", "utf8"));
 
@@ -116,8 +117,6 @@ describe("theft evidence is published per EVALUATION, not per hit", () => {
     // The wiring decision that makes the silence rule work: if only hits were
     // counted, a working detector on a quiet fleet and a broken detector would
     // publish identical series, and the rule could not tell them apart.
-    const { theftDetections } = require("@/lib/observability/metrics");
-    const { registry } = require("@/lib/observability/metrics");
     const before = registry.render();
     assert.ok(before.includes("fgmp_theft_detections_total"), "counter is registered");
 
@@ -233,7 +232,6 @@ describe("db_pool_saturated — a metric that cannot be observed is not invented
     // If something started publishing this, the rule would need a re-think: it
     // would become observable and the honest-unknown behaviour above would be
     // a bug rather than a design choice.
-    const { registry } = require("@/lib/observability/metrics");
     const line = registry
       .render()
       .split("\n")
@@ -245,11 +243,10 @@ describe("db_pool_saturated — a metric that cannot be observed is not invented
 // ── 5. The scheduler gauge is now wired ────────────────────────────────────
 describe("scheduler_running is published by the scheduler lifecycle", () => {
   test("the gauge exists and is writable", () => {
-    const m = require("@/lib/observability/metrics");
-    m.schedulerRunning.set({}, 1);
+    schedulerRunning.set({}, 1);
     // A gauge set with an EMPTY label set renders WITHOUT braces, so matching on
     // "{}" would have failed against a perfectly correct metric.
-    const line = m.registry
+    const line = registry
       .render()
       .split("\n")
       .find((l: string) => l.startsWith("fgmp_scheduler_running"));
@@ -258,10 +255,9 @@ describe("scheduler_running is published by the scheduler lifecycle", () => {
   });
 
   test("stopping clears it, so a stopped scheduler does not pin the rule at 1", () => {
-    const m = require("@/lib/observability/metrics");
-    m.schedulerRunning.set({}, 1);
+    schedulerRunning.set({}, 1);
     assert.equal(evaluateRule(ruleById("scheduler_not_running"), reported(1)).state, "ok");
-    m.schedulerRunning.set({}, 0);
+    schedulerRunning.set({}, 0);
     assert.equal(evaluateRule(ruleById("scheduler_not_running"), reported(0)).state, "firing");
   });
 });

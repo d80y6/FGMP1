@@ -19,6 +19,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { registry } from "@/lib/observability/metrics";
 import { parseAlertRules } from "../alerting/config";
 import { parseExposition, readingFor } from "../alerting/readings";
 import { evaluateRule, type AlertRule, type MetricReading } from "../alerting/rules";
@@ -214,7 +215,6 @@ describe("scenarios are declared, not derived", () => {
   });
 
   test("scenarios never mutate the live registry", () => {
-    const { registry } = require("@/lib/observability/metrics");
     const before = registry.render();
     evaluate(findScenario("cascade")!);
     assert.equal(registry.render(), before, "scenario evaluation touched live metrics");

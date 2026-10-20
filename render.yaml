@@ -1,0 +1,51 @@
+# FGMP — Render Blueprint Specification
+# https://render.com/docs/blueprint-spec
+
+services:
+  # ── Main Next.js Web Application ───────────────────────────────────────────
+  - type: web
+    name: fgmp-app
+    env: docker
+    dockerfilePath: Dockerfile
+    dockerContext: .
+    plan: free
+    # healthCheckPath: /api/fgmp/health
+    envVars:
+      - fromGroup: fgmp1  # Pulls all variables from your existing environment group
+      - key: DATABASE_URL
+        sync: false
+      - key: FGMP_MIGRATE_DATABASE_URL
+        sync: false
+      - key: FGMP_REQUIRE_RLS
+        value: "0"
+      - key: NEXTAUTH_URL
+        sync: false
+      - key: REALTIME_URL
+        sync: false
+
+  # ── Realtime Socket.io Service ─────────────────────────────────────────────
+  - type: web
+    name: fgmp-realtime
+    env: docker
+    dockerfilePath: mini-services/realtime/Dockerfile
+    dockerContext: mini-services/realtime
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - fromGroup: fgmp1
+      - key: NEXT_API_BASE
+        sync: false
+      - key: REALTIME_ORIGIN
+        sync: false
+
+  # ── IoT Telemetry Bridge ───────────────────────────────────────────────────
+  - type: web
+    name: fgmp-iot-bridge
+    env: docker
+    dockerfilePath: mini-services/iot-bridge/Dockerfile
+    dockerContext: mini-services/iot-bridge
+    plan: free
+    envVars:
+      - fromGroup: fgmp1
+      - key: NEXT_API_BASE
+        sync: false
