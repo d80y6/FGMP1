@@ -26,14 +26,13 @@ GRANT USAGE ON SCHEMA public TO fgmp_app, fgmp_ops;
 -- Default privileges cover tables created by later migrations, so a new table
 -- does not silently ship without grants. ALTER DEFAULT PRIVILEGES applies to
 -- objects created by the role that runs it — here, fgmp_migrate.
-ALTER DEFAULT PRIVILEGES FOR ROLE fgmp_migrate IN SCHEMA public
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO fgmp_app, fgmp_ops;
-
 -- Existing tables (the 29 baseline models).
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO fgmp_app, fgmp_ops;
 
 -- Sequences back SERIAL/BIGSERIAL identity columns; without USAGE an INSERT
 -- that relies on a default nextval() fails at runtime.
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO fgmp_app, fgmp_ops;
-ALTER DEFAULT PRIVILEGES FOR ROLE fgmp_migrate IN SCHEMA public
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
   GRANT USAGE, SELECT ON SEQUENCES TO fgmp_app, fgmp_ops;
