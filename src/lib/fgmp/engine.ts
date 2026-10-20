@@ -687,7 +687,7 @@ private tenantsFor(expectedTenantId?: string | null): readonly string[] {
               startedAt: tx.startedAt.getTime(),
               completedAt: tx.completedAt?.getTime(),
               durationSec: tx.durationSec,
-              totalizerLitres: tx.totalizerLitres,
+              totalizerLitres: tx.totalizerLitres ?? undefined,
             })),
           ),
         )
