@@ -207,6 +207,17 @@ if (res.status !== 0) {
 
 log("migrations applied (or already current) — starting server");
 
+// Run the seed script using the migration or app database URL
+const seedRes = spawnSync("bun", ["run", "db:seed"], {
+  stdio: "inherit",
+  env: { ...process.env, DATABASE_URL: migrateUrl },
+});
+
+if (seedRes.status !== 0) {
+  log("WARNING: Database seeding failed or already seeded, continuing startup...");
+} else {
+  log("database seeded successfully — starting server");
+}
 // exec so the server becomes PID 1 and receives SIGTERM directly, letting
 // Next.js shut down cleanly instead of being killed after the grace period.
 const server = spawnSync("bun", [SERVER], { stdio: "inherit", env: serverEnv() });
