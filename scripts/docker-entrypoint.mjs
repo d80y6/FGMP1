@@ -184,7 +184,11 @@ log(
 
 const res = spawnSync(process.execPath, [cli, "migrate", "deploy"], {
   stdio: "inherit",
-  env: { ...process.env, FGMP_MIGRATE_DATABASE_URL: migrateUrl },
+  env: { 
+    ...process.env, 
+    DATABASE_URL: migrateUrl, // Forces Prisma to use the migration URL
+    FGMP_MIGRATE_DATABASE_URL: migrateUrl 
+  },
 });
 
 if (res.error) {
