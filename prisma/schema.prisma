@@ -24,7 +24,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("FGMP_MIGRATE_DATABASE_URL")
+  url      = env("DATABASE_URL")
 }
 
 // ──────────────────────────────────────────────────────────────────────────
