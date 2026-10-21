@@ -78,6 +78,8 @@ COPY --from=builder /app/scripts/docker-entrypoint.mjs ./scripts/docker-entrypoi
 COPY --from=builder /app/scripts/db-preflight.mjs ./scripts/db-preflight.mjs
 # `.next/standalone` re-emits any `.env` it finds via output tracing, so one
 # can land in the shipped image. Remove it — secrets come from the environment.
+COPY --from=builder /app/node_modules/bcryptjs ./node_modules/bcryptjs
+COPY --from=builder /app/scripts ./scripts
 RUN rm -f /app/.env \
  && mkdir -p /app/backups \
  && chown -R nextjs:nodejs /app/backups /app/prisma
