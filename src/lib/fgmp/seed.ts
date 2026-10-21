@@ -33,7 +33,7 @@ import bcrypt from "bcryptjs";
 let ownerClient: PrismaClient | null = null;
 
 function systemDb(): PrismaClient {
-  const url = process.env.FGMP_MIGRATE_DATABASE_URL;
+  const url = process.env.DATABASE_URL;
   if (!url) return db;
   if (!ownerClient) {
     ownerClient = new PrismaClient({
