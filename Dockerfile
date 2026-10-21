@@ -9,7 +9,7 @@ FROM oven/bun:1 AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN bun run db:generate
+#RUN bun run db:generate
 # Compute the Prisma CLI's real dependency closure (see the script's header for
 # why this is derived rather than hand-written) and stage it for the runner.
 RUN bun ./scripts/collect-prisma-cli-deps.ts \
