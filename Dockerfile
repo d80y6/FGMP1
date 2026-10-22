@@ -9,7 +9,7 @@ FROM oven/bun:1 AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN bun run db:generate
+RUN bunx prisma generate
 # Compute the Prisma CLI's real dependency closure (see the script's header for
 # why this is derived rather than hand-written) and stage it for the runner.
 RUN bun ./scripts/collect-prisma-cli-deps.ts \
@@ -78,6 +78,8 @@ COPY --from=builder /app/scripts/docker-entrypoint.mjs ./scripts/docker-entrypoi
 COPY --from=builder /app/scripts/db-preflight.mjs ./scripts/db-preflight.mjs
 # `.next/standalone` re-emits any `.env` it finds via output tracing, so one
 # can land in the shipped image. Remove it — secrets come from the environment.
+COPY --from=builder /app/node_modules/bcryptjs ./node_modules/bcryptjs
+COPY --from=builder /app/scripts ./scripts
 RUN rm -f /app/.env \
  && mkdir -p /app/backups \
  && chown -R nextjs:nodejs /app/backups /app/prisma

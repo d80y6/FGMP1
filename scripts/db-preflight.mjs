@@ -113,7 +113,7 @@ export async function preflight(url, timeoutMs = 15000) {
 
 // ── CLI ──────────────────────────────────────────────────────────────────────
 if (import.meta.main) {
-  const url = process.argv[2] || process.env.DATABASE_URL || "";
+  const url = process.argv[2] || process.env.FGMP_MIGRATE_DATABASE_URL || "";
   if (!url) {
     console.error("[preflight] no database URL given");
     process.exit(1);
