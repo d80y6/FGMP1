@@ -20,25 +20,23 @@ services:
         value: "0"
       - key: NEXTAUTH_URL
         sync: false
-      - key: REALTIME_URL
+      # Hosted realtime (Apinator). REALTIME_URL is gone with the retired
+      # self-hosted socket.io service; credentials come from the Apinator
+      # dashboard and CLUSTER is the data-plane region (eu|us).
+      - key: APINATOR_APP_ID
         sync: false
-
-  # ── Realtime Socket.io Service ─────────────────────────────────────────────
-  - type: web
-    name: fgmp-realtime
-    env: docker
-    dockerfilePath: mini-services/realtime/Dockerfile
-    dockerContext: mini-services/realtime
-    plan: free
-    healthCheckPath: /health
-    envVars:
-      - fromGroup: fgmp1
-      - key: NEXT_API_BASE
+      - key: APINATOR_KEY
         sync: false
-      - key: REALTIME_ORIGIN
+      - key: APINATOR_SECRET
+        sync: false
+      - key: APINATOR_CLUSTER
         sync: false
 
   # ── IoT Telemetry Bridge ───────────────────────────────────────────────────
+  # NOTE: there is deliberately NO fgmp-realtime service here any more. The
+  # self-hosted socket.io mini-service was retired; realtime is hosted by
+  # Apinator and reached directly by browsers, so no container is deployed
+  # for it.
   - type: web
     name: fgmp-iot-bridge
     env: docker

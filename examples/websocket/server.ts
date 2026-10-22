@@ -1,138 +1,98 @@
-import { createServer } from 'http'
-import { Server } from 'socket.io'
+/**
+ * Standalone Apinator demo server (replaces the retired socket.io demo).
+ * ─────────────────────────────────────────────────────────────────────────────
+ * The original demo ran a self-hosted socket.io server on :3003 that browsers
+ * reached through the Caddy gateway's old `?XTransformPort=` open proxy — a
+ * pattern this project removed for security (see the Caddyfile header). This
+ * version shows the hosted pattern instead: there is no long-lived server
+ * socket at all. The server only
+ *
+ *   1. authorizes private/presence channel subscriptions (POST /realtime/auth)
+ *   2. publishes events via the signed REST API          (POST /send)
+ *
+ * and Apinator (ws-{cluster}.apinator.io) handles the WebSocket fan-out.
+ * The production app implements the exact same two responsibilities inside
+ * Next.js — see src/app/api/fgmp/realtime/auth/route.ts and
+ * src/lib/fgmp/realtime-emitter.ts.
+ *
+ * Run:  APINATOR_APP_ID=… APINATOR_KEY=… APINATOR_SECRET=… APINATOR_CLUSTER=eu \
+ *       bun examples/websocket/server.ts
+ */
 
-const httpServer = createServer()
-const io = new Server(httpServer, {
-  // DO NOT change the path, it is used by Caddy to forward the request to the correct port
-  path: '/',
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  },
-  pingTimeout: 60000,
-  pingInterval: 25000,
-})
+import { createServer } from "http";
+import { Apinator } from "@apinator/server";
 
-interface User {
-  id: string
-  username: string
+const APP_ID = process.env.APINATOR_APP_ID;
+const KEY = process.env.APINATOR_KEY;
+const SECRET = process.env.APINATOR_SECRET;
+const CLUSTER = process.env.APINATOR_CLUSTER ?? "eu";
+const PORT = 3004;
+
+if (!APP_ID || !KEY || !SECRET) {
+  console.error("Set APINATOR_APP_ID, APINATOR_KEY, APINATOR_SECRET (and optionally APINATOR_CLUSTER).");
+  process.exit(1);
 }
 
-interface Message {
-  id: string
-  username: string
-  content: string
-  timestamp: Date
-  type: 'user' | 'system'
-}
+const apinator = new Apinator({ appId: APP_ID, key: KEY, secret: SECRET, cluster: CLUSTER });
 
-const users = new Map<string, User>()
+/** The demo's single channel. `presence-` = private + a live member roster. */
+const CHANNEL = "presence-chat-demo";
 
-const generateMessageId = () => Math.random().toString(36).substr(2, 9)
+const server = createServer(async (req, res) => {
+  const send = (status: number, body: unknown) => {
+    res.writeHead(status, { "content-type": "application/json" });
+    res.end(JSON.stringify(body));
+  };
 
-const createSystemMessage = (content: string): Message => ({
-  id: generateMessageId(),
-  username: 'System',
-  content,
-  timestamp: new Date(),
-  type: 'system'
-})
+  if (req.method === "POST" && req.url === "/realtime/auth") {
+    // Channel authorization: the browser SDK POSTs { socket_id, channel_name }
+    // (its authEndpoint defaults to /auth, so this path is passed explicitly).
+    // In a real app the session — not a demo header — decides who may join.
+    let body = "";
+    req.on("data", (c) => (body += c));
+    req.on("end", () => {
+      try {
+        const { socket_id: socketId, channel_name: channelName, user_id: userId } = JSON.parse(body);
+        if (typeof socketId !== "string" || typeof channelName !== "string") {
+          return send(400, { error: "socket_id and channel_name are required" });
+        }
+        if (channelName !== CHANNEL) return send(403, { error: "unknown channel" });
+        // Presence channels require channel_data identifying the member.
+        const auth = apinator.authenticateChannel(
+          socketId,
+          channelName,
+          JSON.stringify({ user_id: String(userId ?? "anonymous"), user_info: { name: String(userId ?? "anonymous") } }),
+        );
+        send(200, auth);
+      } catch {
+        send(400, { error: "invalid JSON body" });
+      }
+    });
+    return;
+  }
 
-const createUserMessage = (username: string, content: string): Message => ({
-  id: generateMessageId(),
-  username,
-  content,
-  timestamp: new Date(),
-  type: 'user'
-})
+  if (req.method === "POST" && req.url === "/send") {
+    // Server-side publish: a signed REST call, no socket held by the server.
+    let body = "";
+    req.on("data", (c) => (body += c));
+    req.on("end", async () => {
+      try {
+        const { name, data } = JSON.parse(body);
+        if (typeof name !== "string") return send(400, { error: "name is required" });
+        await apinator.trigger({ name, channel: CHANNEL, data: JSON.stringify(data ?? null) });
+        send(200, { ok: true });
+      } catch (err) {
+        send(502, { error: err instanceof Error ? err.message : String(err) });
+      }
+    });
+    return;
+  }
 
-io.on('connection', (socket) => {
-  console.log(`User connected: ${socket.id}`)
+  send(404, { error: "not found", hint: "POST /realtime/auth or POST /send" });
+});
 
-  // Add test event handler
-  socket.on('test', (data) => {
-    console.log('Received test message:', data)
-    socket.emit('test-response', { 
-      message: 'Server received test message', 
-      data: data,
-      timestamp: new Date().toISOString()
-    })
-  })
-
-  socket.on('join', (data: { username: string }) => {
-    const { username } = data
-    
-    // Create user object
-    const user: User = {
-      id: socket.id,
-      username
-    }
-    
-    // Add to user list
-    users.set(socket.id, user)
-    
-    // Send join message to all users
-    const joinMessage = createSystemMessage(`${username} joined the chat room`)
-    io.emit('user-joined', { user, message: joinMessage })
-    
-    // Send current user list to new user
-    const usersList = Array.from(users.values())
-    socket.emit('users-list', { users: usersList })
-    
-    console.log(`${username} joined the chat room, current online users: ${users.size}`)
-  })
-
-  socket.on('message', (data: { content: string; username: string }) => {
-    const { content, username } = data
-    const user = users.get(socket.id)
-    
-    if (user && user.username === username) {
-      const message = createUserMessage(username, content)
-      io.emit('message', message)
-      console.log(`${username}: ${content}`)
-    }
-  })
-
-  socket.on('disconnect', () => {
-    const user = users.get(socket.id)
-    
-    if (user) {
-      // Remove from user list
-      users.delete(socket.id)
-      
-      // Send leave message to all users
-      const leaveMessage = createSystemMessage(`${user.username} left the chat room`)
-      io.emit('user-left', { user: { id: socket.id, username: user.username }, message: leaveMessage })
-      
-      console.log(`${user.username} left the chat room, current online users: ${users.size}`)
-    } else {
-      console.log(`User disconnected: ${socket.id}`)
-    }
-  })
-
-  socket.on('error', (error) => {
-    console.error(`Socket error (${socket.id}):`, error)
-  })
-})
-
-const PORT = 3003
-httpServer.listen(PORT, () => {
-  console.log(`WebSocket server running on port ${PORT}`)
-})
-
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('Received SIGTERM signal, shutting down server...')
-  httpServer.close(() => {
-    console.log('WebSocket server closed')
-    process.exit(0)
-  })
-})
-
-process.on('SIGINT', () => {
-  console.log('Received SIGINT signal, shutting down server...')
-  httpServer.close(() => {
-    console.log('WebSocket server closed')
-    process.exit(0)
-  })
-})
+server.listen(PORT, () => {
+  console.log(`Apinator demo server on http://localhost:${PORT}`);
+  console.log(`  auth  : POST /realtime/auth  ({ socket_id, channel_name, user_id })`);
+  console.log(`  send  : POST /send           ({ name, data }) → channel "${CHANNEL}"`);
+});

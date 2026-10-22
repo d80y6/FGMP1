@@ -144,7 +144,7 @@ Secondary: **`:121-132` `getClientIp()` returns the literal string `"anon"` when
 
 ## 6. MEDIUM — Production-grade secrets present in the working tree
 
-`.env:1-6` contains live values for `NEXTAUTH_SECRET`, `IOT_API_KEY`, `REALTIME_SERVER_SECRET`, `REALTIME_SERVICE_TOKEN`, and `REALTIME_TOKEN_SECRET`.
+`.env:1-6` contains live values for `NEXTAUTH_SECRET`, `IOT_API_KEY`, `REALTIME_SERVICE_TOKEN`, and the `APINATOR_*` hosted-realtime credentials. (Audit-time note: the `REALTIME_SERVER_SECRET` and `REALTIME_TOKEN_SECRET` listed when this audit ran were removed together with the retired self-hosted realtime mini-service and replaced by the `APINATOR_*` set.)
 
 **Severity is conditional.** `.gitignore:34` covers `.env*`, so these are *not* in version control — the repo's secret hygiene is otherwise excellent (`docker-compose.yml:20-26` uses `${VAR:?}` with no defaults, and `auth.ts:48` deliberately refuses a committed fallback secret). Treat as **Medium in production** (any host compromise, image layer, or backup yields full auth-forgery capability), **Low for local dev**. Rotate before this `.env` reaches any shared machine or CI context.
 

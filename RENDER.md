@@ -6,12 +6,12 @@ This guide explains how to deploy the **Fuel & Generator Monitoring Platform** (
 
 ## Architecture Overview
 
-The platform consists of four primary components:
+The platform consists of three primary components plus one hosted service:
 
 1. **`fgmp-db` (PostgreSQL Database)**: Managed PostgreSQL instance for persisting platform data and running Prisma schema migrations.
-2. **`fgmp-app` (Next.js Web Service)**: The primary application container serving the web UI, REST API, NextAuth authentication, and telemetry processing.
-3. **`fgmp-realtime` (Socket.io Web Service)**: Bun-based Socket.io server delivering realtime telemetry updates to browsers.
-4. **`fgmp-iot-bridge` (Private Service)**: Background worker ingesting field device telemetry and forwarding updates to the web app and realtime service.
+2. **`fgmp-app` (Next.js Web Service)**: The primary application container serving the web UI, REST API, NextAuth authentication, and telemetry processing. It triggers realtime events to Apinator and signs private-channel subscriptions for browsers.
+3. **`fgmp-iot-bridge` (Private Service)**: Background worker ingesting field device telemetry and POSTing it to the web app's ingest endpoint, which persists it and pushes the update to Apinator.
+4. **Apinator (hosted, external)**: Managed realtime WebSocket channels. Browsers subscribe directly to `wss://ws-<cluster>.apinator.io` — there is **no** realtime container to deploy.
 
 ---
 
@@ -27,8 +27,8 @@ Render supports Infrastructure-as-Code via `render.yaml`. Using a Blueprint auto
 4. Connect your repository and select the branch to deploy.
 5. Render will automatically parse `render.yaml` and prompt you for required sync variables:
    - `NEXTAUTH_URL`: Set this to your web service URL (e.g. `https://fgmp-app.onrender.com`).
-   - `REALTIME_ORIGIN`: Set this to your web service URL (e.g. `https://fgmp-app.onrender.com`).
-6. Click **Apply**. Render will create the database and build/deploy all three services.
+   - `APINATOR_APP_ID` / `APINATOR_KEY` / `APINATOR_SECRET` / `APINATOR_CLUSTER`: From your Apinator dashboard (`eu` or `us`).
+6. Click **Apply**. Render will create the database and build/deploy the services.
 
 ---
 
@@ -55,31 +55,22 @@ If you prefer setting up services individually in the Render Dashboard:
   - `NEXTAUTH_SECRET`: Random 32-byte base64 string (`openssl rand -base64 32`)
   - `NEXTAUTH_URL`: `https://<your-fgmp-app-name>.onrender.com`
   - `IOT_API_KEY`: Random hex string (`openssl rand -hex 32`)
-  - `REALTIME_URL`: `http://fgmp-realtime:3003` (or `https://<fgmp-realtime>.onrender.com`)
-  - `REALTIME_SERVER_SECRET`: Random hex string (`openssl rand -hex 32`)
-  - `REALTIME_SERVICE_TOKEN`: Random hex string (`openssl rand -hex 32`)
-  - `REALTIME_TOKEN_SECRET`: Random base64 string (`openssl rand -base64 32`)
+  - `REALTIME_SERVICE_TOKEN`: Random hex string (`openssl rand -hex 32`) — the IoT bridge presents it on snapshot polling
+  - `APINATOR_APP_ID`: From the Apinator dashboard
+  - `APINATOR_KEY`: From the Apinator dashboard
+  - `APINATOR_SECRET`: From the Apinator dashboard
+  - `APINATOR_CLUSTER`: `eu` or `us` (the dashboard app's region)
 
-### 3. Create Web Service for Realtime (`fgmp-realtime`)
-- **Environment**: Docker
-- **Dockerfile Path**: `mini-services/realtime/Dockerfile`
-- **Docker Context**: `mini-services/realtime`
-- **Health Check Path**: `/health`
-- **Environment Variables**:
-  - `NEXT_API_BASE`: `http://fgmp-app:3000` (or internal URL of `fgmp-app`)
-  - `REALTIME_ORIGIN`: `https://<your-fgmp-app-name>.onrender.com`
-  - `REALTIME_SERVER_SECRET`: Same value as `fgmp-app`
-  - `REALTIME_SERVICE_TOKEN`: Same value as `fgmp-app`
-  - `REALTIME_TOKEN_SECRET`: Same value as `fgmp-app`
-
-### 4. Create Private Service for IoT Bridge (`fgmp-iot-bridge`)
+### 3. Create Private Service for IoT Bridge (`fgmp-iot-bridge`)
 - **Environment**: Docker
 - **Dockerfile Path**: `mini-services/iot-bridge/Dockerfile`
 - **Docker Context**: `mini-services/iot-bridge`
 - **Environment Variables**:
   - `NEXT_API_BASE`: `http://fgmp-app:3000` (or internal URL of `fgmp-app`)
   - `IOT_API_KEY`: Same value as `fgmp-app`
-  - `REALTIME_SERVER_SECRET`: Same value as `fgmp-app`
+  - `REALTIME_SERVICE_TOKEN`: Same value as `fgmp-app`
+
+There is no step for a realtime service: the self-hosted socket.io mini-service was retired and realtime is hosted by Apinator. Browsers connect to `wss://ws-<cluster>.apinator.io` directly using the public `NEXT_PUBLIC_APINATOR_APP_KEY` / `NEXT_PUBLIC_APINATOR_CLUSTER` pair (set those at **build** time — `NEXT_PUBLIC_` vars are inlined into the client bundle).
 
 ---
 
@@ -113,5 +104,5 @@ After seeding, initial login details:
 ## Troubleshooting & Important Notes
 
 1. **Database Migrations on Startup**: The Docker container automatically executes `bun run db:deploy` via `scripts/docker-entrypoint.mjs` on boot if `FGMP_MIGRATE_DATABASE_URL` is set.
-2. **WebSocket & CORS Configuration**: Ensure `REALTIME_ORIGIN` matches the public HTTPS domain of `fgmp-app` so browser WebSocket connections work seamlessly.
+2. **Realtime connectivity**: Browsers connect straight to Apinator (`wss://ws-<cluster>.apinator.io`), not through your Render service. Ensure `APINATOR_CLUSTER` matches the dashboard app's region, the public `NEXT_PUBLIC_APINATOR_APP_KEY` / `NEXT_PUBLIC_APINATOR_CLUSTER` pair was present at **build** time, and the private-channel auth route (`/api/fgmp/realtime/auth`) is reachable — subscriptions for `private-tenant-*` channels are signed server-side.
 3. **Health Check Timing**: Next.js cold boots on Render free/starter tiers may take ~30-60 seconds on initial deployment. Health checks are configured to retry automatically.

@@ -7,8 +7,13 @@
 # instead.
 #
 # Generate the secrets once and keep them in your shell / secret manager:
-#   openssl rand -base64 32   # NEXTAUTH_SECRET, REALTIME_TOKEN_SECRET
-#   openssl rand -hex 32      # IOT_API_KEY, REALTIME_SERVICE_TOKEN, REALTIME_SERVER_SECRET
+#   openssl rand -base64 32   # NEXTAUTH_SECRET
+#   openssl rand -hex 32      # IOT_API_KEY, REALTIME_SERVICE_TOKEN
+#
+# APINATOR_* values are NOT openssl-generated: APP_ID / KEY / SECRET come from
+# the Apinator dashboard (hosted realtime), and CLUSTER is the data-plane
+# region ("eu" or "us"). Browsers receive only the public pair
+# NEXT_PUBLIC_APINATOR_APP_KEY / NEXT_PUBLIC_APINATOR_CLUSTER.
 
 services:
   # ── PostgreSQL (Phase 1, step 1: SQLite → PostgreSQL) ────────────────────
@@ -181,10 +186,19 @@ services:
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:?set NEXTAUTH_SECRET (openssl rand -base64 32)}
       - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
       - IOT_API_KEY=${IOT_API_KEY:?set IOT_API_KEY (openssl rand -hex 32)}
-      - REALTIME_URL=http://fgmp-realtime:3003
-      - REALTIME_SERVER_SECRET=${REALTIME_SERVER_SECRET:?set REALTIME_SERVER_SECRET (openssl rand -hex 32)}
+      # ── Realtime (hosted Apinator) ────────────────────────────────────────
+      # REALTIME_URL / REALTIME_SERVER_SECRET / REALTIME_TOKEN_SECRET are gone:
+      # the self-hosted socket.io mini-service was retired. The app triggers
+      # events and authorizes channel subscriptions against Apinator directly;
+      # browsers connect to wss://ws-<cluster>.apinator.io (public NEXT_PUBLIC_
+      # pair is inlined at build time, so it is not repeated here).
+      # REALTIME_SERVICE_TOKEN stays: the iot-bridge authenticates its
+      # /api/fgmp/realtime/snapshot polling with it, and that endpoint remains.
       - REALTIME_SERVICE_TOKEN=${REALTIME_SERVICE_TOKEN:?set REALTIME_SERVICE_TOKEN (openssl rand -hex 32)}
-      - REALTIME_TOKEN_SECRET=${REALTIME_TOKEN_SECRET:?set REALTIME_TOKEN_SECRET (openssl rand -base64 32)}
+      - APINATOR_APP_ID=${APINATOR_APP_ID:?set APINATOR_APP_ID (Apinator dashboard)}
+      - APINATOR_KEY=${APINATOR_KEY:?set APINATOR_KEY (Apinator dashboard)}
+      - APINATOR_SECRET=${APINATOR_SECRET:?set APINATOR_SECRET (Apinator dashboard)}
+      - APINATOR_CLUSTER=${APINATOR_CLUSTER:?set APINATOR_CLUSTER (eu or us)}
     volumes:
       # SQLite volume mount removed in Phase 1 step 1. The /app/db path is
       # retained only because the standalone image expects the directory to
@@ -207,46 +221,24 @@ services:
         limits:
           memory: 2G
 
-  fgmp-realtime:
-    build: ./mini-services/realtime
-    # NOTE: port 3003 is deliberately NOT published to the host. It used to be
-    # exposed, which bypassed the Caddy gateway and made the socket reachable
-    # directly. Browsers reach it through Caddy at /socket.io.
-    expose:
-      - "3003"
-    environment:
-      # These names matter: the service reads NEXT_API_BASE / REALTIME_ORIGIN.
-      # The file previously set NEXTJS_URL / CORS_ORIGIN, which nothing read,
-      # so both mini-services fell back to localhost:3000 — themselves — and
-      # spun in permanent error loops.
-      - NEXT_API_BASE=http://fgmp-app:3000
-      - REALTIME_ORIGIN=${REALTIME_ORIGIN:-http://localhost:3000}
-      - REALTIME_SERVER_SECRET=${REALTIME_SERVER_SECRET:?set REALTIME_SERVER_SECRET (openssl rand -hex 32)}
-      - REALTIME_SERVICE_TOKEN=${REALTIME_SERVICE_TOKEN:?set REALTIME_SERVICE_TOKEN (openssl rand -hex 32)}
-      - REALTIME_TOKEN_SECRET=${REALTIME_TOKEN_SECRET:?set REALTIME_TOKEN_SECRET (openssl rand -base64 32)}
-    depends_on:
-      fgmp-app:
-        condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:3003/health').then(r=>process.exit(0)).catch(()=>process.exit(1))"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 15s
-    deploy:
-      resources:
-        limits:
-          memory: 256M
+  # ── fgmp-realtime REMOVED ─────────────────────────────────────────────────
+  # The self-hosted socket.io mini-service (mini-services/realtime, :3003,
+  # Caddy /socket.io proxy) was retired in favour of Apinator, a hosted
+  # realtime provider. Browsers subscribe to wss://ws-<cluster>.apinator.io
+  # directly and channel subscriptions are authorized by the app's realtime
+  # auth routes, so nothing in this stack listens on 3003 any more.
 
   fgmp-iot-bridge:
     build: ./mini-services/iot-bridge
     # No port exposure — this service only makes outbound calls.
     environment:
       - NEXT_API_BASE=http://fgmp-app:3000
-      - REALTIME_ORIGIN=${REALTIME_ORIGIN:-http://localhost:3000}
       - IOT_API_KEY=${IOT_API_KEY:?set IOT_API_KEY (openssl rand -hex 32)}
-      - REALTIME_SERVER_SECRET=${REALTIME_SERVER_SECRET:?set REALTIME_SERVER_SECRET (openssl rand -hex 32)}
+      # Snapshot polling token. This was MISSING here before the Apinator
+      # migration — the bridge fell back to its dev default in compose
+      # deployments and every snapshot poll 401'd. It must match the
+      # REALTIME_SERVICE_TOKEN handed to fgmp-app.
+      - REALTIME_SERVICE_TOKEN=${REALTIME_SERVICE_TOKEN:?set REALTIME_SERVICE_TOKEN (openssl rand -hex 32)}
       # mTLS (proposal §7): set to 1 and point NEXT_API_BASE at
       # the gateway's internal listener (https://fgmp-app:8443)
       # once scripts/generate-mtls-certs.sh has populated ./certs.

@@ -1,17 +1,14 @@
 {
   "name": "fgmp-iot-bridge",
   "version": "1.0.0",
-  "private": true,
-  "scripts": {
-    "dev": "bun --hot index.ts",
-    "start": "bun index.ts"
-  },
-  "dependencies": {
-    "socket.io-client": "^4.8.3"
-  },
   "devDependencies": {
     "@types/node": "^26.6.5",
     "bun-types": "^1.4.3",
     "typescript": "^7.0.2"
+  },
+  "private": true,
+  "scripts": {
+    "dev": "bun --hot index.ts",
+    "start": "bun index.ts"
   }
 }

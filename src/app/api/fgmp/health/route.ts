@@ -10,6 +10,11 @@ import {
   getRecentErrors,
   type RecordedError,
 } from "@/lib/fgmp/metrics";
+import {
+  apinatorServerConfig,
+  apinatorWsUrl,
+  getApinatorServer,
+} from "@/lib/fgmp/apinator-server";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +27,10 @@ export const dynamic = "force-dynamic";
  *   - uptime           : formatted "Xd Yh Zm" + raw `uptimeSeconds`
  *   - memory           : process.memoryUsage() converted to MB
  *   - database         : SQLite file size + TENANT-SCOPED row counts
- *   - realtime         : TCP-port-check on :3003 + fetched `clients` count
+ *   - realtime         : hosted Apinator channels probe — `connected` reflects
+ *                        a successful channels API call, `clients` is the sum
+ *                        of subscription counts across `private-tenant-*`
+ *                        channels, `url` is the cluster's WebSocket endpoint
  *   - api              : avg response time + total requests (since boot)
  *   - sessions         : users with lastLoginAt within the last 24h (tenant)
  *   - errors           : last 10 captured errors, detail REDACTED
@@ -98,11 +106,21 @@ async function opsCounts(twentyFourHoursAgo: Date) {
 
 // ── Config ────────────────────────────────────────────────────────────────
 const CACHE_TTL_MS = 10_000;
-const REALTIME_HOST = "127.0.0.1";
-const REALTIME_PORT = 3003;
-const REALTIME_HEALTH_URL = `http://${REALTIME_HOST}:${REALTIME_PORT}/health`;
-const TCP_PROBE_TIMEOUT_MS = 500;
-const HTTP_HEALTH_TIMEOUT_MS = 800;
+/**
+ * Budget for the hosted Apinator channels call. The old self-hosted probe
+ * used a 500ms TCP connect + an 800ms HTTP fetch; a single 800ms race against
+ * the hosted REST API keeps the dashboard's 10s poll responsive even when the
+ * provider is unreachable (the probe degrades to `connected: false` instead
+ * of hanging the snapshot).
+ */
+const APINATOR_PROBE_TIMEOUT_MS = 800;
+/**
+ * Only tenant-private channels are counted: they exist exactly when at least
+ * one browser holds a live subscription, which is the number the NOC display
+ * means by "clients". Server-triggered public channels would otherwise
+ * inflate the figure with sockets nobody is watching.
+ */
+const APINATOR_CHANNEL_PREFIX = "private-tenant-";
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const BYTES_PER_MB = 1024 * 1024;
 
@@ -262,62 +280,63 @@ function resolveSqlitePath(): string | null {
 }
 
 /**
- * TCP port probe — resolves `true` if a connection to (host, port)
- * succeeds within `timeoutMs`. Uses Node's `net` module per task spec.
- * The socket is destroyed immediately on connect / error / timeout so
- * no lingering connection is left on the realtime service.
+ * Probe the hosted Apinator channels API for liveness + client count.
+ *
+ * Replaces the old two-step probe against the self-hosted realtime service
+ * (TCP connect to :3003, then an HTTP `/health` fetch for the client count).
+ * Realtime is now an external provider, so "is it up" and "how many clients"
+ * both come from the same authenticated REST call: listing the
+ * `private-tenant-*` channels. Those channels exist exactly while browsers
+ * hold subscriptions, so a successful listing both proves the credentials and
+ * the data plane work AND yields the client figure the NOC display wants.
+ *
+ * Degradation is deliberate and total — any of these reports
+ * `connected: false, clients: 0`:
+ *   - no Apinator config in the environment (the migration treats realtime as
+ *     optional infrastructure; an unconfigured deployment reports down rather
+ *     than pretending),
+ *   - the call errors (bad credentials, provider outage, rate limit),
+ *   - the call exceeds APINATOR_PROBE_TIMEOUT_MS (raced against a resolving
+ *     timeout promise; the loser is left to settle on its own — its result is
+ *     simply ignored, and a rejection after the race is still observed by the
+ *     race's own handler so it cannot become an unhandled rejection).
  */
-function probeTcpPort(host: string, port: number, timeoutMs: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    let done = false;
-    const finish = (ok: boolean) => {
-      if (done) return;
-      done = true;
-      try {
-        socket.destroy();
-      } catch {
-        /* ignore */
-      }
-      resolve(ok);
-    };
-    // Lazy import so the route module loads cleanly in the Edge-checker.
-    // (Next.js routes run in the Node.js runtime — `force-dynamic` keeps
-    // this code out of the static-build pipeline.)
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const net = require("node:net") as typeof import("node:net");
-    const socket = new net.Socket();
-    socket.setTimeout(timeoutMs);
-    socket.once("connect", () => finish(true));
-    socket.once("timeout", () => finish(false));
-    socket.once("error", () => finish(false));
-    try {
-      socket.connect(port, host);
-    } catch {
-      finish(false);
-    }
-  });
-}
-
-/**
- * Fetch the realtime service's `/health` endpoint to retrieve the live
- * socket.io client count. Returns 0 if the HTTP request fails or the
- * response can't be parsed. Always resolves (never rejects).
- */
-async function fetchRealtimeClients(): Promise<number> {
+async function probeApinatorChannels(): Promise<{
+  connected: boolean;
+  clients: number;
+  url: string;
+}> {
+  const config = apinatorServerConfig();
+  // Unconfigured deployment: report down with the em-dash placeholder the
+  // system-health view renders for "no endpoint".
+  if (!config) {
+    return { connected: false, clients: 0, url: "—" };
+  }
+  const url = apinatorWsUrl(config.cluster);
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), HTTP_HEALTH_TIMEOUT_MS);
-    const res = await fetch(REALTIME_HEALTH_URL, {
-      signal: controller.signal,
-      headers: { accept: "application/json" },
-    });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const channels = await Promise.race([
+      getApinatorServer()?.getChannels(APINATOR_CHANNEL_PREFIX),
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), APINATOR_PROBE_TIMEOUT_MS);
+      }),
+    ]);
     clearTimeout(timer);
-    if (!res.ok) return 0;
-    const data = (await res.json()) as { clients?: number };
-    const n = Number(data?.clients);
-    return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
+    // Null = the timeout won the race (or the server was unavailable). Either
+    // way the probe has no positive evidence of a working channel API.
+    if (!channels) {
+      return { connected: false, clients: 0, url };
+    }
+    const clients = channels.reduce(
+      (sum, ch) => sum + (Number(ch.subscription_count) || 0),
+      0,
+    );
+    return { connected: true, clients, url };
   } catch {
-    return 0;
+    // Auth failure / network error / provider 5xx. A health endpoint that
+    // silently swallows the error into "connected: true" would be the same
+    // monitoring lie this route's verdict logic was built to prevent.
+    return { connected: false, clients: 0, url };
   }
 }
 
@@ -363,15 +382,10 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // ── Realtime TCP probe + HTTP /health (for client count) ──────────
-    const rtConnected = await probeTcpPort(
-      REALTIME_HOST,
-      REALTIME_PORT,
-      TCP_PROBE_TIMEOUT_MS,
-    );
-    // Only fetch the client count if the port is reachable — saves an
-    // 800ms timeout when the realtime service is down.
-    const rtClients = rtConnected ? await fetchRealtimeClients() : 0;
+    // ── Realtime probe (hosted Apinator channels API) ──────────────────
+    // One authenticated REST call replaces the old TCP probe + /health fetch;
+    // it degrades to connected:false on any error or the 800ms timeout.
+    const rt = await probeApinatorChannels();
 
     // ── Prisma aggregations (parallel, TENANT-SCOPED) ─────────────────
     // Models carrying a direct tenantId: Site, Alarm, User, AuditLog.
@@ -448,9 +462,9 @@ export async function GET(req: NextRequest) {
         auditWriteFailures: auditFailureCount(),
       },
       realtime: {
-        connected: rtConnected,
-        url: "ws://localhost:3003",
-        clients: rtClients,
+        connected: rt.connected,
+        url: rt.url,
+        clients: rt.clients,
       },
       api: {
         avgResponseMs,

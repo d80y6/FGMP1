@@ -1,106 +1,136 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { io } from 'socket.io-client';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ScrollArea } from '@/components/ui/scroll-area';
+/**
+ * Apinator chat demo (replaces the retired socket.io demo, which connected
+ * through the removed `?XTransformPort=` gateway proxy). Browsers now talk
+ * straight to Apinator over wss://; private/presence subscriptions are
+ * authorized by the demo server's POST /realtime/auth (in production, by
+ * the app's session-checked /api/fgmp/realtime/auth route).
+ *
+ * Chat messages travel as CLIENT events (`client-message`) on the presence
+ * channel: browser → Apinator → other browsers, without a server round-trip.
+ * Client events require a private/presence channel and the `client-` prefix.
+ */
 
-type User = {
-  id: string;
-  username: string;
-}
+import { useEffect, useRef, useState } from "react";
+import { Apinator, type Channel, type ConnectionState } from "@apinator/client";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
-type Message = {
+const CHANNEL = "presence-chat-demo";
+
+type ChatMessage = {
   id: string;
   username: string;
   content: string;
-  timestamp: Date | string;
-  type: 'user' | 'system';
+  timestamp: string;
+  type: "user" | "system";
+};
+
+type PresenceMember = { user_id: string; user_info?: { name?: string } };
+
+const systemMessage = (content: string): ChatMessage => ({
+  id: Math.random().toString(36).slice(2, 11),
+  username: "System",
+  content,
+  timestamp: new Date().toISOString(),
+  type: "system",
+});
+
+/** The SDK parses JSON payloads but may hand back the raw string. */
+function parsePayload(data: unknown): unknown {
+  if (typeof data !== "string") return data;
+  try {
+    return JSON.parse(data);
+  } catch {
+    return data;
+  }
 }
 
-export default function SocketDemo() {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [inputMessage, setInputMessage] = useState('');
-  const [username, setUsername] = useState('');
+export default function RealtimeDemo() {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [inputMessage, setInputMessage] = useState("");
+  const [username, setUsername] = useState("");
   const [isUsernameSet, setIsUsernameSet] = useState(false);
-  const [socket, setSocket] = useState<any>(null);
   const [isConnected, setIsConnected] = useState(false);
-  const [users, setUsers] = useState<User[]>([]);
+  const [members, setMembers] = useState<string[]>([]);
+  const channelRef = useRef<Channel | null>(null);
+  const clientRef = useRef<Apinator | null>(null);
 
   useEffect(() => {
-    // Connect to websocket server
-    // Never use PORT in the URL, alyways use XTransformPort
-    // DO NOT change the path, it is used by Caddy to forward the request to the correct port
-    const socketInstance = io('/?XTransformPort=3003', {
-      transports: ['websocket', 'polling'],
-      forceNew: true,
-      reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000,
-      timeout: 10000
-    })
+    const appKey = process.env.NEXT_PUBLIC_APINATOR_APP_KEY;
+    const cluster = process.env.NEXT_PUBLIC_APINATOR_CLUSTER ?? "eu";
+    if (!appKey || !isUsernameSet) return;
 
-    setSocket(socketInstance);
+    const client = new Apinator({
+      appKey,
+      cluster,
+      // The demo server signs subscriptions; the production app uses
+      // "/api/fgmp/realtime/auth" (session-checked). Same-origin cookies.
+      authEndpoint: "http://localhost:3004/realtime/auth",
+    });
+    clientRef.current = client;
 
-    socketInstance.on('connect', () => {
-      setIsConnected(true);
+    client.bind("state_change", (data) => {
+      const change = parsePayload(data) as { current?: ConnectionState } | null;
+      setIsConnected(change?.current === "connected");
+    });
+    client.connect();
+
+    const channel = client.subscribe(CHANNEL);
+    channelRef.current = channel;
+
+    // Presence roster: system events carry join/leave; the subscription
+    // snapshot is available after realtime:subscription_succeeded.
+    channel.bind("realtime:subscription_succeeded", (data) => {
+      const snap = parsePayload(data) as { presence?: { hash?: Record<string, unknown> } } | null;
+      setMembers(snap?.presence?.hash ? Object.keys(snap.presence.hash) : []);
+    });
+    channel.bind("realtime:member_added", (data) => {
+      const m = parsePayload(data) as PresenceMember;
+      const name = m?.user_info?.name ?? m?.user_id;
+      setMessages((prev) => [...prev, systemMessage(`${name} joined the chat room`)]);
+      setMembers((prev) => (prev.includes(m.user_id) ? prev : [...prev, m.user_id]));
+    });
+    channel.bind("realtime:member_removed", (data) => {
+      const m = parsePayload(data) as PresenceMember;
+      setMessages((prev) => [...prev, systemMessage(`${m?.user_id} left the chat room`)]);
+      setMembers((prev) => prev.filter((u) => u !== m.user_id));
     });
 
-    socketInstance.on('disconnect', () => {
-      setIsConnected(false);
-    });
-
-    socketInstance.on('message', (msg: Message) => {
-      setMessages(prev => [...prev, msg]);
-    });
-
-    socketInstance.on('user-joined', (data: { user: User; message: Message }) => {
-      setMessages(prev => [...prev, data.message]);
-      setUsers(prev => {
-        if (!prev.find(u => u.id === data.user.id)) {
-          return [...prev, data.user];
-        }
-        return prev;
-      });
-    });
-
-    socketInstance.on('user-left', (data: { user: User; message: Message }) => {
-      setMessages(prev => [...prev, data.message]);
-      setUsers(prev => prev.filter(u => u.id !== data.user.id));
-    });
-
-    socketInstance.on('users-list', (data: { users: User[] }) => {
-      setUsers(data.users);
+    // Chat traffic as client events: browser → Apinator → browsers.
+    channel.bind("client-message", (data) => {
+      const msg = parsePayload(data) as ChatMessage | null;
+      if (msg?.id) setMessages((prev) => [...prev, msg]);
     });
 
     return () => {
-      socketInstance.disconnect();
+      channel.unbindAll();
+      client.unbind("state_change");
+      client.disconnect();
+      channelRef.current = null;
+      clientRef.current = null;
+      setIsConnected(false);
     };
-  }, []);
-
-  const handleJoin = () => {
-    if (socket && username.trim() && isConnected) {
-      socket.emit('join', { username: username.trim() });
-      setIsUsernameSet(true);
-    }
-  };
+  }, [isUsernameSet]);
 
   const sendMessage = () => {
-    if (socket && inputMessage.trim() && username.trim()) {
-      socket.emit('message', {
-        content: inputMessage.trim(),
-        username: username.trim()
-      });
-      setInputMessage('');
-    }
-  };
-
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      sendMessage();
-    }
+    const content = inputMessage.trim();
+    if (!channelRef.current || !content || !username.trim()) return;
+    const msg: ChatMessage = {
+      id: Math.random().toString(36).slice(2, 11),
+      username: username.trim(),
+      content,
+      timestamp: new Date().toISOString(),
+      type: "user",
+    };
+    // Not delivered to the sender — other subscribers only (per Apinator's
+    // client-event rule), so the sender appends its own copy locally.
+    channelRef.current.trigger("client-message", msg);
+    setMessages((prev) => [...prev, msg]);
+    setInputMessage("");
   };
 
   return (
@@ -108,9 +138,9 @@ export default function SocketDemo() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
-            WebSocket Demo
-            <span className={`text-sm px-2 py-1 rounded ${isConnected ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-              {isConnected ? 'Connected' : 'Disconnected'}
+            Apinator Demo ({members.length} online)
+            <span className={`text-sm px-2 py-1 rounded ${isConnected ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
+              {isConnected ? "Connected" : "Disconnected"}
             </span>
           </CardTitle>
         </CardHeader>
@@ -120,20 +150,13 @@ export default function SocketDemo() {
               <Input
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                onKeyPress={(e) => {
-                  if (e.key === 'Enter') {
-                    handleJoin();
-                  }
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && username.trim()) setIsUsernameSet(true);
                 }}
                 placeholder="Enter your username..."
-                disabled={!isConnected}
                 className="flex-1"
               />
-              <Button
-                onClick={handleJoin}
-                disabled={!isConnected || !username.trim()}
-                className="w-full"
-              >
+              <Button onClick={() => username.trim() && setIsUsernameSet(true)} disabled={!username.trim()} className="w-full">
                 Join Chat
               </Button>
             </div>
@@ -148,42 +171,28 @@ export default function SocketDemo() {
                       <div key={msg.id} className="border-b pb-2 last:border-b-0">
                         <div className="flex justify-between items-start">
                           <div className="flex-1">
-                            <p className={`text-sm font-medium ${msg.type === 'system'
-                                ? 'text-blue-600 italic'
-                                : 'text-gray-700'
-                              }`}>
+                            <p className={`text-sm font-medium ${msg.type === "system" ? "text-blue-600 italic" : "text-gray-700"}`}>
                               {msg.username}
                             </p>
-                            <p className={`${msg.type === 'system'
-                                ? 'text-blue-500 italic'
-                                : 'text-gray-900'
-                              }`}>
-                              {msg.content}
-                            </p>
+                            <p className={msg.type === "system" ? "text-blue-500 italic" : "text-gray-900"}>{msg.content}</p>
                           </div>
-                          <span className="text-xs text-gray-500">
-                            {new Date(msg.timestamp).toLocaleTimeString()}
-                          </span>
+                          <span className="text-xs text-gray-500">{new Date(msg.timestamp).toLocaleTimeString()}</span>
                         </div>
                       </div>
                     ))
                   )}
                 </div>
               </ScrollArea>
-
               <div className="flex space-x-2">
                 <Input
                   value={inputMessage}
                   onChange={(e) => setInputMessage(e.target.value)}
-                  onKeyPress={handleKeyPress}
+                  onKeyDown={(e) => e.key === "Enter" && sendMessage()}
                   placeholder="Type a message..."
                   disabled={!isConnected}
                   className="flex-1"
                 />
-                <Button
-                  onClick={sendMessage}
-                  disabled={!isConnected || !inputMessage.trim()}
-                >
+                <Button onClick={sendMessage} disabled={!isConnected || !inputMessage.trim()}>
                   Send
                 </Button>
               </div>

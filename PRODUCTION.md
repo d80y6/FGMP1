@@ -14,8 +14,8 @@ services:
 | Service         | Container        | Port | Role                                         |
 |-----------------|------------------|------|----------------------------------------------|
 | Next.js web app | `fgmp-app`       | 3000 | Web UI + REST API + auth                     |
-| Realtime socket | `fgmp-realtime`  | 3003 | Socket.io server for live push to browsers   |
-| IoT bridge      | `fgmp-iot-bridge`| —    | Ingests field-device telemetry → app + RT    |
+| Realtime        | Apinator (hosted)| —    | Managed WebSocket channels; browsers connect directly |
+| IoT bridge      | `fgmp-iot-bridge`| —    | Ingests field-device telemetry → app (app pushes to Apinator) |
 
 A SQLite database (mounted as a Docker volume) stores users, sites, alarms,
 tickets, deliveries, and audit logs.
@@ -96,23 +96,22 @@ docker compose exec fgmp-app bun run db:push
 ┌────────────────────────────────────────────────────────────────────┐
 │                         Host (Docker)                              │
 │                                                                    │
-│  ┌─────────────────────┐   ┌─────────────────────┐                │
-│  │   fgmp-app          │   │   fgmp-realtime     │                │
-│  │   Next.js 16        │   │   Socket.io server  │                │
-│  │   port 3000         │◄──┤   port 3003         │                │
-│  │                     │   │                     │                │
-│  │  - Web UI           │   │  - state:tick push  │                │
-│  │  - REST API         │   │  - alarm:new        │                │
-│  │  - NextAuth (JWT)   │   │  - delivery:update  │                │
-│  └──────────┬──────────┘   └──────────▲──────────┘                │
-│             │                         │                            │
-│             │  /api/fgmp/iot          │  internal:broadcast        │
-│             ▲                         │                            │
-│             │            ┌────────────┴───────────┐                │
-│             │            │   fgmp-iot-bridge      │                │
-│             └────────────┤   Bun service          │                │
-│                          │   (no exposed port)    │                │
-│                          └────────────────────────┘                │
+│  ┌─────────────────────┐  trigger events + channel auth            │
+│  │   fgmp-app          │ ──────────────────────────► Apinator      │
+│  │   Next.js 16        │                     (hosted realtime:     │
+│  │   port 3000         │                      wss://ws-<cluster>   │
+│  │                     │                      .apinator.io)        │
+│  │  - Web UI           │                                    ▲      │
+│  │  - REST API         │                                    │      │
+│  │  - NextAuth (JWT)   │      browsers subscribe directly           │
+│  └──────────┬──────────┘      over WebSocket (no container)        │
+│             │                                                      │
+│             │  /api/fgmp/iot/ingest (x-api-key)                    │
+│             ▲            ┌────────────────────┐                    │
+│             │            │   fgmp-iot-bridge  │                    │
+│             └────────────┤   Bun service      │                    │
+│                          │   (no exposed port)│                    │
+│                          └────────────────────┘                    │
 │                                                                    │
 │  ┌──────────────────────────────────────────────┐                  │
 │  │   Named volume: fgmp-db                      │                  │
@@ -128,14 +127,17 @@ docker compose exec fgmp-app bun run db:push
 - The **Next.js app** serves the UI, the REST API, and NextAuth. It uses
   the standalone output (`output: "standalone"` in `next.config.ts`) so
   the production image is small.
-- The **realtime service** is a Bun + Socket.io server that maintains
-  persistent WebSocket connections to browsers. The Next.js app pushes
-  events to it server-side; the realtime service fans them out to the
-  subscribed browsers.
+- **Realtime is hosted (Apinator)**, not self-hosted: the app triggers
+  events to Apinator server-side after persisting data, and signs
+  private-channel subscriptions for browsers via its realtime auth
+  routes. Browsers open their WebSocket straight to
+  `wss://ws-<cluster>.apinator.io` — no realtime container exists, and
+  nothing in the stack listens on the old :3003.
 - The **IoT bridge** is a Bun service that listens for field-device
-  telemetry (e.g. via MQTT or HTTP), forwards it to the Next.js app's
-  `/api/fgmp/iot` endpoint, and notifies the realtime service so browsers
-  see the new reading immediately.
+  telemetry (e.g. via MQTT or HTTP), and POSTs it to the Next.js app's
+  `/api/fgmp/iot/ingest` endpoint. That route persists the reading and
+  pushes the event to Apinator itself, so the bridge holds no socket
+  connection.
 - The **SQLite volume** persists the database across container restarts.
 
 ---
@@ -150,12 +152,20 @@ See [`.env.example`](./.env.example) for the full list. The most important:
 | `NEXTAUTH_SECRET`         | **YES**  | dev fallback         | JWT signing secret — **must override** |
 | `NEXTAUTH_URL`            | yes      | `http://localhost:3000` | Public URL of the deployment        |
 | `IOT_API_KEY`             | yes      | `fgmp-iot-dev-key`   | Shared secret for IoT bridge → app    |
-| `REALTIME_URL`            | no       | `http://localhost:3003` | Realtime service URL (server-side) |
-| `REALTIME_SERVER_SECRET`  | no       | `fgmp-realtime-dev-secret` | Realtime emit auth secret        |
+| `REALTIME_SERVICE_TOKEN`  | yes      | —                    | IoT bridge → `/api/fgmp/realtime/snapshot` polling token |
+| `APINATOR_APP_ID`         | **YES**  | —                    | Apinator dashboard app id (hosted realtime) |
+| `APINATOR_KEY`            | **YES**  | —                    | Apinator API key (from the dashboard) |
+| `APINATOR_SECRET`         | **YES**  | —                    | Apinator API secret — signs triggers + channel auth |
+| `APINATOR_CLUSTER`        | **YES**  | —                    | Apinator region: `eu` or `us`         |
+| `NEXT_PUBLIC_APINATOR_APP_KEY` | **YES** | —               | Public app key for the browser client (build-time) |
+| `NEXT_PUBLIC_APINATOR_CLUSTER` | **YES** | —               | Browser client region (build-time)    |
 
-> ⚠️ The dev fallbacks for `NEXTAUTH_SECRET` and `REALTIME_SERVER_SECRET`
-> are deliberately weak so the platform boots locally without env setup.
-> **Never deploy to production without overriding these.**
+> ⚠️ The dev fallback for `NEXTAUTH_SECRET` is deliberately weak so the
+> platform boots locally without env setup. **Never deploy to production
+> without overriding it** — and note that the `APINATOR_*` credentials have
+> no dev fallback at all: compose refuses to start without them. The former
+> `REALTIME_URL` / `REALTIME_SERVER_SECRET` / `REALTIME_TOKEN_SECRET` were
+> removed together with the self-hosted realtime service.
 
 ---
 
@@ -226,7 +236,6 @@ docker compose start fgmp-app
 
 ```bash
 docker compose logs -f fgmp-app        # web app
-docker compose logs -f fgmp-realtime   # socket.io server
 docker compose logs -f fgmp-iot-bridge # iot bridge
 ```
 
@@ -277,11 +286,18 @@ docker compose up -d
 
 ### Realtime push doesn't reach the browser
 
-1. Confirm the realtime service is up — `docker compose ps`.
-2. The browser connects via the Caddy gateway at `/?XTransformPort=3003`.
-   If you're not using Caddy in production, expose port 3003 directly
-   and adjust the client `io(...)` URL in `src/lib/fgmp/use-realtime.ts`.
-3. Check the realtime service logs for `internal:broadcast` events.
+Realtime is hosted by Apinator — there is no realtime container to check.
+1. Confirm the `APINATOR_*` env vars are set on `fgmp-app` and that
+   `APINATOR_CLUSTER` matches the region the dashboard app was created in.
+2. The browser subscribes directly to `wss://ws-<cluster>.apinator.io`
+   using the public `NEXT_PUBLIC_APINATOR_APP_KEY` / `NEXT_PUBLIC_APINATOR_CLUSTER`
+   pair — these are inlined at **build** time, so a rebuild is required
+   after changing them.
+3. Private `private-tenant-*` channel subscriptions are authorized by the
+   app's realtime auth route; check its logs for signing/auth errors.
+4. The System Health view (`/api/fgmp/health`) shows `realtime.connected`
+   — `false` with valid config means the channels API call failed or
+   timed out (credentials, region, or provider outage).
 
 ### IoT telemetry isn't appearing
 

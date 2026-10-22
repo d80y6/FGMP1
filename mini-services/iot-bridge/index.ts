@@ -6,26 +6,28 @@
  * readings to the central FGMP platform.
  *
  * This service:
- *   1. Connects to the FGMP realtime service (port 3003) as a trusted
- *      server-client (auth: role="server" + token).
- *   2. Every 10 seconds, picks a random subset of sites (3–7) and generates
+ *   1. Every 10 seconds, picks a random subset of sites (3–7) and generates
  *      a realistic telemetry reading per site:
  *        - Fuel tank level (litres) — small decrement
  *        - Generator status + load (kW)
  *        - Battery voltage + state of charge (%)
  *        - Ambient temperature (°C)
- *   3. POSTs each reading to `/api/fgmp/iot/ingest` (with the `x-api-key`
- *      header) so the Next.js API can persist a SensorReading row and push
- *      the update into the in-memory engine.
- *   4. Emits a `telemetry:new` event to the realtime service so connected
- *      browser clients receive per-site telemetry immediately (in addition
- *      to the 5s `state:tick` snapshot polling).
+ *   2. POSTs each reading to `/api/fgmp/iot/ingest` (with the `x-api-key`
+ *      header) so the Next.js API can persist a SensorReading row. That
+ *      ingest route pushes the update into Apinator (the hosted realtime
+ *      provider) itself, so the bridge holds NO socket connection — realtime
+ *      delivery is one HTTP hop: bridge → ingest → Apinator → browsers.
+ *      (It used to also emit `internal:broadcast` over a socket.io connection
+ *      to the retired self-hosted mini-service on :3003.)
+ *   3. Polls `/api/fgmp/realtime/snapshot` with the REALTIME_SERVICE_TOKEN
+ *      header to learn the site list (that endpoint stays because the bridge
+ *      cannot obtain a NextAuth browser session).
  *
  * Env vars (all optional, sensible dev defaults):
  *   NEXT_API_BASE             (default http://localhost:3000)
- *   REALTIME_URL              (default http://localhost:3003)
  *   IOT_API_KEY               (default fgmp-iot-dev-key)
- *   REALTIME_SERVER_SECRET    (default fgmp-realtime-dev-secret)
+ *   REALTIME_SERVICE_TOKEN    (default fgmp-realtime-dev-token) — snapshot polling
+ *   REALTIME_POLL_PATH        (default /api/fgmp/realtime/snapshot)
  *   INGEST_INTERVAL_MS        (default 10000)
  *   SITE_REFRESH_INTERVAL_MS  (default 300000)
  *
@@ -83,14 +85,10 @@
  * the firmware agent implementing the ESP32 sketch can stay in sync.
  */
 
-import { io as ioc, type Socket } from "socket.io-client";
 import { mtlsFetch } from "./mtls";
 
 const NEXT_API_BASE = process.env.NEXT_API_BASE ?? "http://localhost:3000";
-const REALTIME_URL = process.env.REALTIME_URL ?? "http://localhost:3003";
 const IOT_API_KEY = process.env.IOT_API_KEY ?? "fgmp-iot-dev-key";
-const SERVER_SECRET =
-  process.env.REALTIME_SERVER_SECRET ?? "fgmp-realtime-dev-secret";
 // Service token for the Next.js `/api/fgmp/realtime/snapshot` endpoint.
 // Required because `/api/fgmp/state` is wrapped in NextAuth session auth
 // (Task 31-A); the iot-bridge cannot obtain a browser session.
@@ -123,27 +121,12 @@ interface IngestPayload {
   readings: TelemetryReading;
 }
 
-// ── Connect to realtime service (server-side, direct — gateway N/A) ───────
-const rt: Socket = ioc(REALTIME_URL, {
-  path: "/",
-  auth: { role: "server", token: SERVER_SECRET },
-  transports: ["websocket"],
-  reconnection: true,
-  reconnectionAttempts: Infinity,
-  reconnectionDelay: 2000,
-  reconnectionDelayMax: 15000,
-  timeout: 8000,
-});
-
-rt.on("connect", () =>
-  console.log(`[iot-bridge] realtime connected (id=${rt.id})`),
-);
-rt.on("disconnect", (r: string) =>
-  console.log(`[iot-bridge] realtime disconnected: ${r}`),
-);
-rt.on("connect_error", (e: Error) =>
-  console.error(`[iot-bridge] realtime connect_error: ${e.message}`),
-);
+// ── No socket connection any more ─────────────────────────────────────────
+// The bridge used to hold a persistent socket.io connection to the self-hosted
+// realtime mini-service and emit `internal:broadcast` per reading. Realtime is
+// hosted (Apinator) now and the ingest route triggers those events server-side
+// after persisting the row, so a socket here would be a second, unauthenticated
+// path to the same data — it was removed, not redirected.
 
 // ── Site list (fetched from /api/fgmp/state, refreshed periodically) ──────
 let sites: SiteInfo[] = [];
@@ -226,12 +209,12 @@ async function ingestOnce(): Promise<void> {
   const n = 3 + Math.floor(Math.random() * 5);
   const batch = pickRandom(sites, n);
   let okCount = 0;
-  let pushCount = 0;
 
   for (const site of batch) {
     const payload = genReading(site);
 
-    // 1. POST to Next.js ingest endpoint (persisted as SensorReading rows)
+    // POST to Next.js ingest endpoint (persisted as SensorReading rows; the
+    // route then triggers the Apinator event that reaches browsers directly).
     try {
       const res = await mtlsFetch(`${NEXT_API_BASE}/api/fgmp/iot/ingest`, {
         method: "POST",
@@ -252,20 +235,10 @@ async function ingestOnce(): Promise<void> {
       const msg = e instanceof Error ? e.message : String(e);
       console.error(`[iot-bridge] ingest ${site.id} error: ${msg}`);
     }
-
-    // 2. Emit telemetry:new to realtime (for immediate browser push)
-    if (rt.connected) {
-      rt.emit("internal:broadcast", {
-        event: "telemetry:new",
-        payload: { ...payload, siteName: site.name, region: site.region, ts: Date.now() },
-        room: `site:${site.id}`,
-      });
-      pushCount++;
-    }
   }
 
   console.log(
-    `[iot-bridge] cycle complete: ${okCount}/${batch.length} ingested, ${pushCount}/${batch.length} pushed to realtime (${rt.connected ? "rt-up" : "rt-down"})`,
+    `[iot-bridge] cycle complete: ${okCount}/${batch.length} ingested`,
   );
 }
 
@@ -273,7 +246,6 @@ async function ingestOnce(): Promise<void> {
 console.log("─────────────────────────────────────────────────────────");
 console.log(" FGMP IoT bridge service (edge gateway simulator)");
 console.log(`  Next.js API  : ${NEXT_API_BASE}`);
-console.log(`  Realtime URL : ${REALTIME_URL}`);
 console.log(`  API key      : ${IOT_API_KEY === "fgmp-iot-dev-key" ? "(dev default)" : "(set via env)"}`);
 console.log(`  Ingest every : ${INGEST_INTERVAL_MS}ms`);
 console.log(`  Site refresh : ${SITE_REFRESH_INTERVAL_MS}ms`);
@@ -289,7 +261,6 @@ setInterval(() => void ingestOnce(), INGEST_INTERVAL_MS);
 // ── Graceful shutdown ────────────────────────────────────────────────────
 function shutdown(signal: string): void {
   console.log(`[iot-bridge] ${signal} received — shutting down`);
-  rt.disconnect();
   setTimeout(() => process.exit(0), 200).unref();
 }
 process.on("SIGTERM", () => shutdown("SIGTERM"));

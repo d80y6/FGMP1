@@ -30,14 +30,15 @@ export const dynamic = "force-dynamic";
  * operator roles that legitimately drive the simulation. Both GET and POST
  * carry the guard: GET ticks too, so it needs the same protection.
  *
- * NOTE for the UI owner: `src/components/fgmp/app-shell.tsx` polls this
- * endpoint every 5s as a fallback when the realtime socket is disconnected,
- * for every role. With this guard, an EXECUTIVE / READONLY session polling
- * with realtime down will now receive 403 and simply stop advancing (the
- * store's `tick()` ignores the response status). The guard was left strict
- * deliberately — the realtime socket still pushes `state:tick` every 5s for
- * those roles, so the dashboard stays fresh. If a role-specific poll is
- * wanted, gate the `useEffect` in app-shell.tsx on the same ROLES.TICK set.
+ * NOTE for the UI owner: `src/components/fgmp/app-shell.tsx` polls the state
+ * API every 5s for every role — since the Apinator cutover this poll is the
+ * ONLY state refresher (there is no `state:tick` push anymore; realtime
+ * events merely trigger an immediate refresh). This endpoint ADVANCES the
+ * simulation and stays gated on ROLES.TICK: an EXECUTIVE / READONLY session
+ * calling it receives 403 and the store's `tick()` ignores the response
+ * status — by design, for the data-integrity reasons documented above. A
+ * role-specific poll is not needed because the state poll uses `refresh()`,
+ * not this endpoint.
  */
 /**
  * Refuse to fabricate telemetry when simulation is not permitted (Phase 2).

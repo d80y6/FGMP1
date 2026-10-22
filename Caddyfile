@@ -10,7 +10,10 @@
 # That let any client name an arbitrary local port (Redis, a Docker socket, an
 # internal admin panel) and have Caddy dial it — an open proxy into the
 # container network, and a way to reach the unauthenticated realtime socket.
-# It is replaced below by a single FIXED upstream for the socket.
+# It is replaced below by a single fixed upstream: everything now goes to the
+# Next.js app, and the realtime socket itself left this gateway entirely —
+# browsers connect to the hosted Apinator WebSocket (wss://ws-<cluster>.
+# apinator.io) directly, so there is no socket upstream to name any more.
 #
 # ── Listen address ───────────────────────────────────────────────────────────
 # `FGMP_SITE_ADDRESS` controls the site address and defaults to `:81`, which is
@@ -21,13 +24,14 @@
 {$FGMP_SITE_ADDRESS::81} {
 	encode zstd gzip
 
-	# ── Realtime websocket ──────────────────────────────────────────────────
-	# Fixed upstream only — no user-controlled port. The browser's socket.io
-	# client connects to `/socket.io` and presents a short-lived signed token in
-	# the handshake `auth`; the realtime service rejects unauthenticated sockets.
-	handle /socket.io/* {
-		reverse_proxy localhost:3003
-	}
+	# ── Realtime websocket (moved off this gateway) ─────────────────────────
+	# The /socket.io/* handle that reverse-proxied the self-hosted realtime
+	# mini-service on :3003 is GONE — that service was retired in favour of
+	# Apinator. Browsers open their WebSocket straight to
+	# wss://ws-<cluster>.apinator.io and authorize channel subscriptions via
+	# the app's /api/fgmp/realtime/auth route, which this gateway still
+	# proxies as an ordinary API path below. No socket traffic traverses
+	# Caddy any more, so no socket-specific handle block is needed.
 
 	# ── Everything else → the Next.js app ───────────────────────────────────
 	handle {

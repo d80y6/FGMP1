@@ -18,9 +18,17 @@ COMMON_ENV=(
   -e NEXTAUTH_SECRET="bootverify-secret-abcdefghijklmnopqrstuv"
   -e NEXTAUTH_URL="http://localhost:3199"
   -e IOT_API_KEY="boot-iot-key-abcdefghijklmnopqrstuvwxyz01"
-  -e REALTIME_SERVER_SECRET="boot-srv-abcdefghijklmnop"
+  # REALTIME_SERVER_SECRET / REALTIME_TOKEN_SECRET are gone with the retired
+  # self-hosted realtime service. The APINATOR_* fakes mirror the compose
+  # required markers so the boot exercises the same env surface; the health
+  # probe's channels call will simply fail its 800ms race and report
+  # realtime connected=false, which is the correct degraded reading.
+  -e APINATOR_APP_ID="boot-app-id"
+  -e APINATOR_KEY="boot-key-abcdefghijklmnop"
+  -e APINATOR_SECRET="boot-apinator-secret-abcdefghijklmnopqrstuvwxyz0123456789"
+  -e APINATOR_CLUSTER="eu"
+  # Stays: the iot-bridge authenticates /api/fgmp/realtime/snapshot with it.
   -e REALTIME_SERVICE_TOKEN="boot-svc-abcdefghijklmnop"
-  -e REALTIME_TOKEN_SECRET="boot-tok-abcdefghijklmnopqrstuvwxyz012"
 )
 
 hr() { printf '\n=========== %s ===========\n' "$1"; }

@@ -185,8 +185,8 @@ export function AppShell() {
   const switchRole = useFgmp((s) => s.switchRole);
   const returnToPermanentRole = useFgmp((s) => s.returnToPermanentRole);
   const lastTickAt = useFgmp((s) => s.lastTickAt);
-  // Realtime push (socket.io). When livePaused, suspend the socket so
-  // "Pause live" halts BOTH the polling tick and the realtime push.
+  // Realtime (hosted Apinator channels). When livePaused, suspend the socket
+  // so "Pause live" halts BOTH the polling refresh and the event push.
   const { connected: rtConnected } = useRealtime({ enabled: !livePaused && status === "authenticated" });
   const { resolvedTheme, setTheme, theme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -262,17 +262,20 @@ export function AppShell() {
   // read-only session still refreshes its own dashboard. It cannot advance
   // anything, and it is the same `refresh()` for every role.
   //
-  // When realtime is live the socket pushes state:tick, so polling is skipped
-  // to avoid duplicate work.
+  // Apinator cutover: there is NO `state:tick` push anymore — realtime
+  // events (alarm:new, command:status, …) are only instant "refresh now"
+  // triggers fired as they arrive. This poll is therefore the ONLY state
+  // refresher and intentionally runs every 5s no matter what the realtime
+  // connection is doing: a missed or dropped event costs at most 5s of
+  // latency, never stale-forever data.
   useEffect(() => {
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = setInterval(() => {
       if (livePaused) return;
-      if (rtConnected) return; // realtime push covers this
       void refresh();
     }, 5000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [refresh, livePaused, rtConnected]);
+  }, [refresh, livePaused]);
 
   // clock lives in <HeaderClock/> (own state) so the 1Hz tick does not
   // re-render AppShell — and therefore the whole view tree — every second.
