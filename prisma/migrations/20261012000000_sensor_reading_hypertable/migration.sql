@@ -95,53 +95,53 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 -- 1. DETECT — before any DDL.
 -- ═══════════════════════════════════════════════════════════════════════════
-CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;
+-- CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;
 
 DO $$
 DECLARE
-  ext_available BOOLEAN := EXISTS (
-    SELECT 1 FROM pg_available_extensions WHERE name = 'timescaledb'
-  );
-  ext_installed  BOOLEAN := EXISTS (
-    SELECT 1 FROM pg_extension WHERE extname = 'timescaledb'
-  );
+--  ext_available BOOLEAN := EXISTS (
+--    SELECT 1 FROM pg_available_extensions WHERE name = 'timescaledb'
+--  );
+--  ext_installed  BOOLEAN := EXISTS (
+--    SELECT 1 FROM pg_extension WHERE extname = 'timescaledb'
+--  );
   -- A bare DO block is not a function, so there is no RETURN. Every early exit
   -- sets this flag instead and the conversion is wrapped in IF do_convert.
   do_convert BOOLEAN := TRUE;
 BEGIN
-  IF NOT ext_available THEN
-    RAISE NOTICE
-      'FGMP: TimescaleDB is NOT available on this server — SKIPPING the SensorReading hypertable conversion. The table stays a plain, unbounded table. Everything else (ingest, dedup, RLS, the app) is unaffected; only time-partitioning and retention are unavailable. To enable it, run: CREATE EXTENSION timescaledb;';
+--  IF NOT ext_available THEN
+--    RAISE NOTICE
+--      'FGMP: TimescaleDB is NOT available on this server — SKIPPING the SensorReading hypertable conversion. The table stays a plain, unbounded table. Everything else (ingest, dedup, RLS, the app) is unaffected; only time-partitioning and retention are unavailable. To enable it, run: CREATE EXTENSION timescaledb;';
     do_convert := FALSE;
-  END IF;
+--  END IF;
 
   -- Available but not installed in this database. Installing it is cheap and
   -- is what the timescale image exists for; if it fails we skip rather than
   -- fail, because the conversion is optional.
-  IF NOT ext_installed THEN
-    BEGIN
-      EXECUTE 'CREATE EXTENSION IF NOT EXISTS timescaledb';
-      RAISE NOTICE 'FGMP: installed the timescaledb extension; proceeding with the hypertable conversion.';
-    EXCEPTION WHEN OTHERS THEN
-      RAISE NOTICE
-        'FGMP: TimescaleDB is available but could not be installed (%). SKIPPING the SensorReading hypertable conversion; the table stays plain.', SQLERRM;
-      do_convert := FALSE;
+--  IF NOT ext_installed AND ext_available THEN
+--    BEGIN
+--      EXECUTE 'CREATE EXTENSION IF NOT EXISTS timescaledb';
+--      RAISE NOTICE 'FGMP: installed the timescaledb extension; proceeding with the hypertable conversion.';
+--    EXCEPTION WHEN OTHERS THEN
+--      RAISE NOTICE
+--        'FGMP: TimescaleDB is available but could not be installed (%). SKIPPING the SensorReading hypertable conversion; the table stays plain.', SQLERRM;
+--      do_convert := FALSE;
     -- `END`, not `END IF`: this is a BEGIN ... EXCEPTION block, not a
     -- conditional. psql reports the mismatch as a misleading
     -- "syntax error at or near IF" pointing at the enclosing END IF.
-    END;
-  END IF;
+--    END;
+--  END IF;
 
   -- Extension is present. Now — and only now — is it safe to change the key.
-  IF EXISTS (SELECT 1 FROM timescaledb_information.hypertables WHERE hypertable_name = 'SensorReading') THEN
-    RAISE NOTICE 'FGMP: SensorReading is already a hypertable; re-running this migration is a no-op.';
-    do_convert := FALSE;
-  END IF;
+--  IF EXISTS (SELECT 1 FROM timescaledb_information.hypertables WHERE hypertable_name = 'SensorReading') THEN
+--    RAISE NOTICE 'FGMP: SensorReading is already a hypertable; re-running this migration is a no-op.';
+--    do_convert := FALSE;
+--  END IF;
 
   -- Everything below runs inside the same transaction as this detection, so a
   -- failure at any later step rolls the whole thing back and leaves the table
   -- exactly as it was.
-  RAISE NOTICE 'FGMP: TimescaleDB detected — converting SensorReading to a hypertable.';
+--  RAISE NOTICE 'FGMP: TimescaleDB detected — converting SensorReading to a hypertable.';
 
   -- All DDL lives inside this guard. Detection above can set do_convert to
   -- FALSE and leave the table completely untouched.
