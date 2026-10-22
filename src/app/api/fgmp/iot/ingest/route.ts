@@ -569,9 +569,10 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // ── Push to realtime service (browser push via socket.io) ─────────────
-  // Emit ONLY to the site room — clients subscribed to this site receive
-  // the per-site telemetry update immediately.
+  // ── Push to realtime (hosted Apinator tenant channel) ────────────────
+  // emitToRealtime resolves the site's tenant and publishes `telemetry:new`
+  // to `private-tenant-<tenantId>` — every subscribed browser of that tenant
+  // refreshes immediately.
   //
   // `ts` is the READING's timestamp, not arrival time, so a browser rendering a
   // late-arriving sample does not present it as happening just now.

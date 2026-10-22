@@ -1,5 +1,5 @@
 import { Prisma, type FuelType } from "@prisma/client";
-import { db } from "@/lib/db";
+import { db, rlsEnforced } from "@/lib/db";
 import { withTenant } from "./tenant-context";
 import { SimulatedGeneratorDispatch } from "./dispatch/simulated";
 import type { GeneratorDispatch } from "./dispatch/types";
@@ -559,7 +559,34 @@ private tenantsFor(expectedTenantId?: string | null): readonly string[] {
       for (const d of g.districts) districtNameById.set(d.id, d.name);
     }
 
+    // ── SCOPING: TRUST RLS, OR FILTER EXPLICITLY ────────────────────────────
+    // The loads below are scoped by ONE of two mechanisms, decided by how this
+    // process connects:
+    //
+    //   • rlsEnforced (DATABASE_URL uses the non-owner `fgmp_app` role): the
+    //     queries are deliberately UNFILTERED — PostgreSQL's policies are the
+    //     scoping authority, and the EngineTenantScopeError guard under the
+    //     site query is the tripwire that PROVES they filtered. Adding a WHERE
+    //     here would let an RLS regression (a dropped or altered policy) pass
+    //     silently, which is exactly what Phase 1 built the guard to catch.
+    //
+    //   • NOT rlsEnforced: PostgreSQL skips RLS for the table owner (see
+    //     db.ts), so an owner/migrate/superuser DATABASE_URL — the normal
+    //     local development setup — gets NO filtering at all. The unfiltered
+    //     query then returns every tenant's rows and the tripwire fires on the
+    //     first foreign one, making the engine unbootable the moment the
+    //     database holds two or more tenants (e.g. after a seed adds a second
+    //     tenant alongside the first). A bypassing role already refuses to
+    //     boot under FGMP_REQUIRE_RLS=1 (assertRlsEnforced), so reaching this
+    //     code means the operator opted out for development: scope in SQL
+    //     instead. Same rows, same guard — enforced by the query rather than
+    //     by the policy.
+    const tenantScope = rlsEnforced ? undefined : { in: [...tenants] };
+
     const sites = await tx.site.findMany({
+      // See the SCOPING note above: `undefined` under a real RLS role (the
+      // policy filters, the guard verifies), explicit under a bypassing role.
+      where: tenantScope ? { tenantId: tenantScope } : undefined,
       include: {
         // Region / Governorate / District are NOT included here: those two
         // tables are revoked from fgmp_app (migration
@@ -585,7 +612,13 @@ private tenantsFor(expectedTenantId?: string | null): readonly string[] {
         throw new EngineTenantScopeError(
           `Engine asked for tenants [${tenants.join(", ")}] but the query returned ` +
             `site ${s.id} owned by "${s.tenantId}". Refusing to hold state for a ` +
-            `tenant that was not requested.`,
+            `tenant that was not requested. RLS did NOT scope this query — the ` +
+            `process connects as a role that bypasses Row Level Security ` +
+            `(PostgreSQL skips policies for the table owner; db.ts warns about ` +
+            `this at boot), or the Site policy is missing. Fix: connect as ` +
+            `fgmp_app (postgresql://fgmp_app:…@…/fgmp?schema=public), or — LOCAL ` +
+            `DEVELOPMENT ONLY — run with FGMP_REQUIRE_RLS=0, where the engine ` +
+            `scopes its loads with explicit tenant WHERE clauses instead.`,
         );
       }
       return {
@@ -699,6 +732,8 @@ private tenantsFor(expectedTenantId?: string | null): readonly string[] {
     // site badge). The gateway tick loop in tick() simulates small live
     // fluctuations on top of these persisted values.
     const gatewayRows = await tx.siteGateway.findMany({
+      // Same SCOPING decision as the site query above.
+      where: tenantScope ? { tenantId: tenantScope } : undefined,
       include: { site: { select: { id: true, name: true, code: true } } },
     });
     this.gateways.push(...gatewayRows.map((g) => ({
@@ -718,7 +753,11 @@ private tenantsFor(expectedTenantId?: string | null): readonly string[] {
     // Load existing open alarm keys for dedup. The key shape must match
     // `raiseAlarm`/`autoResolve` exactly, so severity is part of it.
     const openAlarms = await tx.alarm.findMany({
-      where: { status: { in: ["OPEN", "ACKNOWLEDGED", "ESCALATED"] } },
+      where: {
+        status: { in: ["OPEN", "ACKNOWLEDGED", "ESCALATED"] },
+        // Same SCOPING decision as the site query above.
+        ...(tenantScope ? { tenantId: tenantScope } : {}),
+      },
       select: { type: true, entityId: true, severity: true },
     });
     // Additive, not reassigned: each tenant is loaded in its own context, so
@@ -2804,8 +2843,9 @@ async controlDispenser(
    * Tenant-aware snapshot.
    *
    * Pass `null` (or omit the argument) to get the global cross-tenant view
-   * (used by the platform super-admin and by the realtime mini-service which
-   * fans snapshots out per-tenant on the socket.io side).
+   * (used by the platform super-admin; the realtime mini-service that used to
+   * fan snapshots out per tenant was retired in the Apinator migration and
+   * nothing fans whole snapshots to browsers any more).
    *
    * Pass a concrete `tenantId` to get a snapshot scoped to that tenant only —
    * sites/tanks/generators/batteries/dispensers/IoT/events/transactions are

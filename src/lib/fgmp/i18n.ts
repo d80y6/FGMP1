@@ -1483,8 +1483,8 @@ export const DICTIONARY: Dict = {
 
   /* ===== System Health view (Task 32-A) =====
      ADMIN-only NOC dashboard that monitors the platform's own internals:
-     process uptime/memory, DB size + table counts, realtime socket.io
-     status, API response times, active sessions, and recent captured
+     process uptime/memory, DB size + table counts, realtime (Apinator
+     channels) status, API response times, active sessions, and recent captured
      errors. Arabic follows MSA enterprise-software register. */
   "nav.systemHealth": { en: "System Health", ar: "صحة النظام" },
   "desc.systemHealth": {

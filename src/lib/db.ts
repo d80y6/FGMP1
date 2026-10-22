@@ -43,7 +43,7 @@ function usingRlsRole(databaseUrl: string | undefined): boolean {
   const withoutScheme = databaseUrl.replace(/^[a-z+]+:\/\//i, '')
   const userinfo = withoutScheme.split('@')[0] ?? ''
   const user = userinfo.split(':')[0] ?? ''
-  return user === 'fgmp_app'
+  return user === 'fgmp_app' || user.startsWith('fgmp_app.')
 }
 
 const dbIsRlsEnforced = usingRlsRole(process.env.DATABASE_URL)
@@ -71,7 +71,7 @@ export function assertRlsEnforced(): void {
   if (dbIsRlsEnforced) return
 
   throw new Error(
-    'FGMP_REQUIRE_RLS is enabled but DATABASE_URL does not use the `fgmp_app` ' +
+    `${process.env.DATABASE_URL} `+ 'FGMP_REQUIRE_RLS is enabled but DATABASE_URL does not use the `fgmp_app` ' +
       'role. The table owner bypasses Row Level Security, so every tenant ' +
       'isolation guarantee in this application would be silently disabled.\n' +
       '  Fix: set DATABASE_URL to postgresql://fgmp_app:…@…/fgmp?schema=public\n' +
