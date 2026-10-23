@@ -207,7 +207,7 @@ export function tenantSummary(tenantId: string) {
       tx.fuelTank.count(),
       tx.generator.count(),
       tx.alarm.count({ where: { status: "OPEN" } }),
-      tx.maintenanceTicket.count({ where: { status: { notIn: ["COMPLETED", "CANCELLED"] } } }),
+      tx.maintenanceTicket.count({ where: { status: { notIn: ["DONE", "CANCELLED"] } } }),
       tx.fuelDelivery.count(),
     ]);
     const recentAlarms = await tx.alarm.findMany({

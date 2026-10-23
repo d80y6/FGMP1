@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { hasMfaEnabled } from "./fgmp/mfa/service";
 import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { resolveSessionConfig } from "@/lib/auth-session";
+import { evaluateDemoCredential } from "./fgmp/demo-credentials";
 import {
   findUserByEmail,
   findUserIdentity,
