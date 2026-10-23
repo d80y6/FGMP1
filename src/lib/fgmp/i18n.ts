@@ -861,6 +861,11 @@ export const DICTIONARY: Dict = {
   "detail.iot": { en: "IoT", ar: "IoT" },
   "detail.events": { en: "Events", ar: "الأحداث" },
   "detail.trends": { en: "Trends", ar: "الاتجاهات" },
+  "detail.health": { en: "Site Health", ar: "صحة الموقع" },
+  "detail.healthLive": {
+    en: "Computed from current tank, generator, battery and alarm state. No score history is stored, so there is no trend line to show.",
+    ar: "محسوبة من الحالة الحالية للخزانات والمولّدات والبطاريات والإنذارات. لا يُخزَّن سجل للدرجات، لذا لا يوجد خط اتجاه لعرضه.",
+  },
   "detail.notes": { en: "Notes", ar: "ملاحظات" },
   "detail.low": { en: "Low", ar: "منخفض" },
   "detail.criticalLevel": { en: "Critical", ar: "حرج" },

@@ -19,7 +19,7 @@ import { Breadcrumbs } from "@/components/fgmp/breadcrumbs";
 import { StatusBadge, severityDot } from "@/components/fgmp/status-badge";
 import { Sparkline } from "@/components/fgmp/sparkline";
 import { RemoteControlDialog } from "@/components/fgmp/remote-control-dialog";
-import { SiteHealthTrend } from "@/components/fgmp/site-health-trend";
+import { SiteHealthCard } from "@/components/fgmp/site-health-card";
 import { Building2, Droplet, Zap, BatteryCharging, Siren, Truck, MapPin, Cpu, RotateCcw, AlertOctagon, Power, TrendingUp, Pin, PinOff, StickyNote, Pencil } from "lucide-react";
 import { useApi, apiPatch } from "@/lib/fgmp/use-api";
 import { useFgmp } from "@/lib/fgmp/store";
@@ -254,8 +254,7 @@ export function SiteDetailSheet({ siteId, open, onOpenChange }: { siteId: string
 
                     {/* Trends tab — historical charts */}
                     <TabsContent value="trends" className="mt-0 space-y-3">
-                      <SiteHealthTrend
-                        siteId={siteId}
+                      <SiteHealthCard
                         tanks={data?.tanks ?? []}
                         generators={data?.generators ?? []}
                         batteries={data?.batteries ?? []}

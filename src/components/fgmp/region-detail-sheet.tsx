@@ -81,7 +81,7 @@ function computeRegionScore(r: RegionAgg, totalSites: number): RegionScore {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Site health (mirrors site-health-trend.tsx computeTodayScore)      */
+/*  Site health (the canonical scorer, same as every other surface)     */
 /* ------------------------------------------------------------------ */
 
 /**

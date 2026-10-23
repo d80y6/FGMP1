@@ -123,7 +123,7 @@ runtime files explicitly and `scripts/` wholesale, unchanged.
 ## 8. Known leftovers (deliberately not done here)
 
 * ~~**Unused dependencies.**~~ **Resolved in the production-readiness pass
-  (see `docs/READINESS.md` §6):** 31 packages with no importer were removed from
+  (see `docs/READINESS.md` §7):** 31 packages with no importer were removed from
   `package.json`, and `bun.lock` was pruned with a reachability walk over the
   resolved graph (416 transitive packages, 1,044 → 628 entries). Verified with
   `bun install --frozen-lockfile --dry-run` and a static scan that every bare

@@ -3,7 +3,7 @@
 What was broken, what was changed, how it was verified, and what remains
 external. This is a record of an audit and a remediation pass, not a marketing
 claim: every item below was executed in this checkout, and the items under
-§7 are genuinely not done.
+§8 are genuinely not done.
 
 ## 1. The build did not work
 
@@ -69,7 +69,32 @@ so a render failure showed Next's bare "Application error" page with no retry an
 no correlation id. All four are added; the route error logs the digest, which is
 the only identifier that ties a browser render to a server stack trace.
 
-## 5. Security hardening
+## 5. Two charts were drawing numbers nobody measured
+
+`site-health-trend.tsx` rendered a "7-Day Trend" line whose last point was the
+real score and whose previous six were `Math.sin(seed)` noise around it — and
+then summarised that invented series as **7-Day Avg**, **Trend (Δ)** and **Best
+Day**. `region-performance-trend.tsx` did the same per region, and reported
+**Most Improved +N pts** and **Declining −N pts** from the difference between
+today's score and an invented D-6.
+
+The README states the platform does not fabricate telemetry, and the analytics
+forecast had already been fixed for exactly this (it multiplied by
+`0.9 + Math.random() * 0.2`). An operator had no way to tell these three numbers
+from measurements — which is the definition of the thing the README promises not
+to do.
+
+Both are gone. `site-health-card.tsx` replaces the site widget with what is
+measurable: the canonical score (the same function the badge, the region sheet
+and the dashboard call) plus its five weighted factors, each labelled with the
+weight that produced the number. The region trend card was deleted outright —
+its only real content was today's score per region, which the leaderboard
+directly below it already ranks, with the same scorer.
+
+Two i18n keys were added (`detail.health`, `detail.healthLive`) so the
+"no history is stored" statement is translated rather than English-only.
+
+## 6. Security hardening
 
 * **CSP is now environment-aware.** Production no longer allows
   `script-src 'unsafe-eval'`, and `connect-src` is limited to the app origin plus
@@ -83,7 +108,7 @@ the only identifier that ties a browser render to a server stack trace.
 * `render.yaml` no longer gives the web service the schema-owner URL; migrations
   run in a `fgmp-migrate` job, and `FGMP_REQUIRE_RLS` is `1` instead of `0`.
 
-## 6. Quality gates
+## 7. Quality gates
 
 | Gate | Before | After |
 |---|---|---|
@@ -168,7 +193,7 @@ and enforced as **errors** in CI:
 repository, and CI runs it that way. Rules that are off are off on purpose and
 say so in the config.
 
-## 7. Not reproducible on this machine, and deliberately not decided here
+## 8. Not reproducible on this machine, and deliberately not decided here
 
 The first two rows are executed by CI on every push and are currently green.
 They are listed because they cannot be reproduced in the development sandbox
@@ -185,12 +210,12 @@ that wrote this document, not because they are unverified.
 | **MFA encryption key** | Must be generated per deployment (`openssl rand -base64 48`) and kept stable; the app warns, it cannot invent one. |
 | **Redis** | Optional. A `fgmp-redis` service is in compose; without it the limiter degrades to per-process counters and reports `fgmp_rate_limit_degraded=1`. |
 
-## 8. How to reproduce the verification
+## 9. How to reproduce the verification
 
 ```bash
 bun install --frozen-lockfile
 bun run check:env          # expect errors in a bare checkout — that is the point
-bunx prisma generate       # needs a query engine binary (see §7)
+bunx prisma generate       # needs a query engine binary (see §8)
 npx tsc --noEmit           # 0 errors
 npx eslint .               # 0 errors, 0 warnings
 bun test                   # 731 pass, 13 skip, 0 fail without a database

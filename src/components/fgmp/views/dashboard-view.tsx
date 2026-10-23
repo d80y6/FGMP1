@@ -21,7 +21,6 @@ import { SystemStatusBanner } from "@/components/fgmp/system-status-banner";
 import { OnboardingChecklist } from "@/components/fgmp/onboarding-checklist";
 import { SiteHealthWidget } from "@/components/fgmp/site-health-widget";
 import { RegionLeaderboard } from "@/components/fgmp/region-leaderboard";
-import { RegionPerformanceTrend } from "@/components/fgmp/region-performance-trend";
 import { RegionDetailSheet } from "@/components/fgmp/region-detail-sheet";
 import { FuelRunoutEta } from "@/components/fgmp/fuel-runout-eta";
 import { ShiftHandoverPanel } from "@/components/fgmp/shift-handover-panel";
@@ -551,12 +550,6 @@ export function DashboardView() {
           </CardContent>
         </Card>
       </div>
-
-      {/* Region performance trend — full width */}
-      <RegionPerformanceTrend
-        regions={analytics?.regionBreakdown ?? []}
-        totalSites={k.totalSites}
-      />
 
       {/* Region performance leaderboard — full width */}
       <RegionLeaderboard
