@@ -192,8 +192,8 @@ bun install --frozen-lockfile
 bun run check:env          # expect errors in a bare checkout — that is the point
 bunx prisma generate       # needs a query engine binary (see §7)
 npx tsc --noEmit           # 0 errors
-npx eslint .               # 0 errors
-bun test                   # 724 pass, 13 skip, 0 fail without a database
+npx eslint .               # 0 errors, 0 warnings
+bun test                   # 731 pass, 13 skip, 0 fail without a database
 bun run build              # standalone output
 ```
 
