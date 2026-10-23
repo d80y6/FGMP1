@@ -57,7 +57,7 @@ export function AnalyticsView() {
   const t = useT();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
-  const { data: a } = useApi<AnalyticsPayload>("/api/fgmp/analytics", { interval: 15000 });
+  const { data: a } = useApi<AnalyticsPayload>("/api/fgmp/analytics?projection=analytics", { interval: 15000 });
   const cc = useChartColors();
 
   if (!snapshot) return null;

@@ -149,7 +149,7 @@ function classifyUrgency(etaHours: number | null): Urgency {
 }
 
 export async function GET(req: NextRequest) {
-  const auth = await requireAuth();
+  const auth = await requireAuth(req);
   if ("error" in auth) return auth.error;
   const me = auth.user;
   try {

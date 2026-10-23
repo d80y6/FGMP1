@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { useFgmp } from "@/lib/fgmp/store";
+import { canAccessApi } from "@/lib/fgmp/rbac-core";
 
 interface UseApiState<T> {
   data: T | null;
@@ -33,6 +35,11 @@ export function useApi<T>(
   url: string | null,
   opts?: { interval?: number; deps?: unknown[] },
 ): UseApiState<T> {
+  const role = useFgmp((s) => s.me?.role ?? null);
+  // Do not even issue a fetch for a view/API the effective role cannot read.
+  // The server repeats this check before database access; this is a UX and
+  // connection-pool guard, not a substitute for server authorization.
+  const requestUrl = url && canAccessApi(role, url, "GET") ? url : null;
   const [data, setData] = useState<T | null>(null);
   const [loadingState, setLoadingState] = useState(false);
   const [errorState, setErrorState] = useState<string | null>(null);
@@ -44,10 +51,10 @@ export function useApi<T>(
   const lastNonceRef = useRef(nonce);
   const urlDeps = depKey(opts?.deps);
   const interval = opts?.interval;
-  const identity = `${url ?? "<disabled>"}|${urlDeps}`;
+  const identity = `${requestUrl ?? "<disabled>"}|${urlDeps}`;
 
   useEffect(() => {
-    if (!url) {
+    if (!requestUrl) {
       loadRef.current = async () => {};
       return;
     }
@@ -63,14 +70,14 @@ export function useApi<T>(
       const request = (async () => {
         try {
           setLoadingState(true);
-          const res = await fetch(url, {
+          const res = await fetch(requestUrl, {
             credentials: "include",
             cache: "no-store",
             signal: controller.signal,
           });
           if (!res.ok) {
             if (!cancelled) {
-              setErrorState(`HTTP ${res.status} · ${url}`);
+              setErrorState(`HTTP ${res.status} · ${requestUrl}`);
               setLoadedIdentity(identity);
             }
             return;
@@ -105,12 +112,12 @@ export function useApi<T>(
       cancelled = true;
       controller.abort();
     };
-  }, [url, identity]);
+  }, [requestUrl, identity]);
 
   // Serialized, visibility-aware polling: a poll never overlaps its prior
   // request, and hidden tabs stop consuming database capacity.
   useEffect(() => {
-    if (!url || !interval || interval <= 0) return;
+    if (!requestUrl || !interval || interval <= 0) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -145,7 +152,7 @@ export function useApi<T>(
         document.removeEventListener("visibilitychange", onVisibilityChange);
       }
     };
-  }, [url, identity, interval]);
+  }, [requestUrl, identity, interval]);
 
   // Explicit refetch does not reset the polling cadence and coalesces with any
   // request already in flight.
@@ -155,7 +162,7 @@ export function useApi<T>(
     void loadRef.current();
   }, [nonce]);
 
-  const enabled = url !== null;
+  const enabled = requestUrl !== null;
   return {
     data: enabled ? data : null,
     loading: enabled && (loadingState || loadedIdentity !== identity),
@@ -164,7 +171,22 @@ export function useApi<T>(
   };
 }
 
-export async function apiPost(url: string, body: unknown): Promise<{ ok: boolean; data?: unknown; error?: string; status: number }> {
+type ApiMutationResult = { ok: boolean; data?: unknown; error?: string; status: number };
+
+function localApiDenial(url: string, method: string): ApiMutationResult | null {
+  const role = useFgmp.getState().me?.role;
+  if (canAccessApi(role, url, method)) return null;
+  return {
+    ok: false,
+    status: 403,
+    error: "You do not have permission to perform this action.",
+    data: { code: "INSUFFICIENT_CAPABILITY" },
+  };
+}
+
+export async function apiPost(url: string, body: unknown): Promise<ApiMutationResult> {
+  const denied = localApiDenial(url, "POST");
+  if (denied) return denied;
   try {
     const res = await fetch(url, {
       method: "POST",
@@ -179,7 +201,9 @@ export async function apiPost(url: string, body: unknown): Promise<{ ok: boolean
   }
 }
 
-export async function apiPatch(url: string, body: unknown) {
+export async function apiPatch(url: string, body: unknown): Promise<ApiMutationResult> {
+  const denied = localApiDenial(url, "PATCH");
+  if (denied) return denied;
   try {
     const res = await fetch(url, {
       method: "PATCH",
@@ -195,7 +219,9 @@ export async function apiPatch(url: string, body: unknown) {
 }
 
 /** DELETE a resource; returns the same result envelope as apiPost/apiPatch. */
-export async function apiDelete(url: string): Promise<{ ok: boolean; data?: unknown; error?: string; status: number }> {
+export async function apiDelete(url: string): Promise<ApiMutationResult> {
+  const denied = localApiDenial(url, "DELETE");
+  if (denied) return denied;
   try {
     const res = await fetch(url, {
       method: "DELETE",

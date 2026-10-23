@@ -38,7 +38,7 @@ export const dynamic = "force-dynamic";
  * `authorize()` issued when it created the pending session.
  */
 export async function POST(req: NextRequest) {
-  const auth = await requireAuth();
+  const auth = await requireAuth(req);
   if ("error" in auth) return auth.error;
   try {
     const rl = await rateLimitByUser(

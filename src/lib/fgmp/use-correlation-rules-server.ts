@@ -2,6 +2,8 @@
 
 import { useEffect } from "react";
 import { create } from "zustand";
+import { useFgmp } from "@/lib/fgmp/store";
+import { canAccessApi } from "@/lib/fgmp/rbac-core";
 import type {
   CorrelationRule,
   RuleDraft,
@@ -64,6 +66,10 @@ export interface CorrelationRulesServerState {
 
 const RULES_URL = "/api/fgmp/correlation/rules";
 
+function canRequestRules(method: string): boolean {
+  return canAccessApi(useFgmp.getState().me?.role, RULES_URL, method);
+}
+
 /** Map the persisted row to the shape the editor already renders. */
 function toRule(row: Record<string, unknown>): CorrelationRule {
   return {
@@ -98,6 +104,7 @@ export const useCorrelationRules = create<CorrelationRulesServerState>((set, get
   saving: false,
 
   hydrate: async () => {
+    if (!canRequestRules("GET")) return;
     try {
       const res = await fetch(RULES_URL, { cache: "no-store" });
       if (!res.ok) throw new Error(`rules request failed: ${res.status}`);
@@ -110,6 +117,10 @@ export const useCorrelationRules = create<CorrelationRulesServerState>((set, get
   },
 
   addRule: async (rule) => {
+    if (!canRequestRules("POST")) {
+      set({ error: "You do not have permission to manage correlation rules." });
+      return;
+    }
     set({ saving: true, error: null });
     try {
       const res = await fetch(RULES_URL, {
@@ -134,6 +145,10 @@ export const useCorrelationRules = create<CorrelationRulesServerState>((set, get
   },
 
   updateRule: async (id, patch) => {
+    if (!canRequestRules("PATCH")) {
+      set({ error: "You do not have permission to manage correlation rules." });
+      return;
+    }
     set({ saving: true, error: null });
     try {
       const res = await fetch(`${RULES_URL}/${encodeURIComponent(id)}`, {
@@ -151,6 +166,10 @@ export const useCorrelationRules = create<CorrelationRulesServerState>((set, get
   },
 
   deleteRule: async (id) => {
+    if (!canRequestRules("DELETE")) {
+      set({ error: "You do not have permission to manage correlation rules." });
+      return;
+    }
     set({ saving: true, error: null });
     try {
       const res = await fetch(`${RULES_URL}/${encodeURIComponent(id)}`, {
@@ -190,13 +209,13 @@ export function useCorrelationRulesList(): CorrelationRule[] {
  * A no-op once loaded, so React strict-mode double-invocation and the editor
  * re-opening the dialog do not re-fetch.
  */
-export function useCorrelationRulesHydration(): void {
+export function useCorrelationRulesHydration(enabled = true): void {
   const hydrated = useCorrelationRules((s) => s.hydrated);
   const hydrate = useCorrelationRules((s) => s.hydrate);
   useEffect(() => {
-    if (hydrated) return;
+    if (!enabled || hydrated) return;
     void hydrate();
-  }, [hydrated, hydrate]);
+  }, [enabled, hydrated, hydrate]);
 }
 
 /** Last error from a load or mutation, for surfacing in the editor. */

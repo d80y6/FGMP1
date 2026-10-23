@@ -47,7 +47,6 @@ import { useFgmp } from "@/lib/fgmp/store";
 import {
   useCorrelationRules,
   useCorrelationRulesList,
-  useCorrelationRulesHydration,
   type CorrelationRule,
 } from "@/lib/fgmp/use-correlation-rules-server";
 import type {
@@ -166,8 +165,6 @@ function TriggeredBadge() {
 }
 
 export function CorrelationRulesEditor({ open, onOpenChange }: Props) {
-  // Hydrate the store on first client mount (no-op after the first time).
-  useCorrelationRulesHydration();
   const t = useT();
 
   const rules = useCorrelationRulesList();
@@ -182,7 +179,7 @@ export function CorrelationRulesEditor({ open, onOpenChange }: Props) {
   // request every 8 seconds per operator, forever, for data discarded on
   // arrival. Evaluation is triggered from the server side (see
   // useTriggerEvaluation in the panel header), so the feed was pure cost.
-  const { matches: serverMatches } = useCorrelationMatches();
+  const { matches: serverMatches } = useCorrelationMatches(0, open);
 
   const triggeredCount = useMemo(
     () => new Set(serverMatches.map((m) => m.ruleId)).size,

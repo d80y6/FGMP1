@@ -45,7 +45,7 @@ export const dynamic = "force-dynamic";
  * reasonably tune the rules that raise them.
  */
 export async function GET(req: NextRequest) {
-  const auth = await requireAuth();
+  const auth = await requireAuth(req);
   if ("error" in auth) return auth.error;
   const me = auth.user;
 
@@ -67,11 +67,11 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const auth = await requireAuth();
+  const auth = await requireAuth(req);
   if ("error" in auth) return auth.error;
   const me = auth.user;
 
-  const guard = await requireRole(req, ROLES.ALARM_OPS);
+  const guard = await requireRole(req, ROLES.ALARM_RULES);
   if ("error" in guard) return guard.error;
 
   try {

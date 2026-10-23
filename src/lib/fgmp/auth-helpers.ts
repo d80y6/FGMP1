@@ -7,7 +7,7 @@ import {
   JWT_SECRET_CONFIGURED,
   type SessionUser,
 } from "@/lib/auth";
-import { hasCapability, isSuperAdmin } from "@/lib/fgmp/rbac-core";
+import { canAccessApi, hasCapability, isSuperAdmin } from "@/lib/fgmp/rbac-core";
 import { ApiError } from "@/lib/fgmp/api-error";
 import type { Role } from "@/lib/fgmp/types";
 import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
@@ -80,9 +80,25 @@ export async function requireAuth(_request?: Request): Promise<AuthResult> {
   // closed (null) on any inconsistency, leaving the permanent role
   // in charge.
   const overlayRole = await applyRolePreview(session.user);
-  if (overlayRole) return { user: overlayRole };
+  const user = overlayRole ?? session.user;
 
-  return { user: session.user };
+  // Endpoint policies are capability-based and applied here, before handlers
+  // perform database work. Matching client-side gates avoid making these
+  // requests at all; this server check remains authoritative for direct or
+  // forged HTTP requests.
+  if (_request && !canAccessApi(user.role, _request.url, _request.method)) {
+    return {
+      error: NextResponse.json(
+        {
+          error: "Forbidden",
+          code: "INSUFFICIENT_CAPABILITY",
+        },
+        { status: 403 },
+      ),
+    };
+  }
+
+  return { user };
 }
 
 /**
@@ -145,7 +161,7 @@ export async function requireRole(
         "not exist in src/lib/fgmp/auth-helpers.ts.",
     );
   }
-  const auth = await requireAuth();
+  const auth = await requireAuth(_request);
   if ("error" in auth) return auth;
   if (isSuperAdminUser(auth.user)) return auth;
   if (!roles.includes(auth.user.role as Role)) {
@@ -193,6 +209,8 @@ export const ROLES = {
   ADMIN_ONLY: ["ADMIN"] as Role[],
   /** Alarm acknowledge / resolve — NOC ops + managers. */
   ALARM_OPS: ["ADMIN", "NOC_OPERATOR", "REGIONAL_MANAGER"] as Role[],
+  /** Correlation-rule authoring/evaluation — ADMIN and regional supervisors. */
+  ALARM_RULES: ["ADMIN", "REGIONAL_MANAGER"] as Role[],
   /** Generator remote control — admins + NOC ops. */
   CONTROL: ["ADMIN", "NOC_OPERATOR"] as Role[],
   /** Fuel delivery create / dispatch / verify. */

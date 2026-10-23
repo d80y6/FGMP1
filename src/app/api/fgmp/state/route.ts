@@ -13,7 +13,7 @@ import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 export const dynamic = "force-dynamic";
 
 export const GET = withMetrics(async function GET(req: NextRequest) {
-  const auth = await requireAuth();
+  const auth = await requireAuth(req);
   if (auth.error) return auth.error;
   const me = auth.user;
   try {

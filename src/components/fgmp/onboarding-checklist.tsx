@@ -189,11 +189,13 @@ export function OnboardingChecklist() {
     }
   }, [viewsRaw]);
 
-  // Fetch the user list — only needed to (a) check the "invite team member"
-  // item, and (b) gate the show condition. We fetch unconditionally when the
-  // admin is logged in so the data is ready by the time the card decides
-  // whether to render; the call is cheap (one DB scan of the User table).
-  const { data: users } = useApi<unknown[]>("/api/fgmp/users", { interval: 30000 });
+  // Fetch the user list only for the ADMIN role that can see this checklist.
+  // Hooks remain unconditional, but non-admins pass null so they do not make a
+  // request that the server correctly rejects with 403.
+  const { data: users } = useApi<unknown[]>(
+    role === "ADMIN" ? "/api/fgmp/users" : null,
+    { interval: 30000 },
+  );
   // Fetch a single alarm to check the "threshold configured" proxy. Using
   // limit=1 keeps the payload tiny.
   const { data: alarmsSample } = useApi<unknown[]>("/api/fgmp/alarms?limit=1", { interval: 30000 });

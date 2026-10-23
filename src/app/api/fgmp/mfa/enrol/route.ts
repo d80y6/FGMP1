@@ -26,7 +26,7 @@ export const dynamic = "force-dynamic";
  * protect, which is MFA with the second factor removed.
  */
 export async function POST(req: NextRequest) {
-  const auth = await requireAuth();
+  const auth = await requireAuth(req);
   if ("error" in auth) return auth.error;
   try {
     const rl = await rateLimitByUser(

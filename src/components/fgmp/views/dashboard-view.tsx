@@ -66,7 +66,7 @@ export function DashboardView() {
   // wide enough pool of OPEN alarms to pick the 5 most urgent from.
   const { data: alarms, error: alarmsError, refetch: refetchAlarms } = useApi<AlarmRow[]>("/api/fgmp/alarms?status=OPEN,ACKNOWLEDGED,ESCALATED&limit=50", { interval: 6000 });
   const [range, setRange] = useState<DashboardRange>("24h");
-  const { data: analytics, error: analyticsError, refetch: refetchAnalytics } = useApi<AnalyticsPayload>(`/api/fgmp/analytics?range=${range}`, { interval: 15000, deps: [range] });
+  const { data: analytics, error: analyticsError, refetch: refetchAnalytics } = useApi<AnalyticsPayload>(`/api/fgmp/analytics?range=${range}&projection=dashboard`, { interval: 15000, deps: [range] });
   const cc = useChartColors();
   const [regionSheet, setRegionSheet] = useState<string | null>(null);
 

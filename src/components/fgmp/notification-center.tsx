@@ -9,6 +9,8 @@ import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { timeAgo } from "@/lib/fgmp/format";
 import { useApi, apiPost } from "@/lib/fgmp/use-api";
+import { useFgmp } from "@/lib/fgmp/store";
+import { hasCapability } from "@/lib/fgmp/rbac-core";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
 import { useT } from "@/lib/fgmp/use-language";
@@ -50,6 +52,8 @@ function extractSeverity(subject: string): string | null {
 
 export function NotificationCenter() {
   const t = useT();
+  const role = useFgmp((s) => s.me?.role ?? null);
+  const canDismissNotifications = role !== null && hasCapability(role, "notification:manage");
   const [open, setOpen] = useState(false);
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
   // Poll fast while the panel is open (the list is on screen), slowly while it
@@ -85,7 +89,7 @@ export function NotificationCenter() {
   };
 
   const dismissAll = async () => {
-    if (!notifications) return;
+    if (!notifications || !canDismissNotifications) return;
     // Mark all as sent (acknowledged)
     for (const n of notifications.filter((n) => n.status === "QUEUED")) {
       await apiPost("/api/fgmp/notifications", { action: "markSent", notificationId: n.id });
@@ -136,10 +140,12 @@ export function NotificationCenter() {
                 Mark all read
               </Button>
             )}
-            <Button variant="ghost" size="sm" className="h-7 px-2 text-[10px]" onClick={dismissAll}>
-              <X className="mr-1 h-3 w-3" />
-              Clear
-            </Button>
+            {canDismissNotifications && (
+              <Button variant="ghost" size="sm" className="h-7 px-2 text-[10px]" onClick={dismissAll}>
+                <X className="mr-1 h-3 w-3" />
+                Clear
+              </Button>
+            )}
           </div>
         </div>
 

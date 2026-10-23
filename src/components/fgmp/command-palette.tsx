@@ -62,12 +62,13 @@ export function CommandPalette({ open, onOpenChange }: Props) {
   const visibleNav = useMemo(() => NAV_ITEMS.filter((n) => hasCapability(role, n.cap)), [role]);
 
   const navigate = useCallback((v: ViewKey) => {
+    if (!hasCapability(role, `view:${v}`)) return;
     setView(v);
     const params = new URLSearchParams(searchParams.toString());
     params.set("view", v);
     router.replace(`/?${params.toString()}`, { scroll: false });
     onOpenChange(false);
-  }, [router, searchParams, setView, onOpenChange]);
+  }, [router, searchParams, setView, onOpenChange, role]);
 
   // Reset query when closed
   useEffect(() => {
@@ -151,7 +152,7 @@ export function CommandPalette({ open, onOpenChange }: Props) {
             <span>{t("common.toggleTheme")} {resolvedTheme === "dark" ? "light" : "dark"}</span>
             <CommandShortcut>⌘ J</CommandShortcut>
           </CommandItem>
-          {me && me.roles.length > 1 && (
+          {me && Array.isArray(me.roles) && me.roles.length > 1 && (
             <>
               <CommandSeparator />
               {me.roles.map((r) => (

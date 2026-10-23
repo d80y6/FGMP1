@@ -29,7 +29,7 @@ const bodySchema = z.object({
  * reads the database — which is also why they cannot be emailed "just in case".
  */
 export async function POST(req: NextRequest) {
-  const auth = await requireAuth();
+  const auth = await requireAuth(req);
   if ("error" in auth) return auth.error;
   try {
     const rl = await rateLimitByUser(

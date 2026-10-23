@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useFgmp } from "@/lib/fgmp/store";
+import { canAccessApi } from "@/lib/fgmp/rbac-core";
 
 /**
  * Server-backed correlation MATCHES (Phase 2, vertical 5).
@@ -41,7 +43,11 @@ interface State {
   error: string | null;
 }
 
-export function useCorrelationMatches(pollMs = 0) {
+const MATCHES_URL = "/api/fgmp/correlation/matches?limit=100";
+
+export function useCorrelationMatches(pollMs = 0, enabled = true) {
+  const role = useFgmp((s) => s.me?.role ?? null);
+  const permitted = enabled && canAccessApi(role, MATCHES_URL, "GET");
   const [state, setState] = useState<State>({
     matches: [],
     loading: true,
@@ -50,8 +56,9 @@ export function useCorrelationMatches(pollMs = 0) {
   const mounted = useRef(true);
 
   const load = useCallback(async (signal?: AbortSignal) => {
+    if (!permitted) return;
     try {
-      const res = await fetch("/api/fgmp/correlation/matches?limit=100", {
+      const res = await fetch(MATCHES_URL, {
         signal,
         cache: "no-store",
       });
@@ -73,26 +80,27 @@ export function useCorrelationMatches(pollMs = 0) {
         error: (err as Error).message,
       }));
     }
-  }, []);
+  }, [permitted]);
 
   useEffect(() => {
     mounted.current = true;
+    if (!permitted) return () => { mounted.current = false; };
     const ctrl = new AbortController();
     void load(ctrl.signal);
     return () => {
       mounted.current = false;
       ctrl.abort();
     };
-  }, [load]);
+  }, [load, permitted]);
 
   useEffect(() => {
-    if (!pollMs || pollMs <= 0) return;
+    if (!permitted || !pollMs || pollMs <= 0) return;
     const id = setInterval(() => {
       const ctrl = new AbortController();
       void load(ctrl.signal);
     }, pollMs);
     return () => clearInterval(id);
-  }, [load, pollMs]);
+  }, [load, pollMs, permitted]);
 
   return {
     matches: state.matches,
@@ -111,10 +119,15 @@ export function useCorrelationMatches(pollMs = 0) {
  * choosing when to ask.
  */
 export function useTriggerEvaluation() {
+  const role = useFgmp((s) => s.me?.role ?? null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const trigger = useCallback(async () => {
+    if (!canAccessApi(role, "/api/fgmp/correlation/evaluate", "POST")) {
+      setError("You do not have permission to evaluate correlation rules.");
+      return null;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -131,7 +144,7 @@ export function useTriggerEvaluation() {
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [role]);
 
   return { trigger, busy, error };
 }

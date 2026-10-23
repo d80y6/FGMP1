@@ -20,7 +20,7 @@ export const dynamic = "force-dynamic";
  * deployment counts. DISP-FW-GW — Edge & Firmware view → Firmware tab.
  */
 export async function GET(req: NextRequest) {
-  const auth = await requireAuth();
+  const auth = await requireAuth(req);
   if ("error" in auth) return auth.error;
   try {
     const { user } = await bootstrap();

@@ -2941,10 +2941,11 @@ async controlDispenser(
       : this.fuelTransactions;
     const events = tenantId
       ? this.events.filter((e) => {
-          // SiteEventState carries siteId; if it's missing we err on the side
-          // of inclusion only when the caller is cross-tenant (null tenantId).
+          // Tenant-scoped snapshots must exclude orphaned events: without a
+          // siteId there is no safe way to prove tenant ownership. The
+          // cross-tenant snapshot (tenantId === null) uses the full array above.
           const sid = (e as { siteId?: string }).siteId;
-          return !sid || siteIds.has(sid);
+          return typeof sid === "string" && siteIds.has(sid);
         })
       : this.events;
     const gateways = tenantId

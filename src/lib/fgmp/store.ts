@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import type { Snapshot } from "@/lib/fgmp/types";
 import type { Role } from "@/lib/fgmp/types";
+import { canAccessApi } from "@/lib/fgmp/rbac-core";
 
 export interface Me {
   id: string;
@@ -140,6 +141,9 @@ export const useFgmp = create<FgmpState>((set, get) => ({
    * login returns to it automatically.
    */
   switchRole: async (role) => {
+    if (!canAccessApi(get().me?.role, "/api/fgmp/me/preview-role", "POST")) {
+      throw new Error("switchRole denied: insufficient capability");
+    }
     const res = await fetch("/api/fgmp/me/preview-role", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -161,6 +165,9 @@ export const useFgmp = create<FgmpState>((set, get) => ({
    * the permanent role applies immediately.
    */
   returnToPermanentRole: async () => {
+    if (!canAccessApi(get().me?.role, "/api/fgmp/me/preview-role", "DELETE")) {
+      throw new Error("returnToPermanentRole denied: no authenticated role");
+    }
     const res = await fetch("/api/fgmp/me/preview-role", {
       method: "DELETE",
       credentials: "include",

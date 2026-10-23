@@ -51,7 +51,7 @@ export function InventoryView() {
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
   const { data: deliveries, error: deliveriesError, refetch } = useApi<DeliveryRow[]>("/api/fgmp/deliveries", { interval: 8000 });
-  const { data: analytics, error: analyticsError, refetch: refetchAnalytics } = useApi<AnalyticsPayload>("/api/fgmp/analytics", { interval: 15000 });
+  const { data: analytics, error: analyticsError, refetch: refetchAnalytics } = useApi<AnalyticsPayload>("/api/fgmp/analytics?projection=inventory", { interval: 15000 });
   const [createOpen, setCreateOpen] = useState(false);
   const [verify, setVerify] = useState<{ id: string; vol: number } | null>(null);
 

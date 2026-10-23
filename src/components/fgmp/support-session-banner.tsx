@@ -32,6 +32,7 @@ import { ShieldAlert, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useApi } from "@/lib/fgmp/use-api";
+import { useFgmp } from "@/lib/fgmp/store";
 
 interface ActiveSupport {
   id: string;
@@ -55,14 +56,17 @@ export function SupportSessionBanner() {
   const { data: session } = useSession();
   const role = (session?.user as { role?: string } | undefined)?.role;
   const isSuper = role === "SUPERADMIN";
+  const effectiveRole = useFgmp((s) => s.me?.role ?? null);
+  const canManageSupport = isSuper && effectiveRole === "SUPERADMIN";
 
   const { data, refetch } = useApi<{ active: ActiveSupport | null }>(
-    isSuper ? "/api/fgmp/platform/support-sessions/current" : null,
+    canManageSupport ? "/api/fgmp/platform/support-sessions/current" : null,
     { interval: POLL_MS, deps: [role] },
   );
   const [ending, setEnding] = useState(false);
 
   const end = useCallback(async () => {
+    if (!canManageSupport) return;
     setEnding(true);
     try {
       await fetch("/api/fgmp/platform/support-sessions/current", {
@@ -73,10 +77,10 @@ export function SupportSessionBanner() {
     } finally {
       setEnding(false);
     }
-  }, [refetch]);
+  }, [canManageSupport, refetch]);
 
   const active = data?.active ?? null;
-  if (!active) return null;
+  if (!canManageSupport || !active) return null;
 
   const mins = minutesLeft(active.expiresAt);
   const write = active.mode === "WRITE";
