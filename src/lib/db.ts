@@ -85,10 +85,17 @@ export function assertRlsEnforced(
  * `DATABASE_URL` — password included — to make the misconfiguration "easy to
  * spot". The host and the role are what an operator needs to identify the
  * connection; the password has no diagnostic value.
+ *
+ * Both arguments are required on purpose. Defaulting them to the environment
+ * reads well at the call site but makes `rlsViolation(undefined, "1")` mean "use
+ * the ambient DATABASE_URL" rather than "there is no URL", which is a different
+ * question and is not what a caller passing `undefined` intends — a mistake
+ * this function made until CI, where DATABASE_URL is set, disagreed with the
+ * machine that wrote it.
  */
 export function rlsViolation(
-  databaseUrl: string | undefined = process.env.DATABASE_URL,
-  required: string | undefined = process.env.FGMP_REQUIRE_RLS,
+  databaseUrl: string | undefined,
+  required: string | undefined,
 ): string | null {
   // Unset or "0"/"false" → opt out (local development).
   if (!required || required === '0' || required.toLowerCase() === 'false') return null
