@@ -195,7 +195,7 @@ export function AppShell() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // i18n hydration (call once near top of client tree).
   useLanguageHydration();
@@ -263,24 +263,56 @@ export function AppShell() {
   // read-only session still refreshes its own dashboard. It cannot advance
   // anything, and it is the same `refresh()` for every role.
   //
-  // Apinator cutover: there is NO `state:tick` push anymore — realtime
-  // events (alarm:new, command:status, …) are only instant "refresh now"
-  // triggers fired as they arrive. This poll is therefore the ONLY state
-  // refresher and intentionally runs every 5s no matter what the realtime
-  // connection is doing: a missed or dropped event costs at most 5s of
-  // latency, never stale-forever data.
+  // Apinator events refresh state immediately. A slow safety reconciliation
+  // remains in place if a push is missed: 60s while the private channel is
+  // subscribed, 30s while disconnected. The old unconditional 5s setInterval
+  // kept queuing /state calls while the prior DB request was still running,
+  // which exhausted the hosted database's 15-connection allowance.
   useEffect(() => {
-    if (status !== "authenticated" || !sessionUser) {
-      setMe(null);
+    if (status !== "authenticated" || !sessionUser || livePaused) {
+      if (pollRef.current) clearTimeout(pollRef.current);
+      pollRef.current = null;
       return;
     }
-    if (pollRef.current) clearInterval(pollRef.current);
-    pollRef.current = setInterval(() => {
-      if (livePaused) return;
-      void refresh();
-    }, 5000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [refresh, livePaused, status]);
+
+    let cancelled = false;
+    let delayMs = rtConnected ? 60_000 : 30_000;
+
+    const schedule = () => {
+      if (cancelled) return;
+      pollRef.current = setTimeout(() => void poll(), delayMs);
+    };
+    const poll = async () => {
+      pollRef.current = null;
+      if (cancelled) return;
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        schedule();
+        return;
+      }
+      await refresh();
+      if (cancelled) return;
+      delayMs = useFgmp.getState().error
+        ? Math.min(Math.max(delayMs * 2, 30_000), 120_000)
+        : rtConnected
+          ? 60_000
+          : 30_000;
+      schedule();
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== "visible" || cancelled) return;
+      if (pollRef.current) clearTimeout(pollRef.current);
+      pollRef.current = setTimeout(() => void poll(), 250);
+    };
+
+    schedule();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      cancelled = true;
+      if (pollRef.current) clearTimeout(pollRef.current);
+      pollRef.current = null;
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [refresh, livePaused, status, sessionUser, rtConnected]);
 
   // clock lives in <HeaderClock/> (own state) so the 1Hz tick does not
   // re-render AppShell — and therefore the whole view tree — every second.

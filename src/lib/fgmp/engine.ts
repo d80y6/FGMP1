@@ -1,5 +1,6 @@
 import { Prisma, type FuelType } from "@prisma/client";
 import { db, rlsEnforced } from "@/lib/db";
+import { getOpsDb } from "@/lib/fgmp/owner-db";
 import { withTenant } from "./tenant-context";
 import { SimulatedGeneratorDispatch } from "./dispatch/simulated";
 import type { GeneratorDispatch } from "./dispatch/types";
@@ -65,9 +66,29 @@ export class EngineTenantScopeError extends Error {
  * means loading every tenant into one instance, which is correct only because
  * the engine holds one combined snapshot; see `loadedTenants()`.
  */
+const ACTIVE_TENANT_IDS_TTL_MS = 15_000;
+let activeTenantIdsCache: { fetchedAt: number; ids: string[] } | null = null;
+let activeTenantIdsRequest: Promise<string[]> | null = null;
+
 async function resolveActiveTenantIds(): Promise<string[]> {
-  const rows = await db.tenant.findMany({ select: { id: true }, orderBy: { id: "asc" } });
-  return rows.map((r) => r.id);
+  if (
+    activeTenantIdsCache &&
+    Date.now() - activeTenantIdsCache.fetchedAt < ACTIVE_TENANT_IDS_TTL_MS
+  ) {
+    return activeTenantIdsCache.ids;
+  }
+  if (activeTenantIdsRequest) return activeTenantIdsRequest;
+  activeTenantIdsRequest = db.tenant
+    .findMany({ select: { id: true }, orderBy: { id: "asc" } })
+    .then((rows) => {
+      const ids = rows.map((r) => r.id);
+      activeTenantIdsCache = { fetchedAt: Date.now(), ids };
+      return ids;
+    })
+    .finally(() => {
+      activeTenantIdsRequest = null;
+    });
+  return activeTenantIdsRequest;
 }
 
 // ── Deterministic PRNG for stable backfill ─────────────────────────────────
@@ -473,6 +494,7 @@ private tenantsFor(expectedTenantId?: string | null): readonly string[] {
 
     // Once, after every tenant is resident — see the note in loadInto().
     this.backfillHistory();
+    this.loadedKey = [...new Set(tenants)].sort().join(",");
     this.initialized = true;
   }
 
@@ -2887,7 +2909,11 @@ async controlDispenser(
     // super-admin span tenants — so it goes through `ensureAllTenants()`, which is
     // the ONLY caller allowed to resolve the full list. Passing `undefined`
     // instead would either throw or silently load nothing.
-    await this.ensureInit(tenantId ? [tenantId] : this.loadedTenants());
+    if (tenantId) {
+      await this.ensureInit([tenantId]);
+    } else {
+      await this.ensureAllTenants();
+    }
 
     // Tenant-scoped in-memory slices. For tenantId === null (super-admin /
     // realtime service) we use the full arrays unchanged.
@@ -2927,23 +2953,62 @@ async controlDispenser(
     // regions are platform-level (shared across tenants) — always return full.
     const regions = this.regions;
 
-    // DB counts scoped to the tenant (or unscoped for super-admin).
-    const alarmWhere = tenantId ? { tenantId } : {};
-    const deliveryWhere = tenantId
-      ? { site: { tenantId } }
-      : {};
-    const ticketWhere = tenantId
-      ? { site: { tenantId } }
-      : {};
-
-    const [openAlarms, alarmsL1, alarmsL2, alarmsL3, pendingDeliveries, openTickets] = await Promise.all([
-      db.alarm.count({ where: { ...alarmWhere, status: { in: ["OPEN", "ACKNOWLEDGED", "ESCALATED"] } } }),
-      db.alarm.count({ where: { ...alarmWhere, status: { in: ["OPEN", "ACKNOWLEDGED", "ESCALATED"] }, severity: "L1" } }),
-      db.alarm.count({ where: { ...alarmWhere, status: { in: ["OPEN", "ACKNOWLEDGED", "ESCALATED"] }, severity: "L2" } }),
-      db.alarm.count({ where: { ...alarmWhere, status: { in: ["OPEN", "ACKNOWLEDGED", "ESCALATED"] }, severity: "L3" } }),
-      db.fuelDelivery.count({ where: { ...deliveryWhere, status: { in: ["SCHEDULED", "IN_TRANSIT"] } } }),
-      db.maintenanceTicket.count({ where: { ...ticketWhere, status: { in: ["OPEN", "SCHEDULED", "IN_PROGRESS"] } } }),
-    ]);
+    // Six independently pooled Prisma count() calls used to fan out from every
+    // /state refresh, consuming up to six extra hosted DB connections at once.
+    // Read the same six values in ONE statement; tenant requests execute it on
+    // the RLS-scoped transaction, while platform-wide SUPERADMIN snapshots use
+    // the shared, tightly capped ops pool.
+    interface SnapshotCountRow {
+      openAlarms: number;
+      alarmsL1: number;
+      alarmsL2: number;
+      alarmsL3: number;
+      pendingDeliveries: number;
+      openTickets: number;
+    }
+    const readCounts = async (
+      client: Pick<Prisma.TransactionClient, "$queryRaw">,
+    ): Promise<SnapshotCountRow> => {
+      const rows = await client.$queryRaw<SnapshotCountRow[]>`
+        SELECT
+          (SELECT COUNT(*)::int FROM "Alarm"
+             WHERE "status" IN ('OPEN', 'ACKNOWLEDGED', 'ESCALATED')) AS "openAlarms",
+          (SELECT COUNT(*)::int FROM "Alarm"
+             WHERE "status" IN ('OPEN', 'ACKNOWLEDGED', 'ESCALATED') AND "severity" = 'L1') AS "alarmsL1",
+          (SELECT COUNT(*)::int FROM "Alarm"
+             WHERE "status" IN ('OPEN', 'ACKNOWLEDGED', 'ESCALATED') AND "severity" = 'L2') AS "alarmsL2",
+          (SELECT COUNT(*)::int FROM "Alarm"
+             WHERE "status" IN ('OPEN', 'ACKNOWLEDGED', 'ESCALATED') AND "severity" = 'L3') AS "alarmsL3",
+          (SELECT COUNT(*)::int FROM "FuelDelivery"
+             WHERE "status" IN ('SCHEDULED', 'IN_TRANSIT')) AS "pendingDeliveries",
+          (SELECT COUNT(*)::int FROM "MaintenanceTicket"
+             WHERE "status" IN ('OPEN', 'SCHEDULED', 'IN_PROGRESS')) AS "openTickets"
+      `;
+      const row = rows[0];
+      if (!row) throw new Error("Snapshot KPI count query returned no row.");
+      return row;
+    };
+    let counts: SnapshotCountRow;
+    if (tenantId) {
+      counts = await withTenant(tenantId, readCounts);
+    } else {
+      const ops = getOpsDb();
+      if (!ops) {
+        throw new Error(
+          "A platform-wide state snapshot requires FGMP_OPS_DATABASE_URL (or " +
+            "FGMP_MIGRATE_DATABASE_URL); refusing to return misleading zero counts.",
+        );
+      }
+      counts = await readCounts(ops);
+    }
+    const {
+      openAlarms,
+      alarmsL1,
+      alarmsL2,
+      alarmsL3,
+      pendingDeliveries,
+      openTickets,
+    } = counts;
 
     const totalFuelLitres = tanks.reduce((a, t) => a + t.current, 0);
     const totalFuelCapacity = tanks.reduce((a, t) => a + t.capacity, 0);

@@ -35,9 +35,10 @@
  * It cannot be used to read, list or modify any other table.
  */
 
-import { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
+import { getOpsDb } from "@/lib/fgmp/owner-db";
 
 export interface AuditParams {
   userId?: string;
@@ -67,34 +68,23 @@ export function resetAuditFailureCount(): void {
   failedWrites = 0;
 }
 
-let fallbackClient: PrismaClient | null = null;
-
 /**
  * Owner/ops connection used ONLY as the audit fallback.
  *
  * Prefers the ops role over the migrate role: audit writes are operational
  * traffic, not schema changes, so the least-privileged cross-tenant role is the
- * right one when it is available.
+ * right one when it is available. Shares the bounded `getOpsDb()` pool so
+ * audit writes do not allocate a separate connection pool.
  */
 function fallbackDb(): PrismaClient {
-  const url =
-    process.env.FGMP_OPS_DATABASE_URL ?? process.env.FGMP_MIGRATE_DATABASE_URL;
-  if (!url) {
+  const ops = getOpsDb();
+  if (!ops) {
     throw new Error(
       "audit fallback requires FGMP_OPS_DATABASE_URL or FGMP_MIGRATE_DATABASE_URL; " +
         "without it an RLS-rejected audit row is lost",
     );
   }
-  if (!fallbackClient) {
-    fallbackClient = new PrismaClient({
-      datasources: { db: { url } },
-      log: [
-        { level: "warn", emit: "stdout" as const },
-        { level: "error", emit: "stdout" as const },
-      ],
-    });
-  }
-  return fallbackClient;
+  return ops;
 }
 
 /**
@@ -176,8 +166,6 @@ export async function audit(params: AuditParams): Promise<void> {
 
 /** Close the fallback connection on shutdown. */
 export async function closeAuditClient(): Promise<void> {
-  if (fallbackClient) {
-    await fallbackClient.$disconnect();
-    fallbackClient = null;
-  }
+  // The fallback pool is shared process-wide with auth, scheduler and health.
+  // It is disconnected by disconnectPrivilegedDbs() during graceful shutdown.
 }

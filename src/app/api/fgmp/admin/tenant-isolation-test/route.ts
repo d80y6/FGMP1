@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
 import { bootstrap } from "@/lib/fgmp";
+import { getOpsDb } from "@/lib/fgmp/owner-db";
 import { withTenant } from "@/lib/fgmp/tenant-context";
 import {
   requireAuth,
@@ -134,12 +135,9 @@ export async function GET(req: NextRequest) {
  * 1's FORCE RLS that returned zero rows for everything, and the route still
  * reported success — see the summary note below.
  */
-let opsClient: PrismaClient | null = null;
-
 function ops(): PrismaClient {
-  const url =
-    process.env.FGMP_OPS_DATABASE_URL ?? process.env.FGMP_MIGRATE_DATABASE_URL;
-  if (!url) {
+  const client = getOpsDb();
+  if (!client) {
     throw new Error(
       "No ops/owner database URL configured. Set FGMP_OPS_DATABASE_URL " +
         "(preferred) or FGMP_MIGRATE_DATABASE_URL. Tenant enumeration is " +
@@ -147,10 +145,7 @@ function ops(): PrismaClient {
         "connection.",
     );
   }
-  if (!opsClient) {
-    opsClient = new PrismaClient({ datasources: { db: { url } } });
-  }
-  return opsClient;
+  return client;
 }
 
 async function buildReport(): Promise<TenantIsolationReport> {

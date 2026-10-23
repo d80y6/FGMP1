@@ -9,86 +9,159 @@ interface UseApiState<T> {
   refetch: () => void;
 }
 
-/**
- * Collapse a caller-supplied dep list into a single scalar key.
- *
- * The effect previously depended on `[url, nonce, ...(opts?.deps ?? [])]`.
- * If any caller ever passed an array whose length changed between renders,
- * React throws "The final argument passed to useEffect changed size between
- * renders". Serialising to one value makes the dep array a fixed length
- * regardless of what callers pass.
- */
+/** Collapse variable-length caller deps into one stable effect dependency. */
 function depKey(deps: unknown[] | undefined): string {
   if (!deps || deps.length === 0) return "";
   try {
     return `${deps.length}|${JSON.stringify(deps)}`;
   } catch {
-    // Circular / non-serialisable value — fall back to per-element coercion.
-    // The length prefix keeps different arities in different key spaces.
     return `${deps.length}|${deps.map((d) => String(d)).join("|")}`;
   }
 }
 
-export function useApi<T>(url: string | null, opts?: { interval?: number; deps?: unknown[] }): UseApiState<T> {
+/**
+ * Fetch JSON once and, optionally, reconcile it on a serialized timer.
+ *
+ * The old `setInterval()` ticked independently of request completion. A slow
+ * database request therefore overlapped every later poll, multiplying both
+ * HTTP work and Prisma pool demand until the database rejected requests. This
+ * hook schedules the next timeout only AFTER the previous fetch settles,
+ * coalesces manual refetches with an in-flight request, and pauses while the
+ * tab is hidden.
+ */
+export function useApi<T>(
+  url: string | null,
+  opts?: { interval?: number; deps?: unknown[] },
+): UseApiState<T> {
   const [data, setData] = useState<T | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loadingState, setLoadingState] = useState(false);
+  const [errorState, setErrorState] = useState<string | null>(null);
+  const [loadedIdentity, setLoadedIdentity] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
-
   const refetch = useCallback(() => setNonce((n) => n + 1), []);
-
-  // The loader is held in a ref so the polling timer can be mounted
-  // independently of it. Previously `nonce` sat in the polling effect's dep
-  // array, so every refetch() tore down and restarted the interval — refetch
-  // more often than the interval and the timer never reached its deadline, so
-  // polling stopped silently.
   const loadRef = useRef<() => Promise<void>>(async () => {});
-
+  const inFlightRef = useRef<{ identity: string; promise: Promise<void> } | null>(null);
+  const lastNonceRef = useRef(nonce);
   const urlDeps = depKey(opts?.deps);
   const interval = opts?.interval;
+  const identity = `${url ?? "<disabled>"}|${urlDeps}`;
 
-  // Define the loader + perform the initial fetch whenever the request identity
-  // changes. Deliberately does NOT depend on `nonce`.
   useEffect(() => {
-    if (!url) { setLoading(false); return; }
+    if (!url) {
+      loadRef.current = async () => {};
+      return;
+    }
+
     let cancelled = false;
-    loadRef.current = async () => {
-      try {
-        setLoading(true);
-        const res = await fetch(url, { credentials: "include" });
-        if (!res.ok) {
-          // Include the endpoint so a failure names WHICH request died —
-          // `HTTP 500` alone is unactionable when a view fires several.
-          if (!cancelled) { setError(`HTTP ${res.status} · ${url}`); setLoading(false); }
-          return;
+    const controller = new AbortController();
+    const load = async () => {
+      // One request per hook instance at a time, including interval and manual
+      // refetch triggers. Return the active promise instead of starting a twin.
+      if (inFlightRef.current?.identity === identity) {
+        return inFlightRef.current.promise;
+      }
+      const request = (async () => {
+        try {
+          setLoadingState(true);
+          const res = await fetch(url, {
+            credentials: "include",
+            cache: "no-store",
+            signal: controller.signal,
+          });
+          if (!res.ok) {
+            if (!cancelled) {
+              setErrorState(`HTTP ${res.status} · ${url}`);
+              setLoadedIdentity(identity);
+            }
+            return;
+          }
+          const json = (await res.json()) as T;
+          if (!cancelled) {
+            setData(json);
+            setErrorState(null);
+            setLoadedIdentity(identity);
+          }
+        } catch (err) {
+          if (!cancelled && (err as Error).name !== "AbortError") {
+            setErrorState(String(err));
+            setLoadedIdentity(identity);
+          }
+        } finally {
+          if (!cancelled) setLoadingState(false);
         }
-        const json = await res.json();
-        if (!cancelled) { setData(json); setError(null); }
-      } catch (e) {
-        if (!cancelled) setError(String(e));
+      })();
+      const entry = { identity, promise: request };
+      inFlightRef.current = entry;
+      try {
+        await request;
       } finally {
-        if (!cancelled) setLoading(false);
+        if (inFlightRef.current === entry) inFlightRef.current = null;
       }
     };
-    void loadRef.current();
-    return () => { cancelled = true; };
-  }, [url, urlDeps]);
 
-  // Polling timer. Independent of `nonce`, so refetch() cannot reset it.
+    loadRef.current = load;
+    void load();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [url, identity]);
+
+  // Serialized, visibility-aware polling: a poll never overlaps its prior
+  // request, and hidden tabs stop consuming database capacity.
   useEffect(() => {
     if (!url || !interval || interval <= 0) return;
-    const i = setInterval(() => { void loadRef.current(); }, interval);
-    return () => clearInterval(i);
-  }, [url, urlDeps, interval]);
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
-  // Manual refetch: a one-shot reload that leaves the polling timer running.
-  const skipFirstNonce = useRef(true);
+    const schedule = () => {
+      if (cancelled) return;
+      timer = setTimeout(() => void run(), interval);
+    };
+    const run = async () => {
+      timer = null;
+      if (cancelled) return;
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        schedule();
+        return;
+      }
+      await loadRef.current();
+      schedule();
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== "visible" || cancelled) return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => void run(), 250);
+    };
+
+    schedule();
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", onVisibilityChange);
+    }
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", onVisibilityChange);
+      }
+    };
+  }, [url, identity, interval]);
+
+  // Explicit refetch does not reset the polling cadence and coalesces with any
+  // request already in flight.
   useEffect(() => {
-    if (skipFirstNonce.current) { skipFirstNonce.current = false; return; }
+    if (nonce === lastNonceRef.current) return;
+    lastNonceRef.current = nonce;
     void loadRef.current();
   }, [nonce]);
 
-  return { data, loading, error, refetch };
+  const enabled = url !== null;
+  return {
+    data: enabled ? data : null,
+    loading: enabled && (loadingState || loadedIdentity !== identity),
+    error: enabled ? errorState : null,
+    refetch,
+  };
 }
 
 export async function apiPost(url: string, body: unknown): Promise<{ ok: boolean; data?: unknown; error?: string; status: number }> {
@@ -121,11 +194,7 @@ export async function apiPatch(url: string, body: unknown) {
   }
 }
 
-/**
- * DELETE a resource. Returns the same envelope shape as apiPost/apiPatch so
- * callers can use a uniform success/error handling pattern. The server returns
- * either `{ ok: true, id }` on success or `{ error }` on failure.
- */
+/** DELETE a resource; returns the same result envelope as apiPost/apiPatch. */
 export async function apiDelete(url: string): Promise<{ ok: boolean; data?: unknown; error?: string; status: number }> {
   try {
     const res = await fetch(url, {

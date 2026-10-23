@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
 import { asTenant } from "@/lib/fgmp/route-tenant";
+import { getOpsDb } from "@/lib/fgmp/owner-db";
 import { auditFailureCount } from "@/lib/fgmp/audit";
 import { requireRole, ROLES, isSuperAdminUser } from "@/lib/fgmp/auth-helpers";
 import { errorResponse } from "@/lib/fgmp/api-error";
@@ -36,9 +37,8 @@ export const dynamic = "force-dynamic";
  *   - errors           : last 10 captured errors, detail REDACTED
  *   - timestamp        : ISO string of when this snapshot was assembled
  *
- * The result is cached in-process for 10 seconds (CACHE_TTL_MS) so the
- * auto-refreshing dashboard (polls every 10s) doesn't hammer the DB with
- * count() queries on every render. The cache is per-process; in a multi-
+ * The result is cached in-process for 30 seconds (CACHE_TTL_MS) so the
+ * auto-refreshing health indicator doesn't repeatedly query the database. The cache is per-process; in a multi-
  * instance deployment each instance would have its own cache (acceptable
  * for a NOC display — Prometheus/StatsD would replace this in a hardened
  * production deployment).
@@ -92,54 +92,66 @@ async function databaseSize(client: PrismaClient): Promise<number> {
   return Number(rows[0]?.size ?? 0);
 }
 
+interface OpsHealthCountsRow {
+  sites: number;
+  alarms: number;
+  users: number;
+  auditLogs: number;
+  activeUsers: number;
+  sizeBytes: bigint | number;
+}
+
 async function opsCounts(twentyFourHoursAgo: Date) {
-  const url =
-    process.env.FGMP_OPS_DATABASE_URL ?? process.env.FGPS_OPS_DATABASE_URL ??
-    process.env.FGMP_MIGRATE_DATABASE_URL;
-  if (!url) {
+  const client = getOpsDb();
+  if (!client) {
     throw new Error(
       "SUPERADMIN health view requires FGMP_OPS_DATABASE_URL (or FGMP_MIGRATE_DATABASE_URL). " +
         "Platform-wide counts cannot be served by a tenant-scoped connection. Refusing rather " +
         "than reporting zero, because an empty platform reported as healthy is a monitoring lie.",
     );
   }
-  const client = new PrismaClient({ datasources: { db: { url } } });
-  try {
-    const [s, a, u, al, au, size] = await Promise.all([
-      client.site.count(),
-      client.alarm.count(),
-      client.user.count(),
-      client.auditLog.count(),
-      client.user.count({ where: { lastLoginAt: { gte: twentyFourHoursAgo } } }),
-      databaseSize(client),
-    ]);
-    return {
-      sites: s, alarms: a, sensorReadings: 0, users: u, auditLogs: al, activeUsers: au,
-      sizeBytes: size,
-      scopeMode: "platform" as const,
-    };
-  } finally {
-    await client.$disconnect();
-  }
+  // Execute all 6 platform metrics in ONE single SQL statement on the shared
+  // `getOpsDb()` pool — uses 1 connection and 1 network round-trip instead of
+  // spinning up a transient PrismaClient and opening 6 concurrent connections.
+  const rows = await client.$queryRaw<OpsHealthCountsRow[]>`
+    SELECT
+      (SELECT COUNT(*)::int FROM "Site") AS "sites",
+      (SELECT COUNT(*)::int FROM "Alarm") AS "alarms",
+      (SELECT COUNT(*)::int FROM "User") AS "users",
+      (SELECT COUNT(*)::int FROM "AuditLog") AS "auditLogs",
+      (SELECT COUNT(*)::int FROM "User" WHERE "lastLoginAt" >= ${twentyFourHoursAgo}) AS "activeUsers",
+      pg_database_size(current_database()) AS "sizeBytes"
+  `;
+  const row = rows[0];
+  return {
+    sites: Number(row?.sites ?? 0),
+    alarms: Number(row?.alarms ?? 0),
+    sensorReadings: 0,
+    users: Number(row?.users ?? 0),
+    auditLogs: Number(row?.auditLogs ?? 0),
+    activeUsers: Number(row?.activeUsers ?? 0),
+    sizeBytes: Number(row?.sizeBytes ?? 0),
+    scopeMode: "platform" as const,
+  };
 }
 
 // ── Config ────────────────────────────────────────────────────────────────
-const CACHE_TTL_MS = 10_000;
+const CACHE_TTL_MS = 30_000;
 /**
  * Budget for the hosted Apinator channels call. The old self-hosted probe
  * used a 500ms TCP connect + an 800ms HTTP fetch; a single 800ms race against
- * the hosted REST API keeps the dashboard's 10s poll responsive even when the
+ * the hosted REST API keeps the dashboard's poll responsive even when the
  * provider is unreachable (the probe degrades to `connected: false` instead
  * of hanging the snapshot).
  */
 const APINATOR_PROBE_TIMEOUT_MS = 800;
 /**
  * Only tenant-private channels are counted: they exist exactly when at least
- * one browser holds a live subscription, which is the number the NOC display
- * means by "clients". Server-triggered public channels would otherwise
- * inflate the figure with sockets nobody is watching.
+ * one tenant browser holds a live subscription, which is the number the NOC
+ * display means by "clients".
  */
 const APINATOR_CHANNEL_PREFIX = "private-tenant-";
+const APINATOR_QUERY_PREFIX = "private-";
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const BYTES_PER_MB = 1024 * 1024;
 
@@ -317,7 +329,7 @@ async function probeApinatorChannels(): Promise<{
   try {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const channels = await Promise.race([
-      getApinatorServer()?.getChannels(APINATOR_CHANNEL_PREFIX),
+      getApinatorServer()?.getChannels(APINATOR_QUERY_PREFIX),
       new Promise<null>((resolve) => {
         timer = setTimeout(() => resolve(null), APINATOR_PROBE_TIMEOUT_MS);
       }),
@@ -328,10 +340,12 @@ async function probeApinatorChannels(): Promise<{
     if (!channels) {
       return { connected: false, clients: 0, url };
     }
-    const clients = channels.reduce(
-      (sum, ch) => sum + (Number(ch.subscription_count) || 0),
-      0,
-    );
+    const clients = channels.reduce((sum, ch) => {
+      if (ch.name.startsWith(APINATOR_CHANNEL_PREFIX)) {
+        return sum + (Number(ch.subscription_count) || 0);
+      }
+      return sum;
+    }, 0);
     return { connected: true, clients, url };
   } catch {
     // Auth failure / network error / provider 5xx. A health endpoint that

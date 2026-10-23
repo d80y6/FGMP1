@@ -2,6 +2,105 @@ import { PrismaClient } from '@prisma/client'
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
+  prismaUrl: string | undefined
+}
+
+export type PoolEnv = Record<string, string | undefined>
+
+/**
+ * Detect serverless / function-per-request runtimes (Netlify Functions,
+ * AWS Lambda, Vercel, Cloudflare Pages).
+ *
+ * In these runtimes every concurrent HTTP request runs in an isolated microVM
+ * with its own Prisma query-engine pool. Prisma's default pool size
+ * (`num_physical_cpus * 2 + 1`, typically 5–9 connections per container) holds
+ * idle TCP sockets open until container freeze — so just 2–3 concurrent
+ * requests instantly exhaust a 15-connection hosted PostgreSQL Session Mode
+ * pool (`MaxClientsInSessionMode`). Capping each Prisma pool to
+ * `connection_limit=1` means a serverless instance uses at most one app-role
+ * connection plus one shared privileged-role connection when it needs one.
+ */
+export function isServerlessRuntime(env: PoolEnv = process.env): boolean {
+  const flags = [
+    env.NETLIFY,
+    env.AWS_LAMBDA_FUNCTION_NAME,
+    env.AWS_EXECUTION_ENV,
+    env.VERCEL,
+    env.CF_PAGES,
+  ]
+  return flags.some((v) => v !== undefined && v !== '' && v !== 'false' && v !== '0')
+}
+
+function parsePositiveInt(raw: string | undefined): number | null {
+  if (!raw) return null
+  const n = Number.parseInt(raw, 10)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+export interface ConfigurePoolUrlOptions {
+  /** Default `connection_limit` on long-lived servers when not overridden by URL/env. */
+  defaultLimit?: number
+  /** Default `pool_timeout` in seconds when not already set on URL/env. */
+  defaultPoolTimeoutSec?: number
+  /** Default `connect_timeout` in seconds when not already set on URL. */
+  defaultConnectTimeoutSec?: number
+  env?: PoolEnv
+}
+
+/**
+ * Normalize a PostgreSQL connection URL with bounded pool parameters so a
+ * single process or serverless burst cannot exhaust hosted Postgres connection
+ * limits (e.g. 15 total connections in Supabase Session Mode).
+ *
+ * - Never overwrites explicit `connection_limit`, `pool_timeout`, or
+ *   `connect_timeout` query parameters already present on `rawUrl`.
+ * - Preserves userinfo / password characters verbatim by manipulating only the
+ *   query-string segment rather than round-tripping through `new URL()`.
+ * - Defaults:
+ *   - Serverless (`NETLIFY` / Lambda / Vercel): `connection_limit=1`
+ *   - Long-lived server: `connection_limit=3` (or `defaultLimit=1` for the
+ *     shared auxiliary/ops pool)
+ *   - Explicit `FGMP_DB_CONNECTION_LIMIT` env var overrides the default ceiling.
+ */
+export function configurePoolUrl(
+  rawUrl: string,
+  options: ConfigurePoolUrlOptions = {},
+): string {
+  if (!/^postgres(?:ql)?:\/\//i.test(rawUrl)) {
+    return rawUrl
+  }
+  const env = options.env ?? process.env
+  const hashIdx = rawUrl.indexOf('#')
+  const withoutHash = hashIdx >= 0 ? rawUrl.slice(0, hashIdx) : rawUrl
+  const fragment = hashIdx >= 0 ? rawUrl.slice(hashIdx) : ''
+
+  const qIdx = withoutHash.indexOf('?')
+  const base = qIdx >= 0 ? withoutHash.slice(0, qIdx) : withoutHash
+  const existingQuery = qIdx >= 0 ? withoutHash.slice(qIdx + 1) : ''
+  const params = new URLSearchParams(existingQuery)
+
+  if (!params.has('connection_limit')) {
+    const envLimit = parsePositiveInt(env.FGMP_DB_CONNECTION_LIMIT)
+    const defaultLimit = isServerlessRuntime(env)
+      ? 1
+      : (options.defaultLimit ?? 3)
+    params.set('connection_limit', String(envLimit ?? defaultLimit))
+  }
+  if (!params.has('pool_timeout')) {
+    const envTimeout = parsePositiveInt(env.FGMP_DB_POOL_TIMEOUT)
+    params.set(
+      'pool_timeout',
+      String(envTimeout ?? options.defaultPoolTimeoutSec ?? (isServerlessRuntime(env) ? 5 : 10)),
+    )
+  }
+  if (!params.has('connect_timeout')) {
+    params.set(
+      'connect_timeout',
+      String(options.defaultConnectTimeoutSec ?? (isServerlessRuntime(env) ? 5 : 10)),
+    )
+  }
+
+  return `${base}?${params.toString()}${fragment}`
 }
 
 // Logging: only `warn` and `error` in dev, `error` only in prod.
@@ -168,16 +267,21 @@ if (process.env.NODE_ENV !== 'production' && !dbIsRlsEnforced) {
  * `db.$transaction`, `db.$queryRaw` and typing are unchanged for callers — the
  * only difference is that the first access is what constructs it.
  */
-let prismaClient: PrismaClient | null = null
-
 function getClient(): PrismaClient {
-  if (!prismaClient) {
-    prismaClient = new PrismaClient({ log: logLevels })
-    // Development only: keep one client across hot reloads, or every edit
-    // leaks a connection pool.
-    if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prismaClient
+  const configuredUrl = process.env.DATABASE_URL
+    ? configurePoolUrl(process.env.DATABASE_URL)
+    : undefined
+  if (
+    !globalForPrisma.prisma ||
+    globalForPrisma.prismaUrl !== configuredUrl
+  ) {
+    globalForPrisma.prisma = new PrismaClient({
+      ...(configuredUrl ? { datasources: { db: { url: configuredUrl } } } : {}),
+      log: logLevels,
+    })
+    globalForPrisma.prismaUrl = configuredUrl
   }
-  return prismaClient
+  return globalForPrisma.prisma
 }
 
 export const db: PrismaClient = new Proxy({} as PrismaClient, {

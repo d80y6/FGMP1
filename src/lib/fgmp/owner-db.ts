@@ -31,7 +31,71 @@
  * interface), and `Record<string, string | undefined>` is exactly what Node
  * supplies.
  */
+import { PrismaClient } from "@prisma/client";
+import { configurePoolUrl } from "@/lib/db";
+
 export type OwnerDbEnv = Record<string, string | undefined>;
+
+const globalForPrivilegedPools = globalThis as unknown as {
+  __fgmpPrivilegedPools?: Map<string, PrismaClient>;
+};
+
+const privilegedLogLevels = [
+  { level: "warn" as const, emit: "stdout" as const },
+  { level: "error" as const, emit: "stdout" as const },
+];
+
+/**
+ * Shared singleton factory for privileged (`fgmp_ops` / `fgmp_migrate`)
+ * PrismaClient instances.
+ *
+ * Consolidating all cross-tenant system helpers (`auth-identity`, `audit`,
+ * `rbac`, `realtime-emitter`, `scheduler`, `seed`, `health`,
+ * `tenant-isolation-test`) onto ONE pooled singleton per DSN (capped at
+ * `connection_limit=1` on serverless and long-lived servers) prevents
+ * 8 separate pools of 5–9 connections each from exhausting a 15-connection
+ * hosted PostgreSQL pool.
+ */
+export function getPrivilegedDb(
+  rawUrl: string,
+  env: OwnerDbEnv = process.env,
+): PrismaClient {
+  const normalizedUrl = configurePoolUrl(rawUrl, { defaultLimit: 1, env });
+  if (!globalForPrivilegedPools.__fgmpPrivilegedPools) {
+    globalForPrivilegedPools.__fgmpPrivilegedPools = new Map();
+  }
+  const cache = globalForPrivilegedPools.__fgmpPrivilegedPools;
+  const existing = cache.get(normalizedUrl);
+  if (existing) return existing;
+  const created = new PrismaClient({
+    datasources: { db: { url: normalizedUrl } },
+    log: privilegedLogLevels,
+  });
+  cache.set(normalizedUrl, created);
+  return created;
+}
+
+/**
+ * Shared ops/owner client for narrow cross-tenant system operations, or `null`
+ * when neither `FGMP_OPS_DATABASE_URL` nor `FGMP_MIGRATE_DATABASE_URL` is set.
+ */
+export function getOpsDb(env: OwnerDbEnv = process.env): PrismaClient | null {
+  const raw =
+    env.FGMP_OPS_DATABASE_URL ||
+    env.FGPS_OPS_DATABASE_URL ||
+    env.FGMP_MIGRATE_DATABASE_URL ||
+    undefined;
+  if (!raw) return null;
+  return getPrivilegedDb(raw, env);
+}
+
+/** Disconnect all process-shared privileged clients during graceful shutdown. */
+export async function disconnectPrivilegedDbs(): Promise<void> {
+  const pools = globalForPrivilegedPools.__fgmpPrivilegedPools;
+  if (!pools) return;
+  await Promise.all([...pools.values()].map((client) => client.$disconnect()));
+  pools.clear();
+}
 
 /**
  * The owner/superuser URL for system-level work, if one is configured.
