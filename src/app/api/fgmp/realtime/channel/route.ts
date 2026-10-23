@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { isSuperAdminUser, requireAuth } from "@/lib/fgmp/auth-helpers";
 import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
-import { tenantChannel } from "@/lib/fgmp/apinator-server";
+import {
+  apinatorServerConfig,
+  tenantChannel,
+} from "@/lib/fgmp/apinator-server";
 
 export const dynamic = "force-dynamic";
 
@@ -56,10 +59,18 @@ export async function GET() {
     );
   }
 
-  // Super-admin: no tenant → no channel. See the header note for why null
-  // (poll only) is the correct answer rather than a cross-tenant channel.
+  // `NEXT_PUBLIC_*` values are baked into the browser bundle at build time,
+  // while APINATOR_* credentials are runtime-only. If the server cannot sign a
+  // private-channel authorization, do not hand the client a channel name that
+  // will produce a connected WebSocket with no usable subscription.
+  if (!apinatorServerConfig()) {
+    return NextResponse.json({ enabled: false, channel: null });
+  }
+
+  // Super-admin: no tenant → no tenant channel. See the header note for why
+  // (poll-only) is safer than a cross-tenant event stream.
   if (isSuperAdminUser(auth.user)) {
-    return NextResponse.json({ channel: null });
+    return NextResponse.json({ enabled: true, channel: null });
   }
 
   // The tenant comes from the SESSION, exactly as the auth route will
@@ -69,7 +80,7 @@ export async function GET() {
   // status the gates themselves produce.
   try {
     const tenantId = tenantIdOrThrow(auth.user.tenantId);
-    return NextResponse.json({ channel: tenantChannel(tenantId) });
+    return NextResponse.json({ enabled: true, channel: tenantChannel(tenantId) });
   } catch {
     return NextResponse.json(
       { error: "This session is not scoped to a tenant." },

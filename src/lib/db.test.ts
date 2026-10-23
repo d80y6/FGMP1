@@ -26,7 +26,12 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
-import { usingRlsRole, rlsViolation } from "@/lib/db";
+import {
+  configurePoolUrl,
+  isServerlessRuntime,
+  usingRlsRole,
+  rlsViolation,
+} from "@/lib/db";
 
 const PASSWORD = "p8ssw0rd-should-never-be-logged";
 
@@ -63,6 +68,60 @@ describe("which connections count as RLS-enforced", () => {
   test("no URL at all", () => {
     assert.equal(usingRlsRole(undefined), false);
     assert.equal(usingRlsRole(""), false);
+  });
+});
+
+describe("bounded PostgreSQL connection pools", () => {
+  test("recognizes Netlify / Lambda / Vercel serverless runtimes", () => {
+    assert.equal(isServerlessRuntime({ NETLIFY: "true" }), true);
+    assert.equal(isServerlessRuntime({ AWS_LAMBDA_FUNCTION_NAME: "fgmp" }), true);
+    assert.equal(isServerlessRuntime({ VERCEL: "1" }), true);
+    assert.equal(isServerlessRuntime({ NODE_ENV: "production" }), false);
+    assert.equal(isServerlessRuntime({ NETLIFY: "false" }), false);
+  });
+
+  test("serverless app pools are capped at one connection", () => {
+    const configured = configurePoolUrl(
+      "postgresql://fgmp_app:p%40ss@db.example.test:5432/fgmp?schema=public",
+      { env: { NETLIFY: "true" } },
+    );
+    const url = new URL(configured);
+    assert.equal(url.searchParams.get("connection_limit"), "1");
+    assert.equal(url.searchParams.get("pool_timeout"), "5");
+    assert.equal(url.searchParams.get("connect_timeout"), "5");
+    assert.equal(url.password, "p%40ss");
+  });
+
+  test("long-lived app and privileged pools get small explicit limits", () => {
+    const appUrl = new URL(configurePoolUrl("postgresql://fgmp_app:p@db.example.test/fgmp"));
+    const opsUrl = new URL(
+      configurePoolUrl("postgresql://fgmp_ops:p@db.example.test/fgmp", { defaultLimit: 1 }),
+    );
+    assert.equal(appUrl.searchParams.get("connection_limit"), "3");
+    assert.equal(opsUrl.searchParams.get("connection_limit"), "1");
+  });
+
+  test("explicit URL parameters win; env only supplies defaults", () => {
+    const configured = configurePoolUrl(
+      "postgresql://fgmp_app:p@db.example.test/fgmp?connection_limit=3&pool_timeout=7&connect_timeout=4&pgbouncer=true#frag",
+      { env: { NETLIFY: "true", FGMP_DB_CONNECTION_LIMIT: "9" } },
+    );
+    const url = new URL(configured);
+    assert.equal(url.searchParams.get("connection_limit"), "3");
+    assert.equal(url.searchParams.get("pool_timeout"), "7");
+    assert.equal(url.searchParams.get("connect_timeout"), "4");
+    assert.equal(url.searchParams.get("pgbouncer"), "true");
+    assert.equal(url.hash, "#frag");
+  });
+
+  test("custom pool env values apply when the URL has no explicit limit", () => {
+    const url = new URL(
+      configurePoolUrl("postgresql://fgmp_app:p@db.example.test/fgmp", {
+        env: { NETLIFY: "true", FGMP_DB_CONNECTION_LIMIT: "2", FGMP_DB_POOL_TIMEOUT: "8" },
+      }),
+    );
+    assert.equal(url.searchParams.get("connection_limit"), "2");
+    assert.equal(url.searchParams.get("pool_timeout"), "8");
   });
 });
 

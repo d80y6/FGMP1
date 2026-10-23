@@ -38,8 +38,7 @@
  * oracle. See `loginTimingGuard` in auth.ts.
  */
 
-import { PrismaClient } from "@prisma/client";
-import type { Role } from "@prisma/client";
+import type { PrismaClient, Role } from "@prisma/client";
 
 /**
  * Owner/ops connection used ONLY for the authentication lookups.
@@ -50,12 +49,11 @@ import type { Role } from "@prisma/client";
  * which under RLS yields null — a loud, visible login failure rather than a
  * silent privilege escalation.
  */
-let authClient: PrismaClient | null = null;
+import { getOpsDb } from "@/lib/fgmp/owner-db";
 
 function client(): PrismaClient {
-  const url =
-    process.env.FGMP_OPS_DATABASE_URL ?? process.env.FGMP_MIGRATE_DATABASE_URL;
-  if (!url) {
+  const ops = getOpsDb();
+  if (!ops) {
     // No owner URL configured. Return the ambient client rather than throwing:
     // in a correctly-provisioned deployment this path is unreachable, and where
     // it IS reachable the RLS failure is loud and safe (no rows), not silent
@@ -63,16 +61,7 @@ function client(): PrismaClient {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     return require("@/lib/db").db as PrismaClient;
   }
-  if (!authClient) {
-    authClient = new PrismaClient({
-      datasources: { db: { url } },
-      log: [
-        { level: "warn", emit: "stdout" as const },
-        { level: "error", emit: "stdout" as const },
-      ],
-    });
-  }
-  return authClient;
+  return ops;
 }
 
 /** The user shape the auth path needs. Deliberately minimal. */
@@ -152,8 +141,7 @@ export async function updateAuthUser(
 
 /** Close the auth connection on shutdown so the process can exit cleanly. */
 export async function closeAuthClient(): Promise<void> {
-  if (authClient) {
-    await authClient.$disconnect();
-    authClient = null;
-  }
+  // The client is shared with the other privileged data-access helpers. Its
+  // lifetime is process-wide, so only the centralized graceful-shutdown path
+  // may disconnect it.
 }

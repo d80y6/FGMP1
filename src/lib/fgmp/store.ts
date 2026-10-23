@@ -55,6 +55,8 @@ interface FgmpState {
   toggleLive: () => void;
 }
 
+let stateRequestInFlight: Promise<void> | null = null;
+
 export const useFgmp = create<FgmpState>((set) => ({
   snapshot: null,
   me: null,
@@ -67,39 +69,54 @@ export const useFgmp = create<FgmpState>((set) => ({
   lastTickAt: 0,
   livePaused: false,
 
-  init: async () => {
-    try {
-      set({ loading: true, error: null });
-      // Note: /api/fgmp/me is no longer fetched here — `me` is now derived
-      // from the NextAuth session in AppShell and pushed into the store via
-      // setMe(). See src/components/fgmp/app-shell.tsx (Task 31-A).
-      const res = await fetch("/api/fgmp/state", { credentials: "include" });
-      if (!res.ok) {
-        set({ loading: false, error: `HTTP ${res.status}` });
-        return;
+  init: () => {
+    if (stateRequestInFlight) return stateRequestInFlight;
+    set({ loading: true, error: null });
+    // Note: /api/fgmp/me is no longer fetched here — `me` is derived from the
+    // NextAuth session in AppShell. Share this request with refresh() so an
+    // event or timer cannot race initial hydration.
+    stateRequestInFlight = (async () => {
+      try {
+        const res = await fetch("/api/fgmp/state", {
+          credentials: "include",
+          cache: "no-store",
+        });
+        if (!res.ok) {
+          set({ loading: false, error: `HTTP ${res.status} · /api/fgmp/state` });
+          return;
+        }
+        const stateRes = await res.json();
+        set({ snapshot: stateRes, loading: false, error: null });
+      } catch (e) {
+        set({ loading: false, error: String(e) });
       }
-      const stateRes = await res.json();
-      set({ snapshot: stateRes, loading: false });
-    } catch (e) {
-      set({ loading: false, error: String(e) });
-    }
+    })().finally(() => {
+      stateRequestInFlight = null;
+    });
+    return stateRequestInFlight;
   },
 
-  refresh: async () => {
-    try {
-      const res = await fetch("/api/fgmp/state", { credentials: "include" });
-      // Previously `if (!res.ok) return;` — a 401/403/429/500 was swallowed
-      // entirely, leaving the last good snapshot on screen behind a
-      // healthy-looking header. Record the status + endpoint instead.
-      if (!res.ok) {
-        set({ error: `HTTP ${res.status} · /api/fgmp/state` });
-        return;
+  refresh: () => {
+    if (stateRequestInFlight) return stateRequestInFlight;
+    stateRequestInFlight = (async () => {
+      try {
+        const res = await fetch("/api/fgmp/state", {
+          credentials: "include",
+          cache: "no-store",
+        });
+        if (!res.ok) {
+          set({ error: `HTTP ${res.status} · /api/fgmp/state` });
+          return;
+        }
+        const stateRes = await res.json();
+        set({ snapshot: stateRes, error: null });
+      } catch (e) {
+        set({ error: String(e) });
       }
-      const stateRes = await res.json();
-      set({ snapshot: stateRes, error: null });
-    } catch (e) {
-      set({ error: String(e) });
-    }
+    })().finally(() => {
+      stateRequestInFlight = null;
+    });
+    return stateRequestInFlight;
   },
 
   tick: async (seconds = 60) => {

@@ -10,13 +10,9 @@
  *
  * FULLY EVENT-DRIVEN ARCHITECTURE (read this before "fixing" anything):
  *   There is NO `state:tick` anymore — the server never pushes whole
- *   snapshots. The AppShell's 5-second poll is the ONLY state refresher.
- *   What realtime adds is latency, not data: every tenant event is an
- *   instant "refresh now" trigger that re-fetches /api/fgmp/state so the
- *   operator does not wait out the poll. A missed or dropped event is
- *   harmless — the poll reconciles the store within 5s regardless, which
- *   is why none of the handlers below apply payloads to the store
- *   directly (the old `state:tick` did exactly that, and it is gone).
+ *   snapshots. Tenant events trigger immediate /api/fgmp/state reconciliation;
+ *   a slow watchdog refresh remains to cover dropped events. Realtime carries
+ *   intent, not state, so handlers never apply event payloads to the store.
  *
  * CHANNEL DISCOVERY: `GET /api/fgmp/realtime/channel` (same-origin, so the
  * NextAuth session cookie rides along) returns
@@ -158,33 +154,44 @@ export function useRealtime(opts?: { enabled?: boolean }): RealtimeHook {
       return;
     }
 
-    // The channel-discovery fetch below is async, so `enabled` may flip or
-    // the component may unmount while it is in flight. `cancelled` makes a
-    // late resolution a no-op — once cleanup has run, no client may be
-    // built, connected to, or subscribed with. (Checked after every await;
-    // the build-connect-subscribe tail is synchronous, so no further guard
-    // is needed inside it.)
+    // Channel discovery can be interrupted by a navigation or a session
+    // change. Any network / gateway failure gets a bounded retry, rather than
+    // silently leaving realtime disabled for the rest of the mounted session.
     let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
-    void (async () => {
-      // Missing env → realtime is off entirely. Do not even hit discovery;
-      // `connected` stays false (nothing ever set it true) and polling
-      // keeps the dashboard live. No dev fallbacks.
+    const retryDiscovery = () => {
+      if (cancelled || retryTimer) return;
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        void discover();
+      }, 15_000);
+    };
+
+    const discover = async () => {
+      // Missing build-time config means no browser client can be constructed.
+      // This is an operator configuration issue, not something to retry.
       if (!APINATOR_APP_KEY || !APINATOR_CLUSTER) return;
 
       try {
-        const res = await fetch(CHANNEL_ENDPOINT, { credentials: "same-origin" });
+        const res = await fetch(CHANNEL_ENDPOINT, {
+          credentials: "same-origin",
+          cache: "no-store",
+        });
         if (cancelled) return;
-        // Any !ok (401 stale session, 403 while MFA is pending, 5xx …)
-        // means "stay disconnected quietly" — see the header note. The
-        // poll keeps the UI live; the SDK's own reconnect logic does not
-        // apply here because we never built a client.
-        if (!res.ok) return;
-        const discovered = (await res.json()) as { channel?: string | null };
-        if (cancelled) return;
-        // SUPERADMIN gets `channel: null`: a cross-tenant operator must
-        // not pin one tenant's event stream, so they simply never
-        // subscribe (and the badge honestly shows disconnected).
+        if (!res.ok) {
+          // Auth failures are not helped by a retry loop. Gateway/server
+          // failures can be transient, so retry those at a quiet cadence.
+          if (res.status >= 500) retryDiscovery();
+          return;
+        }
+        const discovered = (await res.json()) as {
+          enabled?: boolean;
+          channel?: string | null;
+        };
+        if (cancelled || discovered.enabled === false) return;
+        // SUPERADMIN gets `channel: null`: a cross-tenant operator must not
+        // pin one tenant's event stream, so they use the ordinary reconciler.
         if (!discovered.channel) return;
 
         const client = new Apinator({
@@ -194,26 +201,28 @@ export function useRealtime(opts?: { enabled?: boolean }): RealtimeHook {
         });
         clientRef.current = client;
 
-        // Bind state BEFORE connect() so the very first transition to
-        // "connected" is observed, not just later reconnects. The SDK
-        // fires this global binding with { previous, current } on every
-        // state machine move; "connected" is the only state that means
-        // the badge may turn green.
+        // A live transport is not enough: show connected only after the
+        // private channel has completed its server-side authorization.
         client.bind("state_change", (data) => {
           const change = parsePayload(data) as {
             previous?: ConnectionState;
             current?: ConnectionState;
           } | null;
-          setConnected(change?.current === "connected");
+          setConnected(
+            change?.current === "connected" &&
+              (channelRef.current?.subscribed ?? false),
+          );
         });
 
         client.connect();
 
-        // One tenant channel, assigned by the server. Private channels
-        // make the SDK POST { socket_id, channel_name } to AUTH_ENDPOINT
-        // (same-origin cookies) — a rejected auth fails closed.
+        // Private channel subscription POSTs { socket_id, channel_name } to
+        // AUTH_ENDPOINT with same-origin cookies. A failed signature must
+        // never show a false-green realtime badge.
         const channel = client.subscribe(discovered.channel);
         channelRef.current = channel;
+        channel.bind("realtime:subscription_succeeded", () => setConnected(true));
+        channel.bind("realtime:subscription_error", () => setConnected(false));
 
         for (const event of TENANT_EVENTS) {
           channel.bind(event, (raw: unknown) => {
@@ -232,21 +241,23 @@ export function useRealtime(opts?: { enabled?: boolean }): RealtimeHook {
             }
             // Realtime carries intent ("something changed"), never data.
             // Reconcile the store from /api/fgmp/state immediately — that
-            // is the whole point of the event — and let the 5s poll cover
-            // anything this push missed.
+            // is the whole point of the event — and let the slower watchdog
+            // reconciliation cover anything this push missed.
             void useFgmp.getState().refresh();
           });
         }
       } catch {
-        // Discovery failed (offline, gateway hiccup, malformed body) →
-        // stay disconnected quietly. No retry loop here on purpose: the
-        // next `enabled` flip rebuilds everything, and polling keeps the
-        // UI live in the meantime.
+        // Offline, gateway error, or malformed response: keep polling as the
+        // safe fallback and retry discovery after a quiet 15 seconds.
+        retryDiscovery();
       }
-    })();
+    };
+
+    void discover();
 
     return () => {
       cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
       if (channelRef.current) {
         channelRef.current.unbindAll();
         channelRef.current = null;

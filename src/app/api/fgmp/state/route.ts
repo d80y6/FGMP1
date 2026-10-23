@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { engine, bootstrap } from "@/lib/fgmp";
+import { engine } from "@/lib/fgmp";
 import {
   rateLimitByUser,
   applyRateLimitHeaders,
@@ -17,8 +17,9 @@ export const GET = withMetrics(async function GET(req: NextRequest) {
   if (auth.error) return auth.error;
   const me = auth.user;
   try {
-    const { user } = await bootstrap();
-    const rl = await rateLimitByUser(req, user.id, READ_LIMIT.limit, READ_LIMIT.windowMs);
+    // `requireAuth()` already resolved this request's session. Do not perform
+    // an all-tenant engine bootstrap on every browser state refresh.
+    const rl = await rateLimitByUser(req, me.id, READ_LIMIT.limit, READ_LIMIT.windowMs);
     if (!rl.success) {
       const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
       applyRateLimitHeaders(res.headers, rl);

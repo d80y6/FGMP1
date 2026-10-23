@@ -106,6 +106,33 @@ orchestrator health probes and looks like a crash loop.
 connection whose role bypasses RLS, which is the last line of defence against a
 misconfigured `DATABASE_URL` silently disabling tenant isolation.
 
+### Hosted PostgreSQL connection budget
+
+Prisma otherwise creates a pool sized from the host's reported CPU count for
+every `PrismaClient`. That is a poor default for Netlify Functions: each warm
+function instance can keep its own pool open, and this app also has narrowly
+scoped ops/auth clients. With a hosted database capped at 15 concurrent
+connections, a few simultaneous function instances and several `new
+PrismaClient()` call sites can consume the whole allowance before the dashboard
+loads.
+
+The app now adds bounded Prisma URL parameters unless explicitly supplied:
+
+- Netlify / AWS Lambda / Vercel: app `connection_limit=1`; shared privileged
+  client `connection_limit=1`.
+- Long-lived app server: app limit 3; shared privileged ops client limit 1.
+- `FGMP_DB_CONNECTION_LIMIT` and `FGMP_DB_POOL_TIMEOUT` override defaults; URL
+  values always take precedence.
+- Auth, audit, scheduler, seed, health and the site→tenant realtime resolver
+  reuse a process-wide privileged client per DSN instead of each opening its
+  own Prisma pool.
+
+This is a per-function/process cap, not a global cap across serverless
+instances. Keep the deployment's aggregate function concurrency below the
+provider's database connection allowance; if it must scale beyond that, place a
+managed pooler in front of Postgres and confirm it supports the app's
+transaction-local RLS context before switching the connection mode.
+
 `FGMP_SIMULATION` enables synthetic telemetry and starts the scheduler. It is
 ignored when `NODE_ENV=production`, and `assertSimulationAllowed()` is the single
 gate. A deployment without field devices should look empty, not realistic.

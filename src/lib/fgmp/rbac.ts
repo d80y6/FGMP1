@@ -265,7 +265,8 @@ export function canView(role: Role, viewKey: string): boolean {
 // instead of being an invisible side effect of an import failure.
 
 import { db } from "@/lib/db";
-import { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
+import { getOpsDb } from "@/lib/fgmp/owner-db";
 import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 /**
@@ -282,22 +283,8 @@ import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
  * system uses (see src/lib/fgmp/seed.ts). It is NOT a licence to move the web
  * app's DATABASE_URL to the owner role, which would disable RLS everywhere.
  */
-let systemClient: PrismaClient | null = null;
-
 function systemDb(): PrismaClient {
-  const url =
-    process.env.FGMP_OPS_DATABASE_URL ?? process.env.FGMP_MIGRATE_DATABASE_URL;
-  if (!url) return db;
-  if (!systemClient) {
-    systemClient = new PrismaClient({
-      datasources: { db: { url } },
-      log: [
-        { level: "warn", emit: "stdout" as const },
-        { level: "error", emit: "stdout" as const },
-      ],
-    });
-  }
-  return systemClient;
+  return getOpsDb() ?? db;
 }
 
 const DEFAULT_USER = {

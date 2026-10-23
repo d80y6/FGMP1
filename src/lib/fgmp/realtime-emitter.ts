@@ -75,8 +75,9 @@
  * session.
  */
 
-import { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
 import { db } from "@/lib/db";
+import { getOpsDb } from "@/lib/fgmp/owner-db";
 import { getApinatorServer, tenantChannel } from "@/lib/fgmp/apinator-server";
 
 // ── Throttled logging ─────────────────────────────────────────────────────────
@@ -115,22 +116,8 @@ function throttledError(key: string, message: string): void {
  * role as fallback, null when neither is configured. One client per process —
  * constructing one per emit would churn connections for no benefit.
  */
-let resolverClient: PrismaClient | null = null;
-
 function siteResolverDb(): PrismaClient | null {
-  const url =
-    process.env.FGMP_OPS_DATABASE_URL ?? process.env.FGMP_MIGRATE_DATABASE_URL;
-  if (!url) return null;
-  if (!resolverClient) {
-    resolverClient = new PrismaClient({
-      datasources: { db: { url } },
-      log: [
-        { level: "warn", emit: "stdout" as const },
-        { level: "error", emit: "stdout" as const },
-      ],
-    });
-  }
-  return resolverClient;
+  return getOpsDb();
 }
 
 /**

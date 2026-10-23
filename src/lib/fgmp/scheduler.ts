@@ -59,8 +59,9 @@
  * scheduler with catch-up semantics, and this module does not claim to be one.
  */
 
-import { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
 import { db } from "@/lib/db";
+import { disconnectPrivilegedDbs, getOpsDb } from "@/lib/fgmp/owner-db";
 import { engine } from "./engine";
 import { evaluateAndPersist } from "./correlation/service";
 
@@ -79,8 +80,6 @@ export const DEFAULT_INTERVAL_MS = 5_000;
 /** How much simulated time each interval represents. */
 export const DEFAULT_STEP_SECONDS = 60;
 
-let ownerClient: PrismaClient | null = null;
-
 /**
  * Resolve the connection used for cross-tenant work.
  *
@@ -90,19 +89,7 @@ let ownerClient: PrismaClient | null = null;
  * producing a scheduler that appears to run and does nothing).
  */
 function schedulerDb(): PrismaClient | null {
-  const url =
-    process.env.FGMP_OPS_DATABASE_URL ?? process.env.FGMP_MIGRATE_DATABASE_URL;
-  if (!url) return null;
-  if (!ownerClient) {
-    ownerClient = new PrismaClient({
-      datasources: { db: { url } },
-      log: [
-        { level: "warn", emit: "stdout" as const },
-        { level: "error", emit: "stdout" as const },
-      ],
-    });
-  }
-  return ownerClient;
+  return getOpsDb();
 }
 
 /**
@@ -507,9 +494,6 @@ export function schedulerRunning(): boolean {
 
 /** Close the ops connection on shutdown so the process can exit cleanly. */
 export async function closeSchedulerConnection(): Promise<void> {
-  if (ownerClient) {
-    await ownerClient.$disconnect();
-    ownerClient = null;
-  }
+  await disconnectPrivilegedDbs();
   await db.$disconnect();
 }

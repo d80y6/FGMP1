@@ -1,10 +1,7 @@
-import type { Prisma } from "@prisma/client";
-// PrismaClient is imported as a VALUE, not a type: `systemDb()` constructs a
-// dedicated owner-role client for system-level seeding under RLS.
-import { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import type { Criticality, PowerSource, IotProtocol, FuelDeliveryStatus } from "@prisma/client";
 import { db } from "@/lib/db";
-import { hasOwnerDbUrl, resolveOwnerDbUrl } from "@/lib/fgmp/owner-db";
+import { getPrivilegedDb, hasOwnerDbUrl, resolveOwnerDbUrl } from "@/lib/fgmp/owner-db";
 import { toNum } from "@/lib/fgmp/decimal";
 import bcrypt from "bcryptjs";
 
@@ -31,8 +28,6 @@ import bcrypt from "bcryptjs";
  * If the owner URL is absent, the seed falls back to the ambient client and
  * fails loudly rather than silently writing rows into an arbitrary tenant.
  */
-let ownerClient: PrismaClient | null = null;
-
 function systemDb(): PrismaClient {
   // Precedence lives in resolveOwnerDbUrl() so it is tested. It MUST prefer
   // FGMP_MIGRATE_DATABASE_URL: DATABASE_URL is the app's RLS-enforced role, and
@@ -51,16 +46,7 @@ function systemDb(): PrismaClient {
         "the deploy-time seed job.",
     );
   }
-  if (!ownerClient) {
-    ownerClient = new PrismaClient({
-      datasources: { db: { url } },
-      log: [
-        { level: "warn", emit: "stdout" as const },
-        { level: "error", emit: "stdout" as const },
-      ],
-    });
-  }
-  return ownerClient;
+  return getPrivilegedDb(url);
 }
 
 /**

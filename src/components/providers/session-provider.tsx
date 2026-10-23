@@ -11,5 +11,12 @@ import type { ReactNode } from "react";
  * the underlying fetcher.
  */
 export function AuthSessionProvider({ children }: { children: ReactNode }) {
-  return <SessionProvider>{children}</SessionProvider>;
+  // The session is a signed JWT and its role/tenant are server-derived. The
+  // app already refreshes protected data as needed; polling /api/auth/session
+  // on every window focus added DB/auth work and used to re-trigger /api/fgmp/me.
+  return (
+    <SessionProvider refetchOnWindowFocus={false} refetchInterval={0}>
+      {children}
+    </SessionProvider>
+  );
 }
