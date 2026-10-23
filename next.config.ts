@@ -97,7 +97,14 @@ const nextConfig: NextConfig = {
   output: "standalone",
   // OpenNext must let workerd resolve Prisma's runtime-specific client and the
   // pg driver instead of bundling the native query-engine entry point.
-  serverExternalPackages: ["@prisma/client", ".prisma/client", "@prisma/adapter-pg", "pg"],
+  serverExternalPackages: [
+    "@prisma/client",
+    ".prisma/client",
+    "@prisma/adapter-pg",
+    "pg",
+    // Needed for the workerd-specific Socket export used by pg.
+    "pg-cloudflare",
+  ],
   /* Next advertises itself with `X-Powered-By: Next.js`. There is no reason to
      tell a scanner which framework is behind the app. */
   poweredByHeader: false,
@@ -109,6 +116,13 @@ const nextConfig: NextConfig = {
      output. */
   outputFileTracingIncludes: {
     "/api/fgmp/**": ["./config/**"],
+    // Next's Node-condition trace misses the workerd-only entry selected for
+    // pg-cloudflare by OpenNext's final bundle. Include both targets so the
+    // require('pg-cloudflare') path in pg/lib/stream.js can resolve dist/index.js.
+    "**/*": [
+      "./node_modules/pg-cloudflare/dist/**",
+      "./node_modules/pg-cloudflare/esm/**",
+    ],
   },
   /* The type gate is now ON. `ignoreBuildErrors: true` shipped 157 type
      errors for years and is why a missing `ROLES.DISPENSER_CONTROL` key and a
