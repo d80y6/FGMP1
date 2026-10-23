@@ -33,12 +33,24 @@ unscoped read returns nothing, so `assertTenantOwned` would never see a row —
 which is why the geography by-id routes (the Phase 0 IDOR) also scope their
 `where` clause. Both are kept.
 
-SUPER_ADMIN bypasses tenant isolation by design (`*` capability). Everywhere
-else the tenant comes from the session, never from the request body or query.
+No role bypasses tenant isolation. `SUPERADMIN` is a capability, not a tenant
+context: every tenant-scoped route — including one serving a super-admin — runs
+inside `withTenant()`, and a super-admin's own session is scoped to the platform
+tenant like anybody else's. Cross-tenant *content* requires an explicit,
+time-boxed support session that names one tenant, records a reason, and is
+visible in that tenant's audit log (`docs/SUPERADMIN.md`). Cross-tenant *numbers*
+(counts on the health endpoint) are read on the ops connection and never joined
+into a row set.
+
+Everywhere else the tenant comes from the session, never from the request body
+or query. The one exception is a super-admin naming a tenant explicitly on the
+user-administration routes (`?tenant=`), which goes through
+`asTenantForAnotherTenant()` — a named, runtime-checked capability.
 
 ## 3. Tenant isolation (RLS)
 
-36 tenant-carrying tables carry a policy on `tenant_id`. The app connects as
+39 tenant-carrying tables carry a policy on `tenant_id` (51 policies in total,
+counting the SECURITY DEFINER helper on the MFA challenge table). The app connects as
 `fgmp_app`, which does not own the tables, so policies apply even to a query
 written without a tenant filter.
 

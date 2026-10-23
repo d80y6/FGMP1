@@ -386,8 +386,11 @@ export function siteTenantWhereOrAll(me: SessionUser): { site?: { tenantId: stri
  * 404 — not 403 — to avoid leaking the existence of cross-tenant records).
  * Returns `null` when access is allowed, so the caller can proceed.
  *
- * SUPERADMIN bypasses this check entirely (cross-tenant access is the whole
- * point of the platform super-admin role).
+ * SUPERADMIN bypasses this POST-FETCH comparison — but not the database. Their
+ * routes resolve an explicit tenant with `resolveTenantScope()` (or, for support
+ * work, a time-boxed support session), so the row they fetched came from the
+ * tenant they actually named. "Skip the comparison" is not "read any tenant":
+ * see docs/SUPERADMIN.md.
  *
  * Usage:
  *   const rec = await db.alarm.findUnique({ where: { id } });

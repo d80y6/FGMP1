@@ -51,8 +51,9 @@ export const dynamic = "force-dynamic";
  *  2. `tableCounts` ran UNSCOPED `db.*.count()`, so tenant A learned
  *     platform-wide row counts across all tenants (alarm/user/audit volume
  *     for the whole platform, i.e. a side channel on every other tenant's
- *     size and activity). Counts are now tenant-scoped; SUPERADMIN (who
- *     bypasses tenant isolation by design) still sees the global numbers.
+ *     size and activity). Counts are now tenant-scoped; SUPERADMIN still gets
+ *     platform-wide FIGURES — read on the ops connection, deliberately, because
+ *     a count is not another tenant's row (docs/SUPERADMIN.md §2.1).
  *  3. `errors[]` was the raw ring buffer, whose `message` field carries
  *     internal exception text (Prisma messages, stack-derived strings). It
  *     is reduced to timestamp / method / status / route.
@@ -349,8 +350,9 @@ export async function GET(req: NextRequest) {
   if ("error" in auth) return auth.error;
   const me = auth.user;
 
-  // SUPERADMIN holds the `*` capability and bypasses tenant isolation by
-  // design (see assertTenantOwned); everyone else is pinned to their tenant.
+  // SUPERADMIN gets platform-wide COUNTS, read on the ops connection on
+  // purpose; everyone else is pinned to their tenant. Rows are a different
+  // question with a different answer — see docs/SUPERADMIN.md.
   const superAdmin = isSuperAdminUser(me);
   const tenantId = superAdmin ? undefined : me.tenantId;
   const cacheKey = tenantId ?? "*";

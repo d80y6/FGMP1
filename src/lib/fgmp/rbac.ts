@@ -13,9 +13,11 @@ export interface Permission {
 // Capability matrix per role.
 //
 // Role hierarchy (Task 49 — Super-admin model):
-//   SUPERADMIN — platform-level, cross-tenant. Creates tenants + tenant ADMINs.
-//                Bypasses tenant isolation entirely (see auth-helpers.ts).
-//                Holds the `*` wildcard — the ONLY role that does.
+//   SUPERADMIN — platform-level. Creates tenants + tenant ADMINs, and may obtain
+//                time-boxed access to ONE tenant at a time through a support
+//                session (docs/SUPERADMIN.md). It does NOT bypass tenant
+//                isolation: every tenant-scoped route still runs in a tenant
+//                context. Holds the `*` wildcard — the ONLY role that does.
 //   ADMIN      — tenant-level administrator. Creates users (non-SUPERADMIN)
 //                within their own tenant only. Cannot create tenants or
 //                touch SUPERADMIN accounts. Holds an EXPLICIT list (below),
@@ -218,7 +220,8 @@ export const SUPERADMIN_ONLY_CAPABILITIES = [
   "user:grant-superadmin",
 ] as const;
 
-/** Whether the given role is the platform-level super-admin (cross-tenant). */
+/** Whether the given role is the platform-level super-admin. Capability, not a
+ *  tenant context: see the note on `ROLE_PERMISSIONS.SUPERADMIN`. */
 export function isSuperAdmin(role: Role | string | undefined | null): boolean {
   return role === "SUPERADMIN";
 }

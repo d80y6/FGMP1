@@ -138,6 +138,16 @@ ending              DELETE …/support-sessions/current  (or [id])
                         └─ clear cookie
 ```
 
+The database side of this was exercised as `fgmp_app` on a clean PostgreSQL 16.2:
+
+```
+insert SupportSession …                     -- allowed
+update SupportSession set endedAt = now()   -- allowed (that is how a session closes)
+insert PlatformAuditLog …                   -- allowed
+delete from SupportSession …                -- ERROR: permission denied
+update PlatformAuditLog …                   -- ERROR: permission denied
+```
+
 Expiry needs no scheduler: `resolveActiveSupport()` refuses a row whose
 `expiresAt` has passed, and the next attempt to open a session marks stale rows
 `EXPIRED` before inserting.
