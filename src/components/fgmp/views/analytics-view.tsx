@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { TrendingUp, TrendingDown, Activity, AlertTriangle, Brain, Gauge as GaugeIcon, Map as MapIcon, DollarSign, Wallet, TrendingDown as TrendDown } from "lucide-react";
 import {
-  Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Line, LineChart,
+  Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Line,
   Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Scatter, ScatterChart, ZAxis,
 } from "recharts";
 import { useFgmp } from "@/lib/fgmp/store";

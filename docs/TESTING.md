@@ -13,19 +13,30 @@ npx tsc --noEmit         # 0 errors
 npx eslint .             # errors block; warnings are a tracked backlog
 ```
 
-`bun test` runs 713 assertions across 36 files. Suites that need PostgreSQL
-(RLS behaviour, MFA challenge resolution, command persistence) are written to
-fail loudly rather than skip when the database is absent, because a silently
-skipped isolation test is worse than a red one. With no database available the
-expected result is:
+`bun test` runs 727 assertions across 37 files. Three suites need PostgreSQL
+(RLS row hiding, MFA challenge resolution, command persistence); they cannot be
+mocked, because the property they pin belongs to the database session, not to the
+code.
+
+Without a database those suites **skip** and print one banner:
 
 ```
-699 pass
-14 fail   (all DB-backed)
+714 pass
+13 skip
+0 fail
 ```
 
-Every failure names a live-database dependency — `bun test` with a running
-database and `DATABASE_URL`/`FGMP_MIGRATE_DATABASE_URL` set should be green.
+That is a deliberate change from failing 14 assertions on every machine without
+PostgreSQL: a permanently red suite trains people to ignore it, and a real
+regression then hides in the noise. The skip is not silent and it is not the
+default in CI:
+
+```bash
+FGMP_REQUIRE_DB_TESTS=1 bun test    # a skipped DB suite is an ERROR
+```
+
+CI sets that flag in the job that provisions PostgreSQL, so a broken pipeline
+cannot quietly stop testing isolation.
 
 ### Database-backed suites
 
@@ -55,6 +66,7 @@ bun run test:proof
 | `scripts/verify/preferences-idor-proof.ts` | a user cannot read another tenant's preferences |
 | `scripts/verify/mfa-live-check.ts` | enrolment → challenge → verify against a live server |
 | `scripts/verify/e2e/run-route-sweep.ts` | every API route returns its expected auth status |
+| `scripts/verify/env-check.ts` | the same environment rules the server applies at boot |
 
 ### End-to-end route sweep
 

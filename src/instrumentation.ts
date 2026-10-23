@@ -45,6 +45,33 @@ export async function register(): Promise<void> {
     return;
   }
 
+  // ── Environment validation, once, before anything else ────────────────────
+  // Only the Node server owns the database credential, the scheduler and the
+  // session secret, so only it refuses to start on a broken environment.
+  // Warnings (no Apinator credentials, no MFA key) are reported and the server
+  // continues: each degrades one feature and none makes the app unsafe to serve.
+  const { assertEnv, formatEnvIssues } = await import("@/lib/env");
+  const envIssues = ((): Awaited<ReturnType<typeof assertEnv>> => {
+    try {
+      return assertEnv();
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : String(err));
+      // Throwing out of register() is NOT fail-closed: Next logs
+      // "Failed to prepare server", marks the hook failed and keeps the port
+      // open, so an orchestrator sees a healthy socket on a process that will
+      // 500 every request. Exiting is the only honest signal.
+      process.exit(1);
+    }
+  })();
+  const warnings = envIssues.filter((i) => i.severity === "warn");
+  if (warnings.length > 0) {
+    console.warn(
+      `[env] ${warnings.length} configuration warning${warnings.length === 1 ? "" : "s"} — ` +
+        "the app runs, but these features are degraded:\n" +
+        formatEnvIssues(warnings),
+    );
+  }
+
   const { simulationDecision } = await import("@/lib/fgmp/simulation");
   const decision = simulationDecision();
 

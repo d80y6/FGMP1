@@ -48,6 +48,28 @@ services:
   # Passwords are DEVELOPMENT credentials, committed on purpose so a developer
   # and the test suite agree without setup. They are worthless outside the
   # loopback listener, and allow_anonymous is false.
+  # ── Shared rate-limit store ─────────────────────────────────────────────────
+  # Optional but recommended: without it every limit is per-process, so N
+  # replicas multiply every budget by N. The limiter fails CLOSED for login and
+  # MFA (an outage is visible; unlimited brute force is not) and fails OPEN for
+  # device ingest (a missing theft window is unrecoverable). No persistence:
+  # a bucket that survives a restart is not a requirement, and losing counters
+  # on restart only ever makes the limiter stricter again.
+  fgmp-redis:
+    image: redis:7-alpine
+    container_name: fgmp-redis
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      # Loopback only: the limiter is internal, it is not a public surface.
+      - "127.0.0.1:6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
   fgmp-broker:
     image: eclipse-mosquitto:2
     container_name: fgmp-broker
@@ -160,7 +182,12 @@ services:
     restart: unless-stopped
 
   fgmp-app:
-    build: .
+    build:
+      context: .
+      # Build-time, not runtime: Next inlines NEXT_PUBLIC_* into the bundle.
+      args:
+        NEXT_PUBLIC_APINATOR_APP_KEY: ${NEXT_PUBLIC_APINATOR_APP_KEY:-}
+        NEXT_PUBLIC_APINATOR_CLUSTER: ${NEXT_PUBLIC_APINATOR_CLUSTER:-eu}
     ports:
       - "3151:3000"
     environment:
@@ -187,8 +214,16 @@ services:
       # as part of `--profile seed`). The app therefore never holds the owner
       # credential; preflight verifies the schema over DATABASE_URL instead.
       - FGMP_SKIP_MIGRATE=1
+      # Shared limiter. Comment this out to run without Redis; the app degrades
+      # to per-process limits and reports fgmp_rate_limit_degraded=1.
+      - REDIS_URL=redis://fgmp-redis:6379
+      # Optional: MFA enrolment is refused without it (the app warns at boot).
+      - FGMP_MFA_ENCRYPTION_KEY=${FGMP_MFA_ENCRYPTION_KEY:-}
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:?set NEXTAUTH_SECRET (openssl rand -base64 32)}
-      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
+      # Defaults to the host port this stack actually publishes (3151). A
+      # mismatch here is not cosmetic: NextAuth uses it to build callback URLs
+      # and to decide whether to mark cookies Secure.
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3151}
       - IOT_API_KEY=${IOT_API_KEY:?set IOT_API_KEY (openssl rand -hex 32)}
       # ── Realtime (hosted Apinator) ────────────────────────────────────────
       # REALTIME_URL / REALTIME_SERVER_SECRET / REALTIME_TOKEN_SECRET are gone:
@@ -211,11 +246,20 @@ services:
     depends_on:
       fgmp-db:
         condition: service_healthy
+      fgmp-redis:
+        condition: service_healthy
     restart: unless-stopped
+    # PID 1 reaping: the entrypoint execs node, but a wrapper that ever changes
+    # that must not leave zombie children behind.
+    init: true
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
-      # Unauthenticated probe — /api/fgmp/health requires ADMIN, so it would
-      # report unhealthy forever. Any HTTP response proves the server is up.
-      test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:3000/api/fgmp/health').then(r=>process.exit(0)).catch(()=>process.exit(1))"]
+      # Readiness, and genuinely so: /api/health/ready returns 503 until the
+      # database and the migrated schema are both reachable, so `docker compose
+      # ps` distinguishes "process started" from "can serve traffic".
+      # /api/fgmp/health is ADMIN-only and would 401 forever.
+      test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:3000/api/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -234,6 +278,7 @@ services:
 
   fgmp-iot-bridge:
     build: ./mini-services/iot-bridge
+    init: true
     # No port exposure — this service only makes outbound calls.
     environment:
       - NEXT_API_BASE=http://fgmp-app:3000

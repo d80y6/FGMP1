@@ -1,0 +1,133 @@
+/**
+ * Self-hosted fonts.
+ *
+ * WHY NOT `next/font/google` — the build used to download Geist and Cairo from
+ * fonts.googleapis.com on every `next build`. That made the production build
+ * depend on an external service: it fails offline, in an air-gapped CI runner,
+ * or when the host is rate-limited, and the failure looks like a code error
+ * ("Turbopack build failed"). The three families are now vendored under
+ * `src/app/fonts/` (woff2, ~270 KB total) and declared here.
+ *
+ * The family names map onto the same CSS variables the rest of the app already
+ * uses (`--font-geist-sans`, `--font-geist-mono`, `--font-cairo`), so
+ * `globals.css` needs no change and nothing in the component tree can tell the
+ * difference.
+ *
+ * Cairo ships per-subset files rather than a variable font, so `unicode-range`
+ * matters: without it the last declaration wins for every glyph and Arabic text
+ * would be rendered from the Latin subset (missing glyphs → fallback font).
+ */
+
+/* ── Geist (UI, Latin) ────────────────────────────────────────────────────── */
+
+@font-face {
+  font-family: "Geist";
+  src: url("./fonts/Geist-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  src: url("./fonts/GeistMono-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ── Cairo (Arabic + Latin) ───────────────────────────────────────────────── */
+
+@font-face {
+  font-family: "Cairo";
+  src: url("./fonts/cairo-arabic-400-normal.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891,
+    U+0898-08E1, U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41,
+    U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC;
+}
+
+@font-face {
+  font-family: "Cairo";
+  src: url("./fonts/cairo-latin-400-normal.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Cairo";
+  src: url("./fonts/cairo-arabic-500-normal.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891,
+    U+0898-08E1, U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41,
+    U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC;
+}
+
+@font-face {
+  font-family: "Cairo";
+  src: url("./fonts/cairo-latin-500-normal.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Cairo";
+  src: url("./fonts/cairo-arabic-600-normal.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891,
+    U+0898-08E1, U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41,
+    U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC;
+}
+
+@font-face {
+  font-family: "Cairo";
+  src: url("./fonts/cairo-latin-600-normal.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Cairo";
+  src: url("./fonts/cairo-arabic-700-normal.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891,
+    U+0898-08E1, U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41,
+    U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC;
+}
+
+@font-face {
+  font-family: "Cairo";
+  src: url("./fonts/cairo-latin-700-normal.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+:root {
+  --font-geist-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-geist-mono: "Geist Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-cairo: "Cairo", "Segoe UI", Tahoma, sans-serif;
+}

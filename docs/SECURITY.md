@@ -69,7 +69,15 @@ TOTP with encrypted-at-rest secrets and single-use recovery codes. See
   not a session.
 * Recovery codes are hashed; using one is recorded in the audit log.
 
-## 5. Secrets
+## 5. Boot-time validation
+
+The server refuses to start on an invalid environment (`src/lib/env.ts`,
+`FGMP_REQUIRE_RLS=0` in production, short secrets, partial realtime
+credentials) and exits non-zero rather than serving a half-configured platform.
+`bun run check:env` applies the same rules before a deploy. Problem reports name
+variables, never values.
+
+## 6. Secrets
 
 * No secret has a committed default. `IOT_API_KEY` is read lazily and refuses
   the request when absent or shorter than 16 characters; the old
@@ -81,7 +89,7 @@ TOTP with encrypted-at-rest secrets and single-use recovery codes. See
 * `NEXT_PUBLIC_*` values are public by definition; they are limited to the
   Apinator app key and cluster.
 
-## 6. Rate limiting
+## 7. Rate limiting
 
 `src/lib/fgmp/rate-limit.ts` uses Redis so limits are shared across replicas
 (the previous in-process `Map` multiplied every budget by the replica count).
@@ -96,7 +104,7 @@ When Redis is unavailable the policy is chosen per call site, explicitly:
 There is also a DB-backed per-account lockout, so the limiter is the first of
 two layers, not the only one.
 
-## 7. Input handling and injection
+## 8. Input handling and injection
 
 * Every mutating route validates its body with Zod. Unknown fields are stripped
   by the schema, not passed through.
@@ -107,16 +115,37 @@ two layers, not the only one.
 * Error responses do not echo database or exception text to non-admins; the
   health endpoint redacts exception messages and is ADMIN-only.
 
-## 8. Transport and headers
+## 9. Transport and headers
 
-`next.config.ts` sets a CSP plus `X-Frame-Options`, `Referrer-Policy`,
-`X-Content-Type-Options` and a permissions policy. `connect-src` allows the
-Apinator WebSocket origins; `frame-ancestors` is restricted to the app's own
-origin. TLS terminates at the reverse proxy (`Caddyfile`), which also terminates
-mTLS for device traffic on `127.0.0.1:8443` and requires a client certificate
-from a private CA.
+`next.config.ts` sets a CSP plus `Referrer-Policy`, `X-Content-Type-Options`,
+`X-DNS-Prefetch-Control`, `Permissions-Policy` and HSTS in production.
+`X-Powered-By` is disabled.
 
-## 9. Backups and download surface
+The CSP is **environment-aware**:
+
+| Directive | Production | Development |
+|---|---|---|
+| `script-src` | `'self' 'unsafe-inline'` | adds `'unsafe-eval'` (HMR) |
+| `connect-src` | `'self' https://*.apinator.io wss://*.apinator.io` | `'self' ws: wss: http://localhost:*` |
+| `object-src` | `'none'` | — |
+| `base-uri` / `form-action` | `'self'` | — |
+
+`'unsafe-inline'` remains because the App Router emits inline bootstrap scripts;
+a nonce-based policy needs middleware on every route. `'unsafe-eval'` is gone
+from production. `frame-ancestors 'self' https:` is still deliberately
+permissive — see the note in `next.config.ts` (preview iframes; the app requires
+a session regardless).
+
+TLS terminates at the reverse proxy (`Caddyfile`), which also terminates mTLS for
+device traffic on `127.0.0.1:8443` and requires a client certificate from a
+private CA.
+
+**Probe disclosure.** `/api/health/live` and `/api/health/ready` are
+unauthenticated by necessity — an orchestrator has no session. They return a
+status and a coarse reason code only: no driver, host, schema name, stack trace
+or exception text. The detailed view stays ADMIN-only.
+
+## 10. Backups and download surface
 
 There is no HTTP backup endpoint. The removed `/api/fgmp/backup*` route served a
 full cross-tenant dump to any tenant ADMIN; backups now run as a one-shot
@@ -124,7 +153,7 @@ container with the ops role (see
 [DEPLOYMENT.md](DEPLOYMENT.md#5-backups)). No authenticated user of any role can
 trigger, download or restore a dump over HTTP.
 
-## 10. Known gaps
+## 11. Known gaps
 
 | Gap | Impact | Mitigation |
 |---|---|---|

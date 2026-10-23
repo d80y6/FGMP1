@@ -56,21 +56,57 @@ const securityHeaders = [
     : []),
   {
     key: "Content-Security-Policy",
-    value: [
-      "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-      "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: blob: https:",
-      "font-src 'self' data:",
-      "connect-src 'self' ws: wss: http://localhost:*",
-      // See the FRAME EMBEDDING note above — deliberately permissive.
-      "frame-ancestors 'self' https:",
-    ].join("; "),
+    // Development and production get DIFFERENT policies. The previous single
+    // policy allowed 'unsafe-eval' and a wildcard `connect-src ws: wss:` in
+    // production, where neither is needed: Next's dev server uses eval for HMR,
+    // and the browser connects only to the app origin plus the hosted realtime
+    // cluster. Shipping the dev policy to production widened the blast radius
+    // of any XSS for the sake of a development convenience.
+    value: (process.env.NODE_ENV === "production"
+      ? [
+          "default-src 'self'",
+          // 'unsafe-inline' is required: the App Router emits inline bootstrap
+          // scripts. A nonce-based policy needs middleware on every route and is
+          // a larger change than this cleanup; 'unsafe-eval' is NOT required.
+          "script-src 'self' 'unsafe-inline'",
+          "style-src 'self' 'unsafe-inline'",
+          "img-src 'self' data: blob: https:",
+          "font-src 'self' data:",
+          // Realtime is Apinator over TLS. No localhost, no bare ws:.
+          "connect-src 'self' https://*.apinator.io wss://*.apinator.io",
+          "object-src 'none'",
+          "base-uri 'self'",
+          "form-action 'self'",
+          // See the FRAME EMBEDDING note above — deliberately permissive.
+          "frame-ancestors 'self' https:",
+        ]
+      : [
+          "default-src 'self'",
+          "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+          "style-src 'self' 'unsafe-inline'",
+          "img-src 'self' data: blob: https:",
+          "font-src 'self' data:",
+          "connect-src 'self' ws: wss: http://localhost:*",
+          "frame-ancestors 'self' https:",
+        ]
+    ).join("; "),
   },
 ];
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  /* Next advertises itself with `X-Powered-By: Next.js`. There is no reason to
+     tell a scanner which framework is behind the app. */
+  poweredByHeader: false,
+  /* `config/alerts.json` is read from disk at request time (alerting cannot
+     invent thresholds). Standalone output traces only module imports, so a
+     data file read through `fs` is NOT copied into the image by default —
+     which would make `/api/fgmp/ops/alerts/preview` throw in production while
+     working in dev. Declaring it here makes the file part of the traced
+     output. */
+  outputFileTracingIncludes: {
+    "/api/fgmp/**": ["./config/**"],
+  },
   /* The type gate is now ON. `ignoreBuildErrors: true` shipped 157 type
      errors for years and is why a missing `ROLES.DISPENSER_CONTROL` key and a
      set of Prisma columns that don't exist went unnoticed until routes started

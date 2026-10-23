@@ -9,7 +9,13 @@ services:
     dockerfilePath: Dockerfile
     dockerContext: .
     plan: free
-    # healthCheckPath: /api/fgmp/health
+    # NEXT_PUBLIC_* are inlined at build time. The Dockerfile declares them as
+    # ARGs, and Render exposes service environment variables to the Docker build
+    # only when an ARG of the same name exists — so keep these declared if you
+    # move realtime credentials around.
+    # Unauthenticated readiness probe. /api/fgmp/health is ADMIN-only, so
+    # pointing Render at it marked every healthy deploy as down.
+    healthCheckPath: /api/health/ready
     envVars:
       - fromGroup: fgmp1  # Pulls all variables from your existing environment group
       - key: DATABASE_URL

@@ -7,9 +7,33 @@ RUN bun install --frozen-lockfile
 # ---- Builder ----
 FROM oven/bun:1 AS builder
 WORKDIR /app
+# NEXT_PUBLIC_* values are inlined into the client bundle at BUILD time. In a
+# Docker build the environment of the builder stage is not visible unless it is
+# declared, so these ARGs are what make realtime work in a container at all.
+# Passing them only as runtime env vars produces a build with an empty app key
+# and realtime silently disabled (the UI falls back to the 5 s poll).
+#   docker build --build-arg NEXT_PUBLIC_APINATOR_APP_KEY=… .
+ARG NEXT_PUBLIC_APINATOR_APP_KEY=""
+ARG NEXT_PUBLIC_APINATOR_CLUSTER="eu"
+ENV NEXT_PUBLIC_APINATOR_APP_KEY=${NEXT_PUBLIC_APINATOR_APP_KEY}
+ENV NEXT_PUBLIC_APINATOR_CLUSTER=${NEXT_PUBLIC_APINATOR_CLUSTER}
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN bunx prisma generate
+# A client generated WITHOUT a query-engine binary still type-checks and still
+# builds: it simply cannot talk to PostgreSQL, and the first query fails with
+# "the URL must start with the protocol prisma://" — the signature of a client
+# that only knows how to reach Prisma Accelerate. That happens whenever the
+# engine download (binaries.prisma.sh) is blocked. Fail here, where the message
+# names the cause, instead of at runtime in the first request.
+RUN found=$(find node_modules/@prisma/engines node_modules/.prisma -name 'libquery_engine*' -o -name 'query_engine*' 2>/dev/null | head -1); \
+    if [ -z "$found" ]; then \
+      echo "FAIL: prisma generate produced no query engine binary."; \
+      echo "The image would build and then be unable to reach PostgreSQL."; \
+      echo "Check network access to binaries.prisma.sh during the build."; \
+      exit 1; \
+    fi; \
+    echo "prisma query engine: $found"
 # Compute the Prisma CLI's real dependency closure (see the script's header for
 # why this is derived rather than hand-written) and stage it for the runner.
 RUN bun ./scripts/collect-prisma-cli-deps.ts \
@@ -34,6 +58,13 @@ COPY --from=builder /app/.next/static ./.next/static
 # `migrate deploy`. Without these the container could only ever have used the
 # old SQLite bootstrap, which hard-exits against PostgreSQL.
 COPY --from=builder /app/prisma ./prisma
+# Runtime data, not code: alerting reads its rule file from disk and refuses to
+# fall back to built-in thresholds. Standalone output traces modules, not data
+# files, so without this copy `/api/fgmp/ops/alerts/preview` throws in the image
+# while working perfectly in dev. (outputFileTracingIncludes in next.config.ts
+# covers the same file for non-Docker tracing; both are kept because they cover
+# different builds.)
+COPY --from=builder /app/config ./config
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
@@ -99,4 +130,11 @@ ENV HOME=/tmp
 # rights. The app connects as fgmp_app, which cannot migrate; handing it an
 # owner credential would make the RLS boundary decorative.
 ENTRYPOINT ["bun", "./scripts/docker-entrypoint.mjs"]
+
+# Liveness, not readiness: the process is up and serving HTTP. Uses the
+# unauthenticated /api/health/live route — /api/fgmp/health is ADMIN-only, so an
+# orchestrator probing it would see 401 and mark a healthy container unhealthy.
+# `bun` is already the runtime, so no curl/wget has to be added to the image.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD bun -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 

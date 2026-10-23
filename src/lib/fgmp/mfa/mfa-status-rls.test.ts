@@ -27,7 +27,8 @@
  * invisible to type checking and to any mock: it is a property of the database
  * session, not of the code.
  */
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
+import { describeDb } from "../test-support/db-required";
 import { db } from "@/lib/db";
 import { withTenant } from "@/lib/fgmp/tenant-context";
 
@@ -63,7 +64,7 @@ async function ensureRow() {
   );
 }
 
-describe("RLS makes an unscoped MFA lookup silently return nothing", () => {
+describeDb("RLS makes an unscoped MFA lookup silently return nothing", () => {
   test("an unscoped findUnique finds NO row, even though one exists", async () => {
     await ensureRow();
     // The bug's mechanism, asserted directly: FORCE RLS means this is null.
@@ -108,7 +109,7 @@ describe("RLS makes an unscoped MFA lookup silently return nothing", () => {
 // HTTP sequence wrong-then-right exposed it, which is why the ordering is
 // asserted here rather than left to a code review.
 // ─────────────────────────────────────────────────────────────────────────────
-describe("a failed attempt must not consume the challenge", () => {
+describeDb("a failed attempt must not consume the challenge", () => {
   test("the SQL resolver only returns LIVE rows, so a spent token is invisible", async () => {
     await ensureRow();
     // Insert a spent challenge and a live one, and assert the SECURITY DEFINER
@@ -180,7 +181,7 @@ describe("a failed attempt must not consume the challenge", () => {
 // If it were written through the owner fallback, it would be visible BOTH ways —
 // which is precisely the tell.
 // ─────────────────────────────────────────────────────────────────────────────
-describe("MFA audit rows are tenant-scoped, not owner-written", () => {
+describeDb("MFA audit rows are tenant-scoped, not owner-written", () => {
   test("an auditMfa row is invisible without a tenant context", async () => {
     await ensureRow();
     const { auditMfa } = await import("@/lib/fgmp/mfa/service");

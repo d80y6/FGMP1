@@ -145,7 +145,26 @@ fetching; shared presentational pieces (status colours, health bands, numeral an
 CSV formatting) live in `src/lib/fgmp/{status,numerals,csv,format,labels}.ts` so
 the same value cannot render two different ways.
 
-## 9. What is intentionally not built
+## 9. Operational surface
+
+| Route | Auth | Purpose |
+|---|---|---|
+| `/api/health/live` | none | liveness: the process serves HTTP, no dependency |
+| `/api/health/ready` | none | readiness: database reachable and schema migrated (503 otherwise) |
+| `/api/fgmp/health` | ADMIN | detailed view: memory, DB size, tenant-scoped counts, verdict |
+| `/api/fgmp/metrics` | ALARM_OPS | Prometheus exposition |
+
+Boot is gated twice before any request is served: `scripts/docker-entrypoint.mjs`
+runs the schema preflight, and `instrumentation.ts` validates the environment
+(`src/lib/env.ts`) and exits non-zero on an error rather than leaving a port open
+on a process that cannot serve.
+
+Static assets: fonts are vendored (`src/app/fonts/`) rather than fetched from
+Google at build time; runtime data files (`config/alerts.json`) are declared in
+`outputFileTracingIncludes` and copied into the image explicitly, because
+standalone tracing follows module imports, not `fs` reads.
+
+## 10. What is intentionally not built
 
 * No write path from the web app to a physical dispenser: the Modbus and MQTT
   transports exist and are tested, but no deployment configures one.

@@ -102,9 +102,12 @@ Time: ${new Date().toISOString()}
   };
 
   const goHome = () => {
-    if (typeof window !== "undefined") {
-      window.location.href = "/?view=dashboard";
-    }
+    if (typeof window === "undefined") return;
+    // Full document navigation on purpose: this component renders when React
+    // itself has failed, so the router and its state cannot be trusted to
+    // recover. `replace` (not `assign`) so the broken page is not left in
+    // history for the Back button to return to.
+    window.location.replace("/?view=dashboard");
   };
 
   return (

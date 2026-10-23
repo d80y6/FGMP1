@@ -9,7 +9,6 @@ import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
@@ -216,7 +215,7 @@ export function RolesView() {
             Not granted
           </span>
           <span className="ml-auto">
-            Click a row to inspect that role's full capability list below.
+            Click a row to inspect that role&apos;s full capability list below.
           </span>
         </CardContent>
       </Card>

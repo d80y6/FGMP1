@@ -127,6 +127,7 @@ docs/                       Current documentation (history/ is archived)
 | `bun run build` | Production build (standalone output) |
 | `bun run start` | Run the built standalone server |
 | `bun run typecheck` | `tsc --noEmit` (zero errors required) |
+| `bun run check:env` | Validate the environment before deploying (same rules as boot) |
 | `bun run lint` | ESLint (errors block; warnings are a tracked backlog) |
 | `bun test` | Unit suites (DB-backed suites skip/fail without PostgreSQL) |
 | `bun run test:rls` | RLS regression suite against a live database |
@@ -134,6 +135,11 @@ docs/                       Current documentation (history/ is archived)
 | `bun run db:generate` / `db:deploy` / `db:seed` | Prisma client, migrations, seed |
 | `bun run seed:admin` | Create or repair the first ADMIN user |
 | `docker compose up -d --build` | Full stack (app :3151) |
+
+Operational endpoints: `GET /api/health/live` (process liveness, no
+dependencies) and `GET /api/health/ready` (database + schema, 503 until
+migrations are applied). Both are unauthenticated by design; the detailed
+`/api/fgmp/health` view is ADMIN-only.
 
 ## Documentation
 
@@ -144,6 +150,7 @@ docs/                       Current documentation (history/ is archived)
 | [`docs/SECURITY.md`](docs/SECURITY.md) | Auth, RBAC, RLS, MFA, secrets, residual risks |
 | [`docs/OPERATIONS.md`](docs/OPERATIONS.md) | Health, metrics, scheduler, MQTT, incident checks |
 | [`docs/TESTING.md`](docs/TESTING.md) | Browser verification and automated suites |
+| [`docs/READINESS.md`](docs/READINESS.md) | Production-readiness audit: what was fixed and what is still external |
 | [`docs/MFA.md`](docs/MFA.md) | MFA design, recovery model and operational notes |
 | [`docs/CONSOLIDATION.md`](docs/CONSOLIDATION.md) | What was removed, merged or moved in the October 2026 cleanup |
 | [`docs/history/`](docs/history/) | Archived reviews, audits and phase records (not normative) |

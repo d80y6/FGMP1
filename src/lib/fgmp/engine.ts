@@ -26,7 +26,6 @@ import {
 } from "./thresholds-time";
 import { Rng, streamsFor, DEFAULT_SIM_SEED } from "./prng";
 import { assertSimulationAllowed } from "./simulation";
-import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 /**
  * Raised when the engine is asked to initialise without being told which

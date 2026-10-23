@@ -30,6 +30,10 @@ platform. Migration credentials are not needed for this check.
 cp .env.example .env
 # fill in every REQUIRED variable — see §3
 
+# 0. Check the environment before starting anything. Same rules as boot:
+#    [error] would stop the server, [warn] degrades one feature.
+bun run check:env
+
 # 1. Apply the committed migrations
 docker compose --profile migrate run --rm fgmp-migrate
 
@@ -91,8 +95,9 @@ orchestrator health probes and looks like a crash loop.
 | `IOT_API_KEY` | Shared secret for device ingest. Minimum 16 characters; the route returns 503 when absent. `openssl rand -hex 32`. |
 | `REALTIME_SERVICE_TOKEN` | Authenticates the IoT bridge on `/api/fgmp/realtime/snapshot`. |
 | `APINATOR_APP_ID`, `APINATOR_KEY`, `APINATOR_SECRET`, `APINATOR_CLUSTER` | Hosted realtime channels (server-side emit + channel auth). |
-| `NEXT_PUBLIC_APINATOR_APP_KEY`, `NEXT_PUBLIC_APINATOR_CLUSTER` | Browser subscription. `NEXT_PUBLIC_*` values are baked at build time — changing them requires a rebuild. |
-| `FGMP_MFA_ENCRYPTION_KEY` | Encrypts TOTP secrets at rest. Changing it invalidates every enrolment. |
+| `NEXT_PUBLIC_APINATOR_APP_KEY`, `NEXT_PUBLIC_APINATOR_CLUSTER` | Browser subscription. `NEXT_PUBLIC_*` values are baked at build time — changing them requires a rebuild. In Docker they are passed as **build args** (the Dockerfile declares the ARGs and compose forwards them from `.env`); supplying them only at runtime produces a bundle with an empty app key and realtime silently disabled. |
+| `FGMP_MFA_ENCRYPTION_KEY` | Encrypts TOTP secrets at rest. Changing it invalidates every enrolment. The app starts without it but MFA enrolment is refused (reported at boot). |
+| `REDIS_URL` | Optional. Shared rate-limit store. Without it limits are per-process and the app reports `fgmp_rate_limit_degraded=1`. Compose provides `fgmp-redis`. |
 
 `FGMP_REQUIRE_RLS` defaults to `1`. Leave it on: the startup check refuses a
 connection whose role bypasses RLS, which is the last line of defence against a
@@ -120,10 +125,10 @@ which is supplied only to that job.
 If you prefer a Render Shell, `bun run db:deploy` works there too — but only if
 the shell's environment has the owner URL. Do not add it to the web service.
 
-`healthCheckPath` is intentionally commented out. `/api/fgmp/health` is
-ADMIN-only by design (it exposes process and database internals), so an
-unauthenticated platform probe would receive 401 and mark a healthy service as
-down. Use TCP/port checks instead.
+`healthCheckPath` is `/api/health/ready` — unauthenticated, and it fails until
+the database is reachable and the migrations are applied. Do **not** point it at
+`/api/fgmp/health`: that route is ADMIN-only by design (process and database
+internals) and would 401, marking a healthy service down.
 
 ## 5. Backups
 

@@ -4,7 +4,26 @@ Day-two behaviour: what the platform reports about itself, how the clock
 advances, how the broker is wired, and what to check first when something looks
 wrong.
 
-## 1. Health endpoint
+## 1. Probes and the health endpoint
+
+Three different questions, three different routes — conflating them is what made
+the first compose healthcheck meaningless:
+
+| Route | Auth | Question | Use |
+|---|---|---|---|
+| `/api/health/live` | none | is the process serving HTTP? | container `HEALTHCHECK`, restart decisions |
+| `/api/health/ready` | none | can it reach PostgreSQL *and* is the schema migrated? | load-balancer / orchestrator readiness, Render `healthCheckPath` |
+| `/api/fgmp/health` | ADMIN | process memory, DB size, table counts, error ring buffer, verdict | operator dashboard |
+
+`live` deliberately does not touch the database: a liveness probe that fails
+when the database is slow restarts a healthy process and makes an outage worse.
+`ready` returns 503 with a coarse reason (`db_unreachable`, `schema_missing`,
+`timeout`) and never discloses the driver, host or exception.
+
+Boot-time validation is the fourth gate: the server refuses to start when the
+environment is invalid (see §9).
+
+## 2. Health endpoint
 
 `GET /api/fgmp/health` — **ADMIN only**, cached 10 s per scope.
 
@@ -41,7 +60,7 @@ wrong.
 Because the route is ADMIN-only, do **not** use it as an unauthenticated
 platform health check. Use a TCP check on the app port.
 
-## 2. Metrics
+## 3. Metrics
 
 `GET /api/fgmp/metrics` — Prometheus text exposition, gated on `ALARM_OPS`
 (metrics reveal operational shape even though labels are low-cardinality).
@@ -58,7 +77,7 @@ Useful series:
 | `fgmp_rate_limit_degraded` | Redis unavailable, limiter policy in effect |
 | `fgmp_audit_write_failures_total` | audit writes that failed |
 
-## 3. The scheduler (telemetry clock)
+## 4. The scheduler (telemetry clock)
 
 `instrumentation.ts` starts `scheduler.ts` once per process:
 
@@ -78,7 +97,7 @@ If state is not advancing: check that simulation is enabled, that the ops URL is
 set in that process, and that the advisory lock is not held by a wedged backend
 (`SELECT * FROM pg_locks WHERE locktype = 'advisory'`).
 
-## 4. MQTT broker
+## 5. MQTT broker
 
 `docker/mosquitto/config/` holds `mosquitto.conf`, `acl` and `passwd`. Compose
 **copies** them into a volume rather than bind-mounting, because a bind mount
@@ -97,7 +116,7 @@ MQTT TLS: `scripts/dev/generate-mtls-certs.sh` produces a local CA, server and
 client certificates for testing; `Caddyfile` terminates mTLS for device traffic
 on `127.0.0.1:8443`.
 
-## 5. IoT ingest
+## 6. IoT ingest
 
 `POST /api/fgmp/iot/ingest` — device auth via `x-api-key`, not a session.
 
@@ -111,7 +130,7 @@ on `127.0.0.1:8443`.
 The route upserts tank/generator/battery readings and pushes the change into
 Apinator itself. The bridge holds no socket.
 
-## 6. Logging
+## 7. Logging
 
 `src/lib/observability/log.ts` writes structured JSON and redacts sensitive keys
 (`authorization`, `cookie`, `x-api-key`, passwords, tokens) before output. Route
@@ -120,11 +139,12 @@ errors are recorded to the in-process ring buffer that feeds `health.errors[]`.
 Log lines carry a request id; correlate a browser failure with the server line by
 timestamp + method + path + status.
 
-## 7. First checks by symptom
+## 8. First checks by symptom
 
 | Symptom | Check |
 |---|---|
-| App container exits immediately | `docker compose logs fgmp-app` — the entrypoint prints which check failed. Usually migrations not applied, or `FGMP_REQUIRE_RLS=1` with a bypassing `DATABASE_URL`. |
+| App container exits immediately | `docker compose logs fgmp-app`. The entrypoint prints which check failed; if the environment itself is invalid, the env validator lists every `[error]` by name (never by value). Usually: migrations not applied, `FGMP_REQUIRE_RLS=1` with a bypassing `DATABASE_URL`, or a missing/short secret. |
+| Orchestrator marks the app down but it serves traffic | Something is probing `/api/fgmp/health`, which is ADMIN-only and returns 401. Point it at `/api/health/ready`. |
 | Login fails for everyone | `NEXTAUTH_URL` / `NEXTAUTH_SECRET` changed? Sessions are invalidated by a secret change. |
 | Dashboard looks empty | Is simulation enabled, and has the scheduler ticked? An empty platform is the honest state without devices. |
 | Realtime indicator offline | Channel auth failed; the 5 s poll still updates data. Check `APINATOR_*` and `NEXT_PUBLIC_APINATOR_*` (the latter is baked at build time). |
@@ -132,7 +152,15 @@ timestamp + method + path + status.
 | Commands stay `PENDING` | Expected: no dispatch transport is configured, so the command resolves to `NO_TRANSPORT`/`TIMEOUT`. `command-reconciliation.ts` clears abandoned rows. |
 | Backup job "succeeds" but is tiny | It ran as `fgmp_app`: RLS-scoped dumps are silently incomplete. Use `fgmp_ops`. |
 
-## 8. Routine maintenance
+## 9. Rate limiting and Redis
+
+Login and MFA fail **closed** when the shared limiter store is unavailable;
+device ingest fails **open**. With no `REDIS_URL` every limit is per-process, so
+N replicas multiply each budget by N, and the app reports
+`fgmp_rate_limit_degraded=1`. Compose provides `fgmp-redis`; a deployment
+without it is functional but weaker.
+
+## 10. Routine maintenance
 
 * **Daily** — verify the backup job ran and the dump is non-trivial in size.
 * **Monthly** — run the restore drill (`fgmp-backup-restore`), review

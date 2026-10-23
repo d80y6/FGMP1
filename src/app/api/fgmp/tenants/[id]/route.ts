@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { bootstrap } from "@/lib/fgmp";
 import { asTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import {

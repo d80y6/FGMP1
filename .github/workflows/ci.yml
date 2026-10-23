@@ -181,8 +181,20 @@ jobs:
       - name: PostgreSQL smoke test (non-destructive, asserts RLS is enforcing)
         run: bun run test:smoke
 
-      # The isolation proof: 24 tables, deliberately unguarded queries that must
-      # not leak. Exits non-zero on any failure.
+      # The database-backed suites, run where the database actually exists.
+      # `verify` runs `bun test` without one, so these were skipped there; until
+      # now nothing ran them in CI at all. FGMP_REQUIRE_DB_TESTS=1 turns the
+      # skip into a failure, so a broken pipeline cannot quietly stop testing
+      # RLS behaviour.
+      - name: Database-backed suites (strict — skips are failures)
+        run: FGMP_REQUIRE_DB_TESTS=1 bun test
+        env:
+          DATABASE_URL: postgresql://fgmp_app:ciapp@127.0.0.1:5432/fgmp?schema=public
+          FGMP_MIGRATE_DATABASE_URL: postgresql://fgmp_migrate:cimigrate@127.0.0.1:5432/fgmp?schema=public
+
+      # The isolation proof: every tenant-carrying table (currently 36),
+      # deliberately unguarded queries that must not leak. Exits non-zero on any
+      # failure.
       - name: RLS regression suite
         run: bun run test:rls
 
@@ -224,9 +236,7 @@ jobs:
             -e FGMP_MIGRATE_DATABASE_URL=postgresql://fgmp_migrate:cimigrate@127.0.0.1:5432/fgmp?schema=public \
             -e NEXTAUTH_SECRET=ci-secret-abcdefghijklmnopqrstuvwxyz0123456789 \
             -e IOT_API_KEY=ci-iot-key-abcdefghijklmnop \
-            -e REALTIME_SERVER_SECRET=ci-srv-secret-abcdefghij \
             -e REALTIME_SERVICE_TOKEN=ci-svc-token-abcdefghij \
-            -e REALTIME_TOKEN_SECRET=ci-token-secret-abcdefghijklmnopqrstuvwxyz0123456789 \
             fgmp:ci
 
           for i in $(seq 1 30); do
@@ -238,8 +248,12 @@ jobs:
             sleep 2
           done
 
-          # The app must actually be talking to PostgreSQL, not a local file.
-          docker exec fgmp-ci sh -c "wget -qO- http://127.0.0.1:3000/api/fgmp/health >/dev/null || true"
+          # Readiness must be positive: the app is talking to PostgreSQL AND the
+          # migrations are applied. A 503 here means the container started
+          # against a database it cannot serve.
+          docker exec fgmp-ci sh -c "bun -e \"fetch('http://127.0.0.1:3000/api/health/ready').then(r=>{if(!r.ok)process.exit(1);return r.text()}).then(t=>console.log(t))\"" \
+            | grep -q '"status":"ready"' \
+            || { echo "FAIL: /api/health/ready is not ready"; docker logs fgmp-ci; exit 1; }
           PGPASSWORD=cimigrate psql -h 127.0.0.1 -U fgmp_migrate -d fgmp -tAc \
             "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'" \
             | grep -Eq '^[1-9][0-9]*$' \
@@ -249,8 +263,8 @@ jobs:
           enabled=$(PGPASSWORD=cimigrate psql -h 127.0.0.1 -U fgmp_migrate -d fgmp -tAc \
             "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
              WHERE n.nspname='public' AND c.relkind='r' AND c.relrowsecurity AND c.relforcerowsecurity")
-          [ "$enabled" -eq 24 ] \
-            || { echo "FAIL: expected 24 FORCE-RLS tables, found $enabled"; exit 1; }
+          [ "$enabled" -ge 36 ] \
+            || { echo "FAIL: expected at least 36 FORCE-RLS tables, found $enabled"; exit 1; }
 
           # Must not have baked .env into the image.
           docker exec fgmp-ci sh -c "test ! -f /app/.env" \

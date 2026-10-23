@@ -122,12 +122,12 @@ runtime files explicitly and `scripts/` wholesale, unchanged.
 
 ## 8. Known leftovers (deliberately not done here)
 
-* **Unused dependencies.** Twenty-one packages have no importer (`@dnd-kit/*`,
-  `@mdxeditor/editor`, `@tanstack/*`, `framer-motion`, `next-intl`, `sharp`,
-  `uuid`, `z-ai-web-dev-sdk`, …). They were **not** removed: `bun.lock` is used
-  with `--frozen-lockfile` in the Docker build, and this sandbox cannot reach the
-  package CDN to regenerate it. Removing them is a one-line `bun remove` in an
-  environment with registry access, followed by a lockfile commit.
+* ~~**Unused dependencies.**~~ **Resolved in the production-readiness pass
+  (see `docs/READINESS.md` §6):** 31 packages with no importer were removed from
+  `package.json`, and `bun.lock` was pruned with a reachability walk over the
+  resolved graph (416 transitive packages, 1,044 → 628 entries). Verified with
+  `bun install --frozen-lockfile --dry-run` and a static scan that every bare
+  import resolves to a declared dependency.
 * **`i18n.ts`** carries ~1,550 keys for 27 views; a sample suggests roughly a
   quarter are unused. Pruning needs per-key verification and is a separate task.
 * **`energy-thresholds.ts`, `notification-dispatch.ts`, `alerting/metrics-wiring.ts`**
