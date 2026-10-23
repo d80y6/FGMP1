@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "NODE_OPTIONS=--max-old-space-size=2560 next dev -p 3000 2>&1 | tee dev.log",
-    "build": "prisma generate && opennextjs-cloudflare build",
+    "build": "opennextjs-cloudflare build",
     "start": "NODE_ENV=production bun .next/standalone/server.js 2>&1 | tee server.log",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",

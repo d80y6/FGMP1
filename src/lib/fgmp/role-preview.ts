@@ -40,22 +40,10 @@
 
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { JWT_SECRET_CONFIGURED } from "@/lib/auth";
+import { PREVIEW_ROLES } from "./role-preview-constants";
 import type { Role } from "./types";
 
-/**
- * The six roles the proposal's role-preview switcher offers
- * (مدير النظام، مشغّل مركز العمليات، مدير إقليمي، مهندس ميداني،
- * تنفيذي، للقراءة فقط). SUPERADMIN is platform-level and is
- * deliberately NOT previewable.
- */
-export const PREVIEW_ROLES: Role[] = [
-  "ADMIN",
-  "NOC_OPERATOR",
-  "REGIONAL_MANAGER",
-  "FIELD_ENGINEER",
-  "EXECUTIVE",
-  "READONLY",
-];
+export { PREVIEW_ROLES };
 
 /** Cookie + header name carrying the preview overlay token. */
 export const PREVIEW_COOKIE = "fgmp_preview_role";
