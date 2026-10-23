@@ -66,6 +66,19 @@ describe("client/server and deployment build boundaries", () => {
     expect(instrumentation).not.toContain("process.exit(");
     expect(instrumentation).not.toContain("process.once(");
   });
+
+  test("OpenNext self-reference matches the deployed Worker and preserves dashboard vars", () => {
+    const wrangler = JSON.parse(source("wrangler.jsonc"));
+    expect(wrangler.name).toBe("fgmp1");
+    expect(wrangler.services).toContainEqual({
+      binding: "WORKER_SELF_REFERENCE",
+      service: "fgmp1",
+    });
+    expect(wrangler.keep_vars).toBe(true);
+    expect(wrangler.vars).toBeUndefined();
+    expect(source("open-next.config.ts")).toContain('buildCommand: "bun run build:standalone"');
+    expect(JSON.parse(source("package.json")).scripts.build).toBe("opennextjs-cloudflare build");
+  });
 });
 
 describe("ordinary browser data endpoints are tenant-bound", () => {

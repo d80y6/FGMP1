@@ -103,3 +103,9 @@ server.log
 
 # npm lockfile — this repo installs with bun (bun.lock is the source of truth)
 package-lock.json
+
+# Cloudflare Workers / OpenNext generated output and local-only bindings
+/.open-next/
+/.wrangler/
+.dev.vars*
+cloudflare-env.d.ts

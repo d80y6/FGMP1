@@ -38,7 +38,7 @@ RUN found=$(find node_modules/@prisma/engines node_modules/.prisma -name 'libque
 # why this is derived rather than hand-written) and stage it for the runner.
 RUN bun ./scripts/collect-prisma-cli-deps.ts \
  && test -s /tmp/prisma-cli-deps/packages.txt
-RUN bun run build
+RUN bun run build:standalone
 
 # ---- Runner ----
 # NOTE: `oven/bun:1-slim` is Debian 13 (trixie) and ships WITHOUT the

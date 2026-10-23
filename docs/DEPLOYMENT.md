@@ -230,3 +230,20 @@ gets slow.
   database. Apply migrations first, then roll the app.
 * The IoT bridge (`mini-services/iot-bridge`) is stateless; restart it freely.
   It retries ingest on the next interval.
+
+## 7. Cloudflare Workers (OpenNext)
+
+The Cloudflare build uses the tracked `wrangler.jsonc` and `open-next.config.ts`;
+this avoids Wrangler's automatic migration deriving a self-reference service
+name from the package name. The Worker name and `WORKER_SELF_REFERENCE` service
+must both remain `fgmp1`.
+
+For Cloudflare Workers Builds, use build command `bun run build` and deploy
+command `npx wrangler deploy`. The build generates Prisma Client, runs the
+Next.js build, and emits the OpenNext Worker bundle. The Docker/Render path uses
+`bun run build:standalone` directly.
+
+`wrangler.jsonc` sets `keep_vars: true` because runtime variables are managed in
+the Cloudflare dashboard. Store credentials as encrypted Worker Secrets, not
+plain-text `vars`; never commit `.dev.vars` or copy production secrets into build
+logs. If credentials have appeared in deployment logs, rotate them immediately.
