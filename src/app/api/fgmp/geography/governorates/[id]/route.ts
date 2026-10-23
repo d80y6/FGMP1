@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { bootstrap } from "@/lib/fgmp";
-import { asTenant } from "@/lib/fgmp/route-tenant";
+import { asTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import {
   rateLimitByUser,
@@ -9,7 +9,7 @@ import {
   MUTATION_LIMIT,
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
-import { requireRole, ROLES, assertTenantOwned, isSuperAdminUser } from "@/lib/fgmp/auth-helpers";
+import { requireRole, ROLES, assertTenantOwned } from "@/lib/fgmp/auth-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -68,7 +68,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       const existing = await tx.governorate.findFirst({
         where: {
           id,
-          ...(isSuperAdminUser(auth.user) ? {} : { region: { tenantId: user.tenantId } }),
+          region: { tenantId: tenantIdOrThrow(user.tenantId) },
         },
         select: { id: true, regionId: true, name: true, region: { select: { tenantId: true } } },
       });
@@ -157,7 +157,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
       const existing = await tx.governorate.findFirst({
         where: {
           id,
-          ...(isSuperAdminUser(auth.user) ? {} : { region: { tenantId: user.tenantId } }),
+          region: { tenantId: tenantIdOrThrow(user.tenantId) },
         },
         select: { id: true, name: true, region: { select: { tenantId: true } }, _count: { select: { sites: true, districts: true } } },
       });

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/fgmp/auth-helpers";
-import { ROLE_PERMISSIONS } from "@/lib/fgmp/rbac";
+import { ROLE_PERMISSIONS } from "@/lib/fgmp/rbac-core";
 import { audit } from "@/lib/fgmp/audit";
 import { rateLimitByUser, applyRateLimitHeaders, MUTATION_LIMIT } from "@/lib/fgmp/rate-limit";
 import {

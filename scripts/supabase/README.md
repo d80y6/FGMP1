@@ -160,8 +160,8 @@ the password.
    or delete the account and create your own. The same applies to the five demo
    users (`Admin@2026`): they exist so RBAC can be reviewed, not so they can be
    deployed. `select email, role from "User";` should show only accounts you own.
-2. Set `NEXTAUTH_SECRET` (≥32 chars), `NEXTAUTH_URL`, `IOT_API_KEY`,
-   `FGMP_MFA_ENCRYPTION_KEY`. `bun run check:env` lists what is missing and
+2. Set `NEXTAUTH_SECRET` (≥32 chars), `NEXTAUTH_URL`,
+   `FGMP_MFA_ENCRYPTION_KEY`. Create tenant-scoped API keys with `write` scope for devices. `bun run check:env` lists what is missing and
    whether it is fatal.
 3. Start the app and confirm `/api/health/ready` returns 200.
 

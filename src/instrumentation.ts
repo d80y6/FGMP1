@@ -1,3 +1,5 @@
+export const runtime = "nodejs";
+
 /**
  * Server startup hook (Phase 2, vertical 5).
  *

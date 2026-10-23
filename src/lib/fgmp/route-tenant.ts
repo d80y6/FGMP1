@@ -34,7 +34,7 @@
 
 import { withTenant } from "./tenant-context";
 import type { SessionUser } from "@/lib/auth";
-import { isSuperAdmin } from "@/lib/fgmp/rbac";
+import { isSuperAdmin } from "@/lib/fgmp/rbac-core";
 import type { Prisma } from "@prisma/client";
 
 /**
@@ -130,9 +130,10 @@ export function tenantIdOrThrow(tenantId: string | undefined | null): string {
  * Run `fn` as ANOTHER tenant — a deliberate, privileged capability.
  *
  * ── WHY THIS IS A SEPARATE NAMED FUNCTION AND NOT A THIRD asTenant FORM ──────
- * Three super-admin routes legitimately act for another tenant: provisioning a
- * region, creating a user, creating a site. Those need a tenant that is NOT the
- * caller's, and that tenant usually originates in a request body.
+ * The named cross-tenant user-administration routes use this capability to
+ * operate on a tenant explicitly named in the request. Operational site and
+ * geography writes do not use it; platform operators must use tenant or
+ * support control-plane surfaces for customer data.
  *
  * Routing them through `asTenant(user, …)` would be the worst possible outcome:
  * it type-checks and silently redirects a super-admin's cross-tenant write into

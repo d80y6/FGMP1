@@ -31,14 +31,14 @@ git clone <repo> fgmp && cd fgmp
 cp .env.example .env
 
 # Fill every required secret in .env. These are NOT optional:
-#   NEXTAUTH_SECRET, IOT_API_KEY, REALTIME_SERVICE_TOKEN,
+#   NEXTAUTH_SECRET, REALTIME_SERVICE_TOKEN,
 #   PGMIGRATE_PASSWORD, PGAPP_PASSWORD, PGOPS_PASSWORD,
 #   APINATOR_APP_ID / KEY / SECRET / CLUSTER,
 #   NEXT_PUBLIC_APINATOR_APP_KEY / CLUSTER
 #
 # Generate symmetric secrets with:
 #   openssl rand -base64 32    # NEXTAUTH_SECRET
-#   openssl rand -hex 32       # IOT_API_KEY, REALTIME_SERVICE_TOKEN
+#   openssl rand -hex 32       # REALTIME_SERVICE_TOKEN
 #   openssl rand -hex 24       # PG*_PASSWORD
 
 # 1. Apply migrations and seed (one-shot; expects a fresh compose database)

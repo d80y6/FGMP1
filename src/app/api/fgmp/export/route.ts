@@ -7,7 +7,7 @@ import {
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { render, isExportFormat } from "@/lib/fgmp/export-render";
-import { requireAuth, isSuperAdminUser } from "@/lib/fgmp/auth-helpers";
+import { requireAuth } from "@/lib/fgmp/auth-helpers";
 import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 export const dynamic = "force-dynamic";
@@ -27,25 +27,14 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const type = searchParams.get("type") ?? "sites"; // sites | tanks | generators | alarms | deliveries
 
-    // ── Tenant isolation (Task TI-2c) ────────────────────────────────────
-    // SUPERADMIN sees every site cross-tenant. Every other role only sees
-    // rows whose parent site belongs to their own tenant. CSV exports must
-    // not leak cross-tenant data.
-    const tenantSiteIds = isSuperAdminUser(me)
-      ? null
-      : new Set(engine.sites.filter((s) => s.tenantId === tenantIdOrThrow(me.tenantId)).map((s) => s.id));
-    const sites = tenantSiteIds === null
-      ? engine.sites
-      : engine.sites.filter((s) => tenantSiteIds.has(s.id));
-    const tanks = tenantSiteIds === null
-      ? engine.tanks
-      : engine.tanks.filter((t) => tenantSiteIds.has(t.siteId));
-    const generators = tenantSiteIds === null
-      ? engine.generators
-      : engine.generators.filter((g) => tenantSiteIds.has(g.siteId));
-    const batteries = tenantSiteIds === null
-      ? engine.batteries
-      : engine.batteries.filter((b) => tenantSiteIds.has(b.siteId));
+    // Engine memory can contain several tenants. Never let the platform role
+    // turn an ordinary export into a cross-tenant data export.
+    const tenantId = tenantIdOrThrow(me.tenantId);
+    const tenantSiteIds = new Set(engine.sites.filter((s) => s.tenantId === tenantId).map((s) => s.id));
+    const sites = engine.sites.filter((s) => s.tenantId === tenantId);
+    const tanks = engine.tanks.filter((t) => tenantSiteIds.has(t.siteId));
+    const generators = engine.generators.filter((g) => tenantSiteIds.has(g.siteId));
+    const batteries = engine.batteries.filter((b) => tenantSiteIds.has(b.siteId));
 
     let rows: Record<string, unknown>[] = [];
     let filename = type;

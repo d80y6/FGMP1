@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { bootstrap } from "@/lib/fgmp";
-import { asTenantForAnotherTenant } from "@/lib/fgmp/route-tenant";
+import { asTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import {
   rateLimitByUser,
@@ -9,7 +9,7 @@ import {
   MUTATION_LIMIT,
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
-import { requireRole, ROLES, isSuperAdminUser } from "@/lib/fgmp/auth-helpers";
+import { requireRole, ROLES } from "@/lib/fgmp/auth-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -21,8 +21,8 @@ const createRegionSchema = z.object({
 /**
  * POST /api/fgmp/geography/regions
  * Create a new region. ADMIN-only. Body: { name, tenantId? }.
- * The tenantId defaults to the acting admin's tenant — passing an explicit
- * tenantId lets a platform admin provision regions under another tenant.
+ * A supplied tenantId must match the authenticated tenant; platform operators
+ * cannot write customer geography through this ordinary tenant endpoint.
  * Enforces unique (tenantId, name).
  */
 export async function POST(req: NextRequest) {
@@ -54,14 +54,8 @@ export async function POST(req: NextRequest) {
       applyRateLimitHeaders(res.headers, rl);
       return res;
     }
-    // Super-admins may pass any tenantId to provision a region under another
-    // tenant. Tenant admins may NOT — they're restricted to their own tenant.
-    // (If they try, return 403 to make the boundary explicit.)
-    if (
-      parsed.data.tenantId &&
-      parsed.data.tenantId !== user.tenantId &&
-      !isSuperAdminUser(user)
-    ) {
+    const tenantId = tenantIdOrThrow(user.tenantId);
+    if (parsed.data.tenantId && parsed.data.tenantId !== tenantId) {
       const res = NextResponse.json(
         { error: "You can only create regions in your own tenant", code: "CROSS_TENANT_FORBIDDEN" },
         { status: 403 },
@@ -69,29 +63,11 @@ export async function POST(req: NextRequest) {
       applyRateLimitHeaders(res.headers, rl);
       return res;
     }
-    const tenantId = parsed.data.tenantId || user.tenantId;
     const name = parsed.data.name;
 
-    // ── Tenant scoping ──────────────────────────────────────────────────────
-    // Region is RLS-protected with FORCE, so these reads on the ambient `db`
-    // returned zero rows and the create was rejected by WITH CHECK. All three
-    // now run inside asTenant(tenantId, …) on the transaction client.
-    //
-    // `tenantId` was resolved above from the acting user's session (or an
-    // explicitly-authorised superadmin), never from the body alone — a tenant
-    // admin passing someone else's tenantId is rejected with 403 before here.
-    // `tenantId` is `parsed.data.tenantId || user.tenantId`, so for a SUPERADMIN
-    // it can name another tenant. That is why this uses the privileged helper
-    // rather than asTenant(me, …): converting it to the caller's own tenant
-    // would type-check and SILENTLY write into the super-admin's tenant instead
-    // of the requested one — a passing build doing the wrong thing.
-    //
-    // For the common case (`parsed.data.tenantId` absent) this is the caller's
-    // own tenant and the assertion below is satisfied by their own role.
-    const { tenant, clash, region } = await asTenantForAnotherTenant(
-      user,
-      tenantId,
-      async (tx) => {
+    // The tenant is pinned to the authenticated session; explicit request
+    // values cannot open a cross-tenant database context.
+    const { tenant, clash, region } = await asTenant(user, async (tx) => {
       // Verify the target tenant exists (defensive — admin's tenant always does).
       // Tenant itself carries no tenantId column, so it is outside RLS; the read
       // is scoped to the one id the caller is already authorised for.

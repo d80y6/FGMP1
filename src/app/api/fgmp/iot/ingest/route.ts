@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createHash } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { engine } from "@/lib/fgmp";
@@ -27,9 +28,9 @@ export const dynamic = "force-dynamic";
  * the `mini-services/iot-bridge` simulator; in prod, real MQTT/Modbus
  * bridges running on-site).
  *
- * Auth: requests MUST include `x-api-key: <IOT_API_KEY>`. The default dev
- * key is `fgmp-iot-dev-key`. In production, set IOT_API_KEY to a strong
- * secret and rotate per-device keys via an API-key management layer.
+ * Auth: requests MUST include a tenant API key with `write` or `admin` scope.
+ * The key is checked inside the tenant that owns the submitted site, so a key
+ * cannot write telemetry across tenant boundaries.
  *
  * Body shape:
  *   {
@@ -127,113 +128,43 @@ const IngestBodySchema = z.object({
  */
 const watermarks = new DeviceWatermarkStore();
 
-/**
- * Shared secret for edge devices. There is deliberately no committed default.
- * The previous fallback (`fgmp-iot-dev-key`) was hardcoded in BOTH this file
- * and firmware/dispenser-esp/*.ino, so any deployment that did not override it
- * accepted telemetry — which overwrites live tank and generator levels — from
- * anyone who read the repository.
- *
- * Read lazily rather than at module scope: `next build` imports route modules
- * to collect page data, where runtime secrets do not exist yet. The request
- * handler below fails closed when the key is genuinely absent.
- */
-function iotApiKey(): string {
-  const v = process.env.IOT_API_KEY;
-  if (!v || v.length < 16) {
-    throw new Error(
-      "IOT_API_KEY is missing or too short (min 16 chars) — refusing to serve telemetry ingest.",
-    );
-  }
-  return v;
+/** Tenant-scoped API keys are SHA-256 hashed in the same way as /api-keys. */
+function hashApiKey(value: string): string {
+  return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
 const HISTORY_LIMIT = 288; // match engine's 24h @ 5min history window
 
 export async function POST(req: NextRequest) {
-  // Initialise the engine WITHOUT bootstrap(). bootstrap() resolves the
-  // authenticated user and throws when there is no session — but this endpoint
-  // authenticates with an API key, and field devices have no NextAuth session.
-  // The call therefore threw on EVERY ingest request, before the API key was
-  // even checked, so the device path returned 500 for all traffic.
-  //
-  // Only engine state is wanted here; the handler never reads `user`.
-  // Device ingest carries an API key, not a session, so there is no tenant to
-  // scope to here — and this endpoint only wants engine state, never `user`.
-  // That makes it a genuine "load everything" case, so it uses the one named
-  // entry point that is allowed to resolve all tenants.
-  await engine.ensureAllTenants();
-
-  // ── API-key auth (edge-device authentication) ──────────────────────────
+  // Reject absent/implausible credentials before reading an attacker-controlled
+  // body. Authorization is checked against the submitted site's tenant below.
   const apiKey = req.headers.get("x-api-key");
-  let expected: string;
-  try {
-    expected = iotApiKey();
-  } catch (err) {
-    // Misconfigured deployment — refuse rather than accept anything.
-    return NextResponse.json(
-      {
-        error: "ingest not configured",
-        detail: err instanceof Error ? err.message : String(err),
-      },
-      { status: 503 },
-    );
-  }
-  if (!apiKey || apiKey !== expected) {
+  if (!apiKey || apiKey.length < 16 || apiKey.length > 512) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  // ── Rate limit ─────────────────────────────────────────────────────────
-  // `rateLimitByApiKey` / `IOT_LIMIT` existed in rate-limit.ts but had ZERO
-  // call sites, so this endpoint — which writes a SensorReading row and
-  // overwrites live tank/generator/battery levels — was an unbounded write
-  // amplifier for anyone holding the key.
-  //
-  // Placed AFTER auth so a bad key still costs a 401 rather than consuming a
-  // legitimate device's budget. Keyed on the api-key itself, not the client
-  // IP, so it is unaffected by the TRUSTED_PROXY change in getClientIp.
-  const rl = await rateLimitByApiKey(req, IOT_LIMIT.limit, IOT_LIMIT.windowMs);
-  if (!rl.success) {
-    const res = NextResponse.json(
-      { error: "Too many requests", code: "RATE_LIMITED" },
-      { status: 429 },
-    );
-    applyRateLimitHeaders(res.headers, rl);
-    return res;
-  }
-
-  // ── Bound the body BEFORE parsing (Phase 2) ────────────────────────────
-  // An unbounded `req.json()` lets a device holding the key send a very large
-  // payload and exhaust memory before any validation runs. The declared length
-  // is the cheap check; the byte cap below is the actual limit.
+  // Bound the body before parsing. This does not authenticate the request; it
+  // prevents an oversized unauthenticated payload from consuming memory.
   const size = checkDeclaredBodySize(req);
   if (!size.ok) {
-    const res = NextResponse.json(
+    return NextResponse.json(
       { error: "payload too large", detail: size.reason },
       { status: 413 },
     );
-    applyRateLimitHeaders(res.headers, rl);
-    return res;
   }
   const raw = await req.text();
   if (Buffer.byteLength(raw, "utf8") > MAX_INGEST_BODY_BYTES) {
-    const res = NextResponse.json(
+    return NextResponse.json(
       { error: "payload too large", detail: `body exceeds ${MAX_INGEST_BODY_BYTES} bytes` },
       { status: 413 },
     );
-    applyRateLimitHeaders(res.headers, rl);
-    return res;
   }
 
-  // ── Parse + validate body ──────────────────────────────────────────────
   let body: unknown;
   try {
     body = JSON.parse(raw);
   } catch {
-    return NextResponse.json(
-      { error: "invalid JSON body" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: "invalid JSON body" }, { status: 400 });
   }
   const parsed = IngestBodySchema.safeParse(body);
   if (!parsed.success) {
@@ -250,9 +181,55 @@ export async function POST(req: NextRequest) {
   }
   // Wrapped so the database duplicate verdict below can be mapped to a 409 and
   // any other failure to errorResponse(), instead of escaping as a 500.
+  let rl: Awaited<ReturnType<typeof rateLimitByApiKey>> | null = null;
   try {
   const { siteId, readings } = parsed.data;
+
+  // Device ingestion is a service-to-service path and may load the shared
+  // engine snapshot, but a credential is valid only for the tenant that owns
+  // the submitted site. The actual persistence below remains tenant-RLS scoped.
+  await engine.ensureAllTenants();
+  const site = engine.sites.find((s) => s.id === siteId);
+  if (!site) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  const tenantId = site.tenantId;
   const now = new Date();
+  const credential = await withTenant(tenantId, async (tx) => {
+    const found = await tx.apiKey.findFirst({
+      where: {
+        tenantId,
+        keyHash: hashApiKey(apiKey),
+        revoked: false,
+        revokedAt: null,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+      },
+      select: { id: true, scopes: true },
+    });
+    if (!found) return null;
+    const scopes = found.scopes.split(",").map((scope) => scope.trim());
+    if (!scopes.includes("write") && !scopes.includes("admin")) return null;
+    await tx.apiKey.update({
+      where: { id: found.id },
+      data: { lastUsedAt: now },
+      select: { id: true },
+    });
+    return found.id;
+  });
+  if (!credential) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  // Budget each registered credential only after tenant and scope validation.
+  rl = await rateLimitByApiKey(req, IOT_LIMIT.limit, IOT_LIMIT.windowMs);
+  if (!rl.success) {
+    const res = NextResponse.json(
+      { error: "Too many requests", code: "RATE_LIMITED" },
+      { status: 429 },
+    );
+    applyRateLimitHeaders(res.headers, rl);
+    return res;
+  }
   const nowMs = now.getTime();
   // Phase 1 step 4: SensorReading requires a tenantId, and the ingest body only
   // carries siteId. Resolve the owning tenant once, from the Site the engine
@@ -265,16 +242,6 @@ export async function POST(req: NextRequest) {
   // here would be circular. The engine's site list IS the database's site list
   // for the tenants it has loaded, and an empty or stale list now fails CLOSED
   // with a 404 rather than writing anywhere.
-  const site = engine.sites.find((s) => s.id === siteId);
-  if (!site) {
-    const res = NextResponse.json(
-      { error: "Unknown site", code: "SITE_NOT_FOUND" },
-      { status: 404 },
-    );
-    applyRateLimitHeaders(res.headers, rl);
-    return res;
-  }
-  const tenantId = site.tenantId;
   const applied: {
     tank?: string;
     generator?: string;
@@ -617,7 +584,7 @@ export async function POST(req: NextRequest) {
         },
         { status: 409 },
       );
-      applyRateLimitHeaders(res.headers, rl);
+      if (rl) applyRateLimitHeaders(res.headers, rl);
       return res;
     }
     return errorResponse(err);
@@ -664,43 +631,13 @@ function isUniqueViolation(err: unknown): boolean {
 }
 
 /**
- * GET — minimal discovery endpoint for edge devices to verify connectivity
- * and auth. Returns 200 if the API key is valid, 401 otherwise.
+ * GET discovery was removed because there is no site context in which to
+ * validate a tenant API key. Devices must use POST with a siteId so the
+ * credential can be checked against that site's tenant.
  */
-export async function GET(req: NextRequest) {
-  const apiKey = req.headers.get("x-api-key");
-  let expected: string;
-  try {
-    expected = iotApiKey();
-  } catch (err) {
-    return NextResponse.json(
-      {
-        error: "ingest not configured",
-        detail: err instanceof Error ? err.message : String(err),
-      },
-      { status: 503 },
-    );
-  }
-  if (!apiKey || apiKey !== expected) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
-  return NextResponse.json({
-    ok: true,
-    endpoint: "/api/fgmp/iot/ingest",
-    method: "POST",
-    requiredHeaders: ["x-api-key", "content-type: application/json"],
-    bodyShape: {
-      siteId: "string",
-      readings: {
-        tankLevel: "number? (litres)",
-        genStatus: '"running" | "stopped" | "fault"?',
-        genLoad: "number? (kW)",
-        battVoltage: "number? (V)",
-        battSoc: "number? (0-100)",
-        battCellBalanceMv: "number? (signed mV, cell-to-cell imbalance)",
-        temp: "number? (°C)",
-        ts: "number|string? (device timestamp, epoch millis or ISO-8601)",
-      },
-    },
-  });
+export async function GET() {
+  return NextResponse.json(
+    { error: "Use POST with a siteId and tenant-scoped API key", code: "METHOD_NOT_ALLOWED" },
+    { status: 405, headers: { Allow: "POST" } },
+  );
 }

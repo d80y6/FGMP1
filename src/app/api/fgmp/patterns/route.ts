@@ -10,7 +10,6 @@ import { toNum } from "@/lib/fgmp/decimal";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import {
   requireAuth,
-  isSuperAdminUser,
   siteTenantWhereOrAll,
 } from "@/lib/fgmp/auth-helpers";
 import { resolvePlatformTimezone, zonedDayOfWeek, zonedHour } from "@/lib/fgmp/thresholds-time";
@@ -138,16 +137,13 @@ export async function GET(req: NextRequest) {
     // BOUNDED: explicit `ts` window + `take` (previously neither existed, so
     // this was a full-table scan on every poll — the endpoint polls every 60 s).
     //
-    // Tenant isolation (Task TI-2c): SensorReading has a bare `siteId` column
-    // (no site relation), so we resolve the caller's tenant site IDs from the
-    // engine snapshot and filter by `siteId IN [...]`. SUPERADMIN bypasses
-    // (null set → no IN filter). FuelTank has a `site` relation so we scope
-    // it directly with `siteTenantWhereOrAll(me)`.
-    const tenantSiteIds = isSuperAdminUser(me)
-      ? null
-      : engine.sites
-          .filter((s) => s.tenantId === tenantIdOrThrow(me.tenantId))
-          .map((s) => s.id);
+    // SensorReading has a bare `siteId` column, so the in-memory site list
+    // supplies the caller's tenant-local IDs. SUPERADMIN is not a data-scope
+    // bypass; use support access for another tenant's operational records.
+    const tenantId = tenantIdOrThrow(me.tenantId);
+    const tenantSiteIds = engine.sites
+      .filter((s) => s.tenantId === tenantId)
+      .map((s) => s.id);
     const cutoff = new Date(Date.now() - WINDOW_DAYS * 86400000);
     // Both reads inside one transaction. The FuelTank query has a nested
     // `site: { … governorate: { … } }` traversal — two RLS-protected hops — so
@@ -158,7 +154,7 @@ export async function GET(req: NextRequest) {
           metric: "FUEL_LEVEL",
           entityKind: "TANK",
           ts: { gte: cutoff },
-          ...(tenantSiteIds ? { siteId: { in: tenantSiteIds } } : {}),
+          siteId: { in: tenantSiteIds },
         },
         select: { entityId: true, value: true, ts: true },
         // Newest first so the `take` keeps the most relevant rows; each tank's

@@ -29,7 +29,7 @@ import { fmtDateTime, timeAgo } from "@/lib/fgmp/format";
 import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 import { roleLabel } from "@/lib/fgmp/labels";
-import { ALL_ROLES } from "@/lib/fgmp/rbac";
+import { ALL_ROLES } from "@/lib/fgmp/rbac-core";
 import type { Role } from "@/lib/fgmp/types";
 
 /* ────────────────────────────────────────────────────────────────────────

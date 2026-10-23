@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { engine, bootstrap } from "@/lib/fgmp";
-import { asTenant, asTenantForAnotherTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
+import { asTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { resolveGeographyPath, attachGeographyNames } from "@/lib/fgmp/geography";
 import { requireAuth, requireRole, ROLES, tenantWhere } from "@/lib/fgmp/auth-helpers";
 import { audit } from "@/lib/fgmp/audit";
@@ -151,24 +151,10 @@ export async function POST(req: NextRequest) {
     // through the file: a tenant-less session must not build a site filter.
     const tenantId = tenantIdOrThrow(me.tenantId);
 
-    // ── Tenant scoping ────────────────────────────────────────────────────
-    // Site, Region, Governorate and District are all FORCE-RLS protected, so
-    // these reads returned null and the create was rejected by WITH CHECK. The
-    // code-uniqueness probe and the hierarchy validation are done in ONE
-    // transaction so the validation and the insert cannot observe different
-    // snapshots. Without a context, `region` came back null and every create
-    // failed with INVALID_HIERARCHY — a wrong answer, not an error.
-    // Also privileged, and for a reason that is easy to get wrong: this
-    // validates the Region/Governorate/District hierarchy for the site being
-    // CREATED. For a super-admin that site may live in another tenant, so the
-    // geography it is validated against must be read in the TARGET tenant.
-    // Scoping this to the caller's own tenant would make every cross-tenant
-    // site create fail with INVALID_HIERARCHY — a confusing wrong answer rather
-    // than an obvious refusal.
-    const { codeClash, path } = await asTenantForAnotherTenant(
-      me,
-      tenantId,
-      async (tx) => {
+    // Tenant sites and their geography are customer data. Site provisioning
+    // runs only in the authenticated tenant; platform admins use tenant
+    // administration/support surfaces rather than creating customer rows.
+    const { codeClash, path } = await asTenant(me, async (tx) => {
         // Unique code check (the DB enforces this too, but a 409 here gives a
         // cleaner error than the generic P2002 from api-error.)
         const existing = await tx.site.findUnique({ where: { code: data.code } });
@@ -233,10 +219,7 @@ export async function POST(req: NextRequest) {
       return res;
     }
 
-    // Privileged helper, for the same reason as geography/regions and users:
-    // a super-admin may legitimately create a site in another tenant, and
-    // asTenant(me, …) would silently redirect it into their own tenant.
-    const site = await asTenantForAnotherTenant(me, tenantId, (tx) => tx.site.create({
+    const site = await asTenant(me, (tx) => tx.site.create({
       data: {
         tenantId,
         code: data.code,
@@ -259,9 +242,7 @@ export async function POST(req: NextRequest) {
     // Geography names come from the tenant-filtered view, not from a Prisma
     // include — see `siteInclude`. Run inside the same tenant context as the
     // create so the view's current_setting() predicate matches.
-    const [withGeography] = await asTenantForAnotherTenant(me, tenantId, (tx) =>
-      attachGeographyNames(tx, [site]),
-    );
+    const [withGeography] = await asTenant(me, (tx) => attachGeographyNames(tx, [site]));
 
     // Force the engine to pick up the new site on the next snapshot read.
     await engine.reload();

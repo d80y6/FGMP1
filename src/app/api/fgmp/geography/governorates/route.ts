@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { bootstrap } from "@/lib/fgmp";
-import { asTenant } from "@/lib/fgmp/route-tenant";
+import { asTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import {
   rateLimitByUser,
@@ -9,7 +9,7 @@ import {
   MUTATION_LIMIT,
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
-import { requireRole, ROLES, isSuperAdminUser } from "@/lib/fgmp/auth-helpers";
+import { requireRole, ROLES } from "@/lib/fgmp/auth-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
       // where clause includes their tenantId, so the two cases are
       // indistinguishable and both 404. Superadmins match on id alone.
       const region = await tx.region.findFirst({
-        where: isSuperAdminUser(user) ? { id: regionId } : { id: regionId, tenantId: user.tenantId },
+        where: { id: regionId, tenantId: tenantIdOrThrow(user.tenantId) },
         select: { id: true, tenantId: true },
       });
       if (!region) return { kind: "not-found" as const };

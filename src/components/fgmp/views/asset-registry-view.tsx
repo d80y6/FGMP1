@@ -8,7 +8,7 @@ import {
   Pencil, Trash2, MoreVertical, ShieldAlert,
 } from "lucide-react";
 import { useFgmp } from "@/lib/fgmp/store";
-import { hasCapability } from "@/lib/fgmp/rbac";
+import { hasCapability } from "@/lib/fgmp/rbac-core";
 import { useApi, apiPost, apiPatch } from "@/lib/fgmp/use-api";
 import { cn } from "@/lib/utils";
 import { SectionHeader } from "@/components/fgmp/section-header";

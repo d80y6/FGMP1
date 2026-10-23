@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { asTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
+import { getTenantMeta, tenantCounts } from "@/lib/fgmp/platform-store";
 import { audit } from "@/lib/fgmp/audit";
 import {
   rateLimitByUser,
@@ -50,31 +51,27 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
       return res;
     }
     const { id } = await ctx.params;
-  // ── Tenant scoping ────────────────────────────────────────────────────
-  // `Tenant` has no tenantId column and no RLS, so the ROW reads fine
-  // unscoped — but `tenantSelect` includes _count over users/sites/
-  // suppressions, which ARE FORCE-protected and resolve on this same client.
-  // Measured unscoped vs scoped: {users:0, sites:0} vs {users:5, sites:52}.
-  // So without the context this route reported that a 52-site tenant had no
-  // users and no sites, behind a 200.
-  //
-  // The tenantId used is the ACTOR's, never the `:id` path parameter: a tenant
-  // admin must not be able to read another tenant's user/site counts by
-  // editing the URL.
-    const tenant = await asTenant(me, (tx) =>
-      tx.tenant.findUnique({ where: { id }, select: tenantSelect }),
-    );
-    // SUPERADMIN can read any tenant; everyone else only their own.
-    //
-    // `user` here was the pre-Phase-1 `const { user } = await bootstrap()`
-    // binding, which no longer exists — so this read a ReferenceError and the
-    // 404 branch below it was unreachable. The actor is `me` (from the
-    // session), and it must stay `me`: this is the authorisation check that
-    // decides whether a SUPERADMIN sees another tenant's counts.
-    if (!isSuperAdminUser(me) && (!tenant || tenant.id !== tenantIdOrThrow(me.tenantId))) {
-      const res = NextResponse.json({ error: "Tenant not found" }, { status: 404 });
-      applyRateLimitHeaders(res.headers, rl);
-      return res;
+    let tenant: Record<string, unknown> | null;
+    if (isSuperAdminUser(me)) {
+      // The registry is platform metadata. Read it unscoped, then compute only
+      // the allowed aggregate counts inside the explicitly named tenant's RLS
+      // context; a platform-tenant context would otherwise return misleading
+      // zero counts for a customer tenant.
+      const meta = await getTenantMeta(id);
+      if (!meta) {
+        const res = NextResponse.json({ error: "Tenant not found" }, { status: 404 });
+        applyRateLimitHeaders(res.headers, rl);
+        return res;
+      }
+      const counts = await tenantCounts(id);
+      tenant = { ...meta, _count: counts };
+    } else {
+      // Tenant users may only inspect their own registry row and counts.
+      const ownTenantId = tenantIdOrThrow(me.tenantId);
+      const own = await asTenant(me, (tx) =>
+        tx.tenant.findUnique({ where: { id: ownTenantId }, select: tenantSelect }),
+      );
+      tenant = own?.id === id ? own : null;
     }
     if (!tenant) {
       const res = NextResponse.json({ error: "Tenant not found" }, { status: 404 });

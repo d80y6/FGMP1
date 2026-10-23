@@ -6,7 +6,7 @@ import {
   READ_LIMIT,
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
-import { requireAuth, isSuperAdminUser } from "@/lib/fgmp/auth-helpers";
+import { requireAuth } from "@/lib/fgmp/auth-helpers";
 import { withMetrics } from "@/lib/fgmp/with-metrics";
 import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
@@ -25,12 +25,10 @@ export const GET = withMetrics(async function GET(req: NextRequest) {
       applyRateLimitHeaders(res.headers, rl);
       return res;
     }
-    // Tenant isolation (Task TI-2c): SUPERADMIN gets the global cross-tenant
-    // snapshot (tenantId === null); every other role gets only their own
-    // tenant's sites/tanks/generators/batteries/events/transactions/...
-    const snap = await engine.snapshotForTenant(
-      isSuperAdminUser(me) ? null : tenantIdOrThrow(me.tenantId),
-    );
+    // Platform operators are scoped to their own platform tenant just like
+    // other sessions. Cross-tenant customer content is available only through
+    // the explicit, audited support-session surface.
+    const snap = await engine.snapshotForTenant(tenantIdOrThrow(me.tenantId));
     const res = NextResponse.json(snap);
     applyRateLimitHeaders(res.headers, rl);
     return res;

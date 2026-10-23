@@ -128,7 +128,7 @@ The ESP posts a JSON body every 5 seconds to:
 POST  <SERVER_URL>/api/fgmp/iot/ingest
 Headers:
   content-type: application/json
-  x-api-key:    <IOT_API_KEY>           # default dev key: fgmp-iot-dev-key
+  x-api-key:    <TENANT_WRITE_API_KEY>  # tenant API key with write scope
 ```
 
 The body conforms to the platform's `iotIngestSchema`
@@ -192,7 +192,7 @@ Every 3 seconds the ESP issues:
 ```
 GET  <SERVER_URL>/api/fgmp/iot/dispenser/commands?deviceId=<ESP_DEVICE_ID>
 Headers:
-  x-api-key:  <IOT_API_KEY>
+  x-api-key:  <TENANT_WRITE_API_KEY>
 ```
 
 A 200 response with one or more queued commands looks like:
@@ -217,7 +217,7 @@ optionally writes 40004 (preset) for `authorize`, then ACKs the command:
 POST <SERVER_URL>/api/fgmp/iot/dispenser/commands/ack
 Headers:
   content-type: application/json
-  x-api-key:    <IOT_API_KEY>
+  x-api-key:    <TENANT_WRITE_API_KEY>
 Body:
   { "commandId": "cmd_01HXYZ...", "status": "applied", "appliedAt": 1730000000000 }
 ```

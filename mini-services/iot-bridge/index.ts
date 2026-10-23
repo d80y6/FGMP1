@@ -25,7 +25,7 @@
  *
  * Env vars (all optional, sensible dev defaults):
  *   NEXT_API_BASE             (default http://localhost:3000)
- *   IOT_API_KEY               (default fgmp-iot-dev-key)
+ *   IOT_API_KEYS              (JSON object: tenantId -> tenant API key)
  *   REALTIME_SERVICE_TOKEN    (default fgmp-realtime-dev-token) — snapshot polling
  *   REALTIME_POLL_PATH        (default /api/fgmp/realtime/snapshot)
  *   INGEST_INTERVAL_MS        (default 10000)
@@ -88,7 +88,25 @@
 import { mtlsFetch } from "./mtls";
 
 const NEXT_API_BASE = process.env.NEXT_API_BASE ?? "http://localhost:3000";
-const IOT_API_KEY = process.env.IOT_API_KEY ?? "fgmp-iot-dev-key";
+const IOT_API_KEYS: Record<string, string> = (() => {
+  const raw = process.env.IOT_API_KEYS;
+  if (!raw) return {};
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw new Error("expected a JSON object");
+    }
+    const entries = Object.entries(value);
+    if (entries.some(([tenantId, key]) => !tenantId || typeof key !== "string" || key.length < 16)) {
+      throw new Error("each tenant entry needs a key of at least 16 characters");
+    }
+    return Object.fromEntries(entries) as Record<string, string>;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "invalid JSON";
+    console.error(`[iot-bridge] IOT_API_KEYS configuration invalid: ${message}`);
+    return {};
+  }
+})();
 // Service token for the Next.js `/api/fgmp/realtime/snapshot` endpoint.
 // Required because `/api/fgmp/state` is wrapped in NextAuth session auth
 // (Task 31-A); the iot-bridge cannot obtain a browser session.
@@ -103,6 +121,7 @@ const SITE_REFRESH_INTERVAL_MS = Number(
 
 interface SiteInfo {
   id: string;
+  tenantId: string;
   name: string;
   region: string;
 }
@@ -128,7 +147,7 @@ interface IngestPayload {
 // after persisting the row, so a socket here would be a second, unauthenticated
 // path to the same data — it was removed, not redirected.
 
-// ── Site list (fetched from /api/fgmp/state, refreshed periodically) ──────
+// ── Site list (fetched from the service snapshot, refreshed periodically) ─
 let sites: SiteInfo[] = [];
 
 async function refreshSites(): Promise<void> {
@@ -141,10 +160,11 @@ async function refreshSites(): Promise<void> {
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const snap = (await res.json()) as {
-      sites?: Array<{ id: string; name: string; region: string }>;
+      sites?: Array<{ id: string; tenantId: string; name: string; region: string }>;
     };
     sites = (snap.sites ?? []).map((s) => ({
       id: s.id,
+      tenantId: s.tenantId,
       name: s.name,
       region: s.region,
     }));
@@ -211,6 +231,11 @@ async function ingestOnce(): Promise<void> {
   let okCount = 0;
 
   for (const site of batch) {
+    const apiKey = IOT_API_KEYS[site.tenantId];
+    if (!apiKey) {
+      console.warn(`[iot-bridge] no write API key configured for tenant ${site.tenantId}; skipped ${site.name}`);
+      continue;
+    }
     const payload = genReading(site);
 
     // POST to Next.js ingest endpoint (persisted as SensorReading rows; the
@@ -220,7 +245,7 @@ async function ingestOnce(): Promise<void> {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "x-api-key": IOT_API_KEY,
+          "x-api-key": apiKey,
         },
         body: JSON.stringify(payload),
       });
@@ -246,7 +271,7 @@ async function ingestOnce(): Promise<void> {
 console.log("─────────────────────────────────────────────────────────");
 console.log(" FGMP IoT bridge service (edge gateway simulator)");
 console.log(`  Next.js API  : ${NEXT_API_BASE}`);
-console.log(`  API key      : ${IOT_API_KEY === "fgmp-iot-dev-key" ? "(dev default)" : "(set via env)"}`);
+console.log(`  Tenant keys  : ${Object.keys(IOT_API_KEYS).length} configured`);
 console.log(`  Ingest every : ${INGEST_INTERVAL_MS}ms`);
 console.log(`  Site refresh : ${SITE_REFRESH_INTERVAL_MS}ms`);
 console.log("─────────────────────────────────────────────────────────");

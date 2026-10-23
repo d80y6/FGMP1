@@ -57,7 +57,7 @@ interface FgmpState {
 
 let stateRequestInFlight: Promise<void> | null = null;
 
-export const useFgmp = create<FgmpState>((set) => ({
+export const useFgmp = create<FgmpState>((set, get) => ({
   snapshot: null,
   me: null,
   loading: true,
@@ -119,29 +119,11 @@ export const useFgmp = create<FgmpState>((set) => ({
     return stateRequestInFlight;
   },
 
-  tick: async (seconds = 60) => {
-    try {
-      const tickRes = await fetch("/api/fgmp/tick", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ seconds }),
-        credentials: "include",
-      });
-      // tick() previously never inspected its own response.
-      if (!tickRes.ok) {
-        set({ error: `HTTP ${tickRes.status} · /api/fgmp/tick` });
-        return;
-      }
-      const res = await fetch("/api/fgmp/state", { credentials: "include" });
-      if (!res.ok) {
-        set({ error: `HTTP ${res.status} · /api/fgmp/state` });
-        return;
-      }
-      const stateRes = await res.json();
-      set({ snapshot: stateRes, lastTickAt: Date.now(), error: null });
-    } catch (e) {
-      set({ error: String(e) });
-    }
+  // Retained for existing view call sites after successful writes. Ticking is
+  // server-owned; this action is now a scoped state refresh only.
+  tick: async (_seconds = 60) => {
+    await get().refresh();
+    if (!get().error) set({ lastTickAt: Date.now() });
   },
 
   setView: (v) => set({ view: v, selectedSiteId: null }),

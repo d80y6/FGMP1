@@ -14,7 +14,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 import { roleLabel } from "@/lib/fgmp/labels";
-import { ROLE_PERMISSIONS, ALL_ROLES } from "@/lib/fgmp/rbac";
+import { ROLE_PERMISSIONS, ALL_ROLES } from "@/lib/fgmp/rbac-core";
 import type { Role } from "@/lib/fgmp/types";
 import { cn } from "@/lib/utils";
 

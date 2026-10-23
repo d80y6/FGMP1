@@ -38,17 +38,12 @@
 // Config — edit this block per deployment. Values can also be overridden at
 // runtime via the captive portal (see provisionWiFi()).
 //
-// SECURITY: apiKey MUST be the deployment's real IOT_API_KEY. The server
-// has no default — if IOT_API_KEY is unset the ingest endpoint refuses to
-// start. Never commit a working key here; keep this placeholder empty and
-// provision it per-device, or inject it at build time:
+// SECURITY: apiKey MUST be a tenant API key with write scope for the site
+// this device reports. Never commit a working key here; keep this placeholder
+// empty and provision it per-device, or inject it at build time:
 //     arduino-cli compile --build-property \
 //       "compiler.cpp.extra_flags=-DAPI_KEY=\"$(cat .iot-key)\""
 //
-// The previous value ("fgmp-iot-dev-key") was committed alongside the
-// server-side fallback, so any deployment that did not override it accepted
-// telemetry — which overwrites live tank and generator levels — from anyone
-// who read this repository.
 // ───────────────────────────────────────────────────────────────────────────
 struct Config {
   const char* wifiSsid     = "FGMP-SITE-WIFI";

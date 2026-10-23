@@ -29,6 +29,7 @@
  */
 
 import type { NextRequest } from "next/server";
+import { createHash } from "node:crypto";
 
 export interface RateLimitResult {
   success: boolean;
@@ -222,7 +223,10 @@ export async function rateLimitByApiKey(
   windowMs: number,
 ): Promise<RateLimitResult> {
   const key = req.headers.get("x-api-key") ?? "no-key";
-  return rateLimit(`k:${key}`, limit, windowMs, "open", "ingest");
+  // Do not place raw API credentials in Redis key names or the local fallback
+  // map. A stable digest still gives every registered key its own budget.
+  const digest = createHash("sha256").update(key, "utf8").digest("hex");
+  return rateLimit(`k:${digest}`, limit, windowMs, "open", "ingest");
 }
 
 // ──────────────────────────────────────────────────────────────────────────

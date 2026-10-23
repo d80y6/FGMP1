@@ -13,7 +13,7 @@
  * Run: bun test src/lib/fgmp/__tests__/rbac-matrix.test.ts
  */
 import { describe, test, expect } from "bun:test";
-import { ROLE_PERMISSIONS, ALL_ROLES, type Role } from "../rbac";
+import { ROLE_PERMISSIONS, ALL_ROLES, type Role } from "../rbac-core";
 
 const caps = (r: Role): Set<string> => new Set(ROLE_PERMISSIONS[r].capabilities);
 // NOTE: read directly off ROLE_PERMISSIONS rather than parsed from source, so an

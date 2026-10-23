@@ -1,14 +1,11 @@
 # FGMP — production stack
 #
-# Every secret below is REQUIRED and has no fallback. The previous defaults
-# (dev-secret-change-me, fgmp-iot-dev-key) shipped in this file and in the
-# firmware source, so a deployment that forgot to export them ran on publicly
-# known credentials. `${VAR:?message}` makes `docker compose up` fail loudly
-# instead.
+# Required secrets have no insecure fallback. Tenant device keys are stored
+# in the API-key registry and optionally mapped into the bridge.
 #
 # Generate the secrets once and keep them in your shell / secret manager:
 #   openssl rand -base64 32   # NEXTAUTH_SECRET
-#   openssl rand -hex 32      # IOT_API_KEY, REALTIME_SERVICE_TOKEN
+#   openssl rand -hex 32      # REALTIME_SERVICE_TOKEN
 #
 # APINATOR_* values are NOT openssl-generated: APP_ID / KEY / SECRET come from
 # the Apinator dashboard (hosted realtime), and CLUSTER is the data-plane
@@ -224,7 +221,6 @@ services:
       # mismatch here is not cosmetic: NextAuth uses it to build callback URLs
       # and to decide whether to mark cookies Secure.
       - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3151}
-      - IOT_API_KEY=${IOT_API_KEY:?set IOT_API_KEY (openssl rand -hex 32)}
       # ── Realtime (hosted Apinator) ────────────────────────────────────────
       # REALTIME_URL / REALTIME_SERVER_SECRET / REALTIME_TOKEN_SECRET are gone:
       # the self-hosted socket.io mini-service was retired. The app triggers
@@ -282,7 +278,7 @@ services:
     # No port exposure — this service only makes outbound calls.
     environment:
       - NEXT_API_BASE=http://fgmp-app:3000
-      - IOT_API_KEY=${IOT_API_KEY:?set IOT_API_KEY (openssl rand -hex 32)}
+      - IOT_API_KEYS=${IOT_API_KEYS:-}
       # Snapshot polling token. This was MISSING here before the Apinator
       # migration — the bridge fell back to its dev default in compose
       # deployments and every snapshot poll 401'd. It must match the

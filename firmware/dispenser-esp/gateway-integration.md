@@ -80,7 +80,7 @@ endpoint, both of which speak the same `iotIngestSchema` JSON).
 POST  <SERVER_URL>/api/fgmp/iot/ingest
 Headers:
   content-type : application/json
-  x-api-key    : <IOT_API_KEY>           # default dev: fgmp-iot-dev-key
+  x-api-key    : <TENANT_WRITE_API_KEY> # API key for the site tenant
 Body (iotIngestSchema + dispenser extras):
   {
     "siteId":      "SITE-ADEN-CENTRAL",
@@ -106,9 +106,9 @@ Body (iotIngestSchema + dispenser extras):
 
 ### 2.2 Server-side processing (see `src/app/api/fgmp/iot/ingest/route.ts`)
 
-1. **Auth** — the `x-api-key` header is compared against `process.env.IOT_API_KEY`
-   (or the dev default `fgmp-iot-dev-key`). A mismatch returns `401 { error:
-   "unauthorized" }`.
+1. **Auth** — the `x-api-key` header must match a non-revoked, unexpired API
+   key in the submitted site's tenant, with `write` or `admin` scope. A key
+   belonging to another tenant returns `401 { error: "unauthorized" }`.
 2. **Schema validation** — the body is parsed through `IngestBodySchema`
    (a Zod schema mirroring `iotIngestSchema` in `src/lib/fgmp/schemas.ts`).
    Unknown top-level keys (`dispenserId`, `espDeviceId`, `dispenser`, `ts`)
@@ -173,7 +173,7 @@ Every 3 seconds the ESP issues:
 ```
 GET  <SERVER_URL>/api/fgmp/iot/dispenser/commands?deviceId=<ESP_DEVICE_ID>
 Headers:
-  x-api-key: <IOT_API_KEY>
+  x-api-key: <TENANT_WRITE_API_KEY>
 ```
 
 The endpoint returns the next ≤ 16 queued commands for this device:
@@ -202,7 +202,7 @@ The ESP writes the appropriate Modbus register(s) and then POSTs an ACK:
 POST <SERVER_URL>/api/fgmp/iot/dispenser/commands/ack
 Headers:
   content-type : application/json
-  x-api-key    : <IOT_API_KEY>
+  x-api-key    : <TENANT_WRITE_API_KEY>
 Body:
   {
     "commandId": "cmd_01J9KQ…",

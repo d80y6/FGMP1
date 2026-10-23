@@ -15,7 +15,7 @@ import {
   CommandItem, CommandList, CommandSeparator, CommandShortcut,
 } from "@/components/ui/command";
 import { useFgmp, type ViewKey } from "@/lib/fgmp/store";
-import { hasCapability } from "@/lib/fgmp/rbac";
+import { hasCapability } from "@/lib/fgmp/rbac-core";
 import { useTheme } from "next-themes";
 import { useT } from "@/lib/fgmp/use-language";
 import { toast } from "sonner";
