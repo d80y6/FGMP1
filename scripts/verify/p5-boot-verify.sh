@@ -17,7 +17,6 @@ COMMON_ENV=(
   -e FGMP_REQUIRE_RLS=1
   -e NEXTAUTH_SECRET="bootverify-secret-abcdefghijklmnopqrstuv"
   -e NEXTAUTH_URL="http://localhost:3199"
-  -e IOT_API_KEY="boot-iot-key-abcdefghijklmnopqrstuvwxyz01"
   # REALTIME_SERVER_SECRET / REALTIME_TOKEN_SECRET are gone with the retired
   # self-hosted realtime service. The APINATOR_* fakes mirror the compose
   # required markers so the boot exercises the same env surface; the health

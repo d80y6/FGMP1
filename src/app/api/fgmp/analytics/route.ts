@@ -13,7 +13,6 @@ import {
 import { errorResponse } from "@/lib/fgmp/api-error";
 import {
   requireAuth,
-  isSuperAdminUser,
   tenantWhereOrAll,
   siteTenantWhereOrAll,
 } from "@/lib/fgmp/auth-helpers";
@@ -98,30 +97,16 @@ export async function GET(req: NextRequest) {
     const battLowPct = await resolveBattLowVoltagePct();
     const timezone = await resolvePlatformTimezone();
 
-    // ── Tenant isolation (Task TI-2c) ────────────────────────────────────
-    // SUPERADMIN sees every site cross-tenant. Every other role sees only the
-    // sites (and child tanks/generators/batteries/events) owned by their own
-    // tenant. We resolve a Set of allowed site IDs once and use it to filter
-    // the in-memory engine arrays below.
-    const tenantSiteIds = isSuperAdminUser(me)
-      ? null
-      : new Set(engine.sites.filter((s) => s.tenantId === tenantIdOrThrow(me.tenantId)).map((s) => s.id));
-
-    const sites = tenantSiteIds === null
-      ? engine.sites
-      : engine.sites.filter((s) => tenantSiteIds.has(s.id));
-    const tanks = tenantSiteIds === null
-      ? engine.tanks
-      : engine.tanks.filter((t) => tenantSiteIds.has(t.siteId));
-    const generators = tenantSiteIds === null
-      ? engine.generators
-      : engine.generators.filter((g) => tenantSiteIds.has(g.siteId));
-    const batteries = tenantSiteIds === null
-      ? engine.batteries
-      : engine.batteries.filter((b) => tenantSiteIds.has(b.siteId));
-    const events = tenantSiteIds === null
-      ? engine.events
-      : engine.events.filter((e) => tenantSiteIds.has(e.siteId));
+    // Engine memory can hold multiple tenants; every session, including
+    // SUPERADMIN, is filtered to its authenticated tenant. The role alone is
+    // not a cross-tenant data grant.
+    const tenantId = tenantIdOrThrow(me.tenantId);
+    const tenantSiteIds = new Set(engine.sites.filter((s) => s.tenantId === tenantId).map((s) => s.id));
+    const sites = engine.sites.filter((s) => s.tenantId === tenantId);
+    const tanks = engine.tanks.filter((t) => tenantSiteIds.has(t.siteId));
+    const generators = engine.generators.filter((g) => tenantSiteIds.has(g.siteId));
+    const batteries = engine.batteries.filter((b) => tenantSiteIds.has(b.siteId));
+    const events = engine.events.filter((e) => tenantSiteIds.has(e.siteId));
 
     const now = Date.now();
 
@@ -207,7 +192,7 @@ export async function GET(req: NextRequest) {
     const dailyReadings = needsDailyReadings
       ? await loadFuelLevelReadings({
           user: me,
-          tenantSiteIds: tenantSiteIds === null ? null : Array.from(tenantSiteIds),
+          tenantSiteIds: Array.from(tenantSiteIds),
           startMs: dayStarts[0],
         })
       : null;
@@ -418,7 +403,7 @@ export async function GET(req: NextRequest) {
       dailyReadings ??
       (await loadFuelLevelReadings({
         user: me,
-        tenantSiteIds: tenantSiteIds === null ? null : Array.from(tenantSiteIds),
+        tenantSiteIds: Array.from(tenantSiteIds),
         startMs: dayStarts[0],
       }));
     const perDayCost = bucketReadingsByZonedDay(dailyReadingsForCost.rows, tanks, timezone);
@@ -647,13 +632,12 @@ async function loadFuelLevelReadings({
   startMs,
 }: {
   user: Pick<SessionUser, "tenantId">;
-  tenantSiteIds: string[] | null;
+  tenantSiteIds: string[];
   startMs: number;
 }): Promise<{ rows: ReadingRow[]; truncated: boolean }> {
-  // The tenant id is part of the cache key: two tenants can both pass
-  // `tenantSiteIds: null` (a superadmin view), and without this the first
-  // result would be served to the second.
-  const key = `${user.tenantId}|${startMs}|${tenantSiteIds ? tenantSiteIds.slice().sort().join(",") : "*"}`;
+  // Include tenant and sorted site scope in the cache key so results cannot
+  // be reused across tenant boundaries.
+  const key = `${user.tenantId}|${startMs}|${tenantSiteIds.slice().sort().join(",")}`;
   const hit = dailyReadingsCache.get(key);
   if (hit && Date.now() - hit.at < DAILY_READINGS_TTL_MS) return hit.value;
 
@@ -666,7 +650,7 @@ async function loadFuelLevelReadings({
         metric: "FUEL_LEVEL",
         entityKind: "TANK",
         ts: { gte: new Date(startMs) },
-        ...(tenantSiteIds ? { siteId: { in: tenantSiteIds } } : {}),
+        siteId: { in: tenantSiteIds },
       },
       select: { entityId: true, value: true, ts: true },
       orderBy: { ts: "desc" },

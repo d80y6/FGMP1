@@ -83,10 +83,10 @@ ESP32/ESP8266 ──MQTT──▶ mosquitto (per-tenant ACL) ──▶ mini-serv
 * `mini-services/iot-bridge` (Bun) subscribes to broker topics / simulates field
   readings and posts them to the ingest route with `x-api-key`. It holds no
   socket to the app.
-* `/api/fgmp/iot/ingest` authenticates the **device** (`IOT_API_KEY`, minimum 16
-  chars, no committed default), validates the reading against the Prisma enums,
-  and rejects unknown site/device identifiers rather than silently dropping them.
-  A missing key is a 503, not an open door.
+* `/api/fgmp/iot/ingest` authenticates the **device** with a tenant-scoped API
+  key carrying `write` or `admin` scope. The submitted site determines which
+  tenant's key registry is checked; a key for another tenant is rejected. The
+  route persists under that tenant's RLS context.
 * `/api/fgmp/realtime/snapshot` exists for the bridge only: it presents
   `REALTIME_SERVICE_TOKEN` because the bridge cannot hold a browser session.
 

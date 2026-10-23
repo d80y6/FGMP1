@@ -91,13 +91,15 @@ variables, never values.
 
 ## 6. Secrets
 
-* No secret has a committed default. `IOT_API_KEY` is read lazily and refuses
-  the request when absent or shorter than 16 characters; the old
-  `fgmp-iot-dev-key` was hardcoded in both the route and the firmware.
+* Device ingest uses tenant-scoped `ApiKey` records with `write` or `admin`
+  scope. The raw key is hashed at rest, expiry and revocation are enforced, and
+  the site owner determines the only tenant whose credential can authorize a
+  write. There is no global ingest key or shared dev fallback.
 * `.env` is excluded from the Docker image and from git. Only `.env.example`
   (placeholders) is tracked.
-* Variable names alone do not authenticate: the bridge and the app share
-  `IOT_API_KEY` / `REALTIME_SERVICE_TOKEN`, which must be rotated together.
+* The bridge holds a tenant-to-key mapping in `IOT_API_KEYS` and a separate
+  service token for snapshot polling. Rotate tenant API keys independently in
+  the tenant API-key manager; never reuse the service token as an ingest key.
 * `NEXT_PUBLIC_*` values are public by definition; they are limited to the
   Apinator app key and cluster.
 

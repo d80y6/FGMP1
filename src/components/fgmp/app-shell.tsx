@@ -20,7 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useTheme } from "next-themes";
 import { useState } from "react";
-import { hasCapability, ROLE_PERMISSIONS } from "@/lib/fgmp/rbac";
+import { hasCapability, ROLE_PERMISSIONS } from "@/lib/fgmp/rbac-core";
 import { PREVIEW_ROLES } from "@/lib/fgmp/role-preview";
 import type { Role } from "@/lib/fgmp/types";
 import dynamic from "next/dynamic";

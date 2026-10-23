@@ -118,12 +118,11 @@ on `127.0.0.1:8443`.
 
 ## 6. IoT ingest
 
-`POST /api/fgmp/iot/ingest` — device auth via `x-api-key`, not a session.
+`POST /api/fgmp/iot/ingest` — device auth via `x-api-key`, not a session. Create a tenant API key with `write` scope in the API-key manager; the submitted site determines which tenant's key registry is checked. For the simulator bridge, set `IOT_API_KEYS` to a JSON object mapping each tenant ID to its raw key, then restart the bridge. There is no shared/global ingest key.
 
 | Symptom | Cause |
 |---|---|
-| `503 ingest not configured` | `IOT_API_KEY` missing or shorter than 16 chars |
-| `401 unauthorized` | key mismatch (rotate app + bridge together) |
+| `401 unauthorized` | API key is absent, revoked, expired, lacks `write`/`admin` scope, or does not belong to the submitted site's tenant |
 | `429` | rate limit; ingest fails **open** when Redis is down, so this is a real limit |
 | `400` with a field name | schema validation; unknown enum values are rejected |
 

@@ -7,7 +7,7 @@ import {
   READ_LIMIT,
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
-import { requireAuth, isSuperAdminUser } from "@/lib/fgmp/auth-helpers";
+import { requireAuth } from "@/lib/fgmp/auth-helpers";
 import { resolvePlatformTimezone } from "@/lib/fgmp/thresholds-time";
 import {
   MAX_DRAIN_LPH_ABS,
@@ -162,15 +162,12 @@ export async function GET(req: NextRequest) {
     }
     const timezone = await resolvePlatformTimezone();
 
-    // ── Tenant isolation (Task TI-2c) ────────────────────────────────────
-    // SUPERADMIN sees every tank cross-tenant; everyone else only sees
-    // tanks whose parent site belongs to their own tenant.
-    const tanks = isSuperAdminUser(me)
-      ? engine.tanks
-      : engine.tanks.filter((t) => {
-          const site = engine.sites.find((s) => s.id === t.siteId);
-          return site?.tenantId === me.tenantId;
-        });
+    // Runout estimates are customer operational data. Platform operators are
+    // scoped to the platform tenant unless an audited support surface is used.
+    const tenantId = tenantIdOrThrow(me.tenantId);
+    const tenantSiteIds = engine.sites.filter((s) => s.tenantId === tenantId).map((s) => s.id);
+    const allowedSiteIds = new Set(tenantSiteIds);
+    const tanks = engine.tanks.filter((t) => allowedSiteIds.has(t.siteId));
     if (tanks.length === 0) {
       const res = NextResponse.json({
         tanks: [],
@@ -186,14 +183,8 @@ export async function GET(req: NextRequest) {
     // Tenant-scoped: only readings for sites owned by the caller's tenant.
     // (SensorReading has a bare siteId column — no site relation — so we
     // filter by siteId IN tenantSites instead of `site: { tenantId }`.)
-    // SUPERADMIN bypasses (null set → no IN filter → all sites).
     // `take` bounds the row count; newest rows are the ones worth keeping.
     const cutoff = new Date(Date.now() - HISTORY_WINDOW_MS);
-    const tenantSiteIds = isSuperAdminUser(me)
-      ? null
-      : engine.sites
-          .filter((s) => s.tenantId === tenantIdOrThrow(me.tenantId))
-          .map((s) => s.id);
     // SensorReading carries no tenantId of its own — tenancy reaches it
     // through Site — so the context comes from the caller's tenant and the
     // existing siteId filter remains as defence in depth.
@@ -202,7 +193,7 @@ export async function GET(req: NextRequest) {
         metric: "FUEL_LEVEL",
         entityKind: "TANK",
         ts: { gte: cutoff },
-        ...(tenantSiteIds ? { siteId: { in: tenantSiteIds } } : {}),
+        siteId: { in: tenantSiteIds },
       },
       select: { entityId: true, value: true, ts: true },
       orderBy: { ts: "desc" },

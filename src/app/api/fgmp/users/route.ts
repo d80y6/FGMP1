@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { bootstrap } from "@/lib/fgmp";
-import { asTenant, asTenantForAnotherTenant, resolveTenantScope } from "@/lib/fgmp/route-tenant";
+import { asTenantForAnotherTenant, resolveTenantScope } from "@/lib/fgmp/route-tenant";
 import {
   requireRole,
   ROLES,
-  tenantWhereOrAll,
-  isSuperAdminUser, requireTenantId } from "@/lib/fgmp/auth-helpers";
+  isSuperAdminUser,
+  requireTenantId,
+} from "@/lib/fgmp/auth-helpers";
 import { audit } from "@/lib/fgmp/audit";
 import {
   rateLimitByUser,
@@ -116,17 +117,14 @@ export async function GET(req: NextRequest) {
     });
 
     const scope = resolveTenantScope(me, searchParams.get("tenant"));
-    const where = tenantWhereOrAll(me);
+    // User roster access is the explicit named-tenant administration exception.
+    // The selected tenant comes from the scope resolver, never an unfiltered
+    // SUPERADMIN list branch.
+    const where = { tenantId: scope.tenantId };
     // ── Tenant scoping ────────────────────────────────────────────────────
-    // `tenantWhereOrAll` builds a WHERE, but a WHERE alone does NOT satisfy
-    // RLS: the policy USING is ANDed with it and current_setting is NULL, so
-    // this returned zero users and an X-Total-Count of 0 for every caller
-    // while returning HTTP 200.
-    //
-    // Scoped to `scope.tenantId`: the caller's own tenant, or — for a
-    // super-admin who named one — that tenant, through the helper that
-    // re-checks the role. `tenantWhereOrAll` supplies the row filter for a
-    // super-admin ({}), but the CONTEXT is what makes RLS return rows at all.
+    // The explicit row filter and transaction context are both derived from
+    // the scope resolver. A cross-tenant roster is available only when the
+    // super-admin names its tenant; no unfiltered list branch exists.
     const [users, total] = await scope.run((tx) =>
       Promise.all([
         tx.user.findMany({

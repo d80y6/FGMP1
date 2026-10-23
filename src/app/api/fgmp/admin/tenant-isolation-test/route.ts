@@ -25,8 +25,9 @@ export const dynamic = "force-dynamic";
 /**
  * GET /api/fgmp/admin/tenant-isolation-test
  *
- * SUPERADMIN-only endpoint that runs a comprehensive tenant-isolation
- * verification suite and returns a structured report. The report covers:
+ * SUPERADMIN-only endpoint that runs a structured helper-level diagnostic.
+ * It samples selected resource types and list filters; it is not a full HTTP
+ * route integration suite. The report covers:
  *
  *   1. **Per-tenant resource census** — counts of users, sites, alarms,
  *      generators, tanks, batteries, dispensers, deliveries, maintenance
@@ -39,8 +40,8 @@ export const dynamic = "force-dynamic";
  *      mock user from tenant B (returns 404). This is the unit test of the
  *      isolation helpers against real DB rows.
  *
- *   3. **SUPERADMIN bypass verification** — confirms the same helpers
- *      return `null` (allow) when called with a mock super-admin user.
+ *   3. **Platform helper behavior** — records the helper result for a mock platform
+ *      user; this does not grant route access or bypass RLS.
  *
  *   4. **List-view scoping audit** — for every tenant, runs the
  *      `tenantWhereOrAll` / `siteTenantWhereOrAll` filter against each model
@@ -70,15 +71,14 @@ export const dynamic = "force-dynamic";
  *      step is the precondition — the rightful tenant must be able to READ its
  *      own row. If it cannot, the policy is over-restrictive and no
  *      cross-tenant conclusion drawn from it is worth anything.
- *   2. `recordFound` is asserted BEFORE the access assertion, and a sample
- *      that cannot be located is recorded as a FAILURE with a reason, never
- *      skipped and never passed. `assertTenantOwned(null, …)` returns the same
- *      404 as "belongs to another tenant", so without this precondition a
- *      completely invisible dataset scores identically to correct isolation.
- *   3. `isolationIntact` requires `failed === 0 && measured > 0 &&
- *      measured === allTests.length`. A suite that measured nothing, or
- *      measured only part of what it claimed, reports false. `verdictBasis`
- *      states which of those happened in plain words.
+ *   2. `recordFound` is asserted BEFORE the access assertion. A missing
+ *      sample is marked UNMEASURED with a reason, never skipped and never
+ *      passed. `assertTenantOwned(null, …)` returns the same 404 as "belongs
+ *      to another tenant", so without this precondition an invisible dataset
+ *      could masquerade as a correct isolation result.
+ *   3. `sampledChecksPassed` requires zero measured failures, at least one real
+ *      measurement and zero unmeasured assertions. Missing data is neither
+ *      called a breach nor presented as success; `verdictBasis` says so.
  *
  * The tenant LIST is read on the ops/owner connection, which is deliberate:
  * this route compares tenants against each other and no single tenant context
@@ -249,7 +249,7 @@ async function buildReport(): Promise<TenantIsolationReport> {
             targetTenant: targetTenant.code,
             recordFound: true,
             crossTenantDenied: denied !== null,
-            superAdminBypass: saAccess === null,
+            platformHelperPermits: saAccess === null,
             // A pass requires the record to have been FOUND and readable by
             // the source tenant AND access to be denied for the target. A
             // null sample cannot score a pass: "denied because it is another
@@ -258,9 +258,8 @@ async function buildReport(): Promise<TenantIsolationReport> {
             pass: denied !== null && saAccess === null,
           });
         } else {
-          // Flaw 2 fix: absence is a FAILURE, not a skip. An
-          // assertion that could not be measured must never be
-          // counted as a pass.
+          // Missing samples are UNMEASURED, never skipped or counted as a
+          // pass. The report distinguishes lack of evidence from a breach.
           tests.push({
             resource: "site",
             resourceId: null,
@@ -269,7 +268,7 @@ async function buildReport(): Promise<TenantIsolationReport> {
             targetTenant: targetTenant.code,
             recordFound: false,
             crossTenantDenied: null,
-            superAdminBypass: null,
+            platformHelperPermits: null,
             reason: "sample not found for site in the source tenant — isolation cannot be measured",
             pass: false,
           });
@@ -287,7 +286,7 @@ async function buildReport(): Promise<TenantIsolationReport> {
             targetTenant: targetTenant.code,
             recordFound: true,
             crossTenantDenied: denied !== null,
-            superAdminBypass: saAccess === null,
+            platformHelperPermits: saAccess === null,
             // A pass requires the record to have been FOUND and readable by
             // the source tenant AND access to be denied for the target. A
             // null sample cannot score a pass: "denied because it is another
@@ -296,9 +295,8 @@ async function buildReport(): Promise<TenantIsolationReport> {
             pass: denied !== null && saAccess === null,
           });
         } else {
-          // Flaw 2 fix: absence is a FAILURE, not a skip. An
-          // assertion that could not be measured must never be
-          // counted as a pass.
+          // Missing samples are UNMEASURED, never skipped or counted as a
+          // pass. The report distinguishes lack of evidence from a breach.
           tests.push({
             resource: "alarm",
             resourceId: null,
@@ -307,7 +305,7 @@ async function buildReport(): Promise<TenantIsolationReport> {
             targetTenant: targetTenant.code,
             recordFound: false,
             crossTenantDenied: null,
-            superAdminBypass: null,
+            platformHelperPermits: null,
             reason: "sample not found for alarm in the source tenant — isolation cannot be measured",
             pass: false,
           });
@@ -325,7 +323,7 @@ async function buildReport(): Promise<TenantIsolationReport> {
             targetTenant: targetTenant.code,
             recordFound: true,
             crossTenantDenied: denied !== null,
-            superAdminBypass: saAccess === null,
+            platformHelperPermits: saAccess === null,
             // A pass requires the record to have been FOUND and readable by
             // the source tenant AND access to be denied for the target. A
             // null sample cannot score a pass: "denied because it is another
@@ -334,9 +332,8 @@ async function buildReport(): Promise<TenantIsolationReport> {
             pass: denied !== null && saAccess === null,
           });
         } else {
-          // Flaw 2 fix: absence is a FAILURE, not a skip. An
-          // assertion that could not be measured must never be
-          // counted as a pass.
+          // Missing samples are UNMEASURED, never skipped or counted as a
+          // pass. The report distinguishes lack of evidence from a breach.
           tests.push({
             resource: "generator",
             resourceId: null,
@@ -345,7 +342,7 @@ async function buildReport(): Promise<TenantIsolationReport> {
             targetTenant: targetTenant.code,
             recordFound: false,
             crossTenantDenied: null,
-            superAdminBypass: null,
+            platformHelperPermits: null,
             reason: "sample not found for generator in the source tenant — isolation cannot be measured",
             pass: false,
           });
@@ -363,7 +360,7 @@ async function buildReport(): Promise<TenantIsolationReport> {
             targetTenant: targetTenant.code,
             recordFound: true,
             crossTenantDenied: denied !== null,
-            superAdminBypass: saAccess === null,
+            platformHelperPermits: saAccess === null,
             // A pass requires the record to have been FOUND and readable by
             // the source tenant AND access to be denied for the target. A
             // null sample cannot score a pass: "denied because it is another
@@ -372,9 +369,8 @@ async function buildReport(): Promise<TenantIsolationReport> {
             pass: denied !== null && saAccess === null,
           });
         } else {
-          // Flaw 2 fix: absence is a FAILURE, not a skip. An
-          // assertion that could not be measured must never be
-          // counted as a pass.
+          // Missing samples are UNMEASURED, never skipped or counted as a
+          // pass. The report distinguishes lack of evidence from a breach.
           tests.push({
             resource: "tank",
             resourceId: null,
@@ -383,7 +379,7 @@ async function buildReport(): Promise<TenantIsolationReport> {
             targetTenant: targetTenant.code,
             recordFound: false,
             crossTenantDenied: null,
-            superAdminBypass: null,
+            platformHelperPermits: null,
             reason: "sample not found for tank in the source tenant — isolation cannot be measured",
             pass: false,
           });
@@ -401,7 +397,7 @@ async function buildReport(): Promise<TenantIsolationReport> {
             targetTenant: targetTenant.code,
             recordFound: true,
             crossTenantDenied: denied !== null,
-            superAdminBypass: saAccess === null,
+            platformHelperPermits: saAccess === null,
             // A pass requires the record to have been FOUND and readable by
             // the source tenant AND access to be denied for the target. A
             // null sample cannot score a pass: "denied because it is another
@@ -410,9 +406,8 @@ async function buildReport(): Promise<TenantIsolationReport> {
             pass: denied !== null && saAccess === null,
           });
         } else {
-          // Flaw 2 fix: absence is a FAILURE, not a skip. An
-          // assertion that could not be measured must never be
-          // counted as a pass.
+          // Missing samples are UNMEASURED, never skipped or counted as a
+          // pass. The report distinguishes lack of evidence from a breach.
           tests.push({
             resource: "user",
             resourceId: null,
@@ -421,7 +416,7 @@ async function buildReport(): Promise<TenantIsolationReport> {
             targetTenant: targetTenant.code,
             recordFound: false,
             crossTenantDenied: null,
-            superAdminBypass: null,
+            platformHelperPermits: null,
             reason: "sample not found for user in the source tenant — isolation cannot be measured",
             pass: false,
           });
@@ -439,7 +434,7 @@ async function buildReport(): Promise<TenantIsolationReport> {
             targetTenant: targetTenant.code,
             recordFound: true,
             crossTenantDenied: denied !== null,
-            superAdminBypass: saAccess === null,
+            platformHelperPermits: saAccess === null,
             // A pass requires the record to have been FOUND and readable by
             // the source tenant AND access to be denied for the target. A
             // null sample cannot score a pass: "denied because it is another
@@ -448,9 +443,8 @@ async function buildReport(): Promise<TenantIsolationReport> {
             pass: denied !== null && saAccess === null,
           });
         } else {
-          // Flaw 2 fix: absence is a FAILURE, not a skip. An
-          // assertion that could not be measured must never be
-          // counted as a pass.
+          // Missing samples are UNMEASURED, never skipped or counted as a
+          // pass. The report distinguishes lack of evidence from a breach.
           tests.push({
             resource: "alarmSuppression",
             resourceId: null,
@@ -459,7 +453,7 @@ async function buildReport(): Promise<TenantIsolationReport> {
             targetTenant: targetTenant.code,
             recordFound: false,
             crossTenantDenied: null,
-            superAdminBypass: null,
+            platformHelperPermits: null,
             reason: "sample not found for alarmSuppression in the source tenant — isolation cannot be measured",
             pass: false,
           });
@@ -477,7 +471,7 @@ async function buildReport(): Promise<TenantIsolationReport> {
             targetTenant: targetTenant.code,
             recordFound: true,
             crossTenantDenied: denied !== null,
-            superAdminBypass: saAccess === null,
+            platformHelperPermits: saAccess === null,
             // A pass requires the record to have been FOUND and readable by
             // the source tenant AND access to be denied for the target. A
             // null sample cannot score a pass: "denied because it is another
@@ -486,9 +480,8 @@ async function buildReport(): Promise<TenantIsolationReport> {
             pass: denied !== null && saAccess === null,
           });
         } else {
-          // Flaw 2 fix: absence is a FAILURE, not a skip. An
-          // assertion that could not be measured must never be
-          // counted as a pass.
+          // Missing samples are UNMEASURED, never skipped or counted as a
+          // pass. The report distinguishes lack of evidence from a breach.
           tests.push({
             resource: "apiKey",
             resourceId: null,
@@ -497,7 +490,7 @@ async function buildReport(): Promise<TenantIsolationReport> {
             targetTenant: targetTenant.code,
             recordFound: false,
             crossTenantDenied: null,
-            superAdminBypass: null,
+            platformHelperPermits: null,
             reason: "sample not found for apiKey in the source tenant — isolation cannot be measured",
             pass: false,
           });
@@ -516,12 +509,15 @@ async function buildReport(): Promise<TenantIsolationReport> {
 
   // 3. Aggregate summary
   const allTests = crossTenantTests.flatMap((g) => g.tests);
-  const passed = allTests.filter((t) => t.pass).length;
-  const failed = allTests.filter((t) => !t.pass).length;
+  const measured = allTests.filter((t) => t.recordFound).length;
+  const passed = allTests.filter((t) => t.recordFound && t.pass).length;
+  // A failed assertion is a measured test that violated the helper contract.
+  // Missing sample rows are reported separately as unmeasured, never as a
+  // breach and never as a successful isolation test.
+  const failed = allTests.filter((t) => t.recordFound && !t.pass).length;
   // A suite that measured nothing must not report success. `failed === 0` on an
   // EMPTY array is true, which is how the previous version reported
-  // isolationIntact:true having executed zero assertions.
-  const measured = allTests.filter((t) => t.recordFound).length;
+  // a green verdict having executed zero assertions.
   const unmeasured = allTests.length - measured;
   const finishedAt = new Date();
 
@@ -548,13 +544,13 @@ async function buildReport(): Promise<TenantIsolationReport> {
        * `failed === 0` was true on an empty suite, so an RLS policy that hid
        * every row produced a green verdict — the exact opposite of the truth.
        */
-      isolationIntact: failed === 0 && measured > 0 && measured === allTests.length,
+      sampledChecksPassed: failed === 0 && measured > 0 && unmeasured === 0,
       /** Why the verdict is what it is, so a reader never has to guess. */
       verdictBasis:
         measured === 0
           ? "NO MEASUREMENT POSSIBLE: no sample rows were visible to the source tenant, so isolation was not tested."
           : unmeasured > 0
-            ? `PARTIAL: ${measured}/${allTests.length} assertions measured; ${unmeasured} had no sample row and are counted as failures.`
+            ? `INCOMPLETE: ${measured}/${allTests.length} assertions measured; ${unmeasured} had no sample row.`
             : `COMPLETE: ${measured} assertions measured against real rows, ${failed} failed.`,
     },
   };
@@ -624,8 +620,8 @@ interface ResourceTest {
   /** null when unmeasured. */
   crossTenantDenied: boolean | null;
   /** null when unmeasured. */
-  superAdminBypass: boolean | null;
-  /** Present only on failures, so an operator is never left guessing. */
+  platformHelperPermits: boolean | null;
+  /** Explains a measured failure or why the assertion was unmeasurable. */
   reason?: string;
   pass: boolean;
 }
@@ -649,7 +645,7 @@ interface TenantIsolationReport {
     failed: number;
     measured: number;
     unmeasured: number;
-    isolationIntact: boolean;
+    sampledChecksPassed: boolean;
     verdictBasis: string;
   };
 }

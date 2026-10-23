@@ -9,7 +9,7 @@ import {
 } from "@/lib/fgmp/rate-limit";
 import { withTenant } from "@/lib/fgmp/tenant-context";
 import { errorResponse } from "@/lib/fgmp/api-error";
-import { requireAuth, isSuperAdminUser } from "@/lib/fgmp/auth-helpers";
+import { requireAuth } from "@/lib/fgmp/auth-helpers";
 import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 export const dynamic = "force-dynamic";
@@ -62,13 +62,10 @@ export async function GET(req: NextRequest) {
     const where: Prisma.EspFirmwareDeploymentWhereInput = {};
     if (status) where.status = status as OtaStatus;
     if (dispenserId) where.dispenserId = dispenserId;
-    // Tenant isolation: scope deployments to those whose dispenser belongs to
-    // a site owned by the caller's tenant. (EspFirmwareDeployment has no
-    // direct siteId; it's reached via dispenser.site.) SUPERADMIN bypasses
-    // the filter so they can see deployments across all tenants.
-    if (!isSuperAdminUser(auth.user)) {
-      where.dispenser = { site: { tenantId: auth.user.tenantId } };
-    }
+    // Device firmware deployment rows are operational customer data. Scope
+    // every role (including platform users) to the session tenant; cross-tenant
+    // access belongs on an explicit audited support surface.
+    where.dispenser = { site: { tenantId: tenantIdOrThrow(auth.user.tenantId) } };
 
     const [deployments, total] = await Promise.all([
             withTenant(tenantIdOrThrow(user.tenantId), (tx) => tx.espFirmwareDeployment.findMany({

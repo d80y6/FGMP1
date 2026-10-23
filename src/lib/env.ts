@@ -7,8 +7,6 @@
  * 500 on some unrelated screen, or — worse — not at all:
  *
  *   - a missing `NEXTAUTH_SECRET` produced "JWEDecryptionFailed" on login;
- *   - a missing `IOT_API_KEY` silently refused all device telemetry (503 from
- *     one route, which nobody watches);
  *   - a `DATABASE_URL` pointing at the owner role disabled every RLS policy
  *     while the UI stayed green;
  *   - a missing `FGMP_MFA_ENCRYPTION_KEY` surfaced only when an operator tried
@@ -28,7 +26,8 @@
  *    A validation error that echoes a secret into the logs is a new incident.
  * 3. **Warnings do not block.** A deployment without Apinator credentials can
  *    serve every page; realtime is a latency feature, not a data source. A
- *    deployment without `IOT_API_KEY` cannot ingest, but it can still be read.
+ *    device credentials are tenant-scoped database API keys, not global env
+ *    secrets, so this validator does not require an ingest key.
  */
 
 export type EnvIssue = {
@@ -145,21 +144,8 @@ export function collectEnvIssues(
   }
 
   // ── Device ingest ─────────────────────────────────────────────────────────
-  const iotKey = get("IOT_API_KEY");
-  if (!iotKey) {
-    warn(
-      "IOT_API_KEY",
-      "is not set. POST /api/fgmp/iot/ingest returns 503, so no device " +
-        "telemetry can be accepted. Set it (min 16 chars) if field devices " +
-        "exist; leave it unset deliberately for a read-only deployment.",
-    );
-  } else if (iotKey.length < 16) {
-    err(
-      "IOT_API_KEY",
-      `is ${iotKey.length} characters; ingest refuses anything shorter than 16. ` +
-        "Generate one with `openssl rand -hex 32`.",
-    );
-  }
+  // Ingest credentials are tenant-scoped ApiKey records with write/admin
+  // scope. A process-global shared secret would permit cross-tenant writes.
 
   // ── MFA secret encryption ─────────────────────────────────────────────────
   const mfaKey = get("FGMP_MFA_ENCRYPTION_KEY");

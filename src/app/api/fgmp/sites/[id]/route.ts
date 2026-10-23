@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { engine, bootstrap } from "@/lib/fgmp";
-import { asTenant, asTenantForAnotherTenant } from "@/lib/fgmp/route-tenant";
+import { asTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import {
   rateLimitByUser,
   applyRateLimitHeaders,
@@ -10,7 +10,7 @@ import {
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { audit } from "@/lib/fgmp/audit";
-import { requireAuth, requireRole, assertTenantOwned, isSuperAdminUser, ROLES } from "@/lib/fgmp/auth-helpers";
+import { requireAuth, requireRole, assertTenantOwned, ROLES } from "@/lib/fgmp/auth-helpers";
 import { resolveGeographyPath, attachGeographyNames } from "@/lib/fgmp/geography";
 
 export const dynamic = "force-dynamic";
@@ -84,7 +84,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     // belongs to this caller do the child reads run.
     const owned = await asTenant(user, (tx) =>
       tx.site.findFirst({
-        where: isSuperAdminUser(user) ? { id } : { id, tenantId: user.tenantId },
+        where: { id, tenantId: tenantIdOrThrow(user.tenantId) },
         select: { id: true },
       }),
     );
@@ -184,7 +184,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // a concurrent rename cannot slip past the uniqueness check.
     const outcome = await asTenant(me, async (tx) => {
       const existing = await tx.site.findFirst({
-        where: isSuperAdminUser(me) ? { id } : { id, tenantId: me.tenantId },
+        where: { id, tenantId: tenantIdOrThrow(me.tenantId) },
         include: siteInclude,
       });
       if (!existing) return { kind: "not-found" as const };
@@ -291,16 +291,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       },
     });
 
-    // The update ran inside asTenant(me, …); decorate inside a context too, since
-    // `v_geography` filters on current_setting('app.tenant_id') and returns
-    // nothing without one. A missing tenant on `updated` is a superadmin editing
-    // another tenant, which asTenantForAnotherTenant handles.
-    const decorated =
-      updated.tenantId && updated.tenantId !== me.tenantId
-        ? await asTenantForAnotherTenant(me, updated.tenantId, (tx) =>
-            attachGeographyNames(tx, [updated]),
-          ).then((r) => r[0])
-        : await asTenant(me, (tx) => attachGeographyNames(tx, [updated])).then((r) => r[0]);
+    // The update and geography decoration are both in the caller's tenant.
+    const decorated = await asTenant(me, (tx) =>
+      attachGeographyNames(tx, [updated]),
+    ).then((r) => r[0]);
 
     const res = NextResponse.json(decorated ?? updated);
     applyRateLimitHeaders(res.headers, rl);
@@ -346,7 +340,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     // Ownership check, counts and delete share one transaction.
     const outcome = await asTenant(me, async (tx) => {
       const existing = await tx.site.findFirst({
-        where: isSuperAdminUser(me) ? { id } : { id, tenantId: me.tenantId },
+        where: { id, tenantId: tenantIdOrThrow(me.tenantId) },
         include: siteInclude,
       });
       if (!existing) return { kind: "not-found" as const };

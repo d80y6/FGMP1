@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { bootstrap } from "@/lib/fgmp";
-import { asTenant } from "@/lib/fgmp/route-tenant";
+import { asTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import {
   rateLimitByUser,
@@ -9,7 +9,7 @@ import {
   MUTATION_LIMIT,
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
-import { requireRole, ROLES, isSuperAdminUser } from "@/lib/fgmp/auth-helpers";
+import { requireRole, ROLES } from "@/lib/fgmp/auth-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -60,19 +60,16 @@ export async function POST(req: NextRequest) {
     // governorate lookup must run inside asTenant — unscoped it returns zero
     // rows and every create fails with a misleading 404.
     //
-    // A governorate in another tenant is simply not found for a tenant admin:
-    // the region filter carries their tenantId, so absent and foreign are
-    // indistinguishable. Superadmins match on id alone and use the tenant the
-    // region actually belongs to.
+    // A governorate in another tenant is not visible to this ordinary tenant
+    // route, including for platform users; the region filter is always derived
+    // from the authenticated session.
     const result = await asTenant(user, async (tx) => {
       const gov = await tx.governorate.findFirst({
         where: {
           id: governorateId,
           // Two hops: filter through the parent region, which is the table that
           // actually carries tenantId.
-          ...(isSuperAdminUser(user)
-            ? {}
-            : { region: { tenantId: user.tenantId } }),
+          region: { tenantId: tenantIdOrThrow(user.tenantId) },
         },
         select: { id: true, region: { select: { tenantId: true } } },
       });

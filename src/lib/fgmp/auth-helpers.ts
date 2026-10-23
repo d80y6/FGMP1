@@ -7,7 +7,7 @@ import {
   JWT_SECRET_CONFIGURED,
   type SessionUser,
 } from "@/lib/auth";
-import { hasCapability, isSuperAdmin } from "@/lib/fgmp/rbac";
+import { hasCapability, isSuperAdmin } from "@/lib/fgmp/rbac-core";
 import { ApiError } from "@/lib/fgmp/api-error";
 import type { Role } from "@/lib/fgmp/types";
 import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
@@ -323,15 +323,12 @@ export function requireTenantId(me: SessionUser): string {
   // tenant when one exists and THROW when it does not, and the compiler has to
   // be able to see that.
   if (typeof me.tenantId === "string" && me.tenantId.trim() !== "") return me.tenantId;
-  // Super-admin carries no single tenant by design. Asking for a scoped filter
-  // is a category error — `tenantWhereOrAll` exists for that case — so it fails
-  // loudly rather than silently returning an unscoped filter.
+  // Platform users also carry the platform tenant id. Their role does not
+  // create an unscoped tenant context; only explicit control-plane paths may
+  // name another tenant.
   throw new ApiError(
     403,
-    isSuperAdminUser(me)
-      ? "A super-admin has no single tenant. Use tenantWhereOrAll() for an unscoped read, " +
-          "or supply an explicit tenantId."
-      : "This request is not scoped to a tenant. Complete multi-factor authentication first.",
+    "This request is not scoped to a tenant. Complete multi-factor authentication first.",
   );
 }
 
@@ -341,17 +338,13 @@ export function tenantWhere(me: SessionUser): { tenantId: string } {
 }
 
 /**
- * Build a tenant filter that admits ALL tenants for super-admins and only
- * the caller's own tenant for everyone else. Returns `Prisma.UserWhereInput`
- * shape `{}` (no filter) for super-admins so `findMany` returns every row.
- *
- * Use this for list endpoints that super-admins should see in full (users,
- * tenants, audit log, …). For single-record access control use
- * `assertTenantOwned()` which also bypasses for super-admins.
+ * Legacy-named list filter. It always scopes rows to the authenticated
+ * session's tenant, including SUPERADMIN sessions (whose tenant is PLATFORM).
+ * Fleet aggregates belong in explicit control-plane stores, never in an
+ * ordinary customer-row list query.
  */
-export function tenantWhereOrAll(me: SessionUser): { tenantId?: string } {
-  if (isSuperAdminUser(me)) return {};
-  return { tenantId: me.tenantId };
+export function tenantWhereOrAll(me: SessionUser): { tenantId: string } {
+  return { tenantId: requireTenantId(me) };
 }
 
 /**
@@ -364,19 +357,11 @@ export function siteTenantWhere(me: SessionUser): { site: { tenantId: string } }
 }
 
 /**
- * Build a site-tenant filter that admits ALL tenants for super-admins and only
- * the caller's own tenant for everyone else. Returns `Prisma.<Child>WhereInput`
- * shape `{}` (no filter) for super-admins so `findMany` returns every row.
- *
- * Use this for list endpoints on child models (tanks, generators, batteries,
- * IoT, dispensers, deliveries, maintenance tickets, site gateways, edge
- * firmware deployments, …) that super-admins should see in full.
- *
- * Single-record access control continues to use `assertSiteTenantOwned()` which
- * also bypasses for super-admins.
+ * Legacy-named child-list filter. It always scopes through the parent site to
+ * the authenticated session's tenant. Platform fleet aggregates must use an
+ * explicit control-plane path instead of widening this customer-data query.
  */
-export function siteTenantWhereOrAll(me: SessionUser): { site?: { tenantId: string } } {
-  if (isSuperAdminUser(me)) return {};
+export function siteTenantWhereOrAll(me: SessionUser): { site: { tenantId: string } } {
   return { site: { tenantId: requireTenantId(me) } };
 }
 

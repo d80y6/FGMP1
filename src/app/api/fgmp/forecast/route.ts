@@ -7,7 +7,7 @@ import {
   READ_LIMIT,
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
-import { requireAuth, isSuperAdminUser, siteTenantWhereOrAll } from "@/lib/fgmp/auth-helpers";
+import { requireAuth, siteTenantWhereOrAll } from "@/lib/fgmp/auth-helpers";
 import {
   MIN_SPAN_H,
   adjustLevelSeriesForDeliveries,
@@ -171,22 +171,14 @@ export async function GET(req: NextRequest) {
       return res;
     }
 
-    // ── Tenant isolation (Task TI-2c) ────────────────────────────────────
-    // SUPERADMIN sees every tank cross-tenant; everyone else only sees
-    // tanks whose parent site belongs to their own tenant. Site IDs are
-    // resolved once and used to filter engine.tanks / engine.sites below.
-    const tenantSiteIds = isSuperAdminUser(me)
-      ? null
-      : new Set(engine.sites.filter((s) => s.tenantId === tenantIdOrThrow(me.tenantId)).map((s) => s.id));
+    // Forecasts are tenant data even when requested by a platform operator.
+    const tenantId = tenantIdOrThrow(me.tenantId);
+    const tenantSiteIds = new Set(engine.sites.filter((s) => s.tenantId === tenantId).map((s) => s.id));
 
     const now = Date.now();
     const cutoff = now - HOURS_24_MS;
-    const tanks = tenantSiteIds === null
-      ? engine.tanks
-      : engine.tanks.filter((t) => tenantSiteIds.has(t.siteId));
-    const sites = tenantSiteIds === null
-      ? engine.sites
-      : engine.sites.filter((s) => tenantSiteIds.has(s.id));
+    const tanks = engine.tanks.filter((t) => tenantSiteIds.has(t.siteId));
+    const sites = engine.sites.filter((s) => tenantSiteIds.has(s.id));
 
     // ── Deliveries that landed inside the analysis window ────────────────
     // The old code classified ANY non-negative regression slope as
@@ -208,11 +200,8 @@ export async function GET(req: NextRequest) {
     // route that derives its DB scope from engine state would silently read
     // the wrong tenant the day that state is populated again.
     //
-    // For a SUPERADMIN, siteTenantWhereOrAll(me) returns {} (no tenant filter)
-    // and withTenant(tenantIdOrThrow(me.tenantId)) scopes the query to the super-admin's own
-    // tenant — which is the safe direction: an empty result rather than a
-    // cross-tenant read. `siteTenantWhereOrAll` is deliberately KEPT so the
-    // non-superadmin filter is unchanged.
+    // `siteTenantWhereOrAll` always supplies the authenticated tenant filter,
+    // including for SUPERADMIN; the role never widens this customer-data read.
     const deliveryRows = tankIds.length
       ? await asTenant(me, (tx) => tx.fuelDelivery.findMany({
           where: {

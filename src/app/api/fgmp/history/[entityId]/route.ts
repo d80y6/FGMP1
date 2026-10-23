@@ -6,7 +6,7 @@ import {
   READ_LIMIT,
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
-import { requireAuth, isSuperAdminUser } from "@/lib/fgmp/auth-helpers";
+import { requireAuth } from "@/lib/fgmp/auth-helpers";
 import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 export const dynamic = "force-dynamic";
@@ -60,16 +60,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ enti
     }
     const { entityId } = await params;
 
-    // Tenant isolation: only return history for entities whose parent site
-    // belongs to the caller's tenant. The engine exposes in-memory snapshots
-    // for all tenants, so we filter at read time using site.tenantId.
-    // SUPERADMIN bypasses the filter, matching every other fgmp route
-    // (analytics / forecast / patterns) — previously a superadmin was
-    // silently restricted to its own tenant here.
-    const tenantSiteIds = isSuperAdminUser(user)
-      ? null
-      : new Set(engine.sites.filter((s) => s.tenantId === tenantIdOrThrow(user.tenantId)).map((s) => s.id));
-    const owns = (siteId: string) => tenantSiteIds === null || tenantSiteIds.has(siteId);
+    // Platform roles are scoped to their own platform tenant here too. Engine
+    // memory is multi-tenant; ordinary entity history must not bypass RLS or
+    // support-session authorization merely because it is in memory.
+    const tenantId = tenantIdOrThrow(user.tenantId);
+    const tenantSiteIds = new Set(engine.sites.filter((s) => s.tenantId === tenantId).map((s) => s.id));
+    const owns = (siteId: string) => tenantSiteIds.has(siteId);
     const notFound = () => {
       const res = NextResponse.json({ error: "not found" }, { status: 404 });
       applyRateLimitHeaders(res.headers, rl);

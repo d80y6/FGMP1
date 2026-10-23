@@ -15,7 +15,6 @@ const PROD = {
   NEXTAUTH_SECRET: "a".repeat(48),
   NEXTAUTH_URL: "https://fgmp.example.ye",
   FGMP_REQUIRE_RLS: "1",
-  IOT_API_KEY: "b".repeat(32),
   FGMP_MFA_ENCRYPTION_KEY: "c".repeat(48),
   REALTIME_SERVICE_TOKEN: "d".repeat(32),
   APINATOR_APP_ID: "app",
@@ -83,9 +82,8 @@ describe("env validation", () => {
     expect(envErrors(issues).map((i) => i.name)).toContain("APINATOR_*");
   });
 
-  test("a short IOT_API_KEY is an error because ingest would refuse every device", () => {
-    const issues = collectEnvIssues({ ...PROD, IOT_API_KEY: "short" });
-    expect(envErrors(issues).map((i) => i.name)).toContain("IOT_API_KEY");
+  test("device ingest credentials are tenant API keys, not environment requirements", () => {
+    expect(collectEnvIssues({ ...PROD, IOT_API_KEY: "short" })).toEqual([]);
   });
 
   test("simulation enabled in production is reported, not obeyed", () => {

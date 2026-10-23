@@ -10,7 +10,6 @@ import { toNum } from "@/lib/fgmp/decimal";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import {
   requireAuth,
-  isSuperAdminUser,
   tenantWhereOrAll,
   siteTenantWhereOrAll,
 } from "@/lib/fgmp/auth-helpers";
@@ -56,22 +55,13 @@ export async function GET(req: NextRequest) {
     ]),
     );
 
-    // Scope the in-memory engine snapshots to the caller's tenant so the
-    // summary KPIs below reflect only sites/tanks/generators that belong to
-    // the current tenant. SUPERADMIN bypasses — they see the cross-tenant
-    // totals. (Task TI-2c)
-    const tenantSites = isSuperAdminUser(me)
-      ? engine.sites
-      : engine.sites.filter((s) => s.tenantId === tenantIdOrThrow(me.tenantId));
-    const tenantSiteIds = isSuperAdminUser(me)
-      ? null
-      : new Set(tenantSites.map((s) => s.id));
-    const tenantTanks = tenantSiteIds === null
-      ? engine.tanks
-      : engine.tanks.filter((t) => tenantSiteIds.has(t.siteId));
-    const tenantGenerators = tenantSiteIds === null
-      ? engine.generators
-      : engine.generators.filter((g) => tenantSiteIds.has(g.siteId));
+    // Summary KPIs use the same authenticated tenant as the database reads;
+    // platform role does not widen this response to customer tenants.
+    const tenantId = tenantIdOrThrow(me.tenantId);
+    const tenantSites = engine.sites.filter((s) => s.tenantId === tenantId);
+    const tenantSiteIds = new Set(tenantSites.map((s) => s.id));
+    const tenantTanks = engine.tanks.filter((t) => tenantSiteIds.has(t.siteId));
+    const tenantGenerators = engine.generators.filter((g) => tenantSiteIds.has(g.siteId));
 
     // Summary KPIs for the report
     const totalFuel = tenantTanks.reduce((a, t) => a + t.current, 0);

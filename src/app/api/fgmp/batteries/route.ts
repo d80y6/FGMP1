@@ -115,8 +115,8 @@ export async function POST(req: NextRequest) {
     }
     const data = r.data;
 
-    // Verify the site exists in the acting admin's tenant
-    // (SUPERADMIN bypasses for cross-tenant asset creation).
+    // Verify the site exists in the authenticated tenant. Platform role does
+    // not authorize operational cross-tenant asset creation.
     // Scoped in the query so the acting admin's own tenant can find the site.
     // assertTenantOwned is KEPT as defence in depth.
     const site = await asTenant(user, (tx) =>

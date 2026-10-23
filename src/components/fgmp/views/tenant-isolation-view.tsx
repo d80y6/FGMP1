@@ -22,12 +22,14 @@ interface TenantCensus {
 
 interface ResourceTest {
   resource: string;
-  resourceId: string;
-  resourceLabel: string;
+  resourceId: string | null;
+  resourceLabel: string | null;
   sourceTenant: string;
   targetTenant: string;
-  crossTenantDenied: boolean;
-  superAdminBypass: boolean;
+  recordFound: boolean;
+  crossTenantDenied: boolean | null;
+  platformHelperPermits: boolean | null;
+  reason?: string;
   pass: boolean;
 }
 
@@ -48,7 +50,10 @@ interface IsolationReport {
     totalTests: number;
     passed: number;
     failed: number;
-    isolationIntact: boolean;
+    measured: number;
+    unmeasured: number;
+    sampledChecksPassed: boolean;
+    verdictBasis: string;
   };
 }
 
@@ -132,10 +137,9 @@ export function TenantIsolationView() {
             {t("nav.tenantIsolation") || "Tenant Isolation"}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Verify cross-tenant data isolation across the entire FGMP API surface.
-            Each test simulates a tenant admin attempting to access another tenant&apos;s
-            resources and confirms the request is denied (404) while a super-admin
-            bypass succeeds (200).
+            Run a helper-level isolation diagnostic over sampled database rows.
+            This checks ownership helpers and selected list filters; it does not execute
+            every HTTP route or grant super-admin access to customer records.
           </p>
         </div>
         <Button onClick={runTest} disabled={running || loading} size="lg" className="shrink-0">
@@ -172,24 +176,28 @@ export function TenantIsolationView() {
       {current && (
         <>
           {/* Summary banner */}
-          <Card className={`p-5 ${current.summary.isolationIntact ? "border-emerald-500/40 bg-emerald-500/5" : "border-rose-500/40 bg-rose-500/5"}`}>
+          <Card className={`p-5 ${current.summary.sampledChecksPassed ? "border-emerald-500/40 bg-emerald-500/5" : current.summary.failed > 0 ? "border-rose-500/40 bg-rose-500/5" : "border-amber-500/40 bg-amber-500/5"}`}>
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div className="flex items-center gap-3">
-                {current.summary.isolationIntact ? (
+                {current.summary.sampledChecksPassed ? (
                   <CheckCircle2 className="h-10 w-10 text-emerald-500" />
-                ) : (
+                ) : current.summary.failed > 0 ? (
                   <XCircle className="h-10 w-10 text-rose-500" />
+                ) : (
+                  <AlertCircle className="h-10 w-10 text-amber-500" />
                 )}
                 <div>
                   <div className="text-lg font-semibold">
-                    {current.summary.isolationIntact
-                      ? "Tenant Isolation Intact"
-                      : "Tenant Isolation BREACHED"}
+                    {current.summary.sampledChecksPassed
+                      ? "Sampled Helper Checks Passed"
+                      : current.summary.failed > 0
+                        ? "Sampled Helper Check Failed"
+                        : "Sampled Helper Check Incomplete"}
                   </div>
                   <div className="text-sm text-muted-foreground">
-                    {current.summary.passed} of {current.summary.totalTests} tests passed ·
-                    {" "}{current.tenantCount} tenants ·
-                    {" "}ran in {current.durationMs}ms
+                    {current.summary.passed} passed · {current.summary.failed} failed · {current.summary.unmeasured} unmeasured ·
+                    {" "}{current.tenantCount} tenants · ran in {current.durationMs}ms
+                    <div className="mt-1 text-xs">{current.summary.verdictBasis}</div>
                   </div>
                 </div>
               </div>
@@ -201,6 +209,10 @@ export function TenantIsolationView() {
                 <div className="text-center">
                   <div className="text-2xl font-bold text-rose-600">{current.summary.failed}</div>
                   <div className="text-xs text-muted-foreground">Failed</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-amber-600">{current.summary.unmeasured}</div>
+                  <div className="text-xs text-muted-foreground">Unmeasured</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold">{current.tenantCount}</div>
@@ -256,12 +268,10 @@ export function TenantIsolationView() {
               Cross-Tenant Access Simulation
             </h2>
             <p className="mb-4 text-sm text-muted-foreground">
-              For each pair of tenants, a sample resource is fetched from the source tenant
-              and the <code className="rounded bg-muted px-1">assertTenantOwned</code> /{" "}
-              <code className="rounded bg-muted px-1">assertSiteTenantOwned</code> helpers
-              are invoked with a mock user from the target tenant. The test passes when
-              the helper denies access (returns 404) for the cross-tenant user AND
-              allows access (returns null) for a mock super-admin.
+              For each tenant pair, sampled rows are tested against ownership helpers.
+              These are helper-level checks only: a super-admin helper result is not
+              route authorization. Platform access still requires a documented,
+              explicitly named control-plane or support path.
             </p>
             <div className="space-y-4">
               {current.crossTenantTests.map((group, i) => (
@@ -269,13 +279,15 @@ export function TenantIsolationView() {
                   <div className="border-b bg-muted/30 px-4 py-2 text-sm font-medium">
                     {group.sourceTenant} → {group.targetTenant}
                     <span className="ml-2 text-xs text-muted-foreground">
-                      ({group.tests.filter((x) => x.pass).length}/{group.tests.length} passed)
+                      ({group.tests.filter((x) => x.recordFound && x.pass).length} passed · {group.tests.filter((x) => x.recordFound && !x.pass).length} failed · {group.tests.filter((x) => !x.recordFound).length} unmeasured)
                     </span>
                   </div>
                   <div className="divide-y">
                     {group.tests.map((test, j) => (
                       <div key={j} className="flex items-center gap-3 px-4 py-2 text-sm">
-                        {test.pass ? (
+                        {!test.recordFound ? (
+                          <AlertCircle className="h-4 w-4 shrink-0 text-amber-500" />
+                        ) : test.pass ? (
                           <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
                         ) : (
                           <XCircle className="h-4 w-4 shrink-0 text-rose-500" />
@@ -283,16 +295,22 @@ export function TenantIsolationView() {
                         <div className="w-28 shrink-0 font-medium">
                           {RESOURCE_LABELS[test.resource] ?? test.resource}
                         </div>
-                        <div className="flex-1 truncate text-muted-foreground" title={test.resourceId}>
+                        <div className="flex-1 truncate text-muted-foreground" title={test.reason ?? test.resourceId ?? "No sample row found"}>
                           {test.resourceLabel}
                         </div>
                         <div className="flex shrink-0 gap-4 text-xs">
-                          <span className={test.crossTenantDenied ? "text-emerald-600" : "text-rose-600"}>
-                            Cross-tenant: {test.crossTenantDenied ? "Denied ✓" : "Allowed ✗"}
-                          </span>
-                          <span className={test.superAdminBypass ? "text-emerald-600" : "text-rose-600"}>
-                            Super-admin: {test.superAdminBypass ? "Bypass ✓" : "Blocked ✗"}
-                          </span>
+                          {!test.recordFound ? (
+                            <span className="text-amber-600" title={test.reason}>Not measured — no sample row</span>
+                          ) : (
+                            <>
+                              <span className={test.crossTenantDenied ? "text-emerald-600" : "text-rose-600"}>
+                                Cross-tenant: {test.crossTenantDenied ? "Denied ✓" : "Allowed ✗"}
+                              </span>
+                              <span className="text-muted-foreground" title="Ownership helper result only; this is not a route grant">
+                                Platform helper: {test.platformHelperPermits ? "Permits" : "Denies"}
+                              </span>
+                            </>
+                          )}
                         </div>
                       </div>
                     ))}

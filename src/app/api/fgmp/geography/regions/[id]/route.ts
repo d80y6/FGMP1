@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { bootstrap } from "@/lib/fgmp";
-import { asTenant } from "@/lib/fgmp/route-tenant";
+import { asTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import {
   rateLimitByUser,
@@ -9,7 +9,7 @@ import {
   MUTATION_LIMIT,
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
-import { requireRole, ROLES, assertTenantOwned, isSuperAdminUser } from "@/lib/fgmp/auth-helpers";
+import { requireRole, ROLES, assertTenantOwned } from "@/lib/fgmp/auth-helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -71,7 +71,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     // makes it function.
     const outcome = await asTenant(user, async (tx) => {
       const existing = await tx.region.findFirst({
-        where: isSuperAdminUser(auth.user) ? { id } : { id, tenantId: user.tenantId },
+        where: { id, tenantId: tenantIdOrThrow(user.tenantId) },
         select: { id: true, tenantId: true, name: true },
       });
       if (!existing) return { kind: "not-found" as const };
@@ -172,7 +172,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     // a wrong read.
     const outcome = await asTenant(user, async (tx) => {
       const existing = await tx.region.findFirst({
-        where: isSuperAdminUser(auth.user) ? { id } : { id, tenantId: user.tenantId },
+        where: { id, tenantId: tenantIdOrThrow(user.tenantId) },
         select: { id: true, name: true, tenantId: true, _count: { select: { sites: true, governorates: true } } },
       });
       if (!existing) return { kind: "not-found" as const };
