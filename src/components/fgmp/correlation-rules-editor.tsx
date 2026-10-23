@@ -583,7 +583,8 @@ function EditorTab({ rules }: { rules: CorrelationRule[] }) {
                 title: t("confirm.resetTitle"),
                 description: t("rules.resetConfirm"),
                 cancelLabel: t("confirm.cancel"),
-                confirmLabel: t("rules.reset"),
+                // `rules.reset` never existed: the confirm button rendered the raw key.
+                confirmLabel: t("confirm.reset"),
               }
             : null
         }

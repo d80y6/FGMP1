@@ -2027,6 +2027,7 @@ export const DICTIONARY: Dict = {
   "confirm.deleteTitle": { en: "Delete", ar: "حذف" },
   "confirm.cancel": { en: "Cancel", ar: "إلغاء" },
   "confirm.resetTitle": { en: "Reset to defaults", ar: "إعادة تعيين إلى الإعدادات الافتراضية" },
+  "confirm.reset": { en: "Reset", ar: "إعادة تعيين" },
   "handover.empty": { en: "No handover notes yet", ar: "لا توجد ملاحظات تسليم بعد" },
   "handover.emptyDesc": { en: "Outgoing operators can leave a note for the next shift here.", ar: "يمكن للمشغّلين المنتهية وردتهم ترك ملاحظة للوردية القادمة هنا." },
   "handover.shift": { en: "Shift", ar: "الوردية" },

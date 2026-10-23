@@ -12,6 +12,8 @@
  *                               + batt×0.15 + alarmLoad×0.10
  *   site-health-trend.tsx        uptime×0.30 + fuel×0.25 + gen×0.20
  *                               + batt×0.15 − alarmPenalty + 15
+ *                               (that file is gone; its replacement,
+ *                               site-health-card.tsx, calls this module)
  *   region-detail-sheet.tsx      a SECOND private copy of the trend formula,
  *                               plus a region formula with entirely
  *                               different factors
