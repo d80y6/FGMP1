@@ -19,9 +19,12 @@ const OPTIONS = [
   { value: "ar", labelEn: "العربية", labelAr: "العربية", short: "AR" },
 ] as const;
 
-/** SSR-safe mounted guard (mirrors theme-switcher pattern). */
-function subscribeNoop(cb: () => void): () => void {
-  // No subscription needed — we just need a stable getServerSnapshot.
+/**
+ * useSyncExternalStore requires a subscribe function. There is nothing to
+ * subscribe to here — we only need a stable server/client snapshot so the
+ * dropdown can render post-hydration — hence the no-op.
+ */
+function subscribeNoop(_cb: () => void): () => void {
   return () => {};
 }
 function getClientSnapshot(): boolean {

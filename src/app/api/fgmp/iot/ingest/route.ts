@@ -345,7 +345,6 @@ export async function POST(req: NextRequest) {
   }
   const readingDate = tsDecision.readingTs;
   const tsSource = tsDecision.source;
-  const receivedDate = new Date(nowMs);
 
   // ── Apply to in-memory engine + persist SensorReading rows ────────────
 

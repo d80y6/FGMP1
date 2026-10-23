@@ -71,7 +71,7 @@ export type TsDecision =
   | { ok: false; status: number; error: string; code: string };
 
 /** Parse a device-supplied timestamp. Returns null when absent or unusable. */
-export function parseDeviceTs(raw: unknown, nowMs: number): number | null {
+export function parseDeviceTs(raw: unknown, _nowMs: number): number | null {
   if (raw === undefined || raw === null) return null;
   if (typeof raw === "number") {
     if (!Number.isFinite(raw) || raw <= 0) return null;

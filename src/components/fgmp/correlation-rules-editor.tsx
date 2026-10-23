@@ -48,7 +48,6 @@ import {
   useCorrelationRules,
   useCorrelationRulesList,
   useCorrelationRulesHydration,
-  useCorrelationRulesError,
   type CorrelationRule,
 } from "@/lib/fgmp/use-correlation-rules-server";
 import type {
@@ -56,7 +55,6 @@ import type {
   CorrelationSeverity as Severity,
   CorrelationRuleScope as RuleScope,
 } from "@/lib/fgmp/correlation-types";
-import { formatRuleCondition, type AlarmState } from "@/lib/fgmp/rule-engine";
 import {
   useCorrelationMatches,
   useTriggerEvaluation,
@@ -177,47 +175,17 @@ export function CorrelationRulesEditor({ open, onOpenChange }: Props) {
 
   const rules = useCorrelationRulesList();
   const { canView } = useRulePermissions();
-  const snapshot = useFgmp((s) => s.snapshot);
-  const sites = snapshot?.sites ?? [];
-
-  // Alarm feed — pulled from the same SWR hook the alarms-view uses so the
-  // evaluations are always against the freshest data. We don't pass through
-  // the view-level filters (severity/type/status) because rules evaluate
-  // against the full active alarm landscape, not the operator's current
-  // filtered view.
-  const [alarms, setAlarms] = useState<AlarmState[]>([]);
-  useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
-    const fetchAlarms = async () => {
-      try {
-        const res = await fetch(
-          "/api/fgmp/alarms?status=OPEN,ACKNOWLEDGED,ESCALATED&limit=300",
-          { credentials: "include" },
-        );
-        if (!res.ok) return;
-        const data: unknown = await res.json();
-        if (Array.isArray(data) && !cancelled) setAlarms(data as AlarmState[]);
-      } catch {
-        // Best-effort: silent on failure (rules will evaluate against empty list).
-      }
-    };
-    fetchAlarms();
-    const id = window.setInterval(fetchAlarms, 8000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, [open]);
-
   // Phase 2: the counts used to come from `evaluateAllRules(rules, alarms,
   // sites)` running in this browser — so "triggered" meant "would fire, per my
   // local copy of the alarms". They now come from matches the server evaluated
   // and persisted, which is the only figure that reflects what the platform
-  // actually acted on. `alarms`/`sites` are still fetched for display context
-  // but no longer decide a correlation outcome.
-  const { matches: serverMatches, error: matchesError } = useCorrelationMatches();
-  const { trigger: runEvaluation, busy: evaluating } = useTriggerEvaluation();
+  // actually acted on, so this component no longer fetches alarms at all.
+  //
+  // It did, on an 8-second interval, into state nothing read: an authenticated
+  // request every 8 seconds per operator, forever, for data discarded on
+  // arrival. Evaluation is triggered from the server side (see
+  // useTriggerEvaluation in the panel header), so the feed was pure cost.
+  const { matches: serverMatches } = useCorrelationMatches();
 
   const triggeredCount = useMemo(
     () => new Set(serverMatches.map((m) => m.ruleId)).size,

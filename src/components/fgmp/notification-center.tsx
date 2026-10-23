@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo } from "react";
-import { Bell, Check, CheckCheck, ExternalLink, X, MessageSquare, Mail, Smartphone, Send } from "lucide-react";
+import { Bell, CheckCheck, X, MessageSquare, Mail, Smartphone, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";

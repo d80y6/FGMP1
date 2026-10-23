@@ -1,7 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
-import { TrendingUp, TrendingDown, Activity, AlertTriangle, Brain, Gauge as GaugeIcon, Map as MapIcon, DollarSign, Wallet, TrendingDown as TrendDown } from "lucide-react";
+import { TrendingUp, TrendingDown, Activity, AlertTriangle, Brain, Gauge as GaugeIcon, Map as MapIcon, DollarSign, Wallet } from "lucide-react";
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Line,
   Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Scatter, ScatterChart, ZAxis,
@@ -15,7 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { timeAgo } from "@/lib/fgmp/format";
-import { useT, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 
 /**
@@ -37,14 +36,12 @@ function formatUsd(
 export function AnalyticsView() {
   const snapshot = useFgmp((s) => s.snapshot);
   const t = useT();
-  const dir = useDir();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
   const { data: a } = useApi<any>("/api/fgmp/analytics", { interval: 15000 });
   const cc = useChartColors();
 
   if (!snapshot) return null;
-  const k = snapshot.kpis;
   const consumption = a?.consumptionTrend ?? [];
   const efficiency = a?.siteEfficiency ?? [];
   const theftEvents = a?.theftEvents ?? [];

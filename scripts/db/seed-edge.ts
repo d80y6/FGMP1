@@ -70,7 +70,6 @@ function sha256Fake(version: string): string {
 const GW_MODELS = ["ESP32-GW-PRO", "ESP32-GW-LITE", "RPI4-GW"];
 // Unused: SiteGateway has no firmware column, so gateway firmware cannot be
 // seeded until the schema carries one.
-const GW_FIRMWARES = ["v1.8.3", "v1.8.4", "v1.9.0"];
 
 const RELEASES = [
   {
@@ -99,7 +98,6 @@ const RELEASES = [
   },
 ];
 
-const OLD_DISPENSER_FIRMWARES = ["v2.3.0", "v2.3.1", "v2.3.2", "v2.4.0", "v2.4.1"];
 
 async function main() {
   // ── 1. ESP firmware releases ────────────────────────────────────────────

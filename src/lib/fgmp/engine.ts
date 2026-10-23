@@ -502,7 +502,7 @@ private tenantsFor(expectedTenantId?: string | null): readonly string[] {
   private async loadInto(
     tx: Prisma.TransactionClient,
     tenants: readonly string[],
-    append = false,
+    _append = false,
   ) {
     // Load geo hierarchy
     //
@@ -1979,7 +1979,7 @@ async controlDispenser(
         else updateData[k] = v;
       }
     }
-    const row = await db.fuelDispenser.update({ where: { id }, data: updateData });
+    await db.fuelDispenser.update({ where: { id }, data: updateData });
     const live = this.dispensers.find((d) => d.id === id);
     if (live) {
       if (data.label !== undefined) live.label = data.label;

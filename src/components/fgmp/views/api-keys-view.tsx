@@ -412,7 +412,7 @@ export function ApiKeysView() {
  * ──────────────────────────────────────────────────────────────────────── */
 
 function CreateKeyDialog({
-  open, onOpenChange, onCreated, numLang,
+  open, onOpenChange, onCreated,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;

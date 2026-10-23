@@ -24,7 +24,7 @@ import { fmtDateTime, timeAgo } from "@/lib/fgmp/format";
 import { downloadCsv, exportFilename } from "@/lib/fgmp/csv-export";
 import { cn } from "@/lib/utils";
 import { MaintenanceGantt } from "@/components/fgmp/maintenance-gantt";
-import { useT, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 import { translate } from "@/lib/fgmp/i18n";
 import { ResourceError } from "@/components/fgmp/resource-error";
@@ -77,7 +77,6 @@ const STATUS_BADGE_DETAIL: Record<string, string> = {
 export function MaintenanceView() {
   const { snapshot, tick } = useFgmp(useShallow((s) => ({ snapshot: s.snapshot, tick: s.tick })));
   const t = useT();
-  const dir = useDir();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
   const [status, setStatus] = useState("OPEN,SCHEDULED,IN_PROGRESS");

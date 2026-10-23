@@ -55,7 +55,7 @@ interface FgmpState {
   toggleLive: () => void;
 }
 
-export const useFgmp = create<FgmpState>((set, get) => ({
+export const useFgmp = create<FgmpState>((set) => ({
   snapshot: null,
   me: null,
   loading: true,

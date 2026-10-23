@@ -30,7 +30,7 @@ import {
   MapPin, Building2, Siren, Droplet, Zap, ChevronRight,
   ShieldCheck, Gauge, ListChecks,
 } from "lucide-react";
-import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { useT, useArabicNumerals } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 import { alarmTypeLabel } from "@/lib/fgmp/labels";
 

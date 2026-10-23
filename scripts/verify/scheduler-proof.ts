@@ -11,7 +11,7 @@
 
 import { PrismaClient } from "@prisma/client";
 import { db } from "../../src/lib/db";
-import { advanceOnce, startScheduler, stopScheduler } from "../../src/lib/fgmp/scheduler";
+import { startScheduler } from "../../src/lib/fgmp/scheduler";
 
 /** Count simulation events. Monotonic: an advance can only add. */
 async function snapshot(): Promise<{ events: number; alarms: number }> {

@@ -6,7 +6,7 @@ function getIsDark() {
 }
 
 export function useChartColors() {
-  const [isDark, setIsDark] = useState(() => getIsDark());
+  const [, setIsDark] = useState(() => getIsDark());
   useEffect(() => {
     const el = document.documentElement;
     const obs = new MutationObserver(() => setIsDark(getIsDark()));

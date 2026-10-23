@@ -26,9 +26,9 @@ import { cn } from "@/lib/utils";
 import { timeAgo, fmtDateTime } from "@/lib/fgmp/format";
 import { csvFilename, type CsvColumn } from "@/lib/fgmp/csv-export";
 import { ExportButton } from "@/components/fgmp/export-button";
-import { useCorrelationRulesHydration, useCorrelationRulesList } from "@/lib/fgmp/use-correlation-rules-server";
+import { useCorrelationRulesHydration } from "@/lib/fgmp/use-correlation-rules-server";
 import { useCorrelationMatches } from "@/lib/fgmp/use-correlation-matches";
-import { useT, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 import { alarmTypeLabel } from "@/lib/fgmp/labels";
 import { ResourceError } from "@/components/fgmp/resource-error";
@@ -50,7 +50,6 @@ export function AlarmsView() {
   const me = useFgmp((s) => s.me);
 
   const t = useT();
-  const dir = useDir();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
   const [status, setStatus] = useState("OPEN,ACKNOWLEDGED,ESCALATED");
@@ -65,7 +64,6 @@ export function AlarmsView() {
   // cross-tab synced. Calling this unconditionally at the top so the rules
   // button badge count can read an up-to-date rule list.
   useCorrelationRulesHydration();
-  const rulesFromStore = useCorrelationRulesList();
   const { data: alarms, loading: alarmsLoading, error: alarmsError, refetch } = useApi<any[]>(`/api/fgmp/alarms?status=${status}&severity=${severity === "all" ? "" : severity}&type=${type === "all" ? "" : type}&limit=300`, { interval: 6000 });
 
   // ── Optimistic updates (#20) ──────────────────────────────────────────────
@@ -789,9 +787,7 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 function EscalationTimeline({
-  severity,
   escalationLevel,
-  status,
   createdAt,
   acknowledgedAt,
   resolvedAt,

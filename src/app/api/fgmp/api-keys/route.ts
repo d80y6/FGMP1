@@ -10,7 +10,7 @@ import {
   READ_LIMIT,
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
-import { requireAuth, requireRole, ROLES, tenantWhereOrAll } from "@/lib/fgmp/auth-helpers";
+import { requireRole, ROLES, tenantWhereOrAll } from "@/lib/fgmp/auth-helpers";
 
 export const dynamic = "force-dynamic";
 

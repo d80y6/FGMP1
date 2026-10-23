@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, ROLES } from "@/lib/fgmp/auth-helpers";
-import { errorResponse } from "@/lib/fgmp/api-error";
 import { loadAlertRules, AlertConfigError } from "@/lib/fgmp/alerting/config";
 import {
   currentReadings,

@@ -110,7 +110,9 @@ async function main() {
   // ── A genuinely new alarm must produce a NEW row ─────────────────────────
   const now2 = Date.now();
   await makeAlarms(1, "second");
-  const third = await evaluateAndPersist({ tenantId: TENANT, now: now2 });
+  // Third evaluation: same window, so the SAME match must come back (idempotency).
+    // Not bound to a variable — the assertion is on the persisted rows below.
+    await evaluateAndPersist({ tenantId: TENANT, now: now2 });
   const rowsAfter = await withTenant(TENANT, (tx) =>
     tx.correlationMatch.findMany({ where: { ruleId } }),
   );

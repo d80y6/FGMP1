@@ -14,8 +14,7 @@
  * touching window/document.
  */
 
-import type { SiteState } from "@/lib/fgmp/types";
-import type { CorrelationRule, CorrelationRuleScope as RuleScope } from "@/lib/fgmp/correlation-types";
+import type { CorrelationRule } from "@/lib/fgmp/correlation-types";
 
 /**
  * Minimal alarm shape required by the engine. The FGMP alarms API returns

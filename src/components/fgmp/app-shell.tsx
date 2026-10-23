@@ -7,7 +7,7 @@ import {
   Truck, TrendingUp, FileText, Cpu, Wrench, ScrollText, Fuel, Users,
   Pause, Play, Activity, ChevronRight, ShieldCheck, Radio, Command, Search, Keyboard,
   Loader2, LogOut, ShieldOff, Bell,
-  HardDrive, GitBranch, BarChart3, CalendarClock, Network, Map, KeyRound,
+  HardDrive, GitBranch, BarChart3, Map, KeyRound,
   Settings, Layers,
 } from "lucide-react";
 import { useSession, signOut } from "next-auth/react";
@@ -165,9 +165,8 @@ export function AppShell() {
   // The session is the single source of truth for the authenticated user.
   // We mirror it into the Zustand store (setMe) so existing consumers that
   // read `me` from useFgmp() keep working unchanged.
-  const { data: session, status, update } = useSession();
+  const { data: session, status } = useSession();
   const sessionUser = session?.user;
-  const sessionRole = sessionUser?.role as Role | undefined;
   // Subscribe to individual slices rather than the whole store: `useFgmp()`
   // with no selector re-renders AppShell — and therefore the sidebar, the KPI
   // chips and the view host — on EVERY store write, including the 5s snapshot
@@ -178,7 +177,6 @@ export function AppShell() {
   const setMe = useFgmp((s) => s.setMe);
   const view = useFgmp((s) => s.view);
   const setView = useFgmp((s) => s.setView);
-  const tick = useFgmp((s) => s.tick);
   const refresh = useFgmp((s) => s.refresh);
   const livePaused = useFgmp((s) => s.livePaused);
   const toggleLive = useFgmp((s) => s.toggleLive);
@@ -188,8 +186,7 @@ export function AppShell() {
   // Realtime (hosted Apinator channels). When livePaused, suspend the socket
   // so "Pause live" halts BOTH the polling refresh and the event push.
   const { connected: rtConnected } = useRealtime({ enabled: !livePaused && status === "authenticated" });
-  const { resolvedTheme, setTheme, theme } = useTheme();
-  const [mounted, setMounted] = useState(false);
+  const { setTheme, theme } = useTheme();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -203,7 +200,6 @@ export function AppShell() {
   // session. Unauthenticated/loading users see a LoginDialog / spinner
   // instead of the app shell.
   useEffect(() => {
-    setMounted(true);
     if (status === "authenticated") init();
   }, [init, status]);
 

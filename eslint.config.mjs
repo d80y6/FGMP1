@@ -1,10 +1,8 @@
 import nextCoreWebVitals from "eslint-config-next/core-web-vitals";
 import nextTypescript from "eslint-config-next/typescript";
-import { dirname } from "path";
 import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
   rules: {
@@ -24,7 +22,17 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
     "react-hooks/purity": "warn",                  // impure render calls (Math.random in render)
     "react/no-unescaped-entities": "warn",
     "@typescript-eslint/no-explicit-any": "warn",  // 76 known; was off
-    "@typescript-eslint/no-unused-vars": "warn",
+    // A leading underscore is the project's way of saying "deliberately
+    // unused" — a callback's positional argument that a signature requires, or
+    // an interface kept for compatibility. Without these patterns the rule
+    // reports those AND real dead code identically, which is how a list of 120
+    // warnings becomes noise nobody reads. Real dead code is still reported.
+    "@typescript-eslint/no-unused-vars": ["warn", {
+      argsIgnorePattern: "^_",
+      varsIgnorePattern: "^_",
+      caughtErrorsIgnorePattern: "^_",
+      destructuredArrayIgnorePattern: "^_",
+    }],
     "@typescript-eslint/no-non-null-assertion": "warn",
     "no-debugger": "error",
     "no-fallthrough": "warn",

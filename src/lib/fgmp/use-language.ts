@@ -3,7 +3,6 @@
 import { create } from "zustand";
 import { useEffect } from "react";
 import { translate, translateFmt, type Language } from "@/lib/fgmp/i18n";
-import { toArabicNumerals } from "./numerals";
 
 /**
  * Language store — persists the active language (EN/AR) to localStorage and

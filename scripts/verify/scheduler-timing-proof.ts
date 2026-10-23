@@ -33,7 +33,6 @@ interface StubStats {
  * without depending on the live engine.
  */
 async function main() {
-  const CONCURRENCY = 3;
   const INTERVAL_MS = 300;
 
   console.log("=".repeat(72));

@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { errorResponse, badRequest, unauthorized } from "@/lib/fgmp/api-error";
+import { errorResponse, badRequest } from "@/lib/fgmp/api-error";
 import {
   rateLimitByIp,
   applyRateLimitHeaders,
   AUTH_LIMIT,
 } from "@/lib/fgmp/rate-limit";
-import { issueChallenge, verifyChallenge } from "@/lib/fgmp/mfa/service";
+import { verifyChallenge } from "@/lib/fgmp/mfa/service";
 import { auditMfa } from "@/lib/fgmp/mfa/service";
 
 export const dynamic = "force-dynamic";

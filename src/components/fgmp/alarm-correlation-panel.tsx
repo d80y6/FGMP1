@@ -7,7 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Network, AlertTriangle, Clock, MapPin, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { timeAgo } from "@/lib/fgmp/format";
-import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 import { alarmTypeLabel } from "@/lib/fgmp/labels";
 
@@ -47,7 +47,6 @@ interface Props {
  * Shows sites with multiple alarms, dominant alarm types, and time clustering.
  */
 export function AlarmCorrelationPanel({ alarms, onSelectSite }: Props) {
-  const t = useT();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
   const groups = useMemo(() => {

@@ -50,7 +50,7 @@ async function main() {
   console.log(`  starting ${CONCURRENCY} CONCURRENT transactions...\n`);
 
   const lockResults = await Promise.all(
-    Array.from({ length: CONCURRENCY }, async (_unused, i) => {
+    Array.from({ length: CONCURRENCY }, async () => {
       return client.$transaction(
         async (tx) => {
           const rows = await tx.$queryRaw<Array<{ locked: boolean }>>`

@@ -49,15 +49,13 @@
 import { PrismaClient } from '@prisma/client'
 import { db, rlsEnforced } from '@/lib/db'
 import {
-  TENANT_SETTING,
   withTenant,
   currentTenantId,
   rawTenantSetting,
   normalizeTenantId,
   assertTenantId,
   TenantContextError,
-  isUuid,
-} from '@/lib/fgmp/tenant-context'
+  isUuid } from '@/lib/fgmp/tenant-context'
 
 // ── Result plumbing ─────────────────────────────────────────────────────────
 
@@ -190,10 +188,6 @@ const mfaEnrollmentRef = (): string => "'mfae-${SUFFIX}'"
 const siteIdFor = (tag: string): string =>
   tag === SUFFIX ? SITE_ID : `${SITE_ID}-${tag}`
 
-const SITE_COLS = `
-  id, code, name, status, "criticality", "loadKw", "powerSource",
-  "tenantId", lat, lng
-`
 
 /**
  * Per-table INSERT column lists and literal values.
@@ -839,10 +833,6 @@ function ownerDb(): PrismaClient {
 /** Execute fixture DDL/DML on the OWNER role (RLS not enforced there). */
 async function oe(sql: string, params: unknown[] = []): Promise<number> {
   return ownerDb().$executeRawUnsafe(sql, ...params) as Promise<number>
-}
-
-function e(sql: string, params: unknown[] = []): Promise<number> {
-  return db.$executeRawUnsafe(sql, ...params) as Promise<number>
 }
 
 /**
@@ -1522,7 +1512,7 @@ async function assertCrossTenantInsert(spec: TableSpec): Promise<void> {
 
   // Build an insert row stamped with TENANT_A in the tenant column but using
   // a tenant-B id, i.e. an attempt to plant data into B's namespace.
-  const cols = Object.entries(spec.columns).map(([k, v]) => `"${k}"`).join(', ')
+  const cols = Object.entries(spec.columns).map(([k]) => `"${k}"`).join(', ')
   const vals = Object.values(spec.columns).map((v) => subst(v)).join(', ')
   const sql = `INSERT INTO "${spec.table}" (${cols}, "${spec.tenantColumn}") VALUES (${vals}, '${TENANT_B}')`
   try {
@@ -1892,7 +1882,6 @@ async function geographyIsolationAssertions(): Promise<void> {
   const chainA = chains[SUFFIX]!
   const chainB = chains[`${SUFFIX}-b`]!
   const govB = chainB.gov
-  const distB = chainB.dist
 
   // 1. FAIL CLOSED. With no tenant context the derived policy's subquery
   //    matches nothing, so the predicate is false and every row is hidden.
@@ -1993,7 +1982,6 @@ function report(): void {
     }
   }
 
-  const hasPolicies = assertions.some((a) => a.status === 'PASS' || a.name.includes('unscoped'))
   if (totals.FAIL > 0) {
     process.exitCode = 1
     console.log('\n\x1b[31m  RESULT: FAIL — backstop is not fully proven.\x1b[0m')

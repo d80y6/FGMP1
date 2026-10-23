@@ -398,7 +398,7 @@ function GatewaysTab({ gateways, loading, numLang }: {
  * Tab 2: ESP Firmware
  * ──────────────────────────────────────────────────────────────────────── */
 
-function FirmwareTab({ gateways, loading, numLang, onRefresh }: {
+function FirmwareTab({ gateways, loading, onRefresh }: {
   gateways: EspGateway[];
   loading: boolean;
   numLang: Language;

@@ -161,8 +161,6 @@ export async function attachGeographyNames<T extends {
   >
 > {
   const regionIds = rows.map((r) => r.regionId).filter((x): x is string => !!x);
-  const govIds = rows.map((r) => r.governorateId).filter((x): x is string => !!x);
-  const districtIds = rows.map((r) => r.districtId).filter((x): x is string => !!x);
 
   const byRegion = new Map<string, string>();
   const byGov = new Map<string, string>();

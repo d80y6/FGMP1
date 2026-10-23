@@ -14,7 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { fmtDateTime, timeAgo } from "@/lib/fgmp/format";
 import { cn } from "@/lib/utils";
-import { useT, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 import { roleLabel } from "@/lib/fgmp/labels";
 import { translate } from "@/lib/fgmp/i18n";
@@ -43,7 +43,6 @@ export function AuditView() {
   const [q, setQ] = useState("");
   const [action, setAction] = useState("all");
   const t = useT();
-  const dir = useDir();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
   const { data: logs } = useApi<any[]>(`/api/fgmp/audit?limit=500${action !== "all" ? `&action=${action}` : ""}`, { interval: 8000 });

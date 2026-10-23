@@ -97,13 +97,59 @@ if (process.env.NODE_ENV !== 'production' && !dbIsRlsEnforced) {
   )
 }
 
-export const db =
-  globalForPrisma.prisma ??
-  new PrismaClient({
-    log: logLevels,
-  })
+/**
+ * The Prisma client, constructed on FIRST USE rather than at import.
+ *
+ * ── WHY LAZY, AND WHY THIS IS NOT OVER-ENGINEERING ──────────────────────────
+ * `new PrismaClient()` does not merely allocate an object: with the library
+ * engine it starts loading the query-engine binary in the background
+ * immediately. When that binary is absent — no `prisma generate`, or a
+ * download that was blocked — the load is an *unhandled promise rejection*,
+ * not a thrown error. The consequences observed in practice:
+ *
+ *   * `bun test` aborted an entire 45-test file (src/lib/fgmp/interlocks.test.ts)
+ *     at import time, reporting "0 pass" for it with no failing test to look
+ *     at. Importing the DATABASE LAYER is not supposed to be an operation that
+ *     can fail.
+ *   * `next build` printed the same error while collecting page data for
+ *     routes that never query anything.
+ *
+ * Deferring construction fixes the class of problem rather than one instance:
+ * importing this module is inert, and a process that never queries never opens
+ * a pool. Everything that does query gets exactly the same client, built once.
+ *
+ * The proxy forwards every property access to the real client, so `db.user`,
+ * `db.$transaction`, `db.$queryRaw` and typing are unchanged for callers — the
+ * only difference is that the first access is what constructs it.
+ */
+let prismaClient: PrismaClient | null = null
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = db
+function getClient(): PrismaClient {
+  if (!prismaClient) {
+    prismaClient = new PrismaClient({ log: logLevels })
+    // Development only: keep one client across hot reloads, or every edit
+    // leaks a connection pool.
+    if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prismaClient
+  }
+  return prismaClient
+}
+
+export const db: PrismaClient = new Proxy({} as PrismaClient, {
+  get(_target, prop, receiver) {
+    // Never look thenable: awaiting `db` itself is a mistake, not a query.
+    if (prop === 'then') return undefined
+    const client = getClient() as unknown as Record<PropertyKey, unknown>
+    const value = Reflect.get(client, prop, client)
+    return typeof value === 'function' ? value.bind(client) : value
+  },
+  has(_target, prop) {
+    return prop in (getClient() as unknown as object)
+  },
+  set(_target, prop, value) {
+    (getClient() as unknown as Record<PropertyKey, unknown>)[prop as string] = value
+    return true
+  },
+})
 
 /**
  * Run the FGMP_REQUIRE_RLS guard.

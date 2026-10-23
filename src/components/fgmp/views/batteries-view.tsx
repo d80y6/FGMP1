@@ -11,13 +11,12 @@ import { Sparkline } from "@/components/fgmp/sparkline";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { useT, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 
 export function BatteriesView() {
   const snapshot = useFgmp((s) => s.snapshot);
   const t = useT();
-  const dir = useDir();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
   const [q, setQ] = useState("");
@@ -35,7 +34,6 @@ export function BatteriesView() {
   }, [snapshot, q]);
 
   if (!snapshot) return null;
-  const k = snapshot.kpis;
   const low = banks.filter((b) => b.status === "LOW" || b.vPct < 90);
   const replacement = banks.filter((b) => b.stateOfHealth < 75);
   const charging = banks.filter((b) => b.charging);

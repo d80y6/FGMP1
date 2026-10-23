@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Fuel, Search, Plus, Pencil, Play, Square, RotateCcw, Lock, Unlock,
-  Trash2, Download, Droplet, Zap, AlertTriangle, Receipt, Wallet,
-  TrendingUp, Gauge, Wifi, CircuitBoard, XCircle, TriangleAlert,
-  Hash, type LucideIcon,
+  Trash2, Download, Droplet, AlertTriangle, Receipt, Wallet,
+  TrendingUp, Gauge, Wifi, XCircle, TriangleAlert,
+  Hash,
 } from "lucide-react";
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell,
@@ -35,7 +35,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { timeAgo, fmtDateTime } from "@/lib/fgmp/format";
-import { useT, useDir, useArabicNumerals, formatNumber, toArabicNumerals } from "@/lib/fgmp/use-language";
+import { useT, useArabicNumerals, formatNumber, toArabicNumerals } from "@/lib/fgmp/use-language";
 import { useChartColors } from "@/lib/fgmp/use-chart-colors";
 import type { Language } from "@/lib/fgmp/i18n";
 import { translate } from "@/lib/fgmp/i18n";
@@ -152,7 +152,7 @@ function formatYer(amount: number, lang: Language): string {
 }
 
 /** Format a duration in seconds as "M:SS" or "H:MM:SS". */
-function formatDuration(sec: number, lang: Language): string {
+function formatDuration(sec: number, _lang: Language): string {
   if (!sec || sec < 1) return "0:00";
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
@@ -174,7 +174,6 @@ export function DispensersView() {
   const tick = useFgmp((s) => s.tick);
 
   const t = useT();
-  const dir = useDir();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
   const cc = useChartColors();

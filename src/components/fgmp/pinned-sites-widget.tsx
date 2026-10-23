@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useSyncExternalStore } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import { Star, ChevronDown, ChevronRight, X } from "lucide-react";
 import { useFgmp } from "@/lib/fgmp/store";
 import {

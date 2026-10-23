@@ -20,7 +20,7 @@ import type { DispatchOutcome, GeneratorDispatch } from "./types";
 function fakeDispatch(outcome: DispatchOutcome, ackCalls: number[] = []): GeneratorDispatch {
   return {
     name: "fake",
-    async dispatch(req) {
+    async dispatch(_req) {
       ackCalls.push(1);
       return { ...outcome, acknowledgement: outcome.acknowledgement };
     },

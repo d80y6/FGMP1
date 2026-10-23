@@ -17,7 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { fmtDateTime } from "@/lib/fgmp/format";
 import { csvFilename, type CsvColumn } from "@/lib/fgmp/csv-export";
-import { useT, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 import { alarmTypeLabel, commandTypeLabel } from "@/lib/fgmp/labels";
 
@@ -37,7 +37,6 @@ export function ReportsView() {
   // (proposal §7: CSV / PDF / Excel).
   const [exportFormat, setExportFormat] = useState<"csv" | "xlsx" | "pdf">("csv");
   const t = useT();
-  const dir = useDir();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
   const { data, loading } = useApi<any>(`/api/fgmp/reports?period=${period}`, { deps: [period] });

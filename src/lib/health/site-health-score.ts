@@ -53,7 +53,7 @@
  * already the convention in two of the three originals and is preserved here.
  */
 
-import type { GenStatus, TankState, GenState, BattState } from "@/lib/fgmp/types";
+import type { TankState, BattState } from "@/lib/fgmp/types";
 
 /**
  * Canonical factor weights. MUST sum to 1.

@@ -52,12 +52,6 @@ function escapeLabel(v: string): string {
   return v.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n");
 }
 
-/** Prometheus text exposition, e.g. `fgmp_a_total{status="SENT"} 3`. */
-function exposition(name: string, labels: Labels, value: number): string {
-  const l = labelKey(labels);
-  return `${name}${l ? `{${l}}` : ""} ${value}\n`;
-}
-
 export type MetricType = "counter" | "gauge" | "histogram";
 
 abstract class Metric {

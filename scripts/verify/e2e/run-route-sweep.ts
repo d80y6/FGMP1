@@ -34,7 +34,7 @@
 
 import { spawn } from "node:child_process";
 import { PrismaClient } from "@prisma/client";
-import { findUser, sessionCookieFor, seedForeignTenant, cleanupForeignTenant } from "./harness";
+import { findUser, sessionCookieFor, seedForeignTenant } from "./harness";
 
 const PORT = Number(process.env.E2E_PORT ?? 3399);
 // In skip-build mode the base URL comes from the environment, because the server

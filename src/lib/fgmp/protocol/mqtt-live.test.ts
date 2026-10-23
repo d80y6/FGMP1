@@ -26,7 +26,7 @@
  * test, because it reads as a green suite.
  */
 
-import { afterAll, beforeAll, describe, expect, test } from "bun:test"
+import { afterAll, describe, expect, test } from "bun:test"
 import { QOS } from "./mqtt-client"
 import {
   MqttTenantConnection,
@@ -46,7 +46,6 @@ const CREDS: Record<string, TenantCredentials> = {
 }
 
 const enc = (s: string) => new TextEncoder().encode(s)
-const dec = (b: Uint8Array) => new TextDecoder().decode(b)
 
 /** Is the broker actually up? Probe rather than assume. */
 async function brokerReachable(): Promise<boolean> {

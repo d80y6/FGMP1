@@ -12,7 +12,7 @@ register("./bun-test-resolve.mjs", pathToFileURL(repo + "/scripts/"));
 
 const { __collect } = await import("./bun-test-shim.mjs");
 
-let pass = 0, fail = 0, skipped = 0;
+let pass = 0, fail = 0;
 const failures = [];
 
 async function runSuite(suite, prefix) {
