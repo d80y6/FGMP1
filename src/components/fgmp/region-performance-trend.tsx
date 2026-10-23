@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo } from "react";
+import { scoreRegion } from "@/lib/fgmp/region-score";
+import type { RegionBreakdownRow } from "@/lib/fgmp/types";
 import { Activity, Trophy, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import {
   CartesianGrid, Legend, Line, LineChart, ResponsiveContainer,
@@ -12,13 +14,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 /*  Shared types (mirrors LeaderboardRegion from region-leaderboard)   */
 /* ------------------------------------------------------------------ */
 
-interface LeaderboardRegion {
-  region: string;
-  sites: number;
-  fuel: number;
-  alarms: number;
-  running: number;
-}
+/** Shared with the leaderboard — see `RegionBreakdownRow`. */
+type LeaderboardRegion = RegionBreakdownRow;
 
 interface RegionPerformanceTrendProps {
   regions: LeaderboardRegion[];
@@ -26,24 +23,11 @@ interface RegionPerformanceTrendProps {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Inline computeScore (same weights as region-leaderboard.tsx)       */
+/*  Scoring — shared with the leaderboard, not re-implemented here     */
 /* ------------------------------------------------------------------ */
 
-const AVG_TANK_CAPACITY_PER_SITE = 5000;
-
 function computeScore(r: LeaderboardRegion, totalSites: number): number {
-  const sites = Math.max(1, r.sites);
-  const alarmDensity = r.alarms / sites;
-  const stability =
-    alarmDensity <= 0.05
-      ? 100
-      : Math.max(0, 100 - (alarmDensity - 0.05) * 100 * 1.05);
-  const fuelAvail = Math.min(100, (r.fuel / (sites * AVG_TANK_CAPACITY_PER_SITE)) * 100);
-  const genActivity = Math.min(100, (r.running / sites) * 100);
-  const coverage = totalSites > 0 ? Math.min(100, (r.sites / totalSites) * 100) : 0;
-  return Math.round(
-    stability * 0.35 + fuelAvail * 0.25 + genActivity * 0.2 + coverage * 0.2,
-  );
+  return scoreRegion(r, totalSites).score;
 }
 
 /* ------------------------------------------------------------------ */

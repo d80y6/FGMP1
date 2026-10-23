@@ -90,7 +90,7 @@ the only identifier that ties a browser render to a server stack trace.
 | `next build` | **fails** (Google Fonts) | passes, standalone output verified |
 | `npx tsc --noEmit` | 0 errors | 0 errors |
 | `npx eslint .` | 24 errors / 443 warnings | **0 errors / 0 warnings** |
-| `bun test` | 699 pass / 14 fail | **724 pass / 0 fail** (13 skipped without a database) |
+| `bun test` | 699 pass / 14 fail | **731 pass / 0 fail** (13 skipped without a database) |
 | Dependency count | 78 production | **47** production, lockfile regenerated |
 
 The 14 failures were not flaky: they were database-backed suites (RLS row

@@ -10,6 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/fgmp/use-language";
+import { scoreRegion, type RegionScoreFactors } from "@/lib/fgmp/region-score";
+import type { RegionBreakdownRow } from "@/lib/fgmp/types";
 
 function FactorBar({ label, value, weight, tone }: { label: string; value: number; weight: number; tone: string }) {
   return (
@@ -24,13 +26,12 @@ function FactorBar({ label, value, weight, tone }: { label: string; value: numbe
   );
 }
 
-export interface LeaderboardRegion {
-  region: string;
-  sites: number;
-  fuel: number;
-  alarms: number;
-  running: number;
-}
+/**
+ * The shape both region surfaces read. Re-exported from the shared payload type
+ * so the leaderboard, the trend chart and the analytics response cannot drift
+ * apart — `region`/`sites`/`fuel`/`alarms`/`running` are the fields they share.
+ */
+export type LeaderboardRegion = RegionBreakdownRow;
 
 interface RegionLeaderboardProps {
   regions: LeaderboardRegion[];
@@ -39,51 +40,14 @@ interface RegionLeaderboardProps {
   onSelectRegion?: (region: string) => void;
 }
 
-/** Avg fuel tank capacity per site, in litres. */
-const AVG_TANK_CAPACITY_PER_SITE = 5000;
-
 interface ScoredRegion extends LeaderboardRegion {
   score: number;
-  factors: {
-    stability: number;
-    fuelAvail: number;
-    genActivity: number;
-    coverage: number;
-  };
+  factors: RegionScoreFactors;
 }
 
-/**
- * Compute a 0-100 performance score for a region.
- *  - Online stability (35%): 100% when alarms < 5% of sites, scaled down for
- *    higher alarm density (reaches 0% at 100% alarm density).
- *  - Fuel availability (25%): fuel / (sites * 5000), capped at 100%.
- *  - Generator activity (20%): running / sites ratio.
- *  - Site coverage (20%): sites / totalSites.
- */
+/** Score a region and keep its factors for the expanded row. */
 function computeScore(r: LeaderboardRegion, totalSites: number): ScoredRegion {
-  const sites = Math.max(1, r.sites);
-
-  // Online stability — 100% if alarms < 5% of sites, scales down above that.
-  const alarmDensity = r.alarms / sites; // 0..n
-  const stability =
-    alarmDensity <= 0.05
-      ? 100
-      : Math.max(0, 100 - (alarmDensity - 0.05) * 100 * 1.05);
-
-  // Fuel availability — assumes avg 5000L tank per site.
-  const fuelAvail = Math.min(100, (r.fuel / (sites * AVG_TANK_CAPACITY_PER_SITE)) * 100);
-
-  // Generator activity — running / sites ratio, capped at 100%.
-  const genActivity = Math.min(100, (r.running / sites) * 100);
-
-  // Site coverage — share of the national fleet.
-  const coverage = totalSites > 0 ? Math.min(100, (r.sites / totalSites) * 100) : 0;
-
-  const score = Math.round(
-    stability * 0.35 + fuelAvail * 0.25 + genActivity * 0.2 + coverage * 0.2,
-  );
-
-  return { ...r, score, factors: { stability, fuelAvail, genActivity, coverage } };
+  return { ...r, ...scoreRegion(r, totalSites) };
 }
 
 function rankBadgeClasses(rank: number): string {
