@@ -32,7 +32,7 @@
  * supplies.
  */
 import { PrismaClient } from "@prisma/client";
-import { configurePoolUrl } from "@/lib/db";
+import { configurePoolUrl, createPgAdapter } from "@/lib/db";
 
 export type OwnerDbEnv = Record<string, string | undefined>;
 
@@ -68,7 +68,7 @@ export function getPrivilegedDb(
   const existing = cache.get(normalizedUrl);
   if (existing) return existing;
   const created = new PrismaClient({
-    datasources: { db: { url: normalizedUrl } },
+    adapter: createPgAdapter(rawUrl, { defaultLimit: 1, env }),
     log: privilegedLogLevels,
   });
   cache.set(normalizedUrl, created);

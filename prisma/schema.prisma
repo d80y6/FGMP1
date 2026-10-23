@@ -19,7 +19,11 @@
 // regression suite (11).
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  // Cloudflare Workers cannot load Prisma's native Rust query engine. The
+  // client engine uses the PostgreSQL driver adapter configured in db.ts.
+  engineType      = "client"
+  previewFeatures = ["driverAdapters"]
 }
 
 datasource db {

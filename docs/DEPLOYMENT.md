@@ -247,3 +247,12 @@ Next.js build, and emits the OpenNext Worker bundle. The Docker/Render path uses
 the Cloudflare dashboard. Store credentials as encrypted Worker Secrets, not
 plain-text `vars`; never commit `.dev.vars` or copy production secrets into build
 logs. If credentials have appeared in deployment logs, rotate them immediately.
+
+Prisma uses the JavaScript `@prisma/adapter-pg` driver (`engineType = "client"`)
+instead of the native Rust query engine, which Cloudflare Workers cannot load.
+The adapter caps each pool at one connection; Worker connections are retired
+after one checkout. This preserves the tenant transaction/RLS setup while
+avoiding stale pooled sockets between requests. Keep `nodejs_compat` enabled.
+The configured PostgreSQL endpoint must accept TCP/TLS from Cloudflare; use a
+Cloudflare Hyperdrive binding or the database provider's Worker-compatible
+adapter if the endpoint is not directly reachable over PostgreSQL TCP.

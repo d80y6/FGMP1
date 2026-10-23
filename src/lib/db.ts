@@ -1,3 +1,4 @@
+import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient } from '@prisma/client'
 
 const globalForPrisma = globalThis as unknown as {
@@ -9,16 +10,13 @@ export type PoolEnv = Record<string, string | undefined>
 
 /**
  * Detect serverless / function-per-request runtimes (Netlify Functions,
- * AWS Lambda, Vercel, Cloudflare Pages).
+ * AWS Lambda, Vercel, Cloudflare Pages, and workerd Workers).
  *
- * In these runtimes every concurrent HTTP request runs in an isolated microVM
- * with its own Prisma query-engine pool. Prisma's default pool size
- * (`num_physical_cpus * 2 + 1`, typically 5–9 connections per container) holds
- * idle TCP sockets open until container freeze — so just 2–3 concurrent
- * requests instantly exhaust a 15-connection hosted PostgreSQL Session Mode
- * pool (`MaxClientsInSessionMode`). Capping each Prisma pool to
- * `connection_limit=1` means a serverless instance uses at most one app-role
- * connection plus one shared privileged-role connection when it needs one.
+ * Serverless instances must not inherit a large default DB pool: the former
+ * Prisma default (`num_physical_cpus * 2 + 1`, typically 5–9 connections) can
+ * exhaust a 15-connection hosted PostgreSQL limit with only a few concurrent
+ * instances. Cap each adapter pool at one connection; in Worker runtimes, also
+ * retire each socket after one checkout so it cannot be reused across requests.
  */
 export function isServerlessRuntime(env: PoolEnv = process.env): boolean {
   const flags = [
@@ -27,8 +25,14 @@ export function isServerlessRuntime(env: PoolEnv = process.env): boolean {
     env.AWS_EXECUTION_ENV,
     env.VERCEL,
     env.CF_PAGES,
+    env.CF_WORKERS,
   ]
-  return flags.some((v) => v !== undefined && v !== '' && v !== 'false' && v !== '0')
+  const hasRuntimeFlag = flags.some((v) => v !== undefined && v !== '' && v !== 'false' && v !== '0')
+  // Cloudflare Workers does not always expose a platform env flag to process.env.
+  // workerd's user agent is available in its JS runtime and lets us apply the
+  // same one-connection policy without relying on an operator-supplied variable.
+  const userAgent = typeof navigator === 'undefined' ? '' : navigator.userAgent
+  return hasRuntimeFlag || /cloudflare|workerd/i.test(userAgent)
 }
 
 function parsePositiveInt(raw: string | undefined): number | null {
@@ -101,6 +105,76 @@ export function configurePoolUrl(
   }
 
   return `${base}?${params.toString()}${fragment}`
+}
+
+export interface PgAdapterConfig {
+  connectionString: string
+  schema: string
+  max: number
+  maxUses?: number
+  connectionTimeoutMillis: number
+  idleTimeoutMillis: number
+}
+
+/**
+ * Convert Prisma's PostgreSQL URL into node-postgres pool settings.
+ *
+ * Prisma's Rust engine understands URL options such as `schema`,
+ * `connection_limit`, and `pool_timeout`; node-postgres uses explicit pool
+ * options instead. Keep the existing URL defaults, transfer the schema and
+ * timeouts, and pass a bounded pool to PrismaPg. Workerd/serverless connections
+ * are retired after one checkout so a Worker never reuses a TCP socket across
+ * requests. `max: 1` also bounds parallel DB work per client to one connection.
+ */
+export function configurePgAdapter(
+  rawUrl: string,
+  options: ConfigurePoolUrlOptions = {},
+): PgAdapterConfig {
+  if (!/^postgres(?:ql)?:\/\//i.test(rawUrl)) {
+    throw new Error('Prisma PostgreSQL adapter requires a postgresql:// DATABASE_URL')
+  }
+  const configured = configurePoolUrl(rawUrl, options)
+  let url: URL
+  try {
+    url = new URL(configured)
+  } catch {
+    // Do not rethrow URL's error: Node may attach the original input (including
+    // its password) to the error object, which can then leak into deployment logs.
+    throw new Error('DATABASE_URL is not a valid PostgreSQL connection URL')
+  }
+  const schema = url.searchParams.get('schema') || 'public'
+  const configuredLimit = parsePositiveInt(url.searchParams.get('connection_limit') ?? undefined) ?? 1
+  const connectTimeoutSeconds =
+    parsePositiveInt(url.searchParams.get('connect_timeout') ?? undefined) ?? 5
+  const isServerless = isServerlessRuntime(options.env ?? process.env)
+
+  for (const parameter of ['schema', 'connection_limit', 'pool_timeout', 'connect_timeout']) {
+    url.searchParams.delete(parameter)
+  }
+  // Fragments are client-side URL metadata and must not reach the PG driver.
+  url.hash = ''
+
+  return {
+    connectionString: url.toString(),
+    schema,
+    // Honor the existing pool setting but never let a single client create an
+    // unbounded pool. Serverless/Workers defaults are one; local Node defaults
+    // remain the existing three.
+    max: Math.min(configuredLimit, isServerless ? 1 : 3),
+    ...(isServerless ? { maxUses: 1 } : {}),
+    connectionTimeoutMillis: connectTimeoutSeconds * 1_000,
+    idleTimeoutMillis: isServerless ? 1_000 : 300_000,
+  }
+}
+
+/** Build an adapter-backed Prisma client configuration from a database URL. */
+export function createPgAdapter(
+  rawUrl: string,
+  options: ConfigurePoolUrlOptions = {},
+): PrismaPg {
+  const config = configurePgAdapter(rawUrl, options)
+  const { schema, ...poolConfig } = config
+  return new PrismaPg(poolConfig, { schema })
 }
 
 // Logging: only `warn` and `error` in dev, `error` only in prod.
@@ -245,38 +319,29 @@ if (process.env.NODE_ENV !== 'production' && !dbIsRlsEnforced) {
 /**
  * The Prisma client, constructed on FIRST USE rather than at import.
  *
- * ── WHY LAZY, AND WHY THIS IS NOT OVER-ENGINEERING ──────────────────────────
- * `new PrismaClient()` does not merely allocate an object: with the library
- * engine it starts loading the query-engine binary in the background
- * immediately. When that binary is absent — no `prisma generate`, or a
- * download that was blocked — the load is an *unhandled promise rejection*,
- * not a thrown error. The consequences observed in practice:
- *
- *   * `bun test` aborted an entire 45-test file (src/lib/fgmp/interlocks.test.ts)
- *     at import time, reporting "0 pass" for it with no failing test to look
- *     at. Importing the DATABASE LAYER is not supposed to be an operation that
- *     can fail.
- *   * `next build` printed the same error while collecting page data for
- *     routes that never query anything.
- *
- * Deferring construction fixes the class of problem rather than one instance:
- * importing this module is inert, and a process that never queries never opens
- * a pool. Everything that does query gets exactly the same client, built once.
+ * The generated client uses `engineType = "client"`, so runtime queries go
+ * through the PostgreSQL driver adapter rather than a native Rust query engine.
+ * Keeping construction lazy still matters: importing the database layer does
+ * not allocate a driver pool, and a process that never queries never opens a
+ * database connection. The shared adapter pool is capped, and Worker sockets
+ * are retired after a single checkout instead of being reused across requests.
  *
  * The proxy forwards every property access to the real client, so `db.user`,
  * `db.$transaction`, `db.$queryRaw` and typing are unchanged for callers — the
  * only difference is that the first access is what constructs it.
  */
 function getClient(): PrismaClient {
-  const configuredUrl = process.env.DATABASE_URL
-    ? configurePoolUrl(process.env.DATABASE_URL)
-    : undefined
+  const databaseUrl = process.env.DATABASE_URL
+  if (!databaseUrl) {
+    throw new Error('DATABASE_URL must be configured before querying PostgreSQL')
+  }
+  const configuredUrl = configurePoolUrl(databaseUrl)
   if (
     !globalForPrisma.prisma ||
     globalForPrisma.prismaUrl !== configuredUrl
   ) {
     globalForPrisma.prisma = new PrismaClient({
-      ...(configuredUrl ? { datasources: { db: { url: configuredUrl } } } : {}),
+      adapter: createPgAdapter(databaseUrl),
       log: logLevels,
     })
     globalForPrisma.prismaUrl = configuredUrl

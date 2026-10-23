@@ -95,6 +95,9 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // OpenNext must let workerd resolve Prisma's runtime-specific client and the
+  // pg driver instead of bundling the native query-engine entry point.
+  serverExternalPackages: ["@prisma/client", ".prisma/client", "@prisma/adapter-pg", "pg"],
   /* Next advertises itself with `X-Powered-By: Next.js`. There is no reason to
      tell a scanner which framework is behind the app. */
   poweredByHeader: false,
