@@ -38,7 +38,7 @@ else the tenant comes from the session, never from the request body or query.
 
 ## 3. Tenant isolation (RLS)
 
-24 tenant-carrying tables carry a policy on `tenant_id`. The app connects as
+36 tenant-carrying tables carry a policy on `tenant_id`. The app connects as
 `fgmp_app`, which does not own the tables, so policies apply even to a query
 written without a tenant filter.
 

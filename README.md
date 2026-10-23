@@ -105,7 +105,7 @@ src/
   lib/health/          Canonical site-health scoring
   lib/observability/   Logging, health and Prometheus metrics
 prisma/
-  schema.prisma        Data model (25+ models, 24 tenant-scoped tables)
+  schema.prisma        Data model (42 models, 36 tenant-scoped tables)
   migrations/          Committed, ordered migration history
 scripts/
   db/                  Seed and database-role bootstrap scripts

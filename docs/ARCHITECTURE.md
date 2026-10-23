@@ -37,7 +37,7 @@ route handler ─ requireAuth/requireRole ─ withTenant(tenantId) ─ Prisma �
   ordinary tables.
 * Prisma 6 with native enums; decimal columns are `Decimal` (no floats for
   money or litres).
-* 24 tenant-carrying tables have `FORCE ROW LEVEL SECURITY` and a `tenant_id`
+* 36 tenant-carrying tables have `FORCE ROW LEVEL SECURITY` and a `tenant_id`
   policy. The app connects as `fgmp_app`, which is **not** the owner, so policies
   apply to every query the app issues, including a query written without a
   tenant filter.
