@@ -84,10 +84,14 @@ const userSelect = {
  * response header instead of an envelope.
  */
 export async function GET(req: NextRequest) {
-  await bootstrap();
+  // Authorise before touching the database. `bootstrap()` runs
+  // `engine.ensureAllTenants()`, so it throws when the database is unreachable —
+  // and when it ran first, an unauthenticated request came back 500 instead of
+  // 401, which reads like a server fault rather than "log in".
   const auth = await requireRole(req, ROLES.SUPER_OR_ADMIN);
   if ("error" in auth) return auth.error;
   const me = auth.user;
+  await bootstrap();
   try {
     const rl = await rateLimitByUser(req, me.id, READ_LIMIT.limit, READ_LIMIT.windowMs);
     if (!rl.success) {
@@ -160,10 +164,10 @@ export async function GET(req: NextRequest) {
  * mutation already uses.
  */
 export async function POST(req: NextRequest) {
-  await bootstrap();
   const auth = await requireRole(req, ROLES.SUPER_OR_ADMIN);
   if ("error" in auth) return auth.error;
   const me = auth.user;
+  await bootstrap();
   const superAdmin = isSuperAdminUser(me);
 
   const rl = await rateLimitByUser(req, me.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);

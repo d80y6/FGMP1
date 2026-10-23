@@ -21,7 +21,7 @@ when the database is slow restarts a healthy process and makes an outage worse.
 `timeout`) and never discloses the driver, host or exception.
 
 Boot-time validation is the fourth gate: the server refuses to start when the
-environment is invalid (see §9).
+environment is invalid (see §8, "App container exits immediately").
 
 ## 2. Health endpoint
 

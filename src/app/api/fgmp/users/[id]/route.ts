@@ -109,10 +109,14 @@ function guardSuperAdminTarget(
  * read SUPERADMIN accounts).
  */
 export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  await bootstrap();
+  // Authorise before touching the database. `bootstrap()` runs
+  // `engine.ensureAllTenants()`, so it throws when the database is unreachable —
+  // and when it ran first, an unauthenticated request came back 500 instead of
+  // 401, which reads like a server fault rather than "log in".
   const auth = await requireRole(req, ROLES.SUPER_OR_ADMIN);
   if ("error" in auth) return auth.error;
   const me = auth.user;
+  await bootstrap();
   const limited = await limitFor(req, me, false);
   if (limited) return limited;
   const { id } = await ctx.params;
@@ -144,10 +148,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
  * deactivating their own account via this endpoint.
  */
 export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  await bootstrap();
   const auth = await requireRole(req, ROLES.SUPER_OR_ADMIN);
   if ("error" in auth) return auth.error;
   const me = auth.user;
+  await bootstrap();
   const limited = await limitFor(req, me, true);
   if (limited) return limited;
   const { id } = await ctx.params;
@@ -230,10 +234,10 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
  * SUPERADMIN accounts.
  */
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  await bootstrap();
   const auth = await requireRole(req, ROLES.SUPER_OR_ADMIN);
   if ("error" in auth) return auth.error;
   const me = auth.user;
+  await bootstrap();
   const limited = await limitFor(req, me, true);
   if (limited) return limited;
   const { id } = await ctx.params;
@@ -296,10 +300,10 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
  * SUPERADMIN accounts.
  */
 export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  await bootstrap();
   const auth = await requireRole(req, ROLES.SUPER_OR_ADMIN);
   if ("error" in auth) return auth.error;
   const me = auth.user;
+  await bootstrap();
   const limited = await limitFor(req, me, true);
   if (limited) return limited;
   const { id } = await ctx.params;

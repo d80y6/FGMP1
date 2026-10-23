@@ -44,10 +44,14 @@ const resetPasswordSchema = z.object({
  * loop and stall every other request in the process.
  */
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  await bootstrap();
+  // Authorise before touching the database. `bootstrap()` runs
+  // `engine.ensureAllTenants()`, so it throws when the database is unreachable —
+  // and when it ran first, an unauthenticated request came back 500 instead of
+  // 401, which reads like a server fault rather than "log in".
   const auth = await requireRole(req, ROLES.SUPER_OR_ADMIN);
   if ("error" in auth) return auth.error;
   const me = auth.user;
+  await bootstrap();
 
   const rl = await rateLimitByUser(req, me.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
   if (!rl.success) {

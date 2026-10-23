@@ -3,7 +3,7 @@
 What was broken, what was changed, how it was verified, and what remains
 external. This is a record of an audit and a remediation pass, not a marketing
 claim: every item below was executed in this checkout, and the items under
-§8 are genuinely not done.
+§8 — plus the last paragraph of §10 — are genuinely not done.
 
 ## 1. The build did not work
 
@@ -201,7 +201,7 @@ that wrote this document, not because they are unverified.
 
 | Item | Why it is not done |
 |---|---|
-| **A live PostgreSQL run, locally** | No PostgreSQL binary and no Docker daemon in this environment, and `prisma generate` cannot download a query engine (`binaries.prisma.sh` is unreachable). CI executes it instead, against `timescale/timescaledb:latest-pg17`, and the `rls` job is green: 24 migrations applied, seed written as the owner role, smoke test, database-backed suites with `FGMP_REQUIRE_DB_TESTS=1`, and the RLS regression suite. The Dockerfile also **fails the build** if `prisma generate` produced no engine, because that image would build cleanly and then fail on its first query. |
+| **The Prisma query path, locally** | PostgreSQL itself turned out to be obtainable in this sandbox (see §10), but `prisma generate` cannot download a query engine (`binaries.prisma.sh` is unreachable), so no Prisma client here can execute a query. CI executes that instead, against `timescale/timescaledb:latest-pg17`, and the `rls` job is green: 24 migrations applied, seed written as the owner role, smoke test, database-backed suites with `FGMP_REQUIRE_DB_TESTS=1`, and the RLS regression suite. The Dockerfile also **fails the build** if `prisma generate` produced no engine, because that image would build cleanly and then fail on its first query. |
 | **Docker image build/boot, locally** | No Docker daemon here. CI's `docker` job builds the image, boots it against PostgreSQL, and asserts `/api/health/ready` is 200, at least 36 tables are FORCE-RLS, the container is non-root and no `.env` was baked in. Green.|
 | **Real device transports** | No Modbus/MQTT hardware is configured; `NO_TRANSPORT` is the honest answer. Wiring serial/TCP gateways is a deployment decision, not a code fix. |
 | **`SensorReading` retention** | TimescaleDB retention/compression policy is a capacity decision (how long telemetry is kept) and must be agreed, not guessed. |
@@ -218,7 +218,7 @@ bun run check:env          # expect errors in a bare checkout — that is the po
 bunx prisma generate       # needs a query engine binary (see §8)
 npx tsc --noEmit           # 0 errors
 npx eslint .               # 0 errors, 0 warnings
-bun test                   # 731 pass, 13 skip, 0 fail without a database
+bun test                   # 736 pass, 13 skip, 0 fail without a database
 bun run build              # standalone output
 ```
 
@@ -232,3 +232,63 @@ FGMP_REQUIRE_DB_TESTS=1 bun test
 bun run test:rls
 bun run test:smoke
 ```
+
+## 10. What was checked by hand, outside CI
+
+CI is the authority for the database and container jobs, but two things turned
+out to be checkable in a bare sandbox, and both found something.
+
+**PostgreSQL 16.2, all migrations, and the RLS policies.** `pip install pgserver`
+ships PostgreSQL binaries, so a cluster was started on port 5433, the three
+roles were provisioned with `scripts/db/pg-init-roles.sh`, and every
+`prisma/migrations/*/migration.sql` was applied in order with
+`psql -v ON_ERROR_STOP=1`:
+
+```
+applied=24 failed=0
+42 public tables, 51 policies
+```
+
+The policies were then exercised as `fgmp_app`, the role the web app uses:
+
+```sql
+-- no app.tenant_id in scope
+select count(*) from "User";   -- 0
+select count(*) from "Site";   -- 0
+insert into "User" (…) values (…, 't1', …);
+-- ERROR: new row violates row-level security policy for table "User"
+
+-- with app.tenant_id set
+begin; set local app.tenant_id = 't1';
+insert into "User" (…) values (…, 't1', …);   -- passes the policy
+rollback;
+```
+
+That is the property the architecture depends on, checked against a real
+PostgreSQL rather than read off the migration text.
+
+**The production server.** `bun run start` on the standalone output, with a real
+`NEXTAUTH_SECRET` and the sandbox database:
+
+| Request | Result |
+|---|---|
+| `/api/health/live` | `200 {"status":"live","uptimeSeconds":…}` |
+| `/api/health/ready` | `503 {"status":"not_ready","reason":"db_unreachable"}` — correct here, the engine is missing (§8) |
+| `/` | `200`, with CSP, HSTS, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy` |
+| every `/api/fgmp/*` route | `401 {"error":"Unauthorized"}` without a session |
+
+The boot log also showed the two fail-closed behaviours working: the env
+validator listed its warnings, and the scheduler refused to fabricate telemetry
+because `NODE_ENV=production`.
+
+**The defect this found.** `/api/fgmp/users`, `/api/fgmp/users/[id]` and
+`/api/fgmp/users/[id]/reset-password` called `bootstrap()` *before*
+`requireRole()`. Bootstrap runs `engine.ensureAllTenants()`, so when the
+database is unreachable it throws — and an unauthenticated request to those
+three routes returned `500` while every other route returned `401`, which reads
+like a server fault rather than "log in". Authorisation now happens first, and
+all three answer `401` (verified against the rebuilt server).
+
+**Still not checked by hand:** anything that goes through Prisma — every
+authenticated view, and the seed — for the engine reason above. The
+authenticated UI therefore remains a CI-and-review claim, not an observed one.
