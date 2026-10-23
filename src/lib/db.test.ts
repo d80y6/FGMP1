@@ -27,6 +27,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  configurePgAdapter,
   configurePoolUrl,
   isServerlessRuntime,
   usingRlsRole,
@@ -76,6 +77,7 @@ describe("bounded PostgreSQL connection pools", () => {
     assert.equal(isServerlessRuntime({ NETLIFY: "true" }), true);
     assert.equal(isServerlessRuntime({ AWS_LAMBDA_FUNCTION_NAME: "fgmp" }), true);
     assert.equal(isServerlessRuntime({ VERCEL: "1" }), true);
+    assert.equal(isServerlessRuntime({ CF_WORKERS: "true" }), true);
     assert.equal(isServerlessRuntime({ NODE_ENV: "production" }), false);
     assert.equal(isServerlessRuntime({ NETLIFY: "false" }), false);
   });
@@ -122,6 +124,46 @@ describe("bounded PostgreSQL connection pools", () => {
     );
     assert.equal(url.searchParams.get("connection_limit"), "2");
     assert.equal(url.searchParams.get("pool_timeout"), "8");
+  });
+
+  test("the pg adapter gets a one-connection Worker pool and no Prisma-only URL options", () => {
+    const config = configurePgAdapter(
+      "postgresql://fgmp_app:p%40ss@db.example.test/fgmp?schema=tenant_data&sslmode=require&connection_limit=8&pool_timeout=9&connect_timeout=4#fragment",
+      { env: { CF_WORKERS: "true" } },
+    );
+    const url = new URL(config.connectionString);
+    assert.equal(config.schema, "tenant_data");
+    assert.equal(config.max, 1);
+    assert.equal(config.maxUses, 1);
+    assert.equal(config.connectionTimeoutMillis, 4_000);
+    assert.equal(config.idleTimeoutMillis, 1_000);
+    assert.equal(url.password, "p%40ss");
+    assert.equal(url.searchParams.get("sslmode"), "require");
+    assert.equal(url.searchParams.has("schema"), false);
+    assert.equal(url.searchParams.has("connection_limit"), false);
+    assert.equal(url.searchParams.has("pool_timeout"), false);
+    assert.equal(url.searchParams.has("connect_timeout"), false);
+    assert.equal(url.hash, "");
+  });
+
+  test("the pg adapter keeps the small Node pool for non-serverless runtimes", () => {
+    const config = configurePgAdapter("postgresql://fgmp_app:p@db.example.test/fgmp", {
+      env: { NODE_ENV: "production" },
+    });
+    assert.equal(config.max, 3);
+    assert.equal(config.maxUses, undefined);
+    assert.equal(config.idleTimeoutMillis, 300_000);
+  });
+
+  test("invalid PostgreSQL URLs fail without echoing credentials", () => {
+    assert.throws(
+      () => configurePgAdapter("postgresql://secret:password with spaces@"),
+      (error: Error) => {
+        assert.equal(error.message, "DATABASE_URL is not a valid PostgreSQL connection URL");
+        assert.equal(error.message.includes("password"), false);
+        return true;
+      },
+    );
   });
 });
 
