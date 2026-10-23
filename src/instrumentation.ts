@@ -81,7 +81,7 @@ export async function register(): Promise<void> {
       // "Failed to prepare server", marks the hook failed and keeps the port
       // open, so an orchestrator sees a healthy socket on a process that will
       // 500 every request. Exiting is the only honest signal.
-      getNodeProcessApi().exit(1);
+      return getNodeProcessApi().exit(1);
     }
   })();
   const warnings = envIssues.filter((i) => i.severity === "warn");
