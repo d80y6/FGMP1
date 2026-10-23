@@ -47,7 +47,9 @@ jobs:
       # the model doesn't define, or a call to a method that doesn't exist,
       # before they become 500s in production.
       - name: Typecheck (must be zero errors)
-        run: bun run typecheck
+        run: |
+          set -o pipefail
+          bun run typecheck 2>&1 | tee /tmp/typecheck.log
 
       # ── The lint gate ────────────────────────────────────────────────────
       # Errors fail the build; warnings are reported but do not block (there is
@@ -98,8 +100,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: >
-          python3 scripts/ci/publish-logs.py "verify: test + build logs"
-          /tmp/test.log /tmp/build.log
+          python3 scripts/ci/publish-logs.py "verify: typecheck + test + build logs"
+          /tmp/typecheck.log /tmp/test.log /tmp/build.log
 
   # The realtime service and the IoT bridge are separate Bun projects with their
   # own lockfiles and are NOT covered by the app build, so they get their own
