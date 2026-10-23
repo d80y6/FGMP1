@@ -15,6 +15,13 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# `checks: write` is what lets the diagnostics step below publish the failing
+# step's log back onto the commit. Without it a failed build is a red X with no
+# readable output (the log archive is behind a separate, authenticated host).
+permissions:
+  contents: read
+  checks: write
+
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -67,17 +74,56 @@ jobs:
       # under __tests__. No database is required — the suites that need
       # PostgreSQL live in the `rls` job below, which provisions a real server.
       - name: Unit tests (must be zero failures)
-        run: bun run test
+        run: |
+          set -o pipefail
+          bun run test 2>&1 | tee /tmp/test.log
 
       # ── The production build ─────────────────────────────────────────────
       # Runs with `typescript.ignoreBuildErrors: false`, so a type error fails
       # here too, and it proves the standalone output the Dockerfile depends
       # on is actually produced.
       - name: Build
-        run: bun run build
+        run: |
+          set -o pipefail
+          bun run build 2>&1 | tee /tmp/build.log
         env:
           DATABASE_URL: postgresql://fgmp_app:ciapp@127.0.0.1:5432/fgmp?schema=public
           NEXT_TELEMETRY_DISABLED: "1"
+
+      # Diagnostics: publish the tail of the test and build logs onto the commit
+      # through the Checks API. `gh run view --log` is served from a different
+      # host than the API and is not always reachable; a check run is.
+      - name: Publish failure diagnostics
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess
+
+          def tail(path, limit=30000):
+              try:
+                  with open(path, errors="replace") as fh:
+                      return fh.read()[-limit:]
+              except FileNotFoundError:
+                  return "(no output)"
+
+          summary = "## unit tests\n\n```\n%s\n```\n\n## build\n\n```\n%s\n```\n" % (
+              tail("/tmp/test.log"), tail("/tmp/build.log"),
+          )
+          body = {
+              "name": "ci-diagnostics",
+              "head_sha": os.environ["GITHUB_SHA"],
+              "status": "completed",
+              "conclusion": "neutral",
+              "output": {"title": "unit test + build logs", "summary": summary[:65000]},
+          }
+          subprocess.run(
+              ["gh", "api", "repos/%s/check-runs" % os.environ["GITHUB_REPOSITORY"],
+               "--input", "-"],
+              input=json.dumps(body).encode(), check=False,
+          )
+          PY
 
   # The realtime service and the IoT bridge are separate Bun projects with their
   # own lockfiles and are NOT covered by the app build, so they get their own
