@@ -89,8 +89,8 @@ the only identifier that ties a browser render to a server stack trace.
 |---|---|---|
 | `next build` | **fails** (Google Fonts) | passes, standalone output verified |
 | `npx tsc --noEmit` | 0 errors | 0 errors |
-| `npx eslint .` | 24 errors / 443 warnings | **0 errors** / 423 warnings |
-| `bun test` | 699 pass / 14 fail | **714 pass / 0 fail** (13 skipped without a database) |
+| `npx eslint .` | 24 errors / 443 warnings | **0 errors** / 302 warnings |
+| `bun test` | 699 pass / 14 fail | **724 pass / 0 fail** (13 skipped without a database) |
 | Dependency count | 78 production | **47** production, lockfile regenerated |
 
 The 14 failures were not flaky: they were database-backed suites (RLS row
@@ -108,12 +108,38 @@ One real test bug was fixed: a metrics assertion assumed a fresh registry, so it
 failed whenever another suite had already incremented the `login/degraded_closed`
 series. It now uses a label pair unique to that test.
 
-## 7. Still external — not fixable in this repository
+Two more defects were found by making the gates trustworthy rather than green:
+
+* **A test suite that re-imported the module under test.** The session-lifetime
+  tests called `import("./auth?cfg=" + Math.random())` and relied on Bun
+  re-evaluating the module. Run alone they passed; in the full suite a stale
+  evaluation leaked `updateAge === maxAge` into the next case and failed for a
+  configuration nobody had set. The configuration now lives in
+  `src/lib/auth-session.ts` and is a pure function of an env object.
+* **Importing the database layer could fail.** `new PrismaClient()` starts
+  loading the query-engine binary in the background; when that binary is absent
+  the load rejects asynchronously. In practice it aborted an entire 45-test file
+  at import (reported as "0 pass", with no failing test) and printed a
+  PrismaClientInitializationError during `next build`. `db` is now a Proxy over
+  a client constructed on first USE, so importing is inert and a process that
+  never queries never opens a pool.
+
+The remaining 302 warnings are four tracked rules — 184 non-null assertions, 77
+`any`, 25 `exhaustive-deps`, 13 `react-hooks/purity` — each of which needs a
+judgement call per site rather than a mechanical edit, and none of which is
+currently enforced as an error. They are a ratchet backlog, not a claim of
+cleanliness.
+
+## 7. Not reproducible on this machine, and deliberately not decided here
+
+The first two rows are executed by CI on every push and are currently green.
+They are listed because they cannot be reproduced in the development sandbox
+that wrote this document, not because they are unverified.
 
 | Item | Why it is not done |
 |---|---|
-| **A live PostgreSQL run** | No PostgreSQL binary and no Docker daemon in this environment, and `prisma generate` cannot download a query engine (binaries.prisma.sh is unreachable), so the local client can only speak to Prisma Accelerate. Compose/CI paths are syntax-checked and the code paths are type-checked, but `migrate → seed → RLS suite` has not been executed here. CI runs it — and the Dockerfile now **fails the build** if `prisma generate` produced no engine, because that image would build cleanly and then fail on the first query. |
-| **Docker image build/boot** | No Docker daemon. The Dockerfile changes (config copy, healthcheck) are reviewed, not executed. CI's `docker` job builds and boots the image. |
+| **A live PostgreSQL run, locally** | No PostgreSQL binary and no Docker daemon in this environment, and `prisma generate` cannot download a query engine (`binaries.prisma.sh` is unreachable). CI executes it instead, against `timescale/timescaledb:latest-pg17`, and the `rls` job is green: 24 migrations applied, seed written as the owner role, smoke test, database-backed suites with `FGMP_REQUIRE_DB_TESTS=1`, and the RLS regression suite. The Dockerfile also **fails the build** if `prisma generate` produced no engine, because that image would build cleanly and then fail on its first query. |
+| **Docker image build/boot, locally** | No Docker daemon here. CI's `docker` job builds the image, boots it against PostgreSQL, and asserts `/api/health/ready` is 200, at least 36 tables are FORCE-RLS, the container is non-root and no `.env` was baked in. Green.|
 | **Real device transports** | No Modbus/MQTT hardware is configured; `NO_TRANSPORT` is the honest answer. Wiring serial/TCP gateways is a deployment decision, not a code fix. |
 | **`SensorReading` retention** | TimescaleDB retention/compression policy is a capacity decision (how long telemetry is kept) and must be agreed, not guessed. |
 | **Object storage for exports/backups** | Backups currently land in a volume. Off-host storage needs a bucket and credentials. |

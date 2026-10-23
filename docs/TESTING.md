@@ -150,7 +150,6 @@ can write the row bypass the second factor.
 | `fgmp_theft_detections_total` absent | Scheduler refuses to fabricate telemetry |
 | Empty dashboard on a new environment | Honest state without devices; seed the demo topology |
 | Backup job output is a small dump | It ran as `fgmp_app`; RLS-scoped dumps are silently incomplete |
-| `bun test` exits 1 with one `PrismaClientInitializationError` (no failing test) | `prisma generate` could not download a query engine, so importing `src/lib/db.ts` rejects in the background. The suite itself passed. Run `bunx prisma generate` on a machine that can reach `binaries.prisma.sh`; CI does this before testing |
 
 ## 4. Checking the boundary yourself
 
