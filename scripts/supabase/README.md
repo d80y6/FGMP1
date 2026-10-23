@@ -52,11 +52,33 @@ Expected output:
 
 ```
 NOTICE:  FGMP roles ready in database postgres.
-NOTICE:  FGMP schema applied: 43 tables, 39 with FORCE RLS, 51 policies, 4 DML grants on "User" for fgmp_app.
+NOTICE:  FGMP schema applied: 45 tables, 39 with FORCE RLS, 51 policies, 4 DML grants on "User" for fgmp_app.
 NOTICE:  FGMP seed ready: 2 tenants, 6 users, 8 sites, 8 tanks, 8 generators, 8 dispensers, 5 alarms, 12 fuel transactions.
 NOTICE:  OK: fgmp_app sees 0 sites with no tenant context.
 NOTICE:  FGMP deployment verified.
 ```
+
+## What the schema contains
+
+45 tables. 39 of them carry a `tenantId` and have **FORCE ROW LEVEL SECURITY**
+with one `tenant_isolation` policy each (51 policies in total, counting the
+SECURITY DEFINER helper on the MFA challenge table). The remaining six are
+platform-global and have no tenant column, deliberately:
+
+| table | why it is global |
+| --- | --- |
+| `Tenant` | the registry itself |
+| `SystemSetting` | installation-wide configuration |
+| `EspFirmwareRelease` | firmware releases are shared by all tenants |
+| `_prisma_migrations` | Prisma's bookkeeping; revoked from both application roles |
+| `SupportSession` | which operator may act as which tenant, until when |
+| `PlatformAuditLog` | the platform trail; must outlive the tenant it concerns |
+
+The last two are the platform administration surface. Their access control is
+the API (`/api/fgmp/platform/**`, SUPERADMIN only) rather than RLS, and the
+verification script asserts the part the database can enforce: `fgmp_app` may
+append to `PlatformAuditLog` but not update or delete it, and may not delete a
+`SupportSession`.
 
 ## Why `set role fgmp_migrate` matters
 

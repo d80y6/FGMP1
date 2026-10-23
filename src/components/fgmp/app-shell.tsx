@@ -83,6 +83,7 @@ import { PinnedSitesWidget } from "@/components/fgmp/pinned-sites-widget";
 import { QuickAccessPopover } from "@/components/fgmp/quick-access-popover";
 import { ThemeSwitcher } from "@/components/fgmp/theme-switcher";
 import { LanguageSwitcher } from "@/components/fgmp/language-switcher";
+import { SupportSessionBanner } from "@/components/fgmp/support-session-banner";
 import { useKeyboardShortcuts } from "@/lib/fgmp/use-keyboard-shortcuts";
 import { useRealtime } from "@/lib/fgmp/use-realtime";
 import { useT, useLanguageHydration, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
@@ -362,6 +363,11 @@ export function AppShell() {
     <div className="flex min-h-screen flex-col bg-background">
       {/* Skip-to-content link — keyboard a11y (bypasses 27 nav items) */}
       <a href="#main-content" className="skip-link">{t("common.skipToContent")}</a>
+
+      {/* Platform support access banner. Renders nothing unless a support
+          session is open; when one is, it is the only thing on the page that
+          cannot be dismissed without ending the session. */}
+      <SupportSessionBanner />
 
       {/* Top header */}
       <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">

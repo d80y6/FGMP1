@@ -668,10 +668,13 @@ async function seedDispensers(db: PrismaClient): Promise<void> {
 /**
  * Idempotent platform super-admin seeder (Task 49).
  *
- * Ensures the cross-tenant SUPERADMIN account exists on every bootstrap().
+ * Ensures the platform SUPERADMIN account exists on every bootstrap().
  * The super-admin is homed in a dedicated "FGMP Platform" tenant (id
- * `t-platform`) — this is purely an FK anchor; the SUPERADMIN role bypasses
- * tenant isolation entirely (see src/lib/fgmp/auth-helpers.ts).
+ * `t-platform`), which is an ordinary tenant as far as RLS is concerned: the
+ * super-admin's own session is scoped to it, exactly like any other user's
+ * session. Cross-tenant access is NOT a property of the role — it requires an
+ * explicit, time-boxed support session (src/lib/fgmp/support-session.ts and
+ * docs/SUPERADMIN.md).
  *
  * Credentials (demo only — rotate on first login):
  *   email:    superadmin@fgmp.telecom

@@ -70,8 +70,11 @@ const userSelect = {
  * `SUPER_OR_ADMIN`, so the list was strictly weaker than the detail view —
  * an inversion. It now requires the same `ROLES.SUPER_OR_ADMIN` set.
  *
- * SUPERADMIN still sees users across ALL tenants (`tenantWhereOrAll`);
- * everyone else is pinned to their own tenant.
+ * A super-admin must NAME the tenant to read another one (`?tenant=t-…`): their
+ * session carries `t-platform`, and a session that carried every tenant would
+ * make "which tenant am I acting as" unknowable. Without the parameter they see
+ * their own tenant, exactly like everybody else. Everyone else is pinned to
+ * their own tenant and any `?tenant=` is ignored rather than refused.
  *
  * Query params (all optional):
  *   - limit  : page size, default 500, max 1000 (`parseIntParam`, so junk
@@ -112,6 +115,7 @@ export async function GET(req: NextRequest) {
       fallback: 0,
     });
 
+    const scope = resolveTenantScope(me, searchParams.get("tenant"));
     const where = tenantWhereOrAll(me);
     // ── Tenant scoping ────────────────────────────────────────────────────
     // `tenantWhereOrAll` builds a WHERE, but a WHERE alone does NOT satisfy
@@ -119,10 +123,11 @@ export async function GET(req: NextRequest) {
     // this returned zero users and an X-Total-Count of 0 for every caller
     // while returning HTTP 200.
     //
-    // Scoped to the CALLER's tenant. A super-admin's unfiltered list is a
-    // deliberate cross-tenant capability and is preserved via the where clause;
-    // the counts for a non-superadmin cannot reach another tenant's rows.
-    const [users, total] = await asTenant(me, (tx) =>
+    // Scoped to `scope.tenantId`: the caller's own tenant, or — for a
+    // super-admin who named one — that tenant, through the helper that
+    // re-checks the role. `tenantWhereOrAll` supplies the row filter for a
+    // super-admin ({}), but the CONTEXT is what makes RLS return rows at all.
+    const [users, total] = await scope.run((tx) =>
       Promise.all([
         tx.user.findMany({
           where,

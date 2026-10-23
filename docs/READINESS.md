@@ -218,7 +218,7 @@ bun run check:env          # expect errors in a bare checkout — that is the po
 bunx prisma generate       # needs a query engine binary (see §8)
 npx tsc --noEmit           # 0 errors
 npx eslint .               # 0 errors, 0 warnings
-bun test                   # 736 pass, 13 skip, 0 fail without a database
+bun test                   # 0 fail without a database (some suites skip)
 bun run build              # standalone output
 ```
 
@@ -309,3 +309,67 @@ exits 1 and prints the host and role. That check found two defects of its own:
 **Still not checked by hand:** anything that goes through Prisma — every
 authenticated view, and the seed — for the engine reason above. The
 authenticated UI therefore remains a CI-and-review claim, not an observed one.
+
+## 11. Provisioning a hosted database, and platform administration
+
+Two things were added after the sections above, both prompted by the question
+"can this be made ready without access to the database from this sandbox?".
+
+**A SQL provisioning path (`scripts/supabase/`).** Four scripts take a fresh
+hosted PostgreSQL — Supabase, RDS, anything without Docker — to a working,
+populated, tenant-isolated deployment:
+
+| file | what it does |
+|---|---|
+| `01-roles.sql` | creates `fgmp_app` (DML only), `fgmp_ops` (`BYPASSRLS`), `fgmp_migrate` (owns the schema); grants `CREATE` on `public` (PostgreSQL 15+ makes it owned by `pg_database_owner`); sets default privileges for **both** `fgmp_migrate` and `postgres`; asserts the resulting posture |
+| `02-schema.sql` | GENERATED from `prisma/migrations` (25 migrations); runs under `set role fgmp_migrate` so a later `prisma migrate deploy` as that role can `ALTER` the tables; records all 25 migrations in `_prisma_migrations` with Prisma's own sha256 checksums, so a subsequent `migrate deploy` is a no-op; revokes the bookkeeping table from both application roles |
+| `03-seed.sql` | 2 tenants, 6 users, the Yemen geography tree, 8 sites with tanks/generators/batteries/dispensers/IoT devices, 5 alarms, 4 deliveries, 3 tickets, 12 fuel transactions. Idempotent |
+| `04-verify.sql` | asserts, as each role: 0 rows without a context; the right rows inside it; no DDL; no writes to `_prisma_migrations`; platform tables global and the trail append-only |
+
+Verified end-to-end on a clean PostgreSQL 16.2 (no TimescaleDB — the closest
+reproduction of a hosted database available here), twice, from an empty
+database:
+
+```
+FGMP roles ready in database fgmp5.
+FGMP schema applied: 45 tables, 39 with FORCE RLS, 51 policies, 4 DML grants on "User" for fgmp_app.
+FGMP seed ready: 2 tenants, 6 users, 8 sites, 8 tanks, 8 generators, 8 dispensers, 5 alarms, 12 fuel transactions.
+OK: fgmp_app sees 0 sites with no tenant context.
+OK: t-default -> 8 sites, 5 users; t-platform -> 0 sites; 2 tenant(s) resolvable.
+OK: fgmp_app cannot create tables.
+OK: fgmp_app cannot modify Prisma migration history.
+OK: fgmp_ops (BYPASSRLS) sees 8 sites across all tenants.
+OK: platform tables are global, and the platform audit trail is append-only for fgmp_app.
+FGMP deployment verified.
+```
+
+Two findings from that work are fixed in the scripts rather than left for an
+operator: a fresh role cannot `CREATE` in `public` on PostgreSQL 15+, and a
+hosted database never grants `SUPERUSER`, so `fgmp_migrate` is subject to FORCE
+RLS and a two-tenant seed fails its `WITH CHECK` (the README documents the three
+ways out; the SQL seed sidesteps it).
+
+`02-schema.sql` is generated and a test fails when it drifts from
+`prisma/migrations`, so a new migration cannot silently leave the hosted path
+behind.
+
+**Platform administration (`docs/SUPERADMIN.md`).** `SUPERADMIN` no longer
+implies standing cross-tenant reads — it never actually provided them, because
+every tenant-scoped route runs inside `asTenant(me, …)` and the role's own tenant
+is `t-platform`. The replacement is a control plane (tenants, grants, counts,
+audit) plus just-in-time support sessions: one tenant, one reason, a ticket for
+write mode, an expiry enforced against the row, a signed user-bound cookie, and
+the access recorded both in the platform trail and in the tenant's own audit
+log. A partial unique index makes "one operator cannot hold two tenants" a
+database property rather than a code convention.
+
+The four false claims this corrected are listed in `docs/SUPERADMIN.md` §8. The
+most instructive: `/api/fgmp/audit` failed closed (a super-admin saw only their
+own tenant) while its comment claimed the opposite — the code was safe, the
+claim was not.
+
+**Still unverified:** the Supabase instance itself (outbound access is blocked
+from this sandbox, so the scripts were exercised against a local PostgreSQL
+instead), the authenticated UI, and any Prisma query path (§8). The platform
+routes are covered by invariant tests and a source-level authorisation scan, but
+have not been exercised against a generated client here.

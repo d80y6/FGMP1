@@ -108,13 +108,18 @@ curl -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3210/    # 200
 | FIELD_ENGINEER | `field.engineer@fgmp.telecom` | `Admin@2026` |
 
 There is no `/signin` route: `/` prompts in place, so a 404 on `/signin` is
-correct.
+correct. `/login` is an alias that redirects to `/` (with a same-origin
+`callbackUrl` preserved), because that is the URL people actually type.
 
 ### Four checks that prove the most
 
 **A. Dashboard — tenant scoping is real.** As ADMIN expect 52 sites, 84 tanks,
-76 generators; as SUPERADMIN the counts change because that role spans tenants.
-Open **Tenant Isolation**: a foreign-tenant ID must never appear.
+76 generators. As SUPERADMIN the dashboard shows the PLATFORM tenant's figures
+(`t-platform`: no sites), not every tenant's — a super-admin's ordinary session
+is scoped like anybody else's. Cross-tenant data is reached only through a
+support session (`docs/SUPERADMIN.md`), which shows a banner and is recorded in
+the target tenant's audit log. Open **Tenant Isolation**: a foreign-tenant ID
+must never appear.
 
 **B. Generators → issue START/STOP.** The correct answer is `NO_TRANSPORT`:
 

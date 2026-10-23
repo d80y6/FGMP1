@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { bootstrap } from "@/lib/fgmp";
-import { asTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
+import { resolveTenantScope } from "@/lib/fgmp/route-tenant";
+import {
+  countOtherActiveSuperAdmins,
+  countOtherActiveTenantAdmins,
+  evaluateGrantChange,
+  removesRole,
+} from "@/lib/fgmp/grant-guards";
 import {
   requireRole,
   ROLES,
@@ -129,8 +135,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   //
   // Cross-tenant and non-existent ids are both null here, so this cannot be
   // used to enumerate user ids.
-  const user = await asTenant(me, (tx) =>
-    tx.user.findFirst({ where: { id, tenantId: me.tenantId }, select: userSelect }),
+  const scope = resolveTenantScope(me, new URL(req.url).searchParams.get("tenant"));
+  const user = await scope.run((tx) =>
+    tx.user.findFirst({ where: { id, tenantId: scope.tenantId }, select: userSelect }),
   );
   const denied = assertTenantOwned(user, me);
   if (denied) return denied;
@@ -178,9 +185,12 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
     );
   }
 
-  const existing = await asTenant(me, (tx) =>
-    tx.user.findFirst({ where: { id, tenantId: me.tenantId } }),
-  );
+  // A super-admin may name the tenant (`?tenant=`); everybody else is pinned to
+  // their own. See resolveTenantScope for why naming is required rather than
+  // inferred.
+  const scope = resolveTenantScope(me, new URL(req.url).searchParams.get("tenant"));
+
+  const existing = await scope.run((tx) => tx.user.findFirst({ where: { id, tenantId: scope.tenantId } }));
   const denied = assertTenantOwned(existing, me);
   if (denied) return denied;
   const guarded = guardSuperAdminTarget(existing, me);
@@ -193,6 +203,34 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
     );
   }
 
+  // Privilege rules (self-grant, last administrator, last super-admin). The
+  // counts are read in the same tenant context as the write below.
+  if (existing) {
+    const next = { role: parsed.data.role, active: parsed.data.active };
+    const needsTenantCount = removesRole(existing, next);
+    const otherActiveAdminsInTenant = needsTenantCount
+      ? await scope.run((tx) => countOtherActiveTenantAdmins(tx, scope.tenantId, existing.id))
+      : 0;
+    const otherActiveSuperAdmins =
+      needsTenantCount && existing.role === "SUPERADMIN"
+        ? await countOtherActiveSuperAdmins(existing.id)
+        : 0;
+    const refusal = evaluateGrantChange({
+      actorId: me.id,
+      actorRole: me.role,
+      targetId: existing.id,
+      targetRole: existing.role,
+      targetActive: existing.active,
+      newRole: parsed.data.role,
+      newActive: parsed.data.active,
+      otherActiveAdminsInTenant,
+      otherActiveSuperAdmins,
+    });
+    if (refusal) {
+      return NextResponse.json({ error: refusal.error, code: refusal.code }, { status: refusal.status });
+    }
+  }
+
   const data: Record<string, unknown> = {};
   if (parsed.data.name !== undefined) data.name = parsed.data.name;
   if (parsed.data.role !== undefined) data.role = parsed.data.role;
@@ -203,9 +241,9 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
   // ownership re-read below happens in the SAME transaction as the write, so a
   // row that changed tenants between the authorising read and this write cannot
   // be clobbered.
-  const updated = await asTenant(me, async (tx) => {
+  const updated = await scope.run(async (tx) => {
     const owned = await tx.user.findFirst({
-      where: { id, tenantId: me.tenantId },
+      where: { id, tenantId: scope.tenantId },
       select: { id: true },
     });
     if (!owned) return null;
@@ -217,7 +255,7 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
 
   await audit({
     userId: me.id,
-    tenantId: tenantIdOrThrow(me.tenantId),
+    tenantId: scope.tenantId,
     action: "USER_UPDATE",
     entity: "User",
     entityId: id,
@@ -259,19 +297,54 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     );
   }
 
-  const existing = await asTenant(me, (tx) =>
-    tx.user.findFirst({ where: { id, tenantId: me.tenantId } }),
-  );
+  const scope = resolveTenantScope(me, new URL(req.url).searchParams.get("tenant"));
+
+  const existing = await scope.run((tx) => tx.user.findFirst({ where: { id, tenantId: scope.tenantId } }));
   const denied = assertTenantOwned(existing, me);
   if (denied) return denied;
   const guarded = guardSuperAdminTarget(existing, me);
   if (guarded) return guarded;
 
+  // Deactivating the last administrator would leave the tenant with nobody who
+  // can manage it; the same rule as PUT, applied to the flag this route owns.
+  if (existing && existing.role === "ADMIN" && body.active === false) {
+    const others = await scope.run((tx) => countOtherActiveTenantAdmins(tx, scope.tenantId, existing.id));
+    const refusal = evaluateGrantChange({
+      actorId: me.id,
+      actorRole: me.role,
+      targetId: existing.id,
+      targetRole: existing.role,
+      targetActive: existing.active,
+      newActive: body.active,
+      otherActiveAdminsInTenant: others,
+      otherActiveSuperAdmins: 0,
+    });
+    if (refusal) {
+      return NextResponse.json({ error: refusal.error, code: refusal.code }, { status: refusal.status });
+    }
+  }
+  if (existing && existing.role === "SUPERADMIN" && body.active === false) {
+    const others = await countOtherActiveSuperAdmins(existing.id);
+    const refusal = evaluateGrantChange({
+      actorId: me.id,
+      actorRole: me.role,
+      targetId: existing.id,
+      targetRole: existing.role,
+      targetActive: existing.active,
+      newActive: body.active,
+      otherActiveAdminsInTenant: 0,
+      otherActiveSuperAdmins: others,
+    });
+    if (refusal) {
+      return NextResponse.json({ error: refusal.error, code: refusal.code }, { status: refusal.status });
+    }
+  }
+
   // Ownership re-asserted inside the writing transaction — `update` takes a
   // unique selector so tenantId cannot be part of it.
-  const updated = await asTenant(me, async (tx) => {
+  const updated = await scope.run(async (tx) => {
     const owned = await tx.user.findFirst({
-      where: { id, tenantId: me.tenantId },
+      where: { id, tenantId: scope.tenantId },
       select: { id: true },
     });
     if (!owned) return null;
@@ -283,7 +356,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
   await audit({
     userId: me.id,
-    tenantId: tenantIdOrThrow(me.tenantId),
+    tenantId: scope.tenantId,
     action: body.active ? "USER_ACTIVATE" : "USER_DEACTIVATE",
     entity: "User",
     entityId: id,
@@ -315,19 +388,43 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     );
   }
 
-  const existing = await asTenant(me, (tx) =>
-    tx.user.findFirst({ where: { id, tenantId: me.tenantId } }),
-  );
+  const scope = resolveTenantScope(me, new URL(req.url).searchParams.get("tenant"));
+
+  const existing = await scope.run((tx) => tx.user.findFirst({ where: { id, tenantId: scope.tenantId } }));
   const denied = assertTenantOwned(existing, me);
   if (denied) return denied;
   const guarded = guardSuperAdminTarget(existing, me);
   if (guarded) return guarded;
 
+  // Soft-delete is a deactivation, so the last-administrator rule applies here
+  // too. Guarding only PATCH and PUT would leave this hole open.
+  if (existing && (existing.role === "ADMIN" || existing.role === "SUPERADMIN")) {
+    const otherAdmins =
+      existing.role === "ADMIN"
+        ? await scope.run((tx) => countOtherActiveTenantAdmins(tx, scope.tenantId, existing.id))
+        : 0;
+    const otherSupers =
+      existing.role === "SUPERADMIN" ? await countOtherActiveSuperAdmins(existing.id) : 0;
+    const refusal = evaluateGrantChange({
+      actorId: me.id,
+      actorRole: me.role,
+      targetId: existing.id,
+      targetRole: existing.role,
+      targetActive: existing.active,
+      newActive: false,
+      otherActiveAdminsInTenant: otherAdmins,
+      otherActiveSuperAdmins: otherSupers,
+    });
+    if (refusal) {
+      return NextResponse.json({ error: refusal.error, code: refusal.code }, { status: refusal.status });
+    }
+  }
+
   // Ownership re-asserted inside the writing transaction — `update` takes a
   // unique selector so tenantId cannot be part of it.
-  const updated = await asTenant(me, async (tx) => {
+  const updated = await scope.run(async (tx) => {
     const owned = await tx.user.findFirst({
-      where: { id, tenantId: me.tenantId },
+      where: { id, tenantId: scope.tenantId },
       select: { id: true },
     });
     if (!owned) return null;
@@ -339,7 +436,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
 
   await audit({
     userId: me.id,
-    tenantId: tenantIdOrThrow(me.tenantId),
+    tenantId: scope.tenantId,
     action: "USER_DEACTIVATE",
     entity: "User",
     entityId: id,

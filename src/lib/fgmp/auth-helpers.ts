@@ -260,11 +260,20 @@ for (const [key, value] of ROLE_SET_ENTRIES) {
 }
 
 // ── Super-admin helpers (Task 49) ───────────────────────────────────────────
-// SUPERADMIN is the platform-level role: it bypasses tenant isolation
-// entirely. These helpers let route handlers express "all tenants for
-// super-admin, own tenant for everyone else" in one line.
+// SUPERADMIN is the platform-level role. It does NOT bypass tenant isolation:
+// no role does, and no connection in the request path has BYPASSRLS. What the
+// role gets is the platform API surface (/api/fgmp/platform/**) plus the right
+// to NAME another tenant explicitly on the user routes.
+//
+// These helpers answer "is this person a platform operator?", which is a
+// question about the ROUTE's policy. They must not be used to widen a tenant
+// filter: a WHERE clause cannot widen RLS (see docs/SUPERADMIN.md §8, and the
+// audit route for a measured example of a comment that claimed otherwise).
+//
+// Cross-tenant ACCESS is a separate, time-boxed grant:
+// src/lib/fgmp/support-session.ts.
 
-/** Whether the authenticated user is a platform super-admin (cross-tenant). */
+/** Whether the authenticated user is a platform super-admin. */
 export function isSuperAdminUser(user: { role?: string } | null | undefined): boolean {
   return isSuperAdmin(user?.role);
 }

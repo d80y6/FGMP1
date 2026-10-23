@@ -91,9 +91,13 @@ and a checkbox.
 **SUPERADMIN first. The lead's framing was right and my earlier ordering was
 under-argued.**
 
-- SUPERADMIN can read **every tenant's** data. It is the highest-blast-radius
-  credential in the system, and it spans tenants, so it is the one whose
-  compromise is worst.
+- SUPERADMIN can obtain access to **any tenant's** data — but only one tenant at
+  a time, through an explicit, time-boxed support session that records a reason
+  and is visible in that tenant's own audit log (see `docs/SUPERADMIN.md`).
+  Because the reachable blast radius is the whole platform, it is still the
+  credential whose compromise is worst. It is **not** true that a super-admin's
+  ordinary session spans tenants: every tenant-scoped route runs in the caller's
+  own tenant context, and `SUPERADMIN` is no exception.
 - It is the **smallest population** — usually one or two people. So a mistake in
   the enrolment or recovery flow has a tiny blast radius while it is being
   shaken out in production.

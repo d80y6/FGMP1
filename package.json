@@ -17,6 +17,7 @@
     "db:deploy": "prisma migrate deploy",
     "db:reset": "prisma migrate reset",
     "db:seed": "bun run scripts/db/seed.ts",
+    "user:set-password": "bun run scripts/set-password.ts",
     "test:rls": "bun run scripts/verify/rls-regression.ts",
     "test:smoke": "bun run scripts/verify/smoke-postgres.ts",
     "seed:admin": "bun run scripts/db/seed-admin.ts",

@@ -98,6 +98,38 @@ begin
   raise notice 'OK: fgmp_ops (BYPASSRLS) sees % sites across all tenants.', v_ops_sees;
 end $$;
 
+-- ── 5. Platform tables: global by design, and append-only for the app ──────
+-- `SupportSession` and `PlatformAuditLog` carry no tenantId and are deliberately
+-- NOT under RLS (see 20261023000000_platform_support_access). What replaces the
+-- policy is narrow API access plus these privilege assertions: the application
+-- may open and close support sessions, and may append to the platform trail, but
+-- it may not rewrite or delete what it appended.
+do $$
+declare
+  v_rls boolean;
+  v_app_update boolean;
+  v_app_delete boolean;
+begin
+  select relrowsecurity into v_rls from pg_class where relname = 'PlatformAuditLog';
+  if v_rls then
+    raise exception 'PlatformAuditLog has RLS enabled. It is platform-global by design; a tenant policy here would hide the trail from the operators who must read it.';
+  end if;
+
+  select bool_or(privilege_type = 'UPDATE'), bool_or(privilege_type = 'DELETE')
+    into v_app_update, v_app_delete
+    from information_schema.role_table_grants
+   where table_name = 'PlatformAuditLog' and grantee = 'fgmp_app';
+
+  if coalesce(v_app_update, false) then
+    raise exception 'fgmp_app can UPDATE "PlatformAuditLog". The platform trail must be append-only for the application role.';
+  end if;
+  if coalesce(v_app_delete, false) then
+    raise exception 'fgmp_app can DELETE from "PlatformAuditLog". The platform trail must be append-only for the application role.';
+  end if;
+
+  raise notice 'OK: platform tables are global, and the platform audit trail is append-only for fgmp_app.';
+end $$;
+
 do $$
 begin
   raise notice 'FGMP deployment verified.';

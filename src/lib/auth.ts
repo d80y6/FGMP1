@@ -249,6 +249,34 @@ export const authOptions: NextAuthOptions = {
           return null;
         }
 
+        // ── Demo-credential rotation ────────────────────────────────────────
+        // The password just verified. If it is one of the values published in
+        // the seed files, a production deployment refuses the login unless the
+        // operator explicitly opted in. This runs BEFORE the counters are
+        // reset, so a refused demo login does not look like a successful one in
+        // the audit trail.
+        //
+        // The plaintext is only available here, which is why the check lives in
+        // authorize() rather than in a hook that sees only the hash.
+        const demoDecision = evaluateDemoCredential(password);
+        if (demoDecision === "refuse") {
+          console.warn(
+            `[auth] refused login for ${user.email}: the account still uses a published demo password and FGMP_ALLOW_DEMO_CREDENTIALS is not set. ` +
+              "Rotate it with the reset-password endpoint or scripts/set-password.ts.",
+          );
+          // Return the SAME null as a wrong password. The client cannot tell
+          // "this account exists but is misconfigured" from "wrong password",
+          // so this is not an enumeration oracle; the operator gets the real
+          // reason from the log line above. (Throwing would surface a 500 on
+          // the sign-in page and make the failure look like a server fault.)
+          return null;
+        }
+        if (demoDecision === "allow-with-warning") {
+          console.warn(
+            `[auth] ${user.email} signed in with a PUBLISHED demo password. FGMP_ALLOW_DEMO_CREDENTIALS=1 permits this; do not run a real deployment this way.`,
+          );
+        }
+
         // Success — reset counters + stamp lastLoginAt.
         await updateAuthUser(user.id, {
           lastLoginAt: new Date(),

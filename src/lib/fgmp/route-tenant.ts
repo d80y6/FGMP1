@@ -241,3 +241,47 @@ export async function findOwnedMany<T extends { tenantId: string }>(
   const rows = await model.findMany({ where: { id: { in: ids }, tenantId } });
   return rows.filter((r) => r.tenantId === tenantId);
 }
+/**
+ * Resolve which tenant a request acts for, when the caller is allowed to name it.
+ *
+ * ── WHY THIS EXISTS ────────────────────────────────────────────────────────
+ * A super-admin's session carries ONE tenant (`t-platform`, the tenant that owns
+ * platform accounts). Every helper above is built on that assumption, so a
+ * super-admin listing users "cross-tenant" through `tenantWhereOrAll() inside
+ * asTenant(me, …)` actually got the platform tenant's users and a silent, wrong
+ * answer — the same class of bug as the audit route.
+ *
+ * The fix is NOT to let the session wander. It is to require the caller to NAME
+ * the tenant explicitly, and to funnel that name through the helper that already
+ * re-checks SUPERADMIN at the point the privilege is used
+ * (`asTenantForAnotherTenant`). A tenant admin that supplies `?tenant=` is
+ * ignored rather than refused: their own scope is the only legal one, and
+ * "ignore" cannot be turned into an oracle for whether a tenant id exists.
+ *
+ * Returns a tenant id plus a `run` that opens the right context. Callers should
+ * prefer `run` over inspecting `tenantId`, because `tenantId` is informational
+ * (used for audit rows) while `run` is what actually applies the policy.
+ */
+export function resolveTenantScope(
+  user: Pick<SessionUser, "tenantId" | "role">,
+  requestedTenantId?: string | null,
+): { tenantId: string; crossTenant: boolean; run: <T>(fn: (tx: TenantScopedClient) => Promise<T>) => Promise<T> } {
+  const own = tenantIdOrThrow(user.tenantId);
+  const requested = typeof requestedTenantId === "string" ? requestedTenantId.trim() : "";
+  if (!requested || requested === own) {
+    return { tenantId: own, crossTenant: false, run: (fn) => withTenant(own, fn) };
+  }
+  if (!isSuperAdmin(user.role)) {
+    // Ignoring the request is the safe answer, and it is also the honest one:
+    // the caller cannot distinguish "tenant exists but you may not use it" from
+    // "tenant does not exist" here, so no enumeration.
+    return { tenantId: own, crossTenant: false, run: (fn) => withTenant(own, fn) };
+  }
+  return {
+    tenantId: requested,
+    crossTenant: true,
+    // Re-checks SUPERADMIN inside, so the privilege cannot be obtained by
+    // reaching this line with a hand-built object.
+    run: (fn) => asTenantForAnotherTenant(user, requested, fn),
+  };
+}

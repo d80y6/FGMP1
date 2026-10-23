@@ -49,7 +49,10 @@ PostgreSQL is reachable only on `127.0.0.1:5433` for local tooling.
 
 Seeding is a deploy-time step, not something the web app does on first request:
 it spans tenants and creates them, so it needs the owner role. Keeping it out of
-`bootstrap()` is why the app can run without that credential.
+`bootstrap()` is why the app can run without that credential. (Platform
+administration at runtime — the tenant list, support sessions, grants — does NOT
+need that role: it runs as `fgmp_app` and reads one tenant at a time. See
+`docs/SUPERADMIN.md`.)
 
 ### Creating the first administrator
 
