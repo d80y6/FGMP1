@@ -42,6 +42,7 @@ import {
 } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 import { cn } from "@/lib/utils";
+import { fmtDateTime, fmtTime } from "@/lib/fgmp/format";
 
 /* ────────────────────────────────────────────────────────────────────────
  * Types — mirror of the HealthResponse interface exported by
@@ -68,7 +69,7 @@ interface HealthResponse {
     external: number;
   };
   database: {
-    type: "sqlite";
+    type: "postgres";
     sizeBytes: number;
     sizeMB: number;
     path: string;
@@ -106,46 +107,6 @@ const ONE_HOUR_MS = 60 * 60 * 1000;
 /* ────────────────────────────────────────────────────────────────────────
  * Helpers
  * ──────────────────────────────────────────────────────────────────────── */
-
-/** Localize a Date ISO string → readable HH:MM:SS in the active language. */
-function fmtTime(iso: string, lang: Language): string {
-  try {
-    const d = new Date(iso);
-    if (lang === "ar") {
-      try {
-        return d.toLocaleTimeString("ar-SA-u-nu-arab", {
-          hour12: false,
-          timeZone: "Asia/Aden",
-        });
-      } catch {
-        return d.toLocaleTimeString("en-GB", { hour12: false });
-      }
-    }
-    return d.toLocaleTimeString("en-GB", { hour12: false, timeZone: "Asia/Aden" });
-  } catch {
-    return iso;
-  }
-}
-
-/** Localize a Date ISO string → readable YYYY-MM-DD HH:MM:SS. */
-function fmtDateTimeLocal(iso: string, lang: Language): string {
-  try {
-    const d = new Date(iso);
-    if (lang === "ar") {
-      try {
-        return d.toLocaleString("ar-SA-u-nu-arab", {
-          hour12: false,
-          timeZone: "Asia/Aden",
-        });
-      } catch {
-        return d.toLocaleString("en-GB", { hour12: false });
-      }
-    }
-    return d.toLocaleString("en-GB", { hour12: false, timeZone: "Asia/Aden" });
-  } catch {
-    return iso;
-  }
-}
 
 /* ────────────────────────────────────────────────────────────────────────
  * Main view
@@ -601,7 +562,7 @@ export function SystemHealthView() {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <DbMeta
               label={t("systemHealth.dbType")}
-              value={data?.database.type ?? "sqlite"}
+              value={data?.database.type ?? "postgres"}
               mono
             />
             <DbMeta
@@ -712,7 +673,7 @@ export function SystemHealthView() {
                   {data.errors.map((e, i) => (
                     <TableRow key={`${e.timestamp}-${i}-${e.path}`}>
                       <TableCell className="text-[11px] text-muted-foreground whitespace-nowrap font-mono" dir="ltr">
-                        {fmtDateTimeLocal(e.timestamp, numLang)}
+                        {fmtDateTime(e.timestamp, numLang)}
                       </TableCell>
                       <TableCell className="whitespace-nowrap">
                         <Badge variant="outline" className="text-[10px] font-mono">

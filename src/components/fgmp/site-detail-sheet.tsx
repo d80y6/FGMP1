@@ -30,16 +30,10 @@ import { cn } from "@/lib/utils";
 import type { GenCommand } from "@/lib/fgmp/types";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
-import { translate, type Language } from "@/lib/fgmp/i18n";
+import type { Language } from "@/lib/fgmp/i18n";
+import { alarmTypeLabel } from "@/lib/fgmp/labels";
 import { toast } from "sonner";
 
-/** Resolve an alarm type enum value to its localized display label. */
-function alarmTypeLabel(type: string, lang: Language): string {
-  if (!type) return "";
-  const key = `alarm.${type}`;
-  const translated = translate(key, lang);
-  return translated === key ? type.replace(/_/g, " ") : translated;
-}
 
 export function SiteDetailSheet({ siteId, open, onOpenChange }: { siteId: string | null; open: boolean; onOpenChange: (v: boolean) => void }) {
   const t = useT();

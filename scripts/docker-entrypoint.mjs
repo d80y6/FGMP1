@@ -1,7 +1,7 @@
 /**
  * Container entrypoint: apply pending Prisma migrations, then exec the server.
  *
- * ── Why this replaced scripts/docker-init-db.js ─────────────────────────────
+ * ── Why this replaced scripts/db/docker-init-db.js ─────────────────────────────
  * The previous entrypoint ran `docker-init-db.js`, which was a SQLite-era
  * artifact: it imported `bun:sqlite`, and hard-exited unless DATABASE_URL began
  * with `file:`. Phase 1 migrated the datasource to PostgreSQL, so the shipped
@@ -88,11 +88,21 @@ function serverEnv() {
 }
 
 if (SKIP_MIGRATE) {
-  if (!process.env.FGMP_MIGRATE_DATABASE_URL) {
+  // No migration credential is required here on purpose. In the split model the
+  // app container is the one place that MUST NOT hold the owner URL
+  // (docker-compose deliberately never passes FGMP_MIGRATE_DATABASE_URL to it),
+  // so preflight runs against DATABASE_URL — a SELECT-only check that needs no
+  // DDL rights. Requiring the owner credential here contradicted the security
+  // model and made the documented "app starts with FGMP_SKIP_MIGRATE=1" path
+  // impossible to boot.
+  const checkUrl =
+    process.env.FGMP_MIGRATE_DATABASE_URL || process.env.DATABASE_URL || "";
+  if (!checkUrl) {
     fail(
-      "FGMP_SKIP_MIGRATE=1 is set but no migration credential was supplied. Run the " +
-        "migration job first (docker compose --profile migrate run --rm fgmp-migrate, " +
-        "or `prisma migrate deploy` in CI), then start the app.",
+      "FGMP_SKIP_MIGRATE=1 is set but neither FGMP_MIGRATE_DATABASE_URL nor " +
+        "DATABASE_URL was supplied, so the schema cannot be verified. Run the " +
+        "migration job first (docker compose --profile migrate run --rm fgmp-migrate), " +
+        "then start the app.",
     );
   }
 
@@ -104,7 +114,7 @@ if (SKIP_MIGRATE) {
   // least-privilege boundary.
   const { preflight } = await import("./db-preflight.mjs");
   const check = await preflight(
-    process.env.FGMP_MIGRATE_DATABASE_URL || process.env.DATABASE_URL || "",
+    checkUrl,
     Number(process.env.FGMP_PREFLIGHT_TIMEOUT_MS || 15000),
   );
   if (!check.ok) {

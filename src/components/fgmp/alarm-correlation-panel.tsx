@@ -8,15 +8,9 @@ import { Network, AlertTriangle, Clock, MapPin, TrendingUp } from "lucide-react"
 import { cn } from "@/lib/utils";
 import { timeAgo } from "@/lib/fgmp/format";
 import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
-import { translate, type Language } from "@/lib/fgmp/i18n";
+import type { Language } from "@/lib/fgmp/i18n";
+import { alarmTypeLabel } from "@/lib/fgmp/labels";
 
-/** Resolve an alarm type enum value to its localized display label. */
-function alarmTypeLabel(type: string, lang: Language): string {
-  if (!type) return "";
-  const key = `alarm.${type}`;
-  const translated = translate(key, lang);
-  return translated === key ? type.replace(/_/g, " ") : translated;
-}
 
 interface Alarm {
   id: string;

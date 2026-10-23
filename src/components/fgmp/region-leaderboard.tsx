@@ -1,5 +1,6 @@
 "use client";
 
+import { scoreBarClass, scoreTextClass } from "./score-tone";
 import { useEffect, useMemo, useState } from "react";
 import {
   Crown, Trophy, TrendingUp, Building2, Siren, Droplet, Zap, ChevronRight,
@@ -83,18 +84,6 @@ function computeScore(r: LeaderboardRegion, totalSites: number): ScoredRegion {
   );
 
   return { ...r, score, factors: { stability, fuelAvail, genActivity, coverage } };
-}
-
-function scoreColorClasses(score: number): string {
-  if (score >= 85) return "text-emerald-500";
-  if (score >= 70) return "text-amber-500";
-  return "text-rose-500";
-}
-
-function scoreBarGradient(score: number): string {
-  if (score >= 85) return "bg-gradient-to-r from-emerald-500 to-emerald-400";
-  if (score >= 70) return "bg-gradient-to-r from-amber-500 to-amber-400";
-  return "bg-gradient-to-r from-rose-500 to-rose-400";
 }
 
 function rankBadgeClasses(rank: number): string {
@@ -216,7 +205,7 @@ export function RegionLeaderboard({ regions, totalSites, onSelectRegion }: Regio
                         <div
                           className={cn(
                             "h-full rounded-full transition-all duration-700 ease-out",
-                            scoreBarGradient(r.score),
+                            scoreBarClass(r.score),
                           )}
                           style={{ width: `${widthPct}%` }}
                         />
@@ -224,7 +213,7 @@ export function RegionLeaderboard({ regions, totalSites, onSelectRegion }: Regio
                       <span
                         className={cn(
                           "w-9 text-right text-sm font-bold tabular-nums",
-                          scoreColorClasses(r.score),
+                          scoreTextClass(r.score),
                         )}
                       >
                         {r.score}
@@ -237,7 +226,7 @@ export function RegionLeaderboard({ regions, totalSites, onSelectRegion }: Regio
                         <div
                           className={cn(
                             "h-full rounded-full transition-all duration-700 ease-out",
-                            scoreBarGradient(r.score),
+                            scoreBarClass(r.score),
                           )}
                           style={{ width: `${widthPct}%` }}
                         />
@@ -245,7 +234,7 @@ export function RegionLeaderboard({ regions, totalSites, onSelectRegion }: Regio
                       <span
                         className={cn(
                           "w-8 text-right text-sm font-bold tabular-nums",
-                          scoreColorClasses(r.score),
+                          scoreTextClass(r.score),
                         )}
                       >
                         {r.score}

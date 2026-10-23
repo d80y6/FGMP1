@@ -52,9 +52,9 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { toast } from "sonner";
 import { ConfirmDestructive, useDestructiveConfirm } from "@/components/fgmp/confirm-destructive";
 import { fmtDateTime } from "@/lib/fgmp/format";
-import { useT, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { useT, useDir, useArabicNumerals, formatNumber, toArabicNumerals } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
-import { translate } from "@/lib/fgmp/i18n";
+import { alarmTypeLabel } from "@/lib/fgmp/labels";
 
 /* ────────────────────────────────────────────────────────────────────────
  * Types & constants
@@ -95,13 +95,6 @@ const ROLE_OK = new Set(["ADMIN", "NOC_OPERATOR", "REGIONAL_MANAGER"]);
  * Helpers
  * ──────────────────────────────────────────────────────────────────────── */
 
-/** Resolve an alarm type enum value to its localized display label. */
-function alarmTypeLabel(type: string | null, lang: Language): string {
-  if (!type) return "";
-  const key = `alarm.${type}`;
-  const translated = translate(key, lang);
-  return translated === key ? type.replace(/_/g, " ") : translated;
-}
 
 /** Format a millisecond duration as "1h 5m" / "3m 10s" / "expired". */
 function fmtDuration(ms: number, lang: Language): string {
@@ -115,12 +108,7 @@ function fmtDuration(ms: number, lang: Language): string {
   if (h > 0) s2 = `${h}h ${m}m`;
   else if (m > 0) s2 = `${m}m ${s}s`;
   else s2 = `${s}s`;
-  return (neg ? "-" : "") + (lang === "ar" ? toArabicDigitsLocal(s2) : s2);
-}
-
-function toArabicDigitsLocal(input: string): string {
-  const ARABIC_DIGITS = ["٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩"];
-  return input.replace(/[0-9]/g, (d) => ARABIC_DIGITS[Number(d)] ?? d);
+  return (neg ? "-" : "") + (lang === "ar" ? toArabicNumerals(s2) : s2);
 }
 
 /** Color tone for an active suppression card based on remaining time. */

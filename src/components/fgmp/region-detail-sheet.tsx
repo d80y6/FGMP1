@@ -1,5 +1,6 @@
 "use client";
 
+import { scoreBadgeClass, scoreBarClass, scoreTextClass } from "./score-tone";
 import { computeSiteHealth as computeCanonicalSiteHealth } from "@/lib/health/site-health-score";
 import type React from "react";
 import { useMemo } from "react";
@@ -30,15 +31,9 @@ import {
   ShieldCheck, Gauge, ListChecks,
 } from "lucide-react";
 import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
-import { translate, type Language } from "@/lib/fgmp/i18n";
+import type { Language } from "@/lib/fgmp/i18n";
+import { alarmTypeLabel } from "@/lib/fgmp/labels";
 
-/** Resolve an alarm type enum value to its localized display label. */
-function alarmTypeLabel(type: string, lang: Language): string {
-  if (!type) return "";
-  const key = `alarm.${type}`;
-  const translated = translate(key, lang);
-  return translated === key ? type.replace(/_/g, " ") : translated;
-}
 
 /* ------------------------------------------------------------------ */
 /*  Region score — a DIFFERENT metric from site health, deliberately.      */
@@ -113,23 +108,6 @@ function computeSiteHealth(
 /*  Style helpers                                                      */
 /* ------------------------------------------------------------------ */
 
-function scoreTextClass(score: number): string {
-  if (score >= 85) return "text-emerald-500";
-  if (score >= 70) return "text-amber-500";
-  return "text-rose-500";
-}
-
-function scoreBadgeClass(score: number): string {
-  if (score >= 85) return "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400";
-  if (score >= 70) return "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400";
-  return "border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400";
-}
-
-function scoreBarClass(score: number): string {
-  if (score >= 85) return "bg-gradient-to-r from-emerald-500 to-emerald-400";
-  if (score >= 70) return "bg-gradient-to-r from-amber-500 to-amber-400";
-  return "bg-gradient-to-r from-rose-500 to-rose-400";
-}
 
 /** Severity chip — task spec: L1 sky, L2 amber, L3 rose. */
 function severityChipClass(sev: string): string {

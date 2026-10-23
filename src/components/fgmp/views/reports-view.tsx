@@ -19,23 +19,9 @@ import { fmtDateTime } from "@/lib/fgmp/format";
 import { csvFilename, type CsvColumn } from "@/lib/fgmp/csv-export";
 import { useT, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
-import { translate } from "@/lib/fgmp/i18n";
+import { alarmTypeLabel, commandTypeLabel } from "@/lib/fgmp/labels";
 
-/** Resolve an alarm type enum value to its localized display label. */
-function alarmTypeLabel(type: string, lang: Language): string {
-  if (!type) return "";
-  const key = `alarm.${type}`;
-  const translated = translate(key, lang);
-  return translated === key ? type.replace(/_/g, " ") : translated;
-}
 
-/** Resolve a generator command enum value to its localized display label. */
-function commandTypeLabel(cmd: string, lang: Language): string {
-  if (!cmd) return "";
-  const key = `command.${cmd}`;
-  const translated = translate(key, lang);
-  return translated === key ? cmd.replace(/_/g, " ") : translated;
-}
 
 const PERIODS = [
   { value: "daily", labelKey: "reports.daily" },

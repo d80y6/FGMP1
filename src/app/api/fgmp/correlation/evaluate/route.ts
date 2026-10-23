@@ -31,7 +31,7 @@ export const dynamic = "force-dynamic";
  * A second run over an unchanged alarm stream must insert nothing. The
  * response reports `inserted` and `deduplicated` separately precisely so that
  * property is observable from the API rather than assumed; see
- * `scripts/correlation-idempotency-proof.ts`.
+ * `scripts/verify/correlation-idempotency-proof.ts`.
  *
  * Evaluates only the CALLER's tenant. There is no cross-tenant mode, because
  * there is no safe way to offer one: `evaluateAndPersist` scopes its reads and

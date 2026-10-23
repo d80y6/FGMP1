@@ -26,7 +26,7 @@ export const dynamic = "force-dynamic";
  * Returns:
  *   - uptime           : formatted "Xd Yh Zm" + raw `uptimeSeconds`
  *   - memory           : process.memoryUsage() converted to MB
- *   - database         : SQLite file size + TENANT-SCOPED row counts
+ *   - database         : PostgreSQL size + TENANT-SCOPED row counts
  *   - realtime         : hosted Apinator channels probe — `connected` reflects
  *                        a successful channels API call, `clients` is the sum
  *                        of subscription counts across `private-tenant-*`
@@ -46,7 +46,7 @@ export const dynamic = "force-dynamic";
  * ── LEAK FIXES ────────────────────────────────────────────────────────────
  * This endpoint previously disclosed three things to ANY tenant admin:
  *
- *  1. `database.path` was the ABSOLUTE SQLite path from `DATABASE_URL` —
+ *  1. `database.path` was the ABSOLUTE database path from `DATABASE_URL` —
  *     filesystem disclosure (mount layout, often the OS username).
  *  2. `tableCounts` ran UNSCOPED `db.*.count()`, so tenant A learned
  *     platform-wide row counts across all tenants (alarm/user/audit volume
@@ -75,6 +75,22 @@ export const dynamic = "force-dynamic";
  * that silently reports zeros when its privileged connection is unavailable is
  * precisely the monitoring lie this route previously told.
  */
+/**
+ * Database size in bytes, asked of PostgreSQL.
+ *
+ * This replaces `fs.statSync()` on a SQLite file. Since the Phase 1 move to
+ * PostgreSQL there is no file to stat, so the old branch reported 0 bytes for
+ * every deployment — a number that looks measured and is not. `pg_database_size`
+ * includes indexes and TOAST data, which is the figure an operator means by
+ * "how big is the database".
+ */
+async function databaseSize(client: PrismaClient): Promise<number> {
+  const rows = await client.$queryRaw<{ size: bigint | number }[]>`
+    SELECT pg_database_size(current_database()) AS size
+  `;
+  return Number(rows[0]?.size ?? 0);
+}
+
 async function opsCounts(twentyFourHoursAgo: Date) {
   const url =
     process.env.FGMP_OPS_DATABASE_URL ?? process.env.FGPS_OPS_DATABASE_URL ??
@@ -88,15 +104,17 @@ async function opsCounts(twentyFourHoursAgo: Date) {
   }
   const client = new PrismaClient({ datasources: { db: { url } } });
   try {
-    const [s, a, u, al, au] = await Promise.all([
+    const [s, a, u, al, au, size] = await Promise.all([
       client.site.count(),
       client.alarm.count(),
       client.user.count(),
       client.auditLog.count(),
       client.user.count({ where: { lastLoginAt: { gte: twentyFourHoursAgo } } }),
+      databaseSize(client),
     ]);
     return {
       sites: s, alarms: a, sensorReadings: 0, users: u, auditLogs: al, activeUsers: au,
+      sizeBytes: size,
       scopeMode: "platform" as const,
     };
   } finally {
@@ -142,12 +160,13 @@ export interface HealthResponse {
     external: number;
   };
   database: {
-    type: "sqlite";
+    type: "postgres";
     sizeBytes: number;
     sizeMB: number;
     /**
-     * Relative label only ("db/custom.db"). The absolute path from
-     * DATABASE_URL is a filesystem disclosure and is deliberately NOT returned.
+     * Database name only ("fgmp"). Credentials and host are deliberately NOT
+     * returned — the health payload is readable by any tenant ADMIN, and a
+     * connection string is an infrastructure disclosure.
      */
     path: string;
     /** True when the row counts below cover only the caller's tenant. */
@@ -208,8 +227,14 @@ export interface HealthResponse {
   scopeMode: "tenant" | "platform";
 }
 
-/** Relative, non-disclosing label for the live SQLite file. */
-const DB_PATH_DISPLAY = "db/custom.db";
+/** Non-disclosing label for the live database (name only, never the URL). */
+const DB_PATH_DISPLAY = (() => {
+  try {
+    return new URL(process.env.DATABASE_URL ?? "").pathname.replace(/^\//, "") || "fgmp";
+  } catch {
+    return "fgmp";
+  }
+})();
 
 const REDACTED_ERROR_MESSAGE = "(detail redacted — see server logs)";
 
@@ -252,31 +277,6 @@ function round2(n: number): number {
 /** Convert bytes to MB with 2-decimal precision. */
 function bytesToMb(bytes: number): number {
   return round2(bytes / BYTES_PER_MB);
-}
-
-/**
- * Resolve the on-disk SQLite path from the `DATABASE_URL` env var.
- * Supports both `file:/abs/path.db` and `file:./rel/path.db` shapes.
- * Returns the absolute path if resolvable, or null if the env var is
- * missing / unparseable (the caller falls back gracefully).
- */
-function resolveSqlitePath(): string | null {
-  const url = process.env.DATABASE_URL;
-  if (!url) return null;
-  if (url.startsWith("file:")) {
-    const raw = url.slice("file:".length);
-    // Absolute paths (leading / on POSIX, leading drive letter on Win)
-    if (raw.startsWith("/") || /^[A-Za-z]:[\\/]/.test(raw)) return raw;
-    // Relative path → resolve against process.cwd()
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { resolve } = require("node:path") as typeof import("node:path");
-      return resolve(process.cwd(), raw);
-    } catch {
-      return raw;
-    }
-  }
-  return null;
 }
 
 /**
@@ -368,20 +368,6 @@ export async function GET(req: NextRequest) {
     const mem = process.memoryUsage();
     const uptimeSeconds = process.uptime();
 
-    // ── DB size via fs.statSync on the SQLite file ────────────────────
-    // The absolute path is used for the stat() only — it is never returned.
-    const dbPath = resolveSqlitePath();
-    let sizeBytes = 0;
-    if (dbPath) {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { statSync } = require("node:fs") as typeof import("node:fs");
-        sizeBytes = statSync(dbPath).size;
-      } catch {
-        sizeBytes = 0;
-      }
-    }
-
     // ── Realtime probe (hosted Apinator channels API) ──────────────────
     // One authenticated REST call replaces the old TCP probe + /health fetch;
     // it degrades to connected:false on any error or the 800ms timeout.
@@ -409,7 +395,7 @@ export async function GET(req: NextRequest) {
     // no single tenant and legitimately wants platform-wide figures, so that
     // path uses the ops connection deliberately — documented below — rather
     // than inheriting the tenant path's scoping.
-    const { sites, alarms, sensorReadings, users, auditLogs, activeUsers, scopeMode } =
+    const { sites, alarms, sensorReadings, users, auditLogs, activeUsers, sizeBytes, scopeMode } =
       await (tenantId
         ? asTenant(me, async (tx) => {
             const tenantSiteIds = (await tx.site.findMany({
@@ -425,8 +411,12 @@ export async function GET(req: NextRequest) {
               tx.auditLog.count({ where: { tenantId } }),
               tx.user.count({ where: { lastLoginAt: { gte: twentyFourHoursAgo }, tenantId } }),
             ]);
+            // `pg_database_size` is a server-wide catalogue read, not a row
+            // read: RLS does not — and should not — scope it.
+            const sizeBytes = await databaseSize(tx as unknown as PrismaClient);
             return {
               sites: s, alarms: a, sensorReadings: sr, users: u, auditLogs: al, activeUsers: au,
+              sizeBytes,
               scopeMode: "tenant" as const,
             };
           })
@@ -447,7 +437,7 @@ export async function GET(req: NextRequest) {
         external: bytesToMb(mem.external),
       },
       database: {
-        type: "sqlite",
+        type: "postgres",
         sizeBytes,
         sizeMB: round2(sizeBytes / BYTES_PER_MB),
         path: DB_PATH_DISPLAY,

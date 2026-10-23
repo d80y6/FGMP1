@@ -1,6 +1,9 @@
 "use client";
 
-import { computeSiteHealth as computeCanonicalSiteHealth } from "@/lib/health/site-health-score";
+import {
+  bandFor,
+  computeSiteHealth as computeCanonicalSiteHealth,
+} from "@/lib/health/site-health-score";
 import { useMemo } from "react";
 import { Activity, TrendingUp, TrendingDown } from "lucide-react";
 import {
@@ -84,11 +87,26 @@ function computeTodayScore(
 
 const DAY_LABELS = ["D-6", "D-5", "D-4", "D-3", "D-2", "D-1", "Today"];
 
+/* Presentation scale for this chart: four bands with its own cut-offs. The
+ * lookup (highest `min` first, deterministic fallback) is shared via bandFor;
+ * only the table and labels are local. */
+const TREND_BANDS: ReadonlyArray<{ min: number; band: Band }> = [
+  { min: 90, band: "excellent" },
+  { min: 75, band: "good" },
+  { min: 50, band: "warn" },
+  { min: 0, band: "critical" },
+];
+
+const TREND_BAND_LABELS: Record<Band, string> = {
+  excellent: "Excellent",
+  good: "Good",
+  warn: "Warn",
+  critical: "Critical",
+};
+
 function scoreBand(score: number): { label: string; band: Band } {
-  if (score >= 90) return { label: "Excellent", band: "excellent" };
-  if (score >= 75) return { label: "Good", band: "good" };
-  if (score >= 50) return { label: "Warn", band: "warn" };
-  return { label: "Critical", band: "critical" };
+  const band = bandFor(score, TREND_BANDS, "critical");
+  return { label: TREND_BAND_LABELS[band], band };
 }
 
 const BAND_STYLES: Record<Band, { bg: string; text: string; border: string }> = {

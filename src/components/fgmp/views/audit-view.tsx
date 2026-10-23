@@ -16,6 +16,7 @@ import { fmtDateTime, timeAgo } from "@/lib/fgmp/format";
 import { cn } from "@/lib/utils";
 import { useT, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
+import { roleLabel } from "@/lib/fgmp/labels";
 import { translate } from "@/lib/fgmp/i18n";
 
 const ACTIONS = ["CREATE", "UPDATE", "DELETE", "CONTROL", "ACK", "RESOLVE", "BULK_ACK", "BULK_RESOLVE", "LOGIN", "LOGOUT", "EXPORT", "CONFIG", "SEED", "OTA", "REBOOT", "DELIVERY_CREATE", "DELIVERY_VERIFY", "DELIVERY_DISPATCH", "TICKET_CREATE", "TICKET_COMPLETE", "NOTIF_DISMISS", "NOTIF_DISMISS_ALL"];
@@ -28,13 +29,6 @@ function auditActionLabel(action: string, lang: Language): string {
   return translated === key ? action.replace(/_/g, " ") : translated;
 }
 
-/** Resolve a user role enum value to its localized display label. */
-function roleLabel(role: string, lang: Language): string {
-  if (!role) return "";
-  const key = `role.${role.toLowerCase()}`;
-  const translated = translate(key, lang);
-  return translated === key ? role.replace(/_/g, " ") : translated;
-}
 
 const ACTION_TONE: Record<string, string> = {
   CONTROL: "border-sky-500/40 bg-sky-500/10 text-sky-600 dark:text-sky-400",

@@ -30,17 +30,11 @@ import { useCorrelationRulesHydration, useCorrelationRulesList } from "@/lib/fgm
 import { useCorrelationMatches } from "@/lib/fgmp/use-correlation-matches";
 import { useT, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
-import { translate } from "@/lib/fgmp/i18n";
+import { alarmTypeLabel } from "@/lib/fgmp/labels";
 import { ResourceError } from "@/components/fgmp/resource-error";
 
 const TYPES = ["FUEL_THEFT", "FUEL_REFILL", "FUEL_LOW", "FUEL_CRITICAL", "GEN_OFFLINE", "GEN_FAILURE", "GEN_OVERHEAT", "BATT_LOW_VOLTAGE", "BATT_FAILURE", "COMM_LOSS"];
 
-/** Resolve an alarm type enum value to its localized display label. */
-function alarmTypeLabel(type: string, lang: Language): string {
-  const key = `alarm.${type}`;
-  const translated = translate(key, lang);
-  return translated === key ? (type ?? "").replace(/_/g, " ") : translated;
-}
 
 const ACTIONABLE_STATUSES = new Set(["OPEN", "ACKNOWLEDGED", "ESCALATED"]);
 

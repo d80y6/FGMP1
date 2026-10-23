@@ -18,37 +18,12 @@ import { cn } from "@/lib/utils";
 import type { Kpis } from "@/lib/fgmp/types";
 import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
-
-type StatusLevel = "OPERATIONAL" | "DEGRADED" | "CRITICAL";
+import { determineSystemStatus, type SystemStatusLevel as StatusLevel } from "@/lib/fgmp/status";
 
 interface SystemStatusBannerProps {
   kpis: Kpis;
 }
 
-/**
- * Determine overall system status from KPIs.
- *  - CRITICAL:  offlineSites >= 3 OR alarmsL3 >= 5 OR (alarmsL3 > 0 AND tanksCritical > 5)
- *  - DEGRADED:  offlineSites > 0 OR alarmsL3 > 0 OR tanksCritical > 2 OR generatorsFault > 0
- *  - OPERATIONAL: otherwise (offlineSites===0 AND alarmsL3===0 AND tanksCritical===0 AND generatorsFault===0)
- */
-function determineStatus(k: Kpis): StatusLevel {
-  if (
-    k.offlineSites >= 3 ||
-    k.alarmsL3 >= 5 ||
-    (k.alarmsL3 > 0 && k.tanksCritical > 5)
-  ) {
-    return "CRITICAL";
-  }
-  if (
-    k.offlineSites > 0 ||
-    k.alarmsL3 > 0 ||
-    k.tanksCritical > 2 ||
-    k.generatorsFault > 0
-  ) {
-    return "DEGRADED";
-  }
-  return "OPERATIONAL";
-}
 
 interface StatusConfig {
   titleKey: "statusBanner.operational" | "statusBanner.degraded" | "statusBanner.critical";
@@ -127,7 +102,7 @@ export function SystemStatusBanner({ kpis }: SystemStatusBannerProps) {
   const t = useT();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
-  const status = determineStatus(kpis);
+  const status = determineSystemStatus(kpis);
   const config = STATUS_CONFIG[status];
   const { Icon: StatusIcon } = config;
 

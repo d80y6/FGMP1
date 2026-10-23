@@ -14,7 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
-import { translate } from "@/lib/fgmp/i18n";
+import { roleLabel } from "@/lib/fgmp/labels";
 import { ROLE_PERMISSIONS, ALL_ROLES, hasCapability } from "@/lib/fgmp/rbac";
 import type { Role } from "@/lib/fgmp/types";
 import { cn } from "@/lib/utils";
@@ -23,12 +23,6 @@ import { cn } from "@/lib/utils";
  * Helpers
  * ──────────────────────────────────────────────────────────────────────── */
 
-/** Resolve a role enum value to its localized display label. */
-function roleLabel(role: Role, lang: Language): string {
-  const key = `role.${role.toLowerCase()}`;
-  const translated = translate(key, lang);
-  return translated === key ? role.replace(/_/g, " ") : translated;
-}
 
 /** Capability groups (prefixes) shown as columns in the matrix. */
 const CAPABILITY_GROUPS: { prefix: string; label: string }[] = [

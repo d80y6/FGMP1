@@ -22,7 +22,7 @@ const createGeneratorSchema = z.object({
   manufacturer: z.string().trim().min(1).max(120),
   model: z.string().trim().min(1).max(120),
   ratedPowerKw: z.coerce.number().positive().max(20_000),
-  fuelType: z.enum(["DIESEL", "PETROL"]).default("DIESEL"),
+  fuelType: z.enum(["DIESEL", "PETROL", "BIOFUEL"]).default("DIESEL"),
   oilChangeIntervalHrs: z.coerce.number().min(1).max(10_000).optional(),
 });
 

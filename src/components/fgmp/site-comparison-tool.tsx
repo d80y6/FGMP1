@@ -12,6 +12,8 @@ import { cn } from "@/lib/utils";
 import { useFgmp } from "@/lib/fgmp/store";
 import { toast } from "sonner";
 import type { SiteState, TankState, GenState, BattState } from "@/lib/fgmp/types";
+import { siteStatusTextClass } from "@/lib/fgmp/status";
+import { rowsToCsv } from "@/lib/fgmp/csv";
 
 interface ComparisonRow {
   label: string;
@@ -146,15 +148,6 @@ export function SiteComparisonTool() {
     return { metric, values, bestIdx };
   });
 
-  const statusColor = (status: string) => {
-    switch (status) {
-      case "ONLINE": return "text-emerald-500 border-emerald-500/30 bg-emerald-500/10";
-      case "DEGRADED": return "text-amber-500 border-amber-500/30 bg-amber-500/10";
-      case "OFFLINE": return "text-rose-500 border-rose-500/30 bg-rose-500/10";
-      case "MAINTENANCE": return "text-sky-500 border-sky-500/30 bg-sky-500/10";
-      default: return "text-muted-foreground";
-    }
-  };
 
   // Per-site win counts and leading site (most wins)
   const winCounts = selectedSites.map((_, i) =>
@@ -163,15 +156,6 @@ export function SiteComparisonTool() {
   const maxWins = winCounts.length > 0 ? Math.max(...winCounts) : 0;
   const leaderIdx = winCounts.findIndex((w) => w === maxWins);
   const leaderSite = leaderIdx >= 0 && maxWins > 0 ? selectedSites[leaderIdx] : null;
-
-  // CSV escaping: wrap a field in double quotes if it contains a comma, quote, or newline.
-  // Per RFC 4180, embedded double quotes are escaped by doubling them.
-  const csvEscape = (value: string): string => {
-    if (/[",\n\r]/.test(value)) {
-      return `"${value.replace(/"/g, "\"\"")}"`;
-    }
-    return value;
-  };
 
   const handleExportCsv = () => {
     try {
@@ -209,9 +193,7 @@ export function SiteComparisonTool() {
         "",
       ]);
 
-      const csvContent = rows
-        .map((row) => row.map(csvEscape).join(","))
-        .join("\n");
+      const csvContent = rowsToCsv(rows);
 
       const blob = new Blob([csvContent], {
         type: "text/csv;charset=utf-8;",
@@ -310,7 +292,7 @@ export function SiteComparisonTool() {
             {selectedSites.map((s) => (
               <div key={s.id} className={cn(
                 "flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium",
-                statusColor(s.status)
+                siteStatusTextClass(s.status)
               )}>
                 <span className="max-w-[160px] truncate">{s.name}</span>
                 <button onClick={() => removeSite(s.id)} className="ml-0.5 rounded-sm hover:bg-foreground/10">
@@ -335,7 +317,7 @@ export function SiteComparisonTool() {
                       <div className="flex flex-col items-center gap-0.5">
                         <span className="text-[9px] text-muted-foreground">Site {i + 1}</span>
                         <span className="max-w-[110px] truncate text-[11px] font-semibold">{s.name}</span>
-                        <span className={cn("rounded border px-1 text-[8px]", statusColor(s.status))}>{s.status}</span>
+                        <span className={cn("rounded border px-1 text-[8px]", siteStatusTextClass(s.status))}>{s.status}</span>
                       </div>
                     </th>
                   ))}

@@ -15,14 +15,15 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:reset": "prisma migrate reset",
-    "db:seed": "bun run scripts/seed.ts",
-    "test:rls": "bun run scripts/rls-regression.ts",
-    "test:smoke": "bun run scripts/smoke-postgres.ts",
-    "seed:admin": "bun run scripts/seed-admin.ts",
+    "db:seed": "bun run scripts/db/seed.ts",
+    "test:rls": "bun run scripts/verify/rls-regression.ts",
+    "test:smoke": "bun run scripts/verify/smoke-postgres.ts",
+    "seed:admin": "bun run scripts/db/seed-admin.ts",
     "docker:build": "docker-compose build",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",
-    "docker:logs": "docker-compose logs -f"
+    "docker:logs": "docker-compose logs -f",
+    "test:proof": "bun run scripts/verify/scheduler-proof.ts"
   },
   "dependencies": {
     "@apinator/client": "^2.2.2",

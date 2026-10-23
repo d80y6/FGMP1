@@ -6,16 +6,10 @@ import type { SiteState } from "@/lib/fgmp/types";
 import { YEMEN_GOVERNORATES, govNameToId, projectLngLat } from "@/lib/fgmp/yemen-map-data";
 import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
+import { SITE_STATUS_HEX as STATUS_COLOR } from "@/lib/fgmp/status";
 
 // SVG viewBox matches the amcharts Yemen governorate map (see yemen-map-data.ts).
 const MAP_VIEWBOX = "127.69 -2.5 1015.63 674";
-
-const STATUS_COLOR: Record<string, string> = {
-  ONLINE: "#10b981",
-  DEGRADED: "#f59e0b",
-  OFFLINE: "#f43f5e",
-  MAINTENANCE: "#a855f7",
-};
 
 // Severity rank for "worst status wins" aggregation (higher = worse).
 const SEVERITY_RANK: Record<string, number> = {

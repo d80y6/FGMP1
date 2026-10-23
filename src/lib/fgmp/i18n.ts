@@ -1520,8 +1520,8 @@ export const DICTIONARY: Dict = {
 
   "systemHealth.database": { en: "Database", ar: "قاعدة البيانات" },
   "systemHealth.databaseSubtitle": {
-    en: "SQLite file size and row counts",
-    ar: "حجم ملف SQLite وعدد الصفوف",
+    en: "Database size and row counts",
+    ar: "حجم قاعدة البيانات وعدد الصفوف",
   },
   "systemHealth.dbType": { en: "Type", ar: "النوع" },
   "systemHealth.dbSize": { en: "File Size", ar: "حجم الملف" },

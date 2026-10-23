@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Cairo } from "next/font/google";
 import "./globals.css";
-import { Toaster } from "@/components/ui/toaster";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/fgmp/theme-provider";
 import { AuthSessionProvider } from "@/components/providers/session-provider";
@@ -52,7 +51,6 @@ export default function RootLayout({
                 available in AppShell + LoginDialog (Task 31-A). */}
             <AuthSessionProvider>
               {children}
-              <Toaster />
               <SonnerToaster position="top-right" richColors closeButton />
             </AuthSessionProvider>
           </ThemeProvider>

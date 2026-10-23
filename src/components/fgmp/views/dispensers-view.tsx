@@ -35,7 +35,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { timeAgo, fmtDateTime } from "@/lib/fgmp/format";
-import { useT, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { useT, useDir, useArabicNumerals, formatNumber, toArabicNumerals } from "@/lib/fgmp/use-language";
 import { useChartColors } from "@/lib/fgmp/use-chart-colors";
 import type { Language } from "@/lib/fgmp/i18n";
 import { translate } from "@/lib/fgmp/i18n";
@@ -147,7 +147,7 @@ function txnStatusLabel(status: string, lang: Language): string {
 function formatYer(amount: number, lang: Language): string {
   const s = Math.round(amount).toLocaleString("en-US");
   const digits = lang === "ar" ? translate("dispenser.yerSuffix", lang) : "YER";
-  const num = lang === "ar" ? s.replace(/[0-9]/g, (d) => "٠١٢٣٤٥٦٧٨٩"[Number(d)]) : s;
+  const num = toArabicNumerals(s);
   return lang === "ar" ? `${num} ${digits}` : `${num} ${digits}`;
 }
 
@@ -158,7 +158,7 @@ function formatDuration(sec: number, lang: Language): string {
   const m = Math.floor((sec % 3600) / 60);
   const s = sec % 60;
   const out = h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
-  return lang === "ar" ? out.replace(/[0-9]/g, (d) => "٠١٢٣٤٥٦٧٨٩"[Number(d)]) : out;
+  return toArabicNumerals(out);
 }
 
 /* ────────────────────────────────────────────────────────────────────────

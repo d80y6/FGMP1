@@ -22,6 +22,8 @@
 //      API for new callers — it keeps the export metadata declarative and
 //      lets the parent pass already-localized labels.
 
+import { csvEscape, rowsToCsv } from "./csv";
+
 /**
  * Column descriptor for the record-based CSV API.
  *
@@ -35,39 +37,12 @@ export interface CsvColumn {
 }
 
 /**
- * Convert any value to a CSV-safe string.
- *
- * Per RFC 4180:
- *   - Fields containing a comma, double-quote, or line break must be
- *     wrapped in double quotes.
- *   - Embedded double quotes are escaped by doubling them ("  ->  "").
- *
- * Null / undefined are rendered as empty strings so the row stays aligned
- * with the header. Booleans render as "true"/"false". Numbers render via
- * `String(value)` which preserves integer/float formatting. Everything
- * else goes through `String(value)`.
+ * CSV escaping and row joining live in the shared `csv` module so the browser
+ * exports and the server export route cannot drift (in particular, the
+ * formula-injection guard used to exist only server-side). Re-exported here to
+ * keep existing importers working.
  */
-export function csvEscape(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  if (typeof value === "boolean") return value ? "true" : "false";
-  const s = typeof value === "string" ? value : String(value);
-  if (/[",\n\r]/.test(s)) {
-    return `"${s.replace(/"/g, '""')}"`;
-  }
-  return s;
-}
-
-/**
- * Convert a 2D array of rows into a CSV string (header row first).
- *
- * Each row is joined with commas; rows are joined with CRLF line endings
- * (RFC 4180 specifies CRLF, and Excel on Windows parses it most reliably).
- */
-export function rowsToCsv(rows: (string | number)[][]): string {
-  return rows
-    .map((row) => row.map(csvEscape).join(","))
-    .join("\r\n");
-}
+export { csvEscape, rowsToCsv };
 
 /**
  * Convert an array of record rows + a column descriptor list into a CSV

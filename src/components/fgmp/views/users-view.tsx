@@ -28,7 +28,7 @@ import { toast } from "sonner";
 import { fmtDateTime, timeAgo } from "@/lib/fgmp/format";
 import { useT, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
-import { translate } from "@/lib/fgmp/i18n";
+import { roleLabel } from "@/lib/fgmp/labels";
 import { ALL_ROLES } from "@/lib/fgmp/rbac";
 import type { Role } from "@/lib/fgmp/types";
 
@@ -60,13 +60,6 @@ interface TenantRow {
   _count: { users: number; sites: number; suppressions: number };
 }
 
-/** Resolve a user role enum value to its localized display label. */
-function roleLabel(role: string, lang: Language): string {
-  if (!role) return "";
-  const key = `role.${role.toLowerCase()}`;
-  const translated = translate(key, lang);
-  return translated === key ? role.replace(/_/g, " ") : translated;
-}
 
 /* ────────────────────────────────────────────────────────────────────────
  * Form schemas

@@ -268,8 +268,26 @@ const BAND_THRESHOLDS: { min: number; band: HealthBand }[] = [
   { min: 0, band: "critical" },
 ];
 
+/**
+ * Generic threshold lookup: the first table entry whose `min` the score meets.
+ *
+ * Exported because a few surfaces still need a NARROWER scale than the
+ * canonical five bands (the 7-day trend renders four bands, the region
+ * leaderboard three). Those scales are presentation choices, but the lookup
+ * itself must not be re-implemented — a copy is how the same score ended up
+ * green in one place and amber in another. Each caller keeps its own table and
+ * labels; ordering and fallback live here.
+ */
+export function bandFor<T extends string>(
+  score: number,
+  thresholds: ReadonlyArray<{ min: number; band: T }>,
+  fallback: T,
+): T {
+  return thresholds.find((t) => score >= t.min)?.band ?? fallback;
+}
+
 export function healthBand(score: number): HealthBand {
-  return BAND_THRESHOLDS.find((t) => score >= t.min)?.band ?? "critical";
+  return bandFor(score, BAND_THRESHOLDS, "critical");
 }
 
 /** Visual classes per band, so the four surfaces render identically. */
@@ -297,4 +315,27 @@ export const HEALTH_BAND_CLASSES: Record<
     cls: "border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400",
     dot: "bg-rose-500",
   },
+};
+/**
+ * Hex equivalents of the band colours, for SVG strokes/fills where a Tailwind
+ * class cannot be used (the health gauge). Same five bands, same order — the
+ * gauge previously carried its own 85/70/55/40 cut-offs, one point off from
+ * the canonical scale, so a score of 88 was "excellent" in the gauge and
+ * "good" on the badge.
+ */
+export const HEALTH_BAND_HEX: Record<HealthBand, string> = {
+  excellent: "#10b981",
+  good: "#22c55e",
+  fair: "#eab308",
+  poor: "#f59e0b",
+  critical: "#f43f5e",
+};
+
+/** i18n key per band; the `health.*` namespace already holds the labels. */
+export const HEALTH_BAND_LABEL_KEYS: Record<HealthBand, `health.${HealthBand}`> = {
+  excellent: "health.excellent",
+  good: "health.good",
+  fair: "health.fair",
+  poor: "health.poor",
+  critical: "health.critical",
 };
