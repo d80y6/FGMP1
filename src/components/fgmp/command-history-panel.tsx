@@ -20,15 +20,9 @@ import {
 import { cn } from "@/lib/utils";
 import { timeAgo, fmtDateTime } from "@/lib/fgmp/format";
 import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
-import { translate, type Language } from "@/lib/fgmp/i18n";
+import type { Language } from "@/lib/fgmp/i18n";
+import { commandTypeLabel } from "@/lib/fgmp/labels";
 
-/** Resolve a generator command enum value to its localized display label. */
-function commandTypeLabel(cmd: string, lang: Language): string {
-  if (!cmd) return "";
-  const key = `command.${cmd}`;
-  const translated = translate(key, lang);
-  return translated === key ? cmd.replace(/_/g, " ") : translated;
-}
 
 /**
  * Command shape — accepts both the spec'd canonical form

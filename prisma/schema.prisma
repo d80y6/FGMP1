@@ -2080,3 +2080,69 @@ enum MfaResetStatus {
   APPLIED
   REJECTED
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// Platform administration (super-admin support access)
+//
+// WHY THESE TWO MODELS HAVE NO `tenantId` AND NO RLS
+// --------------------------------------------------
+// They are platform-global by definition. `SupportSession` records which
+// operator is allowed to act inside which tenant; a row scoped to a tenant
+// could not grant access to that tenant. `PlatformAuditLog` records what the
+// operator did, and must stay readable after the tenant it concerned is
+// deleted — so it deliberately has no foreign keys to Tenant or User.
+//
+// Isolation for these tables is therefore the API layer (every route under
+// /api/fgmp/platform requires SUPERADMIN) plus a test that enumerates the
+// routes that touch them. Compare `Tenant` and `SystemSetting`, the other two
+// global tables in this schema, which are treated the same way.
+//
+// The tenant-VISIBLE half of the trail is not here: starting a support session
+// also writes a normal `AuditLog` row inside the target tenant, so the tenant
+// sees who looked, in its own audit view.
+// ──────────────────────────────────────────────────────────────────────────
+
+model SupportSession {
+  id           String    @id @default(cuid())
+  /// The operator. Deliberately not a relation: the record must survive the
+  /// operator being deleted, and it is read without a tenant context.
+  actorUserId  String
+  actorEmail   String
+  /// The single tenant this session may act as. One session, one tenant —
+  /// there is no "all tenants" value, on purpose.
+  tenantId     String
+  /// Free text, required. Enforced non-empty by the route, not by a default.
+  reason       String
+  /// Ticket / case reference, when the support process requires one.
+  ticketRef    String?
+  /// "READ" or "WRITE". READ is the default; see support-session.ts for why
+  /// write mode is a separate grant rather than a flag on the same one.
+  mode         String    @default("READ")
+  createdAt    DateTime  @default(now())
+  expiresAt    DateTime
+  endedAt      DateTime?
+  endReason    String?
+  ip           String?
+  userAgent    String?
+
+  @@index([actorUserId, endedAt])
+  @@index([tenantId, createdAt])
+}
+
+model PlatformAuditLog {
+  id               String   @id @default(cuid())
+  actorUserId      String
+  actorEmail       String
+  action           String
+  targetTenantId   String?
+  supportSessionId String?
+  /// JSON string. Kept as text for the same reason AuditLog.details is: the
+  /// shape varies by action and a column per action would be unusable.
+  detail           String
+  ip               String?
+  createdAt        DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([targetTenantId, createdAt])
+}

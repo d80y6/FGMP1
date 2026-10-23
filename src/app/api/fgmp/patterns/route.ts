@@ -96,8 +96,8 @@ function accumulateConsumption(
   const plausible = maxPlausibleDrainLph(capacity);
   let consumed = 0;
   for (let i = 0; i < sorted.length - 1; i++) {
-    const a = sorted[i]!;
-    const b = sorted[i + 1]!;
+    const a = sorted[i];
+    const b = sorted[i + 1];
     if (a.value <= b.value) continue; // rise or flat — a refill, not consumption
     const dtH = (b.ts - a.ts) / 3_600_000;
     if (dtH <= 0) continue;
@@ -108,7 +108,7 @@ function accumulateConsumption(
     if (matrix) {
       const day = zonedDayOfWeek(b.ts, timezone); // 0=Sun..6=Sat
       const hour = zonedHour(b.ts, timezone);    // 0..23
-      matrix[day]![hour]! += diff;
+      matrix[day][hour] += diff;
     }
   }
   return consumed;
@@ -224,7 +224,7 @@ export async function GET(req: NextRequest) {
     const hourlyAverages: number[] = [];
     for (let h = 0; h < 24; h++) {
       let sum = 0;
-      for (let d = 0; d < 7; d++) sum += matrix[d]![h]!;
+      for (let d = 0; d < 7; d++) sum += matrix[d][h];
       hourlyAverages.push(round1(sum / 7));
     }
 
@@ -236,21 +236,21 @@ export async function GET(req: NextRequest) {
     // ── Peak hour (highest hourly average) ────────────────────────────────
     let peakHour = 0;
     for (let h = 1; h < 24; h++) {
-      if (hourlyAverages[h]! > hourlyAverages[peakHour]!) peakHour = h;
+      if (hourlyAverages[h] > hourlyAverages[peakHour]) peakHour = h;
     }
 
     // ── Peak day (highest daily total) ────────────────────────────────────
     let peakDay = 0;
     for (let d = 1; d < 7; d++) {
-      if (dailyTotals[d]! > dailyTotals[peakDay]!) peakDay = d;
+      if (dailyTotals[d] > dailyTotals[peakDay]) peakDay = d;
     }
 
     // ── Peak cell (single highest-consumption cell) ───────────────────────
     let peakCell = { day: 0, hour: 0, litres: 0 };
     for (let d = 0; d < 7; d++) {
       for (let h = 0; h < 24; h++) {
-        if (matrix[d]![h]! > peakCell.litres) {
-          peakCell = { day: d, hour: h, litres: matrix[d]![h]! };
+        if (matrix[d][h] > peakCell.litres) {
+          peakCell = { day: d, hour: h, litres: matrix[d][h] };
         }
       }
     }
@@ -260,7 +260,7 @@ export async function GET(req: NextRequest) {
     let nonZeroCells = 0;
     for (let d = 0; d < 7; d++) {
       for (let h = 0; h < 24; h++) {
-        const v = matrix[d]![h]!;
+        const v = matrix[d][h];
         if (v > 0) {
           totalConsumed += v;
           nonZeroCells++;
@@ -274,7 +274,7 @@ export async function GET(req: NextRequest) {
     let nightConsumed = 0;
     for (let d = 0; d < 7; d++) {
       for (const h of NIGHT_HOURS) {
-        nightConsumed += matrix[d]![h]!;
+        nightConsumed += matrix[d][h];
       }
     }
     const nightConsumptionPct =
@@ -289,7 +289,7 @@ export async function GET(req: NextRequest) {
     if (threshold > 0) {
       for (let d = 0; d < 7; d++) {
         for (let h = 0; h < 24; h++) {
-          const v = matrix[d]![h]!;
+          const v = matrix[d][h];
           if (v > threshold) {
             anomalyCells.push({ day: d, hour: h, litres: round1(v) });
           }

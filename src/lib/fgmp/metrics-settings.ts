@@ -55,7 +55,8 @@ function isFresh(): boolean {
  * the caller can distinguish "operator configured this" from "not configured".
  */
 export async function getSystemSetting(key: string): Promise<string | undefined> {
-  if (isFresh()) return cache!.values.get(key);
+  // `isFresh()` already requires a cache, but only a local check narrows the type.
+  if (cache && isFresh()) return cache.values.get(key);
   if (!inflight) {
     inflight = loadAll().then((values) => {
       cache = { at: Date.now(), values };

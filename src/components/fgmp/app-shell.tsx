@@ -1,13 +1,13 @@
 "use client";
 
-import { memo, useEffect, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef, type ComponentType } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   LayoutDashboard, Building2, Droplet, Zap, BatteryCharging, Siren,
   Truck, TrendingUp, FileText, Cpu, Wrench, ScrollText, Fuel, Users,
   Pause, Play, Activity, ChevronRight, ShieldCheck, Radio, Command, Search, Keyboard,
   Loader2, LogOut, ShieldOff, Bell,
-  HardDrive, GitBranch, BarChart3, CalendarClock, Network, Map, KeyRound,
+  HardDrive, GitBranch, BarChart3, Map, KeyRound,
   Settings, Layers,
 } from "lucide-react";
 import { useSession, signOut } from "next-auth/react";
@@ -41,7 +41,11 @@ const ViewLoader = () => (
     <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
   </div>
 );
-const dyn = (imp: () => Promise<any>) => dynamic(imp, { loading: ViewLoader, ssr: false });
+// The views take no props (they read the store), so the loader contract is a
+// component with none — written out rather than `any`, which would let a
+// renamed or prop-taking export slip past the type gate.
+const dyn = (imp: () => Promise<{ default: ComponentType<Record<string, never>> }>) =>
+  dynamic(imp, { loading: ViewLoader, ssr: false });
 const DashboardView = dyn(() => import("@/components/fgmp/views/dashboard-view").then(m => ({ default: m.DashboardView })));
 const SitesView = dyn(() => import("@/components/fgmp/views/sites-view").then(m => ({ default: m.SitesView })));
 const FuelView = dyn(() => import("@/components/fgmp/views/fuel-view").then(m => ({ default: m.FuelView })));
@@ -79,6 +83,7 @@ import { PinnedSitesWidget } from "@/components/fgmp/pinned-sites-widget";
 import { QuickAccessPopover } from "@/components/fgmp/quick-access-popover";
 import { ThemeSwitcher } from "@/components/fgmp/theme-switcher";
 import { LanguageSwitcher } from "@/components/fgmp/language-switcher";
+import { SupportSessionBanner } from "@/components/fgmp/support-session-banner";
 import { useKeyboardShortcuts } from "@/lib/fgmp/use-keyboard-shortcuts";
 import { useRealtime } from "@/lib/fgmp/use-realtime";
 import { useT, useLanguageHydration, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
@@ -165,9 +170,8 @@ export function AppShell() {
   // The session is the single source of truth for the authenticated user.
   // We mirror it into the Zustand store (setMe) so existing consumers that
   // read `me` from useFgmp() keep working unchanged.
-  const { data: session, status, update } = useSession();
+  const { data: session, status } = useSession();
   const sessionUser = session?.user;
-  const sessionRole = sessionUser?.role as Role | undefined;
   // Subscribe to individual slices rather than the whole store: `useFgmp()`
   // with no selector re-renders AppShell — and therefore the sidebar, the KPI
   // chips and the view host — on EVERY store write, including the 5s snapshot
@@ -178,7 +182,6 @@ export function AppShell() {
   const setMe = useFgmp((s) => s.setMe);
   const view = useFgmp((s) => s.view);
   const setView = useFgmp((s) => s.setView);
-  const tick = useFgmp((s) => s.tick);
   const refresh = useFgmp((s) => s.refresh);
   const livePaused = useFgmp((s) => s.livePaused);
   const toggleLive = useFgmp((s) => s.toggleLive);
@@ -188,8 +191,7 @@ export function AppShell() {
   // Realtime (hosted Apinator channels). When livePaused, suspend the socket
   // so "Pause live" halts BOTH the polling refresh and the event push.
   const { connected: rtConnected } = useRealtime({ enabled: !livePaused && status === "authenticated" });
-  const { resolvedTheme, setTheme, theme } = useTheme();
-  const [mounted, setMounted] = useState(false);
+  const { setTheme, theme } = useTheme();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -203,7 +205,6 @@ export function AppShell() {
   // session. Unauthenticated/loading users see a LoginDialog / spinner
   // instead of the app shell.
   useEffect(() => {
-    setMounted(true);
     if (status === "authenticated") init();
   }, [init, status]);
 
@@ -284,7 +285,7 @@ export function AppShell() {
   useEffect(() => {
     const v = searchParams.get("view") as ViewKey | null;
     if (v && VIEW_COMPONENTS[v] && v !== view) setView(v);
-  }, [searchParams]);
+  }, [searchParams, view, setView]);
 
   const navigate = (v: ViewKey) => {
     setView(v);
@@ -362,6 +363,11 @@ export function AppShell() {
     <div className="flex min-h-screen flex-col bg-background">
       {/* Skip-to-content link — keyboard a11y (bypasses 27 nav items) */}
       <a href="#main-content" className="skip-link">{t("common.skipToContent")}</a>
+
+      {/* Platform support access banner. Renders nothing unless a support
+          session is open; when one is, it is the only thing on the page that
+          cannot be dismissed without ending the session. */}
+      <SupportSessionBanner />
 
       {/* Top header */}
       <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">

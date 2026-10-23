@@ -1,7 +1,7 @@
 -- Phase 1 step 8 (part): grant table privileges to the three roles.
 --
 -- Runs immediately after the baseline schema migration. The roles themselves
--- are created by scripts/pg-init-roles.sh on first database initialisation,
+-- are created by scripts/db/pg-init-roles.sh on first database initialisation,
 -- but that script cannot grant on tables that do not exist yet — so the grants
 -- live here, where they are applied after every table creation and re-applied
 -- whenever a later migration adds one.

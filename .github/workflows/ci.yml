@@ -15,6 +15,13 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# `checks: write` is what lets the diagnostics step below publish the failing
+# step's log back onto the commit. Without it a failed build is a red X with no
+# readable output (the log archive is behind a separate, authenticated host).
+permissions:
+  contents: read
+  checks: write
+
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -40,7 +47,9 @@ jobs:
       # the model doesn't define, or a call to a method that doesn't exist,
       # before they become 500s in production.
       - name: Typecheck (must be zero errors)
-        run: bun run typecheck
+        run: |
+          set -o pipefail
+          bun run typecheck 2>&1 | tee /tmp/typecheck.log
 
       # ── The lint gate ────────────────────────────────────────────────────
       # Errors fail the build; warnings are reported but do not block (there is
@@ -67,17 +76,32 @@ jobs:
       # under __tests__. No database is required — the suites that need
       # PostgreSQL live in the `rls` job below, which provisions a real server.
       - name: Unit tests (must be zero failures)
-        run: bun run test
+        run: |
+          set -o pipefail
+          bun run test 2>&1 | tee /tmp/test.log
 
       # ── The production build ─────────────────────────────────────────────
       # Runs with `typescript.ignoreBuildErrors: false`, so a type error fails
       # here too, and it proves the standalone output the Dockerfile depends
       # on is actually produced.
       - name: Build
-        run: bun run build
+        run: |
+          set -o pipefail
+          bun run build 2>&1 | tee /tmp/build.log
         env:
           DATABASE_URL: postgresql://fgmp_app:ciapp@127.0.0.1:5432/fgmp?schema=public
           NEXT_TELEMETRY_DISABLED: "1"
+
+      # Diagnostics: publish the tail of the test and build logs onto the
+      # commit through the Checks API. `gh run view --log` is served from a
+      # different host than the API and is not always reachable; a check run is.
+      - name: Publish failure diagnostics
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >
+          python3 scripts/ci/publish-logs.py "verify: typecheck + test + build logs"
+          /tmp/typecheck.log /tmp/test.log /tmp/build.log
 
   # The realtime service and the IoT bridge are separate Bun projects with their
   # own lockfiles and are NOT covered by the app build, so they get their own
@@ -88,7 +112,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [realtime, iot-bridge]
+        service: [iot-bridge]
 
     steps:
       - uses: actions/checkout@v4
@@ -150,41 +174,96 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Create the app role (non-owner, RLS enforced)
-        run: |
-          PGPASSWORD=cimigrate psql -h 127.0.0.1 -U fgmp_migrate -d fgmp -v ON_ERROR_STOP=1 <<'SQL'
-          DO $$ BEGIN
-            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'fgmp_app') THEN
-              CREATE ROLE fgmp_app LOGIN PASSWORD 'ciapp' NOSUPERUSER NOBYPASSRLS;
-            END IF;
-          END $$;
-          GRANT USAGE ON SCHEMA public TO fgmp_app;
-          SQL
+      # The seed, the smoke test and the database-backed suites all import
+      # @prisma/client, and an ungenerated client fails at import with
+      # `Cannot find module '.prisma/client/default'`. The migrations below do
+      # NOT need it (the CLI reads schema.prisma), which is why this job got as
+      # far as seeding before failing — so generate explicitly.
+      - name: Generate Prisma client
+        run: bun run db:generate
+        env:
+          DATABASE_URL: postgresql://fgmp_migrate:cimigrate@127.0.0.1:5432/fgmp?schema=public
 
+      # ── Roles BEFORE migrations ────────────────────────────────────────
+      # All three roles must exist first. The second committed migration does
+      # `GRANT … TO fgmp_app, fgmp_ops`; with only fgmp_app created, `migrate
+      # deploy` dies there with `role "fgmp_ops" does not exist`, which is
+      # exactly what this job did the first time it was ever allowed to run
+      # (it had been skipped behind a failing `verify` since it was written).
+      #
+      # The provisioning SQL is the SAME file docker-compose mounts into
+      # /docker-entrypoint-initdb.d, not a copy: a CI role setup that drifts
+      # from the deployed one would test a database nobody runs.
+      - name: Provision database roles
+        run: |
+          PGPASSWORD=cimigrate psql -h 127.0.0.1 -U fgmp_migrate -d fgmp -v ON_ERROR_STOP=1 \
+            --set=app_password=ciapp \
+            --set=ops_password=ciops \
+            --set=migrate_password=cimigrate \
+            -f scripts/db/pg-init-roles.sql
+
+      # Migrations run as the OWNER. `prisma migrate deploy` reads DATABASE_URL,
+      # and the job-level DATABASE_URL is the app's RLS role — which is not the
+      # schema owner and cannot run DDL. Passing the app URL here would fail
+      # with a permission error that looks like a broken migration.
       - name: Apply migrations
-        run: bunx prisma migrate deploy
-
-      - name: Grant DML to the app role
+        env:
+          DATABASE_URL: postgresql://fgmp_migrate:cimigrate@127.0.0.1:5432/fgmp?schema=public
         run: |
-          PGPASSWORD=cimigrate psql -h 127.0.0.1 -U fgmp_migrate -d fgmp -v ON_ERROR_STOP=1 <<'SQL'
-          GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO fgmp_app;
-          GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO fgmp_app;
-          SQL
+          set -o pipefail
+          bunx prisma migrate deploy 2>&1 | tee /tmp/migrate.log
 
+      # The migration grants DML itself (20261004203149_grant_role_privileges),
+      # so this step is deliberately NOT repeated here: if the migration stops
+      # granting, CI must fail rather than paper over it with a compensating
+      # GRANT. That is the difference between testing the deployment and
+      # testing a database nobody deploys.
+      #
       # Seeding is a deploy-time step (Phase 1 step 6 removed it from
-      # bootstrap()), so CI must do it explicitly — exactly as an operator would.
+      # bootstrap()), so CI must do it explicitly — exactly as an operator would,
+      # with the owner credential the deploy-time job holds.
       - name: Seed (deploy-time step, owner role)
-        run: bun run db:seed
+        env:
+          FGMP_MIGRATE_DATABASE_URL: postgresql://fgmp_migrate:cimigrate@127.0.0.1:5432/fgmp?schema=public
+        run: |
+          set -o pipefail
+          bun run db:seed 2>&1 | tee /tmp/seed.log
 
       # Proves the schema works at runtime AND that the policies are live: the
       # smoke test asserts an unscoped app-role read returns zero rows.
       - name: PostgreSQL smoke test (non-destructive, asserts RLS is enforcing)
-        run: bun run scripts/smoke-postgres.ts
+        run: |
+          set -o pipefail
+          bun run test:smoke 2>&1 | tee /tmp/smoke.log
 
-      # The isolation proof: 24 tables, deliberately unguarded queries that must
-      # not leak. Exits non-zero on any failure.
+      # The database-backed suites, run where the database actually exists.
+      # `verify` runs `bun test` without one, so these were skipped there; until
+      # now nothing ran them in CI at all. FGMP_REQUIRE_DB_TESTS=1 turns the
+      # skip into a failure, so a broken pipeline cannot quietly stop testing
+      # RLS behaviour.
+      - name: Database-backed suites (strict — skips are failures)
+        run: |
+          set -o pipefail
+          FGMP_REQUIRE_DB_TESTS=1 bun test 2>&1 | tee /tmp/dbtests.log
+        env:
+          DATABASE_URL: postgresql://fgmp_app:ciapp@127.0.0.1:5432/fgmp?schema=public
+          FGMP_MIGRATE_DATABASE_URL: postgresql://fgmp_migrate:cimigrate@127.0.0.1:5432/fgmp?schema=public
+
+      # The isolation proof: every tenant-carrying table (currently 36),
+      # deliberately unguarded queries that must not leak. Exits non-zero on any
+      # failure.
       - name: RLS regression suite
-        run: bun run scripts/rls-regression.ts
+        run: |
+          set -o pipefail
+          bun run test:rls 2>&1 | tee /tmp/rls.log
+
+      - name: Publish failure diagnostics
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >
+          python3 scripts/ci/publish-logs.py "rls: migration + isolation logs"
+          /tmp/migrate.log /tmp/seed.log /tmp/smoke.log /tmp/dbtests.log /tmp/rls.log
 
   docker:
     runs-on: ubuntu-latest
@@ -216,16 +295,31 @@ jobs:
       - name: Build image
         run: docker build -t fgmp:ci .
 
+      # The container migrates as fgmp_migrate, and the migrations grant
+      # privileges to fgmp_app and fgmp_ops. Those roles have to exist first —
+      # the image cannot create them, because the entrypoint deliberately never
+      # runs DDL beyond the committed migrations. Same provisioning file the
+      # compose stack mounts, so CI and a real deployment start from one
+      # definition.
+      - name: Provision database roles
+        run: |
+          PGPASSWORD=cimigrate psql -h 127.0.0.1 -U fgmp_migrate -d fgmp -v ON_ERROR_STOP=1 \
+            --set=app_password=ciapp \
+            --set=ops_password=ciops \
+            --set=migrate_password=cimigrate \
+            -f scripts/db/pg-init-roles.sql
+
       - name: Boot against PostgreSQL and apply migrations
         run: |
+          set -o pipefail
+          (
           docker run -d --name fgmp-ci -p 3000:3000 \
             --network host \
             -e DATABASE_URL=postgresql://fgmp_app:ciapp@127.0.0.1:5432/fgmp?schema=public \
+            -e FGMP_MIGRATE_DATABASE_URL=postgresql://fgmp_migrate:cimigrate@127.0.0.1:5432/fgmp?schema=public \
             -e NEXTAUTH_SECRET=ci-secret-abcdefghijklmnopqrstuvwxyz0123456789 \
             -e IOT_API_KEY=ci-iot-key-abcdefghijklmnop \
-            -e REALTIME_SERVER_SECRET=ci-srv-secret-abcdefghij \
             -e REALTIME_SERVICE_TOKEN=ci-svc-token-abcdefghij \
-            -e REALTIME_TOKEN_SECRET=ci-token-secret-abcdefghijklmnopqrstuvwxyz0123456789 \
             fgmp:ci
 
           for i in $(seq 1 30); do
@@ -237,8 +331,12 @@ jobs:
             sleep 2
           done
 
-          # The app must actually be talking to PostgreSQL, not a local file.
-          docker exec fgmp-ci sh -c "wget -qO- http://127.0.0.1:3000/api/fgmp/health >/dev/null || true"
+          # Readiness must be positive: the app is talking to PostgreSQL AND the
+          # migrations are applied. A 503 here means the container started
+          # against a database it cannot serve.
+          docker exec fgmp-ci sh -c "bun -e \"fetch('http://127.0.0.1:3000/api/health/ready').then(r=>{if(!r.ok)process.exit(1);return r.text()}).then(t=>console.log(t))\"" \
+            | grep -q '"status":"ready"' \
+            || { echo "FAIL: /api/health/ready is not ready"; docker logs fgmp-ci; exit 1; }
           PGPASSWORD=cimigrate psql -h 127.0.0.1 -U fgmp_migrate -d fgmp -tAc \
             "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'" \
             | grep -Eq '^[1-9][0-9]*$' \
@@ -248,8 +346,8 @@ jobs:
           enabled=$(PGPASSWORD=cimigrate psql -h 127.0.0.1 -U fgmp_migrate -d fgmp -tAc \
             "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
              WHERE n.nspname='public' AND c.relkind='r' AND c.relrowsecurity AND c.relforcerowsecurity")
-          [ "$enabled" -eq 24 ] \
-            || { echo "FAIL: expected 24 FORCE-RLS tables, found $enabled"; exit 1; }
+          [ "$enabled" -ge 36 ] \
+            || { echo "FAIL: expected at least 36 FORCE-RLS tables, found $enabled"; exit 1; }
 
           # Must not have baked .env into the image.
           docker exec fgmp-ci sh -c "test ! -f /app/.env" \
@@ -258,6 +356,25 @@ jobs:
           # Must run as a non-root user.
           uid=$(docker exec fgmp-ci id -u)
           [ "$uid" != "0" ] || { echo "FAIL: container runs as root"; exit 1; }
+          ) 2>&1 | tee /tmp/docker-boot.log
+
+      # Container logs explain a failed boot better than anything the runner
+      # says, so capture them before the container is removed. The entrypoint
+      # prints the migration output verbatim.
+      - name: Capture container logs
+        if: always()
+        run: |
+          docker logs fgmp-ci > /tmp/docker-container.log 2>&1 || true
+          docker inspect fgmp-ci > /tmp/docker-inspect.json 2>&1 || true
+          tail -50 /tmp/docker-container.log || true
+
+      - name: Publish failure diagnostics
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >
+          python3 scripts/ci/publish-logs.py "docker: boot + migration logs"
+          /tmp/docker-boot.log /tmp/docker-container.log
 
       - name: Cleanup
         if: always()

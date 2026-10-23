@@ -1,9 +1,10 @@
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
-import { db } from "@/lib/db";
 import { hasMfaEnabled } from "./fgmp/mfa/service";
 import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
+import { resolveSessionConfig } from "@/lib/auth-session";
+import { evaluateDemoCredential } from "./fgmp/demo-credentials";
 import {
   findUserByEmail,
   findUserIdentity,
@@ -158,65 +159,22 @@ declare module "next-auth/jwt" {
  * on a desk, a shared terminal, or a token lifted from a compromised host stays
  * authorised indefinitely, with no server-side event that could revoke it.
  *
- * ── WHY THESE VALUES ─────────────────────────────────────────────────────────
- * maxAge 8h — one shift. Long enough that an operator is not re-authenticating
- * constantly during an incident, short enough that a stolen token expires while
- * the shift it was stolen on is still relevant. Deliberately NOT sliding:
- * a token with no absolute expiry is a permanent credential.
- *
- * updateAge 1h — how often a SESSION cookie is refreshed when the user is
- * active. This is what makes a shift-long session possible while still bounding
- * how long an INACTIVE token stays usable without any human present.
- *
- * Both are env-overridable because the right value is a deployment decision: a
- * site with a physical control room may want longer, a field tablet on a moving
- * vehicle may want shorter. The DEFAULTS are the safe ones — an operator who
- * forgets to configure this still gets bounded sessions.
+ * ── WHERE THE VALUES COME FROM ───────────────────────────────────────────────
+ * `resolveSessionConfig()` in `src/lib/auth-session.ts` — the defaults, the
+ * env overrides and the validation all live there, next to the tests that pin
+ * them. It throws on a nonsensical configuration, and this module calls it at
+ * load time, so a bad value stops the process at boot rather than at the first
+ * login.
  */
-const SESSION_MAX_AGE_MS = Number(process.env.FGMP_SESSION_MAX_AGE_MS ?? 8 * 60 * 60 * 1000);
-const SESSION_UPDATE_AGE_MS = Number(process.env.FGMP_SESSION_UPDATE_AGE_MS ?? 60 * 60 * 1000);
-
-/**
- * Reject a session configuration that would silently remove the bound.
- *
- * `Number("")` is 0 and `Number("abc")` is NaN, so a typo like
- * FGMP_SESSION_MAX_AGE_MS= (empty) would produce a zero or NaN lifetime and
- * reintroduce exactly the unbounded-session defect this change exists to fix.
- * A loud failure at boot beats a silently-insecure default.
- */
-function assertSaneSessionConfig(maxAge: number, updateAge: number): void {
-  if (!Number.isFinite(maxAge) || maxAge <= 0) {
-    throw new Error(
-      `FGMP_SESSION_MAX_AGE_MS is not a positive number (got ${maxAge}). ` +
-        `A session with no valid lifetime is unbounded, which is the defect ` +
-        `this setting exists to prevent.`,
-    );
-  }
-  if (!Number.isFinite(updateAge) || updateAge < 0) {
-    throw new Error(
-      `FGMP_SESSION_UPDATE_AGE_MS must be a non-negative number (got ${updateAge}).`,
-    );
-  }
-  if (updateAge >= maxAge) {
-    // updateAge >= maxAge means the cookie is never refreshed before expiry,
-    // so every user is logged out at maxAge regardless of activity.
-    throw new Error(
-      `FGMP_SESSION_UPDATE_AGE_MS (${updateAge}) must be less than ` +
-        `FGMP_SESSION_MAX_AGE_MS (${maxAge}), otherwise active sessions are ` +
-        `never refreshed and expire mid-shift.`,
-    );
-  }
-}
-
-assertSaneSessionConfig(SESSION_MAX_AGE_MS, SESSION_UPDATE_AGE_MS);
+const SESSION_CONFIG = resolveSessionConfig();
 
 export const authOptions: NextAuthOptions = {
   session: {
     strategy: "jwt",
     /** Absolute lifetime. A token stops being valid here regardless of use. */
-    maxAge: SESSION_MAX_AGE_MS,
+    maxAge: SESSION_CONFIG.maxAge,
     /** How often an active session's cookie is refreshed. */
-    updateAge: SESSION_UPDATE_AGE_MS,
+    updateAge: SESSION_CONFIG.updateAge,
   },
   secret: process.env.NEXTAUTH_SECRET ?? BUILD_PLACEHOLDER_SECRET,
   providers: [
@@ -290,6 +248,34 @@ export const authOptions: NextAuthOptions = {
                 : user.lockedUntil,
           });
           return null;
+        }
+
+        // ── Demo-credential rotation ────────────────────────────────────────
+        // The password just verified. If it is one of the values published in
+        // the seed files, a production deployment refuses the login unless the
+        // operator explicitly opted in. This runs BEFORE the counters are
+        // reset, so a refused demo login does not look like a successful one in
+        // the audit trail.
+        //
+        // The plaintext is only available here, which is why the check lives in
+        // authorize() rather than in a hook that sees only the hash.
+        const demoDecision = evaluateDemoCredential(password);
+        if (demoDecision === "refuse") {
+          console.warn(
+            `[auth] refused login for ${user.email}: the account still uses a published demo password and FGMP_ALLOW_DEMO_CREDENTIALS is not set. ` +
+              "Rotate it with the reset-password endpoint or scripts/set-password.ts.",
+          );
+          // Return the SAME null as a wrong password. The client cannot tell
+          // "this account exists but is misconfigured" from "wrong password",
+          // so this is not an enumeration oracle; the operator gets the real
+          // reason from the log line above. (Throwing would surface a 500 on
+          // the sign-in page and make the failure look like a server fault.)
+          return null;
+        }
+        if (demoDecision === "allow-with-warning") {
+          console.warn(
+            `[auth] ${user.email} signed in with a PUBLISHED demo password. FGMP_ALLOW_DEMO_CREDENTIALS=1 permits this; do not run a real deployment this way.`,
+          );
         }
 
         // Success — reset counters + stamp lastLoginAt.

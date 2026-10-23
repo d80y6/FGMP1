@@ -45,17 +45,11 @@ function assertLabelValues(name: string, labels: Labels): void {
 
 function labelKey(labels: Labels): string {
   const keys = Object.keys(labels).sort();
-  return keys.map((k) => `${k}="${escapeLabel(labels[k]!)}"`).join(",");
+  return keys.map((k) => `${k}="${escapeLabel(labels[k])}"`).join(",");
 }
 
 function escapeLabel(v: string): string {
   return v.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n");
-}
-
-/** Prometheus text exposition, e.g. `fgmp_a_total{status="SENT"} 3`. */
-function exposition(name: string, labels: Labels, value: number): string {
-  const l = labelKey(labels);
-  return `${name}${l ? `{${l}}` : ""} ${value}\n`;
 }
 
 export type MetricType = "counter" | "gauge" | "histogram";
@@ -148,7 +142,7 @@ class Histogram extends Metric {
     const k = labelKey(labels);
     let placed = false;
     for (let i = 0; i < this.buckets.length; i++) {
-      if (value <= this.buckets[i]!) {
+      if (value <= this.buckets[i]) {
         this.counts[i] = (this.counts[i] ?? 0) + 1;
         placed = true;
       }

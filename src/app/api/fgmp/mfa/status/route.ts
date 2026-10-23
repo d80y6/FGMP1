@@ -26,7 +26,7 @@ export const dynamic = "force-dynamic";
  * Both are hashed or encrypted at rest and neither is recoverable, which is the
  * property that makes them safe; a status endpoint must not undo it.
  */
-export async function GET(req: NextRequest) {
+export async function GET(_req: NextRequest) {
   const auth = await requireAuth();
   if ("error" in auth) return auth.error;
   try {

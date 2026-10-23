@@ -7,16 +7,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Network, AlertTriangle, Clock, MapPin, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { timeAgo } from "@/lib/fgmp/format";
-import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
-import { translate, type Language } from "@/lib/fgmp/i18n";
+import { useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import type { Language } from "@/lib/fgmp/i18n";
+import { alarmTypeLabel } from "@/lib/fgmp/labels";
 
-/** Resolve an alarm type enum value to its localized display label. */
-function alarmTypeLabel(type: string, lang: Language): string {
-  if (!type) return "";
-  const key = `alarm.${type}`;
-  const translated = translate(key, lang);
-  return translated === key ? type.replace(/_/g, " ") : translated;
-}
 
 interface Alarm {
   id: string;
@@ -53,7 +47,6 @@ interface Props {
  * Shows sites with multiple alarms, dominant alarm types, and time clustering.
  */
 export function AlarmCorrelationPanel({ alarms, onSelectSite }: Props) {
-  const t = useT();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
   const groups = useMemo(() => {
@@ -61,8 +54,9 @@ export function AlarmCorrelationPanel({ alarms, onSelectSite }: Props) {
     const map = new Map<string, AlarmGroup>();
     for (const a of alarms) {
       const key = a.siteId;
-      if (!map.has(key)) {
-        map.set(key, {
+      let g = map.get(key);
+      if (!g) {
+        g = {
           key,
           siteName: a.site?.name ?? "Unknown",
           siteCode: a.site?.code ?? "—",
@@ -73,9 +67,9 @@ export function AlarmCorrelationPanel({ alarms, onSelectSite }: Props) {
           firstAt: a.createdAt,
           lastAt: a.createdAt,
           alarms: [],
-        });
+        };
+        map.set(key, g);
       }
-      const g = map.get(key)!;
       g.count++;
       g.types.add(a.type);
       g.severities[a.severity as "L1" | "L2" | "L3"]++;

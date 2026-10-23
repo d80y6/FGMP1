@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo } from "react";
-import { Bell, Check, CheckCheck, ExternalLink, X, MessageSquare, Mail, Smartphone, Send } from "lucide-react";
+import { Bell, CheckCheck, X, MessageSquare, Mail, Smartphone, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -12,6 +12,7 @@ import { useApi, apiPost } from "@/lib/fgmp/use-api";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
 import { useT } from "@/lib/fgmp/use-language";
+import { useNow } from "@/lib/fgmp/use-now";
 
 interface Notification {
   id: string;
@@ -97,13 +98,13 @@ export function NotificationCenter() {
   const isUnread = (n: Notification) => !readIds.has(n.id) && n.status !== "SENT";
 
   // Group by time period
+  const now = useNow();
   const grouped = useMemo(() => {
     if (!notifications) return { recent: [], earlier: [] };
-    const now = Date.now();
     const recent = notifications.filter((n) => now - new Date(n.createdAt).getTime() < 30 * 60 * 1000);
     const earlier = notifications.filter((n) => now - new Date(n.createdAt).getTime() >= 30 * 60 * 1000);
     return { recent, earlier };
-  }, [notifications]);
+  }, [notifications, now]);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

@@ -42,7 +42,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
 import { useDir } from "@/lib/fgmp/use-language";
 
 export interface ConfirmDestructiveTarget {

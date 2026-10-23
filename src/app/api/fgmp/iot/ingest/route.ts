@@ -345,7 +345,6 @@ export async function POST(req: NextRequest) {
   }
   const readingDate = tsDecision.readingTs;
   const tsSource = tsDecision.source;
-  const receivedDate = new Date(nowMs);
 
   // ── Apply to in-memory engine + persist SensorReading rows ────────────
 
@@ -481,6 +480,9 @@ export async function POST(req: NextRequest) {
       // alarmed on, or reviewed. A measurement that is collected and discarded
       // is the same defect as one never collected.
       if (readings.battCellBalanceMv !== undefined) {
+        // Captured: the guards below run inside deferred write closures, where
+        // TypeScript cannot carry the `!== undefined` narrowing.
+        const cellBalanceMv = readings.battCellBalanceMv;
         writes.push((tx) =>
           tx.sensorReading.create({
             data: {
@@ -489,7 +491,7 @@ export async function POST(req: NextRequest) {
               entityKind: "BATTERY",
               entityId: batt.id,
               metric: "BATT_CELL_BALANCE_MV",
-              value: readings.battCellBalanceMv!,
+              value: cellBalanceMv,
               ts: readingDate,
               tsSource,
             },
@@ -498,7 +500,7 @@ export async function POST(req: NextRequest) {
         writes.push((tx) =>
           tx.batteryBank.update({
             where: { id: batt.id },
-            data: { cellBalanceMv: Math.round(readings.battCellBalanceMv!) },
+            data: { cellBalanceMv: Math.round(cellBalanceMv) },
           }),
         );
       }

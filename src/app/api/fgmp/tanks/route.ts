@@ -19,7 +19,7 @@ export const dynamic = "force-dynamic";
 const createTankSchema = z.object({
   siteId: z.string().trim().min(1).max(200),
   label: z.string().trim().min(1).max(120),
-  fuelType: z.enum(["DIESEL", "PETROL"]).default("DIESEL"),
+  fuelType: z.enum(["DIESEL", "PETROL", "BIOFUEL"]).default("DIESEL"),
   capacityLitres: z.coerce.number().positive().max(5_000_000),
   currentLitres: z.coerce.number().min(0).max(5_000_000).optional(),
   lowThreshold: z.coerce.number().min(0).max(5_000_000).optional(),

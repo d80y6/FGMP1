@@ -3,33 +3,7 @@
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Kpis } from "@/lib/fgmp/types";
-
-type StatusLevel = "OPERATIONAL" | "DEGRADED" | "CRITICAL";
-
-/**
- * Determine overall system status from KPIs — same 3-tier logic as SystemStatusBanner.
- *  - CRITICAL:  offlineSites >= 3 OR alarmsL3 >= 5 OR (alarmsL3 > 0 AND tanksCritical > 5)
- *  - DEGRADED:  offlineSites > 0 OR alarmsL3 > 0 OR tanksCritical > 2 OR generatorsFault > 0
- *  - OPERATIONAL: otherwise
- */
-function determineStatus(k: Kpis): StatusLevel {
-  if (
-    k.offlineSites >= 3 ||
-    k.alarmsL3 >= 5 ||
-    (k.alarmsL3 > 0 && k.tanksCritical > 5)
-  ) {
-    return "CRITICAL";
-  }
-  if (
-    k.offlineSites > 0 ||
-    k.alarmsL3 > 0 ||
-    k.tanksCritical > 2 ||
-    k.generatorsFault > 0
-  ) {
-    return "DEGRADED";
-  }
-  return "OPERATIONAL";
-}
+import { determineSystemStatus, type SystemStatusLevel as StatusLevel } from "@/lib/fgmp/status";
 
 const PILL_STYLES: Record<StatusLevel, string> = {
   OPERATIONAL: "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
@@ -48,7 +22,7 @@ interface MiniStatusIndicatorProps {
 }
 
 export function MiniStatusIndicator({ kpis }: MiniStatusIndicatorProps) {
-  const status = determineStatus(kpis);
+  const status = determineSystemStatus(kpis);
 
   // Build tooltip breakdown — only non-zero items
   const issues: string[] = [];

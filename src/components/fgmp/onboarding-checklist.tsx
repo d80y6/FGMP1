@@ -193,10 +193,10 @@ export function OnboardingChecklist() {
   // item, and (b) gate the show condition. We fetch unconditionally when the
   // admin is logged in so the data is ready by the time the card decides
   // whether to render; the call is cheap (one DB scan of the User table).
-  const { data: users } = useApi<any[]>("/api/fgmp/users", { interval: 30000 });
+  const { data: users } = useApi<unknown[]>("/api/fgmp/users", { interval: 30000 });
   // Fetch a single alarm to check the "threshold configured" proxy. Using
   // limit=1 keeps the payload tiny.
-  const { data: alarmsSample } = useApi<any[]>("/api/fgmp/alarms?limit=1", { interval: 30000 });
+  const { data: alarmsSample } = useApi<unknown[]>("/api/fgmp/alarms?limit=1", { interval: 30000 });
 
   // Show only for ADMINs with a loaded snapshot. We don't early-return before
   // the hooks above — hooks must run unconditionally.

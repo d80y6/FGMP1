@@ -9,15 +9,24 @@ services:
     dockerfilePath: Dockerfile
     dockerContext: .
     plan: free
-    # healthCheckPath: /api/fgmp/health
+    # NEXT_PUBLIC_* are inlined at build time. The Dockerfile declares them as
+    # ARGs, and Render exposes service environment variables to the Docker build
+    # only when an ARG of the same name exists — so keep these declared if you
+    # move realtime credentials around.
+    # Unauthenticated readiness probe. /api/fgmp/health is ADMIN-only, so
+    # pointing Render at it marked every healthy deploy as down.
+    healthCheckPath: /api/health/ready
     envVars:
       - fromGroup: fgmp1  # Pulls all variables from your existing environment group
       - key: DATABASE_URL
         sync: false
-      - key: FGMP_MIGRATE_DATABASE_URL
-        sync: false
+      # NOTE: no FGMP_MIGRATE_DATABASE_URL here. The app must not hold the
+      # schema-owner credential; migrations run in the `fgmp-migrate` job below.
+      # Keep RLS enforcement on. The managed database must expose a
+      # non-owner `fgmp_app` role (see docs/DEPLOYMENT.md); disabling this
+      # would let an owner-role connection bypass every tenant policy.
       - key: FGMP_REQUIRE_RLS
-        value: "0"
+        value: "1"
       - key: NEXTAUTH_URL
         sync: false
       # Hosted realtime (Apinator). REALTIME_URL is gone with the retired
@@ -31,6 +40,24 @@ services:
         sync: false
       - key: APINATOR_CLUSTER
         sync: false
+
+  # ── One-shot migration job ─────────────────────────────────────────────────
+  # Manual ("Run job") after every deploy that adds a migration. This is the
+  # ONLY service that receives the owner URL, and it exits when done.
+  - type: job
+    name: fgmp-migrate
+    env: docker
+    dockerfilePath: Dockerfile
+    dockerContext: .
+    plan: starter
+    envVars:
+      - fromGroup: fgmp1
+      - key: DATABASE_URL
+        sync: false
+      - key: FGMP_MIGRATE_DATABASE_URL
+        sync: false
+    # The image entrypoint is the web server; override it for the one-shot job.
+    dockerCommand: sh -c "bun run db:deploy"
 
   # ── IoT Telemetry Bridge ───────────────────────────────────────────────────
   # NOTE: there is deliberately NO fgmp-realtime service here any more. The

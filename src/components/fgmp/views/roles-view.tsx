@@ -9,13 +9,12 @@ import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
-import { translate } from "@/lib/fgmp/i18n";
-import { ROLE_PERMISSIONS, ALL_ROLES, hasCapability } from "@/lib/fgmp/rbac";
+import { roleLabel } from "@/lib/fgmp/labels";
+import { ROLE_PERMISSIONS, ALL_ROLES } from "@/lib/fgmp/rbac";
 import type { Role } from "@/lib/fgmp/types";
 import { cn } from "@/lib/utils";
 
@@ -23,12 +22,6 @@ import { cn } from "@/lib/utils";
  * Helpers
  * ──────────────────────────────────────────────────────────────────────── */
 
-/** Resolve a role enum value to its localized display label. */
-function roleLabel(role: Role, lang: Language): string {
-  const key = `role.${role.toLowerCase()}`;
-  const translated = translate(key, lang);
-  return translated === key ? role.replace(/_/g, " ") : translated;
-}
 
 /** Capability groups (prefixes) shown as columns in the matrix. */
 const CAPABILITY_GROUPS: { prefix: string; label: string }[] = [
@@ -222,7 +215,7 @@ export function RolesView() {
             Not granted
           </span>
           <span className="ml-auto">
-            Click a row to inspect that role's full capability list below.
+            Click a row to inspect that role&apos;s full capability list below.
           </span>
         </CardContent>
       </Card>

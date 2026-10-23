@@ -69,7 +69,7 @@ export async function PATCH(
     ...ROLES.ALARM_OPS,
     ...ROLES.DELIVERY,
     ...ROLES.MAINTENANCE,
-  ] as any);
+  ]);
   if ("error" in auth) return auth.error;
   try {
     const { user } = await bootstrap();

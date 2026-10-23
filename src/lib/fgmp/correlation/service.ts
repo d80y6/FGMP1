@@ -21,7 +21,6 @@
  */
 
 import type { AlarmSeverity, Prisma, PrismaClient } from "@prisma/client";
-import { db } from "@/lib/db";
 import { withTenant } from "../tenant-context";
 import {
   computeEscalations,

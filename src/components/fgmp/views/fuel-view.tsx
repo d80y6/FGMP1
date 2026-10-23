@@ -19,18 +19,19 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { fmtLitres, timeAgo } from "@/lib/fgmp/format";
-import { useT, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
+import type { EventItem } from "@/lib/fgmp/types";
+import type { AnalyticsPayload } from "@/lib/fgmp/types";
 
 export function FuelView() {
   const snapshot = useFgmp((s) => s.snapshot);
   const t = useT();
-  const dir = useDir();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
   const [q, setQ] = useState("");
   const [sort, setSort] = useState("pct-asc");
-  const { data: analytics } = useApi<any>("/api/fgmp/analytics", { interval: 15000 });
+  const { data: analytics } = useApi<AnalyticsPayload>("/api/fgmp/analytics", { interval: 15000 });
   const cc = useChartColors();
 
   const tanks = useMemo(() => {
@@ -250,7 +251,7 @@ export function FuelView() {
                 <div className="mt-2"><BarGauge value={t.pct} showLabel /></div>
                 <div className="mt-1.5 flex items-center justify-between text-[10px] text-muted-foreground">
                   <span>{fmtLitres(t.current, numLang)} / {fmtLitres(t.capacity, numLang)}</span>
-                  <Sparkline data={t.history?.slice(-40).map((h: any) => h.l) ?? []} width={70} height={18} color={t.pct <= 12 ? cc.rose : (t.pct <= 25 ? cc.amber : cc.emerald)} />
+                  <Sparkline data={t.history?.slice(-40).map((h) => h.l) ?? []} width={70} height={18} color={t.pct <= 12 ? cc.rose : (t.pct <= 25 ? cc.amber : cc.emerald)} />
                 </div>
               </div>
             ))}
@@ -261,7 +262,7 @@ export function FuelView() {
   );
 }
 
-function ScrollList({ events, empty, tone }: { events: any[]; empty: string; tone: "rose" | "emerald" }) {
+function ScrollList({ events, empty, tone }: { events: EventItem[]; empty: string; tone: "rose" | "emerald" }) {
   const t = useT();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";

@@ -1,9 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
-import { TrendingUp, TrendingDown, Activity, AlertTriangle, Brain, Gauge as GaugeIcon, Map as MapIcon, DollarSign, Wallet, TrendingDown as TrendDown } from "lucide-react";
+import { TrendingUp, TrendingDown, Activity, AlertTriangle, Brain, Gauge as GaugeIcon, Map as MapIcon, DollarSign, Wallet } from "lucide-react";
 import {
-  Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Line, LineChart,
+  Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Line,
   Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Scatter, ScatterChart, ZAxis,
 } from "recharts";
 import { useFgmp } from "@/lib/fgmp/store";
@@ -15,8 +14,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { timeAgo } from "@/lib/fgmp/format";
-import { useT, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
+import type { AnalyticsPayload } from "@/lib/fgmp/types";
 
 /**
  * Render a currency figure that is null when no FX rate is configured.
@@ -34,30 +34,46 @@ function formatUsd(
   return `$${formatNumber(v.toFixed(opts.scale ? 1 : 2), numLang)}${opts.suffix ?? ""}`;
 }
 
+/**
+ * What a currency chart shows when no rate is configured.
+ *
+ * The section note above claims a zeroed chart is never drawn — these two were
+ * the exception: the donut coalesced null USD values to 0 and rendered
+ * "$0 consumed / $0 stolen / $0 delivered", and the regional bar chart drew an
+ * axis of $0k. Both state a measurement the platform does not have, which is the
+ * one thing the dash in the KPI cards exists to avoid.
+ */
+function NoCurrencyNotice() {
+  const t = useT();
+  return (
+    <p className="flex h-[200px] items-center justify-center px-6 text-center text-[11px] leading-relaxed text-muted-foreground">
+      {t("analytics.noFxRateConfigured")}
+    </p>
+  );
+}
+
 export function AnalyticsView() {
   const snapshot = useFgmp((s) => s.snapshot);
   const t = useT();
-  const dir = useDir();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
-  const { data: a } = useApi<any>("/api/fgmp/analytics", { interval: 15000 });
+  const { data: a } = useApi<AnalyticsPayload>("/api/fgmp/analytics", { interval: 15000 });
   const cc = useChartColors();
 
   if (!snapshot) return null;
-  const k = snapshot.kpis;
   const consumption = a?.consumptionTrend ?? [];
   const efficiency = a?.siteEfficiency ?? [];
   const theftEvents = a?.theftEvents ?? [];
   const forecast = a?.forecast ?? [];
   const regions = a?.regionBreakdown ?? [];
 
-  const totalConsumed = consumption.reduce((s: number, c: any) => s + c.litres, 0);
-  const totalRunning = consumption.reduce((s: number, c: any) => s + c.running, 0);
-  const avgEfficiency = efficiency.length ? (efficiency.reduce((s: number, e: any) => s + e.efficiency, 0) / efficiency.length) : 0;
+  const totalConsumed = consumption.reduce((s: number, c) => s + c.litres, 0);
+  const totalRunning = consumption.reduce((s: number, c) => s + c.running, 0);
+  const avgEfficiency = efficiency.length ? (efficiency.reduce((s: number, e) => s + e.efficiency, 0) / efficiency.length) : 0;
   const topConsumers = [...efficiency].sort((x, y) => y.consumed - x.consumed).slice(0, 10);
 
   // anomaly scatter: consumed vs kwh
-  const scatterData = efficiency.map((e: any) => ({ x: e.kwh, y: e.consumed, name: e.site, z: 1 }));
+  const scatterData = efficiency.map((e) => ({ x: e.kwh, y: e.consumed, name: e.site, z: 1 }));
 
   return (
     <div className="space-y-4">
@@ -73,7 +89,7 @@ export function AnalyticsView() {
         <KpiCard label={t("analytics.avgEfficiency")} value={`${formatNumber(avgEfficiency.toFixed(2), numLang)}`} unit="L/kWh" icon={<GaugeIcon className="h-4 w-4" />} tone={avgEfficiency > 0.4 ? "warn" : "good"} />
         <KpiCard label={t("analytics.theftEvents")} value={formatNumber(theftEvents.length, numLang)} icon={<AlertTriangle className="h-4 w-4" />} tone={theftEvents.length ? "danger" : "good"} />
         <KpiCard label={t("analytics.sitesAnalyzed")} value={formatNumber(efficiency.length, numLang)} icon={<MapIcon className="h-4 w-4" />} />
-        <KpiCard label={t("analytics.forecast7d")} value={`${formatNumber((forecast.reduce((s: number, f: any) => s + f.litres, 0) / 1000).toFixed(1), numLang)}k`} unit="L" icon={<Brain className="h-4 w-4" />} tone="info" />
+        <KpiCard label={t("analytics.forecast7d")} value={`${formatNumber((forecast.reduce((s: number, f) => s + f.litres, 0) / 1000).toFixed(1), numLang)}k`} unit="L" icon={<Brain className="h-4 w-4" />} tone="info" />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -107,7 +123,7 @@ export function AnalyticsView() {
                 <YAxis tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} />
                 <Tooltip contentStyle={{ fontSize: 12 }} />
                 <Bar dataKey="litres" radius={[4, 4, 0, 0]}>
-                  {forecast.map((_: any, i: number) => <Cell key={i} fill={cc.amber} />)}
+                  {forecast.map((_f, i: number) => <Cell key={i} fill={cc.amber} />)}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -126,7 +142,7 @@ export function AnalyticsView() {
                 <YAxis type="category" dataKey="site" tick={{ fontSize: 9 }} stroke="currentColor" strokeOpacity={0.3} width={120} />
                 <Tooltip contentStyle={{ fontSize: 12 }} />
                 <Bar dataKey="consumed" radius={[0, 4, 4, 0]} name={t("fuel.litresConsumed")}>
-                  {topConsumers.map((e: any, i: number) => <Cell key={i} fill={e.efficiency > 0.45 ? cc.rose : e.efficiency > 0.35 ? cc.amber : cc.emerald} />)}
+                  {topConsumers.map((e, i: number) => <Cell key={i} fill={e.efficiency > 0.45 ? cc.rose : e.efficiency > 0.35 ? cc.amber : cc.emerald} />)}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -142,7 +158,7 @@ export function AnalyticsView() {
                 <XAxis type="number" dataKey="x" name="kWh" tick={{ fontSize: 9 }} stroke="currentColor" strokeOpacity={0.3} label={{ value: "kWh", position: "insideBottom", offset: -2, fontSize: 9 }} />
                 <YAxis type="number" dataKey="y" name="Litres" tick={{ fontSize: 9 }} stroke="currentColor" strokeOpacity={0.3} />
                 <ZAxis type="number" dataKey="z" range={[40, 40]} />
-                <Tooltip contentStyle={{ fontSize: 11 }} formatter={(v: any, n: string) => [v, n === "y" ? "Litres" : "kWh"]} labelFormatter={() => ""} />
+                <Tooltip contentStyle={{ fontSize: 11 }} formatter={(v: number, n: string) => [v, n === "y" ? "Litres" : "kWh"]} labelFormatter={() => ""} />
                 <Scatter data={scatterData} fill={cc.sky} />
               </ScatterChart>
             </ResponsiveContainer>
@@ -157,7 +173,7 @@ export function AnalyticsView() {
           <CardContent className="p-3">
             <ScrollArea className="h-[220px]">
               <div className="space-y-1.5">
-                {theftEvents.slice(0, 20).map((e: any, i: number) => (
+                {theftEvents.slice(0, 20).map((e, i: number) => (
                   <div key={i} className="flex items-start gap-2 rounded border border-rose-500/20 bg-rose-500/5 p-2 text-[11px]">
                     <Badge variant="outline" className="h-4 shrink-0 px-1 text-[8px] border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400">{t("fuel.theft")}</Badge>
                     <div className="min-w-0 flex-1"><p className="line-clamp-2">{e.message}</p><p className="text-[10px] text-muted-foreground">{timeAgo(e.ts, numLang)}</p></div>
@@ -254,6 +270,9 @@ export function AnalyticsView() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
+                {a.fuelCost.currencyAvailable === false ? (
+                  <NoCurrencyNotice />
+                ) : (
                 <ResponsiveContainer width="100%" height={240}>
                   <BarChart
                     data={a.fuelCost.costByRegion}
@@ -271,11 +290,12 @@ export function AnalyticsView() {
                     <YAxis type="category" dataKey="region" tick={{ fontSize: 9 }} stroke="currentColor" strokeOpacity={0.3} width={110} />
                     <Tooltip
                       contentStyle={{ fontSize: 12 }}
-                      formatter={(v: any) => [`$${formatNumber(Number(v).toLocaleString(), numLang)}`, "Fuel Value"]}
+                      formatter={(v: number) => [`$${formatNumber(Number(v).toLocaleString(), numLang)}`, "Fuel Value"]}
                     />
                     <Bar dataKey="costUsd" radius={[0, 4, 4, 0]} fill="url(#cost-grad)" name="Fuel Value" />
                   </BarChart>
                 </ResponsiveContainer>
+                )}
               </CardContent>
             </Card>
 
@@ -287,10 +307,10 @@ export function AnalyticsView() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {(() => {
-                  // Null when no rate is configured. Coalesce to 0 for the
-                  // chart geometry only — the section is hidden below unless
-                  // the data is real, so a zeroed pie is never shown.
+                {a.fuelCost.currencyAvailable === false ? (
+                  <NoCurrencyNotice />
+                ) : (() => {
+                  // Reached only when a rate exists, so these are real USD.
                   const consumed = a.fuelCost.consumedTodayUsd ?? 0;
                   const stolen = a.fuelCost.stolenValueUsd ?? 0;
                   const delivered = a.fuelCost.deliveredValueUsd ?? 0;
@@ -318,7 +338,7 @@ export function AnalyticsView() {
                           </Pie>
                           <Tooltip
                             contentStyle={{ fontSize: 12 }}
-                            formatter={(v: any, n: string) => [`$${formatNumber(Number(v).toLocaleString(), numLang)}`, n]}
+                            formatter={(v: number, n: string) => [`$${formatNumber(Number(v).toLocaleString(), numLang)}`, n]}
                           />
                         </PieChart>
                       </ResponsiveContainer>

@@ -201,7 +201,7 @@ export function decideReconciliation(
 /** Compose the `reason` string persisted on the row. */
 export function reconciliationReasonText(
   decision: ReconciliationDecision,
-  cmd: ReconcilableCommand,
+  _cmd: ReconcilableCommand,
 ): string {
   return `${decision.reason}: ${decision.note}`;
 }

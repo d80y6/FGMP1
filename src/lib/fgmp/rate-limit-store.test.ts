@@ -9,7 +9,7 @@
  * Redis does not get run by the people who need it.
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { beforeEach, describe, expect, test } from "bun:test"
 
 // The store reads this at call time. Disable the shared backend BEFORE the
 // module is imported so the fallback path is exercised, and import it ONCE —

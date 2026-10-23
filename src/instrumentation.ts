@@ -45,6 +45,52 @@ export async function register(): Promise<void> {
     return;
   }
 
+  // ── Environment validation, once, before anything else ────────────────────
+  // Only the Node server owns the database credential, the scheduler and the
+  // session secret, so only it refuses to start on a broken environment.
+  // Warnings (no Apinator credentials, no MFA key) are reported and the server
+  // continues: each degrades one feature and none makes the app unsafe to serve.
+  const { assertEnv, formatEnvIssues } = await import("@/lib/env");
+  const envIssues = ((): Awaited<ReturnType<typeof assertEnv>> => {
+    try {
+      return assertEnv();
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : String(err));
+      // Throwing out of register() is NOT fail-closed: Next logs
+      // "Failed to prepare server", marks the hook failed and keeps the port
+      // open, so an orchestrator sees a healthy socket on a process that will
+      // 500 every request. Exiting is the only honest signal.
+      process.exit(1);
+    }
+  })();
+  const warnings = envIssues.filter((i) => i.severity === "warn");
+  if (warnings.length > 0) {
+    console.warn(
+      `[env] ${warnings.length} configuration warning${warnings.length === 1 ? "" : "s"} — ` +
+        "the app runs, but these features are degraded:\n" +
+        formatEnvIssues(warnings),
+    );
+  }
+
+  // ── RLS posture, before the first query ───────────────────────────────────
+  // `db.ts` runs this check at module load too, but in a deployed process
+  // nothing imports the database layer during boot — the scheduler is the only
+  // boot-time consumer and it is disabled in production — so a bypassing
+  // DATABASE_URL produced a healthy socket, a working sign-in screen and a 500
+  // on every data route, discovered only by making a request. Checking here is
+  // what makes `FGMP_REQUIRE_RLS=1` mean what .env.example and compose claim:
+  // the process refuses to start.
+  //
+  // The import is inside the try because the module itself can throw this
+  // error while being evaluated.
+  try {
+    const { assertRlsEnforced } = await import("@/lib/db");
+    assertRlsEnforced();
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
+
   const { simulationDecision } = await import("@/lib/fgmp/simulation");
   const decision = simulationDecision();
 

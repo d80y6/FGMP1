@@ -91,8 +91,13 @@ export function CommandPalette({ open, onOpenChange }: Props) {
     return () => window.removeEventListener("keydown", handler);
   }, [open, onOpenChange]);
 
-  const sites = snapshot?.sites ?? [];
-  const events = snapshot?.events ?? [];
+  // Derived together from `snapshot` so the empty-array fallbacks keep a stable
+  // identity: rebuilt on every render they would invalidate `filteredSites`
+  // (and everything downstream) even when the data has not changed.
+  const { sites, events } = useMemo(
+    () => ({ sites: snapshot?.sites ?? [], events: snapshot?.events ?? [] }),
+    [snapshot],
+  );
   const filteredSites = useMemo(() => {
     if (!query.trim()) return sites.slice(0, 6);
     const q = query.toLowerCase();

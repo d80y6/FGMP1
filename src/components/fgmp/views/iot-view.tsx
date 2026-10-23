@@ -14,12 +14,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { timeAgo } from "@/lib/fgmp/format";
-import { useT, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
+import type { IoTDeviceRow } from "@/lib/fgmp/types";
 import { translate } from "@/lib/fgmp/i18n";
 import { ResourceError } from "@/components/fgmp/resource-error";
 
@@ -43,10 +43,9 @@ function iotProtocolLabel(proto: string, lang: Language): string {
 export function IotView() {
   const { snapshot, tick } = useFgmp(useShallow((s) => ({ snapshot: s.snapshot, tick: s.tick })));
   const t = useT();
-  const dir = useDir();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
-  const { data: devices, error: devicesError, refetch } = useApi<any[]>("/api/fgmp/iot", { interval: 8000 });
+  const { data: devices, error: devicesError, refetch } = useApi<IoTDeviceRow[]>("/api/fgmp/iot", { interval: 8000 });
   const [q, setQ] = useState("");
   const [protocol, setProtocol] = useState("all");
   const [type, setType] = useState("all");
@@ -203,6 +202,6 @@ export function IotView() {
 function nextFw(current: string): string {
   const m = current.match(/v(\d+)\.(\d+)\.(\d+)/);
   if (!m) return "v3.0.0";
-  const [_, maj, min, pat] = m;
+  const [, maj, min, pat] = m;
   return `v${maj}.${min}.${Number(pat) + 1}`;
 }

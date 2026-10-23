@@ -18,11 +18,11 @@ import {
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useApi } from "@/lib/fgmp/use-api";
 import { useFgmp } from "@/lib/fgmp/store";
-import { timeAgo, fmtDateTime, fmtLitres } from "@/lib/fgmp/format";
+import { useNow } from "@/lib/fgmp/use-now";
+import { timeAgo, fmtLitres } from "@/lib/fgmp/format";
 
 /**
  * Fuel Delivery Tracking
@@ -444,7 +444,7 @@ export function FuelDeliveryTracking() {
 
 /** Active delivery card with progress + ETA. */
 function ActiveDeliveryCard({ d }: { d: Delivery & { uiStatus: UiStatus; region: string } }) {
-  const now = Date.now();
+  const now = useNow();
   const scheduledAt = parseDate(d.scheduledAt);
   const dispatchedAt = parseDate(d.dispatchedAt);
   const eta = dispatchedAt ? new Date(dispatchedAt.getTime() + 90 * 60 * 1000) : null;

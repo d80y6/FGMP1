@@ -1,6 +1,5 @@
 import { toJsonNumber, toNum, decimalsToJson } from "@/lib/fgmp/decimal";
 import { NextRequest, NextResponse } from "next/server";
-import { bootstrap } from "@/lib/fgmp";
 import {
   rateLimitByUser,
   applyRateLimitHeaders,

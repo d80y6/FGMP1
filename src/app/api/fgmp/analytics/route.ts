@@ -208,7 +208,7 @@ export async function GET(req: NextRequest) {
       ? await loadFuelLevelReadings({
           user: me,
           tenantSiteIds: tenantSiteIds === null ? null : Array.from(tenantSiteIds),
-          startMs: dayStarts[0]!,
+          startMs: dayStarts[0],
         })
       : null;
 
@@ -419,7 +419,7 @@ export async function GET(req: NextRequest) {
       (await loadFuelLevelReadings({
         user: me,
         tenantSiteIds: tenantSiteIds === null ? null : Array.from(tenantSiteIds),
-        startMs: dayStarts[0]!,
+        startMs: dayStarts[0],
       }));
     const perDayCost = bucketReadingsByZonedDay(dailyReadingsForCost.rows, tanks, timezone);
     // ── Currency conversion is OPTIONAL and never guessed ────────────────────

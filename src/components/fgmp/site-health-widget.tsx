@@ -5,6 +5,11 @@ import { Activity, Droplet, Zap, Battery, Siren, Building2 } from "lucide-react"
 import { cn } from "@/lib/utils";
 import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
+import {
+  healthBand,
+  HEALTH_BAND_HEX,
+  HEALTH_BAND_LABEL_KEYS,
+} from "@/lib/health/site-health-score";
 
 interface HealthFactor {
   label: string;
@@ -36,33 +41,19 @@ const FACTOR_LABEL_KEYS: Record<string, string> = {
   alarm: "dash.alarmLoad",
 };
 
-function healthColor(score: number): string {
-  if (score >= 85) return "#10b981"; // emerald
-  if (score >= 70) return "#22c55e"; // green
-  if (score >= 55) return "#eab308"; // yellow
-  if (score >= 40) return "#f59e0b"; // amber
-  return "#f43f5e"; // rose
-}
-
 /**
- * Returns the i18n key for the tier label corresponding to a given score.
- * Keys live under the `health.*` namespace and resolve to localized tier names
- * ("Excellent" / "Good" / "Fair" / "Poor" / "Critical").
+ * Band/colour lookup now comes from the canonical site-health module. This
+ * widget used to carry a near-copy of the scale with 85/70/55/40 cut-offs,
+ * which disagreed with the badge on scores of 85–89 and 70–74.
  */
-function healthLabelKey(score: number): "health.excellent" | "health.good" | "health.fair" | "health.poor" | "health.critical" {
-  if (score >= 85) return "health.excellent";
-  if (score >= 70) return "health.good";
-  if (score >= 55) return "health.fair";
-  if (score >= 40) return "health.poor";
-  return "health.critical";
-}
+const healthColor = (score: number): string => HEALTH_BAND_HEX[healthBand(score)];
 
 export function SiteHealthWidget({ overall, factors }: SiteHealthWidgetProps) {
   const t = useT();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
   const color = healthColor(overall);
-  const label = t(healthLabelKey(overall));
+  const label = t(HEALTH_BAND_LABEL_KEYS[healthBand(overall)]);
 
   // Pulse-on-change: when `overall` changes, the score number span remounts
   // (key includes the value) and replays the CSS fade-in animation. This is

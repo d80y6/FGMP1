@@ -139,27 +139,9 @@ export function useArabicNumerals(): boolean {
   return lang === "ar";
 }
 
-const ARABIC_DIGITS = ["٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩"];
-
 /**
- * Convert Western digits (0-9) in a string to Arabic-Indic (٠-٩).
- * Leaves non-digit characters untouched. Useful for localizing numeric
- * labels, KPI chips, and timestamps when language is AR.
+ * Digit localisation and number formatting live in the pure `numerals` module
+ * so server code and client code share one implementation. Re-exported here
+ * because `use-language` is the module most callers already import from.
  */
-export function toArabicNumerals(input: string): string {
-  return input.replace(/[0-9]/g, (d) => ARABIC_DIGITS[Number(d)] ?? d);
-}
-
-/**
- * Format a number for display in the given language.
- *  - For "ar": converts the digits to Arabic-Indic (٠١٢٣٤٥٦٧٨٩).
- *  - For "en": leaves the digits as Western (Latin).
- *
- * Accepts a number or string. Non-numeric strings pass through with digits
- * converted (so `$1,234.5` → `$١٬٢٣٤٫٥` style — though we don't localize
- * the thousands separator or decimal point here, only the digits).
- */
-export function formatNumber(n: number | string, lang: Language): string {
-  const s = typeof n === "number" ? n.toLocaleString("en-US") : n;
-  return lang === "ar" ? toArabicNumerals(s) : s;
-}
+export { toArabicNumerals, formatNumber } from "./numerals";

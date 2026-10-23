@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useSyncExternalStore } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import { Star, ChevronDown, ChevronRight, X } from "lucide-react";
 import { useFgmp } from "@/lib/fgmp/store";
 import {
@@ -9,6 +9,7 @@ import {
   resolvePinnedSites,
 } from "@/lib/fgmp/use-favorites";
 import type { SiteState } from "@/lib/fgmp/types";
+import { siteStatusDotClass } from "@/lib/fgmp/status";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/fgmp/use-language";
 
@@ -49,21 +50,6 @@ function writeCollapsed(v: boolean): void {
   }
 }
 
-/** Status → dot colour, matching the rest of the app's severity semantics. */
-function statusDot(status: string): string {
-  switch (status) {
-    case "ONLINE":
-      return "bg-emerald-500";
-    case "DEGRADED":
-      return "bg-amber-500";
-    case "OFFLINE":
-      return "bg-rose-500";
-    case "MAINTENANCE":
-      return "bg-sky-500";
-    default:
-      return "bg-slate-400";
-  }
-}
 
 export function PinnedSitesWidget() {
   const t = useT();
@@ -153,7 +139,7 @@ export function PinnedSitesWidget() {
                     <span
                       className={cn(
                         "h-1.5 w-1.5 shrink-0 rounded-full",
-                        statusDot(s.status),
+                        siteStatusDotClass(s.status),
                       )}
                     />
                     <span className="min-w-0 flex-1">

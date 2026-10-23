@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { engine } from "@/lib/fgmp";
 import { errorResponse } from "@/lib/fgmp/api-error";
-import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 export const dynamic = "force-dynamic";
 

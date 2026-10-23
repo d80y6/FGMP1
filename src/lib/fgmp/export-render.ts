@@ -31,6 +31,7 @@
  */
 
 import type { DecimalLike } from "@/lib/fgmp/decimal";
+import { quoteCsvField } from "./csv";
 import { Document, Packer, Paragraph, Table, TableCell, TableRow, TextRun, WidthType } from "docx";
 import PDFDocument from "pdfkit";
 import arabicReshaper from "arabic-reshaper";
@@ -122,16 +123,15 @@ export function renderCell(v: unknown): string {
   return renderNumber(v);
 }
 
-/** Escape one CSV field. RFC 4180. */
+/**
+ * Escape one CSV field. RFC 4180 + the shared Excel formula-injection guard.
+ *
+ * The quoting rule lives in `csv.ts` so the client-side exports apply the same
+ * guard; this function only adds the export-specific cell rendering (Decimal
+ * strings, Dates, arrays, Yes/No booleans) before quoting.
+ */
 export function csvEscape(v: unknown): string {
-  const s = renderCell(v);
-  // Quote when the value contains a delimiter, a quote, or a newline. The
-  // leading-space and tab cases are Excel's formula-injection guard: a cell
-  // beginning `=`, `+`, `-` or `@` is executed as a formula on open, which is
-  // how a site name from user input becomes code on an operator's machine.
-  const needsQuote = /[",\r\n]/.test(s) || /^[=+\-@\t\r]/.test(s);
-  if (!needsQuote) return s;
-  return `"${s.replace(/"/g, '""')}"`;
+  return quoteCsvField(renderCell(v));
 }
 
 /** Render CSV with a BOM so Excel opens UTF-8 Arabic correctly. */

@@ -1,28 +1,25 @@
-import type { Metadata } from "next";
-import { Geist, Geist_Mono, Cairo } from "next/font/google";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import { Toaster } from "@/components/ui/toaster";
+import "./fonts.css";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/fgmp/theme-provider";
 import { AuthSessionProvider } from "@/components/providers/session-provider";
 import { ErrorBoundary } from "@/components/providers/error-boundary";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
+/* Fonts are self-hosted in `src/app/fonts/` and declared in `fonts.css`
+   (see that file for why `next/font/google` was removed: the build must not
+   download from fonts.googleapis.com). The CSS variables are defined there. */
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
-const cairo = Cairo({
-  variable: "--font-cairo",
-  subsets: ["arabic", "latin"],
-  weight: ["400", "500", "600", "700"],
-  display: "swap",
-});
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  // Matches the slate background in both themes, so the mobile browser chrome
+  // does not flash white before the app paints.
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#0b0f14" },
+  ],
+};
 
 export const metadata: Metadata = {
   title: "FGMP — Fuel & Generator Monitoring Platform",
@@ -42,7 +39,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} ${cairo.variable} antialiased bg-background text-foreground`}
+        className="antialiased bg-background text-foreground"
       >
         {/* ErrorBoundary sits OUTSIDE ThemeProvider so theme-switching errors
             (and any other provider-level render errors) are also caught. */}
@@ -52,7 +49,6 @@ export default function RootLayout({
                 available in AppShell + LoginDialog (Task 31-A). */}
             <AuthSessionProvider>
               {children}
-              <Toaster />
               <SonnerToaster position="top-right" richColors closeButton />
             </AuthSessionProvider>
           </ThemeProvider>

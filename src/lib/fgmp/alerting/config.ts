@@ -144,7 +144,10 @@ export function loadAlertRules(path?: string): AlertRulesFile {
   const file = path ?? join(process.cwd(), "config", "alerts.json");
   let text: string;
   try {
-    text = readFileSync(file, "utf8");
+    // `turbopackIgnore` keeps the tracer from treating a runtime data path as
+    // a module edge and pulling the whole repository into the standalone
+    // output. The file is shipped explicitly via outputFileTracingIncludes.
+    text = readFileSync(/* turbopackIgnore: true */ file, "utf8");
   } catch (err) {
     throw new AlertConfigError(
       `Could not read alert rules at ${file}: ${err instanceof Error ? err.message : String(err)}. ` +

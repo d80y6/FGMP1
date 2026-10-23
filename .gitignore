@@ -100,3 +100,6 @@ server.log
 
 # mTLS material (scripts/generate-mtls-certs.sh) — never commit keys
 /certs/
+
+# npm lockfile — this repo installs with bun (bun.lock is the source of truth)
+package-lock.json

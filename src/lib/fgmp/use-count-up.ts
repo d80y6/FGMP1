@@ -28,7 +28,12 @@ export function useCountUp(
 ): string {
   // When animation is disabled or user prefers reduced motion, skip state entirely.
   const shouldAnimate = enabled && !prefersReducedMotion();
-  const [display, setDisplay] = useState<number>(shouldAnimate ? 0 : value);
+  const initialDisplay = shouldAnimate ? 0 : value;
+  const [display, setDisplay] = useState<number>(initialDisplay);
+  // `display` mirrored for the effect below. Taking it as a dependency would
+  // restart the animation on every frame it writes, so the effect reads the
+  // ref instead — same value, without the feedback loop.
+  const displayRef = useRef<number>(initialDisplay);
   const rafRef = useRef<number | null>(null);
   const fromRef = useRef<number>(value);
   const startRef = useRef<number | null>(null);
@@ -36,12 +41,15 @@ export function useCountUp(
   useEffect(() => {
     if (!shouldAnimate) {
       // No animation: keep display synced via rAF callback (avoids setState-in-effect lint).
-      rafRef.current = requestAnimationFrame(() => setDisplay(value));
+      rafRef.current = requestAnimationFrame(() => {
+        displayRef.current = value;
+        setDisplay(value);
+      });
       return () => {
         if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
       };
     }
-    fromRef.current = display;
+    fromRef.current = displayRef.current;
     startRef.current = null;
 
     const tick = (now: number) => {
@@ -51,10 +59,12 @@ export function useCountUp(
       // ease-out cubic
       const eased = 1 - Math.pow(1 - t, 3);
       const current = fromRef.current + (value - fromRef.current) * eased;
+      displayRef.current = current;
       setDisplay(current);
       if (t < 1) {
         rafRef.current = requestAnimationFrame(tick);
       } else {
+        displayRef.current = value;
         setDisplay(value);
       }
     };

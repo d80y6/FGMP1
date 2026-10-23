@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const auth = await requireRole(req, [...ROLES.NOTIFICATION, "SUPERADMIN"] as any);
+  const auth = await requireRole(req, [...ROLES.NOTIFICATION, "SUPERADMIN"]);
   if ("error" in auth) return auth.error;
   const me = auth.user;
   try {

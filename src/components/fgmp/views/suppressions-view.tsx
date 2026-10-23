@@ -35,6 +35,7 @@ import { z } from "zod";
 import { useFgmp } from "@/lib/fgmp/store";
 import { useApi, apiPost, apiPatch, apiDelete } from "@/lib/fgmp/use-api";
 import { SectionHeader } from "@/components/fgmp/section-header";
+import { useLiveNow } from "@/lib/fgmp/use-now";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -52,9 +53,9 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { toast } from "sonner";
 import { ConfirmDestructive, useDestructiveConfirm } from "@/components/fgmp/confirm-destructive";
 import { fmtDateTime } from "@/lib/fgmp/format";
-import { useT, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { useT, useDir, useArabicNumerals, formatNumber, toArabicNumerals } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
-import { translate } from "@/lib/fgmp/i18n";
+import { alarmTypeLabel } from "@/lib/fgmp/labels";
 
 /* ────────────────────────────────────────────────────────────────────────
  * Types & constants
@@ -95,13 +96,6 @@ const ROLE_OK = new Set(["ADMIN", "NOC_OPERATOR", "REGIONAL_MANAGER"]);
  * Helpers
  * ──────────────────────────────────────────────────────────────────────── */
 
-/** Resolve an alarm type enum value to its localized display label. */
-function alarmTypeLabel(type: string | null, lang: Language): string {
-  if (!type) return "";
-  const key = `alarm.${type}`;
-  const translated = translate(key, lang);
-  return translated === key ? type.replace(/_/g, " ") : translated;
-}
 
 /** Format a millisecond duration as "1h 5m" / "3m 10s" / "expired". */
 function fmtDuration(ms: number, lang: Language): string {
@@ -115,12 +109,7 @@ function fmtDuration(ms: number, lang: Language): string {
   if (h > 0) s2 = `${h}h ${m}m`;
   else if (m > 0) s2 = `${m}m ${s}s`;
   else s2 = `${s}s`;
-  return (neg ? "-" : "") + (lang === "ar" ? toArabicDigitsLocal(s2) : s2);
-}
-
-function toArabicDigitsLocal(input: string): string {
-  const ARABIC_DIGITS = ["٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩"];
-  return input.replace(/[0-9]/g, (d) => ARABIC_DIGITS[Number(d)] ?? d);
+  return (neg ? "-" : "") + (lang === "ar" ? toArabicNumerals(s2) : s2);
 }
 
 /** Color tone for an active suppression card based on remaining time. */
@@ -163,24 +152,18 @@ export function SuppressionsView() {
   // Phase 5 task 4 — confirm dialog state.
   const confirmDelete = useDestructiveConfirm();
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
-  // Tick to force re-render of countdowns every 5s without re-fetching.
-  const [, setTick] = useState(0);
+  // Countdowns tick from the shared 5 s clock instead of a bespoke timer, so
+  // every card in the list agrees on "now" and no component owns an interval.
+  const now = useLiveNow();
 
   const { data: suppressions, loading, refetch } = useApi<SuppressionRow[]>(
     "/api/fgmp/suppressions",
     { interval: 30000 },
   );
 
-  // Local clock — re-render every 5s so countdowns update smoothly.
-  useEffect(() => {
-    const i = setInterval(() => setTick((n) => n + 1), 5000);
-    return () => clearInterval(i);
-  }, []);
-
   const sites = snapshot?.sites ?? [];
 
   const { active, expired } = useMemo(() => {
-    const now = Date.now();
     const list = suppressions ?? [];
     const activeList: SuppressionRow[] = [];
     const expiredList: SuppressionRow[] = [];
@@ -196,10 +179,9 @@ export function SuppressionsView() {
       }
     }
     return { active: activeList, expired: expiredList.slice(0, 50) };
-  }, [suppressions]);
+  }, [suppressions, now]);
 
   const stats = useMemo(() => {
-    const now = Date.now();
     const activeNow = active.filter((s) => {
       const start = new Date(s.startsAt).getTime();
       const end = new Date(s.endsAt).getTime();
@@ -210,7 +192,7 @@ export function SuppressionsView() {
       tenantWide: active.filter((s) => s.siteId === null).length,
       expiredTotal: (suppressions ?? []).length - active.length,
     };
-  }, [active, suppressions]);
+  }, [active, suppressions, now]);
 
   // RBAC gate — only the three roles listed in the spec may manage
   // suppressions. Other authenticated users (e.g. FIELD_ENGINEER /
@@ -493,7 +475,7 @@ interface ActiveCardProps {
 
 function ActiveCard({ row, lang, onExtend, onCancel, onDelete, canDelete }: ActiveCardProps) {
   const t = useT();
-  const now = Date.now();
+  const now = useLiveNow();
   const start = new Date(row.startsAt).getTime();
   const end = new Date(row.endsAt).getTime();
   const tone = toneFor(now, end, start);

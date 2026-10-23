@@ -1,7 +1,7 @@
 import type { Prisma, SystemSettingCategory } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { withTenant } from "@/lib/fgmp/tenant-context";
-import { asTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
+import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { audit } from "@/lib/fgmp/audit";
 import {
   rateLimitByUser,

@@ -161,8 +161,6 @@ export async function attachGeographyNames<T extends {
   >
 > {
   const regionIds = rows.map((r) => r.regionId).filter((x): x is string => !!x);
-  const govIds = rows.map((r) => r.governorateId).filter((x): x is string => !!x);
-  const districtIds = rows.map((r) => r.districtId).filter((x): x is string => !!x);
 
   const byRegion = new Map<string, string>();
   const byGov = new Map<string, string>();
@@ -188,12 +186,20 @@ export async function attachGeographyNames<T extends {
     }
   }
 
-  return rows.map((r) => ({
-    ...r,
-    region: r.regionId && byRegion.has(r.regionId) ? { id: r.regionId, name: byRegion.get(r.regionId)! } : r.region ?? null,
-    governorate: r.governorateId && byGov.has(r.governorateId) ? { id: r.governorateId, name: byGov.get(r.governorateId)! } : null,
-    district: r.districtId && byDistrict.has(r.districtId) ? { id: r.districtId, name: byDistrict.get(r.districtId)! } : null,
-  }));
+  return rows.map((r) => {
+    // Resolve each name once. `has()` followed by `get()!` reads the same map
+    // twice and asserts what it just checked; a single lookup that yields a
+    // string-or-undefined expresses the same thing without the assertion.
+    const regionName = r.regionId ? byRegion.get(r.regionId) : undefined;
+    const governorateName = r.governorateId ? byGov.get(r.governorateId) : undefined;
+    const districtName = r.districtId ? byDistrict.get(r.districtId) : undefined;
+    return {
+      ...r,
+      region: r.regionId && regionName ? { id: r.regionId, name: regionName } : r.region ?? null,
+      governorate: r.governorateId && governorateName ? { id: r.governorateId, name: governorateName } : null,
+      district: r.districtId && districtName ? { id: r.districtId, name: districtName } : null,
+    };
+  });
 }
 
 /** List a tenant's governorates, optionally filtered by region. */

@@ -14,16 +14,11 @@
 // is threaded through explicitly.
 
 import { translateFmt, type Language } from "@/lib/fgmp/i18n";
-
-/** Convert Western digits (0-9) in a string to Arabic-Indic (٠-٩). */
-function toArabicDigits(input: string): string {
-  const ARABIC_DIGITS = ["٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩"];
-  return input.replace(/[0-9]/g, (d) => ARABIC_DIGITS[Number(d)] ?? d);
-}
+import { formatNumber, toArabicNumerals } from "./numerals";
 
 /** Localize a number/string for display per the given language. */
 function localize(s: string, lang: Language): string {
-  return lang === "ar" ? toArabicDigits(s) : s;
+  return lang === "ar" ? toArabicNumerals(s) : s;
 }
 
 /**
@@ -52,8 +47,7 @@ export function timeAgo(ts: number | string | Date, lang: Language = "en"): stri
 }
 
 export function fmtNum(n: number, digits = 0, lang: Language = "en"): string {
-  const s = n.toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: 0 });
-  return localize(s, lang);
+  return formatNumber(n, lang, digits);
 }
 
 /**
@@ -102,4 +96,24 @@ export function fmtDate(ts: number | string | Date, lang: Language = "en"): stri
     }
   }
   return d.toLocaleDateString("en-GB", { timeZone: "Asia/Aden" });
+}
+
+/**
+ * Time-of-day formatter (HH:MM:SS) in the platform timezone.
+ * `fmtDateTime` covers dates; this covers the clock-only case that the system
+ * health view previously implemented locally (and, in the Arabic fallback,
+ * without a timezone — so the same log line could render in two zones).
+ */
+export function fmtTime(ts: number | string | Date, lang: Language = "en"): string {
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return typeof ts === "string" ? ts : "";
+  if (lang === "ar") {
+    try {
+      return d.toLocaleTimeString("ar-SA-u-nu-arab", { hour12: false, timeZone: "Asia/Aden" })
+        || d.toLocaleTimeString("en-GB", { hour12: false, timeZone: "Asia/Aden" });
+    } catch {
+      return d.toLocaleTimeString("en-GB", { hour12: false, timeZone: "Asia/Aden" });
+    }
+  }
+  return d.toLocaleTimeString("en-GB", { hour12: false, timeZone: "Asia/Aden" });
 }

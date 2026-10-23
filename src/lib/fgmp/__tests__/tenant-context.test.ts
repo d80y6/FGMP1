@@ -4,7 +4,7 @@
  * These are pure and need no database — they cover the input validation that
  * stands between a caller and a security context. The DATABASE-dependent
  * properties (RLS isolation, fail-closed, no context leak) are proven by
- * scripts/rls-regression.ts, which runs against a live PostgreSQL instance.
+ * scripts/verify/rls-regression.ts, which runs against a live PostgreSQL instance.
  *
  * Run with:  node --test --import tsx src/lib/fgmp/__tests__/
  * (or via the project test runner once one is configured)

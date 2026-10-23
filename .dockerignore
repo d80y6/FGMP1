@@ -20,9 +20,9 @@ node_modules
 .initial_snapshot.json
 
 # Docs that are not needed to build or run the app
-REVIEW.md
-PRODUCTION.md
 AGENTS.md
+docs/
+README.md
 
 # Non-app deliverables (proposal documents, generated PDFs)
 *.docx

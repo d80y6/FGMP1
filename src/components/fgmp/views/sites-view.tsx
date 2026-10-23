@@ -5,7 +5,7 @@ import { useShallow } from "zustand/react/shallow";
 import { Building2, Search, MapPin, Filter, Star, Plus, Pencil, Trash2, MoreHorizontal, Loader2 } from "lucide-react";
 import { useFgmp } from "@/lib/fgmp/store";
 import { useFavorites, useFavoritesHydration, useIsFavorite } from "@/lib/fgmp/use-favorites";
-import { useApi, apiDelete } from "@/lib/fgmp/use-api";
+import { apiDelete } from "@/lib/fgmp/use-api";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { NationalMap } from "@/components/fgmp/national-map";
 import { StatusBadge } from "@/components/fgmp/status-badge";
@@ -31,7 +31,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import { csvFilename, type CsvColumn } from "@/lib/fgmp/csv-export";
-import { useT, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 import type { SiteState } from "@/lib/fgmp/types";
 import { toast } from "sonner";
@@ -41,7 +41,6 @@ export function SitesView() {
   useFavoritesHydration();
   const { snapshot, selectSite, selectedSiteId, me, refresh } = useFgmp(useShallow((s) => ({ snapshot: s.snapshot, selectSite: s.selectSite, selectedSiteId: s.selectedSiteId, me: s.me, refresh: s.refresh })));
   const t = useT();
-  const dir = useDir();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
   const toggle = useFavorites((s) => s.toggle);

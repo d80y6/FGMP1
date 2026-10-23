@@ -9,9 +9,21 @@
  * console with a stable error id so support staff can correlate reports
  * with server logs.
  *
- * In production, the `componentDidCatch` hook would forward the error to
- * Sentry / Datadog — left as a TODO comment so the integration point is
- * explicit.
+ * ── ERROR REPORTING ─────────────────────────────────────────────────────────
+ * This package ships no vendor SDK (Sentry, Datadog, Rollbar …): which one a
+ * deployment uses is an operator decision, and bundling one would add a global
+ * agent and a DSN to every page for a feature that may be switched off. What it
+ * DOES do is make the integration point real instead of a TODO:
+ *
+ *   1. every caught error is logged as one structured JSON line carrying the
+ *      same `errorId` the operator sees on screen;
+ *   2. `window.__fgmpReportError` is called with the full report when a
+ *      deployment has installed it (see docs/OPERATIONS.md §7);
+ *   3. a `fgmp:client-error` CustomEvent is dispatched, so a host page or a
+ *      wrapper script can forward it without changing this file.
+ *
+ * All three are best-effort: a failing reporter must never mask the original
+ * error or break the fallback UI.
  */
 
 import { Component, type ErrorInfo, type ReactNode, useState } from "react";
@@ -42,6 +54,58 @@ function genErrorId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/** The payload handed to a deployment's error reporter. */
+export interface ClientErrorReport {
+  errorId: string;
+  name: string;
+  message: string;
+  stack?: string;
+  componentStack?: string;
+  url: string;
+  userAgent: string;
+  occurredAt: string;
+}
+
+function buildErrorReport(
+  error: Error,
+  info: ErrorInfo,
+  errorId: string,
+): ClientErrorReport {
+  const nav = typeof navigator === "undefined" ? undefined : navigator;
+  return {
+    errorId,
+    name: error?.name ?? "Error",
+    message: error?.message ?? String(error),
+    stack: error?.stack,
+    componentStack: info?.componentStack ?? undefined,
+    url: typeof window === "undefined" ? "" : window.location.href,
+    userAgent: nav?.userAgent ?? "",
+    occurredAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Hand the report to whatever the deployment installed.
+ *
+ * Deliberately swallow every failure: reporting is diagnostics, and an
+ * exception thrown inside an error reporter is how a user ends up staring at a
+ * blank page instead of the fallback.
+ */
+function forwardToDeploymentReporter(report: ClientErrorReport): void {
+  if (typeof window === "undefined") return;
+  try {
+    const hook = window.__fgmpReportError;
+    if (typeof hook === "function") hook(report);
+  } catch {
+    /* a broken reporter must not break the boundary */
+  }
+  try {
+    window.dispatchEvent(new CustomEvent("fgmp:client-error", { detail: report }));
+  } catch {
+    /* older browsers / non-DOM contexts */
+  }
+}
+
 /**
  * Reload the current page — used by the fallback "Reload" button. We force
  * a server re-render (not just a soft reset) to clear any corrupted
@@ -64,10 +128,14 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
-    // Always log to the browser console for developer diagnostics.
-    console.error("[ErrorBoundary] Uncaught render error:", error, info);
-    // TODO: forward to Sentry / Datadog in production.
-    //   Sentry.captureException(error, { extra: { componentStack: info.componentStack, errorId: this.state.errorId } });
+    const report = buildErrorReport(error, info, this.state.errorId);
+
+    // Structured, greppable, and value-redacted by construction: only the
+    // message, the stack and the component stack are included, never form
+    // state or anything else the error object happens to carry.
+    console.error("[ErrorBoundary]", JSON.stringify(report));
+
+    forwardToDeploymentReporter(report);
   }
 
   render(): ReactNode {
@@ -102,9 +170,12 @@ Time: ${new Date().toISOString()}
   };
 
   const goHome = () => {
-    if (typeof window !== "undefined") {
-      window.location.href = "/?view=dashboard";
-    }
+    if (typeof window === "undefined") return;
+    // Full document navigation on purpose: this component renders when React
+    // itself has failed, so the router and its state cannot be trusted to
+    // recover. `replace` (not `assign`) so the broken page is not left in
+    // history for the Back button to return to.
+    window.location.replace("/?view=dashboard");
   };
 
   return (
@@ -164,4 +235,20 @@ Time: ${new Date().toISOString()}
       </Card>
     </div>
   );
+}
+
+declare global {
+  interface Window {
+    /**
+     * Optional deployment hook: set by a script that has already loaded an
+     * error-reporting SDK, e.g.
+     *
+     *   window.__fgmpReportError = (report) => {
+     *     Sentry.captureException(report);   // or Datadog RUM, etc.
+     *   };
+     *
+     * The app never loads a vendor SDK itself — see the header of this file.
+     */
+    __fgmpReportError?: (report: ClientErrorReport) => void;
+  }
 }

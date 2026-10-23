@@ -1,7 +1,6 @@
 import type { TicketStatus } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { bootstrap } from "@/lib/fgmp";
 import { validateBody } from "@/lib/fgmp/schemas";
 import {
   rateLimitByUser,

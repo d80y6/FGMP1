@@ -671,7 +671,7 @@ const TONE_ICON_BG: Record<ChannelCardProps["tone"], string> = {
 
 function ChannelCard({
   icon, tone, title, description, enabled, onToggle,
-  severities, onToggleSeverity, t, numLang, children,
+  severities, onToggleSeverity, t, children,
 }: ChannelCardProps) {
   const dir = useDir();
   const selected = parseSeverities(severities);

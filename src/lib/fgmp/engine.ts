@@ -26,7 +26,6 @@ import {
 } from "./thresholds-time";
 import { Rng, streamsFor, DEFAULT_SIM_SEED } from "./prng";
 import { assertSimulationAllowed } from "./simulation";
-import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 /**
  * Raised when the engine is asked to initialise without being told which
@@ -503,7 +502,7 @@ private tenantsFor(expectedTenantId?: string | null): readonly string[] {
   private async loadInto(
     tx: Prisma.TransactionClient,
     tenants: readonly string[],
-    append = false,
+    _append = false,
   ) {
     // Load geo hierarchy
     //
@@ -897,7 +896,10 @@ private tenantsFor(expectedTenantId?: string | null): readonly string[] {
 
     // ── Generators + fuel consumption ────────────────────────────────────
     for (const g of this.generators) {
-      const site = this.sites.find((s) => s.id === g.siteId)!;
+      const site = this.sites.find((s) => s.id === g.siteId);
+      // Orphaned asset (its site is not in engine state): skip it rather
+      // than crash the whole tick on a missing parent.
+      if (!site) continue;
       const siteCommsDown = !!(site.commLossUntil && this.now <= site.commLossUntil);
 
       if (g.status === "FAULT") {
@@ -997,7 +999,10 @@ private tenantsFor(expectedTenantId?: string | null): readonly string[] {
 
     // ── Fuel tanks: DETECTED losses, then thresholds ─────────────────────
     for (const tk of this.tanks) {
-      const site = this.sites.find((s) => s.id === tk.siteId)!;
+      const site = this.sites.find((s) => s.id === tk.siteId);
+      // Orphaned asset (its site is not in engine state): skip it rather
+      // than crash the whole tick on a missing parent.
+      if (!site) continue;
 
       // ── FUEL THEFT: DERIVED, NOT INJECTED ─────────────────────────────────
       // The previous code rolled a dice, subtracted a random volume, and then
@@ -1135,7 +1140,10 @@ private tenantsFor(expectedTenantId?: string | null): readonly string[] {
 
     // ── Batteries ────────────────────────────────────────────────────────
     for (const b of this.batteries) {
-      const site = this.sites.find((s) => s.id === b.siteId)!;
+      const site = this.sites.find((s) => s.id === b.siteId);
+      // Orphaned asset (its site is not in engine state): skip it rather
+      // than crash the whole tick on a missing parent.
+      if (!site) continue;
       const genRunning = this.generators.some((g) => g.siteId === b.siteId && g.status === "RUNNING");
       const charging = genRunning || site.gridAvailable;
       b.charging = charging;
@@ -1184,7 +1192,10 @@ private tenantsFor(expectedTenantId?: string | null): readonly string[] {
     // preset, complete the txn, push a FuelTransaction row, update the
     // totalizer, and decrement the site's DIESEL tank.
     for (const d of this.dispensers) {
-      const site = this.sites.find((s) => s.id === d.siteId)!;
+      const site = this.sites.find((s) => s.id === d.siteId);
+      // Orphaned asset (its site is not in engine state): skip it rather
+      // than crash the whole tick on a missing parent.
+      if (!site) continue;
       // ── ESP reboot recovery (Task 48) ──────────────────────────────────
       // While an applyEspReboot() window is in flight the ESP is off the bus:
       // hold OFFLINE until the window elapses, then come back as IDLE.
@@ -1469,7 +1480,11 @@ private tenantsFor(expectedTenantId?: string | null): readonly string[] {
     const status: FuelTransactionState["status"] = cancelled ? "CANCELLED" : "COMPLETED";
     // Phase 1 step 4: FuelTransaction requires tenantId. Resolved from the
     // parent Site already loaded in engine state.
-    const site = this.sites.find((s) => s.id === d.siteId)!;
+    const site = this.sites.find((s) => s.id === d.siteId);
+    // A FuelTransaction carries its tenant, which only the parent site knows.
+    // If the site is gone from engine state we cannot attribute the row, so the
+    // transaction is left incomplete rather than persisted against a guess.
+    if (!site) return;
     // The counter (عدّاد) the proposal's fill-operations table shows is
     // the pump's cumulative totalizer AT COMPLETION — computed BEFORE
     // the in-memory accumulator is advanced, so the row and the
@@ -1980,7 +1995,7 @@ async controlDispenser(
         else updateData[k] = v;
       }
     }
-    const row = await db.fuelDispenser.update({ where: { id }, data: updateData });
+    await db.fuelDispenser.update({ where: { id }, data: updateData });
     const live = this.dispensers.find((d) => d.id === id);
     if (live) {
       if (data.label !== undefined) live.label = data.label;
@@ -2284,7 +2299,7 @@ async controlDispenser(
     );
     const g = this.generators.find((x) => x.id === genId);
     if (!g) return { ok: false, message: this.absentAssetMessage("Generator", genId) };
-    const site = this.sites.find((s) => s.id === g.siteId)!;
+    const site = this.sites.find((s) => s.id === g.siteId);
     // Site lookup must not be asserted with `!` and then trusted: if the site
     // is absent the old code would throw a TypeError on `site.commLossUntil`,
     // which surfaced as a 500 rather than a refusal.

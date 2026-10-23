@@ -861,6 +861,11 @@ export const DICTIONARY: Dict = {
   "detail.iot": { en: "IoT", ar: "IoT" },
   "detail.events": { en: "Events", ar: "الأحداث" },
   "detail.trends": { en: "Trends", ar: "الاتجاهات" },
+  "detail.health": { en: "Site Health", ar: "صحة الموقع" },
+  "detail.healthLive": {
+    en: "Computed from current tank, generator, battery and alarm state. No score history is stored, so there is no trend line to show.",
+    ar: "محسوبة من الحالة الحالية للخزانات والمولّدات والبطاريات والإنذارات. لا يُخزَّن سجل للدرجات، لذا لا يوجد خط اتجاه لعرضه.",
+  },
   "detail.notes": { en: "Notes", ar: "ملاحظات" },
   "detail.low": { en: "Low", ar: "منخفض" },
   "detail.criticalLevel": { en: "Critical", ar: "حرج" },
@@ -1520,8 +1525,8 @@ export const DICTIONARY: Dict = {
 
   "systemHealth.database": { en: "Database", ar: "قاعدة البيانات" },
   "systemHealth.databaseSubtitle": {
-    en: "SQLite file size and row counts",
-    ar: "حجم ملف SQLite وعدد الصفوف",
+    en: "Database size and row counts",
+    ar: "حجم قاعدة البيانات وعدد الصفوف",
   },
   "systemHealth.dbType": { en: "Type", ar: "النوع" },
   "systemHealth.dbSize": { en: "File Size", ar: "حجم الملف" },
@@ -2022,6 +2027,7 @@ export const DICTIONARY: Dict = {
   "confirm.deleteTitle": { en: "Delete", ar: "حذف" },
   "confirm.cancel": { en: "Cancel", ar: "إلغاء" },
   "confirm.resetTitle": { en: "Reset to defaults", ar: "إعادة تعيين إلى الإعدادات الافتراضية" },
+  "confirm.reset": { en: "Reset", ar: "إعادة تعيين" },
   "handover.empty": { en: "No handover notes yet", ar: "لا توجد ملاحظات تسليم بعد" },
   "handover.emptyDesc": { en: "Outgoing operators can leave a note for the next shift here.", ar: "يمكن للمشغّلين المنتهية وردتهم ترك ملاحظة للوردية القادمة هنا." },
   "handover.shift": { en: "Shift", ar: "الوردية" },

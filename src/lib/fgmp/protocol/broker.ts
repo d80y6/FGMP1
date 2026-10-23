@@ -70,20 +70,27 @@ export class InMemoryBroker implements MqttBroker {
     // A clean session discards prior state, including queued QoS 1 messages.
     // Getting this backwards means a reconnecting gateway silently loses
     // commands that were in flight when the network dropped.
+    let session = existing
     if (options.cleanSession || !existing) {
-      this.sessions.set(options.clientId, {
+      session = {
         clientId: options.clientId,
         cleanSession: options.cleanSession,
         connected: true,
         subscriptions: existing && !options.cleanSession ? existing.subscriptions : [],
         queued: [],
-      })
+      }
+      this.sessions.set(options.clientId, session)
     } else {
       existing.connected = true
       existing.cleanSession = options.cleanSession
     }
 
-    const session = this.sessions.get(options.clientId)!
+    // One of the branches above always leaves a session: either the one that
+    // was already registered or the one just stored. The check keeps the type
+    // honest without asserting, and cannot fire in practice.
+    if (!session) {
+      throw new Error(`MQTT session for ${options.clientId} missing after connect`)
+    }
     session.will = options.will
 
     // Deliver anything queued while this client was offline.

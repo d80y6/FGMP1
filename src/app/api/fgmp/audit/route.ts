@@ -32,8 +32,21 @@ export const dynamic = "force-dynamic";
  *
  * We now enforce the capability itself (`can(me, "view:audit")`) rather than
  * re-stating a role list, so the matrix in rbac.ts stays the single source of
- * truth. `SUPERADMIN` holds `*` and therefore bypasses via `hasCapability`,
- * and `isSuperAdminUser` still widens the tenant scope via `tenantWhereOrAll`.
+ * truth. `SUPERADMIN` holds `*` and therefore passes via `hasCapability`.
+ *
+ * ── CORRECTION: A SUPER-ADMIN DOES *NOT* SEE OTHER TENANTS HERE ────────────
+ * This comment used to say `isSuperAdminUser` "widens the tenant scope via
+ * tenantWhereOrAll". That was false, and measurably so: `tenantWhereOrAll`
+ * returns `{}` — which is a WHERE clause, not a tenant CONTEXT — and the query
+ * then ran inside `asTenant(me, …)`, i.e. with `app.tenant_id` set to the
+ * super-admin's own tenant. Measured: 0 rows returned while other tenants had
+ * thousands, with an HTTP 200.
+ *
+ * The behaviour is now stated honestly and deliberately: this route returns the
+ * caller's tenant's audit log, for every role including SUPERADMIN. That is the
+ * fail-closed answer. Reading another tenant's trail requires a support session
+ * (POST /api/fgmp/platform/support-sessions) and the platform support routes,
+ * where the access is time-boxed, recorded and visible to that tenant.
  *
  * ── CORRECTNESS (limit/offset parsing) ──────────────────────────────────────
  * `Math.min(500, Number(x))` returns NaN for `?limit=abc`, and NaN passed to

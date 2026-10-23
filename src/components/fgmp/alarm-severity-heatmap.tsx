@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useNow } from "@/lib/fgmp/use-now";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Clock, Flame, TrendingUp, Activity, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -152,6 +153,7 @@ export function AlarmSeverityHeatmap({
   const useArabicNums = useArabicNumerals();
   const lang: Language = useArabicNums ? "ar" : "en";
   const [hover, setHover] = useState<HoverState | null>(null);
+  const now = useNow();
 
   const { matrix, stats, hourLabels } = useMemo(() => {
     const m: Record<Severity, number[]> = {
@@ -159,7 +161,6 @@ export function AlarmSeverityHeatmap({
       L2: new Array(24).fill(0),
       L3: new Array(24).fill(0),
     };
-    const now = Date.now();
     let total = 0;
     const totals: Record<Severity, number> = { L1: 0, L2: 0, L3: 0 };
 
@@ -237,7 +238,7 @@ export function AlarmSeverityHeatmap({
     };
 
     return { matrix: m, stats: s, hourLabels: labels };
-  }, [alarms]);
+  }, [alarms, now]);
 
   const peakLabel = stats.peakHour >= 0 ? hourLabels[stats.peakHour] : "—";
   const quietLabel =

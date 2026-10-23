@@ -26,25 +26,22 @@ import { cn } from "@/lib/utils";
 import { timeAgo, fmtDateTime } from "@/lib/fgmp/format";
 import { csvFilename, type CsvColumn } from "@/lib/fgmp/csv-export";
 import { ExportButton } from "@/components/fgmp/export-button";
-import { useCorrelationRulesHydration, useCorrelationRulesList } from "@/lib/fgmp/use-correlation-rules-server";
+import { useCorrelationRulesHydration } from "@/lib/fgmp/use-correlation-rules-server";
 import { useCorrelationMatches } from "@/lib/fgmp/use-correlation-matches";
-import { useT, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
-import { translate } from "@/lib/fgmp/i18n";
+import type { AlarmRow } from "@/lib/fgmp/types";
+import { alarmTypeLabel } from "@/lib/fgmp/labels";
+import { useNow } from "@/lib/fgmp/use-now";
 import { ResourceError } from "@/components/fgmp/resource-error";
 
 const TYPES = ["FUEL_THEFT", "FUEL_REFILL", "FUEL_LOW", "FUEL_CRITICAL", "GEN_OFFLINE", "GEN_FAILURE", "GEN_OVERHEAT", "BATT_LOW_VOLTAGE", "BATT_FAILURE", "COMM_LOSS"];
 
-/** Resolve an alarm type enum value to its localized display label. */
-function alarmTypeLabel(type: string, lang: Language): string {
-  const key = `alarm.${type}`;
-  const translated = translate(key, lang);
-  return translated === key ? (type ?? "").replace(/_/g, " ") : translated;
-}
 
 const ACTIONABLE_STATUSES = new Set(["OPEN", "ACKNOWLEDGED", "ESCALATED"]);
 
 export function AlarmsView() {
+  const now = useNow();
   // Subscribe to individual slices: a bare `useFgmp()` re-renders this
   // component on EVERY store write (search keystrokes, view changes,
   // lastTickAt, …) instead of only the slices actually read.
@@ -56,7 +53,6 @@ export function AlarmsView() {
   const me = useFgmp((s) => s.me);
 
   const t = useT();
-  const dir = useDir();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
   const [status, setStatus] = useState("OPEN,ACKNOWLEDGED,ESCALATED");
@@ -71,8 +67,7 @@ export function AlarmsView() {
   // cross-tab synced. Calling this unconditionally at the top so the rules
   // button badge count can read an up-to-date rule list.
   useCorrelationRulesHydration();
-  const rulesFromStore = useCorrelationRulesList();
-  const { data: alarms, loading: alarmsLoading, error: alarmsError, refetch } = useApi<any[]>(`/api/fgmp/alarms?status=${status}&severity=${severity === "all" ? "" : severity}&type=${type === "all" ? "" : type}&limit=300`, { interval: 6000 });
+  const { data: alarms, loading: alarmsLoading, error: alarmsError, refetch } = useApi<AlarmRow[]>(`/api/fgmp/alarms?status=${status}&severity=${severity === "all" ? "" : severity}&type=${type === "all" ? "" : type}&limit=300`, { interval: 6000 });
 
   // ── Optimistic updates (#20) ──────────────────────────────────────────────
   // Local overlay patches applied on top of the polled alarm list so ack/resolve
@@ -81,7 +76,7 @@ export function AlarmsView() {
   // reconciled with the polled data via the derived `mergedAlarms` below —
   // once the server returns the new status, the patch is auto-evicted and the
   // row returns to full opacity. On error the patch is rolled back.
-  const [optimisticPatches, setOptimisticPatches] = useState<Record<string, Partial<any>>>({});
+  const [optimisticPatches, setOptimisticPatches] = useState<Record<string, Partial<AlarmRow>>>({});
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
 
   // Active patches = patches that haven't yet been absorbed by the polled data.
@@ -90,9 +85,9 @@ export function AlarmsView() {
   // react-hooks/set-state-in-effect).
   const activePatches = useMemo(() => {
     const list = alarms ?? [];
-    const polled = new Map<string, any>();
+    const polled = new Map<string, AlarmRow>();
     for (const a of list) polled.set(a.id, a);
-    const out: Record<string, Partial<any>> = {};
+    const out: Record<string, Partial<AlarmRow>> = {};
     for (const [id, p] of Object.entries(optimisticPatches)) {
       const server = polled.get(id);
       if (!server) continue; // alarm rolled out of view — drop patch
@@ -136,22 +131,20 @@ export function AlarmsView() {
   const filteredAlarms = useMemo(() => {
     const all = mergedAlarms ?? [];
     if (!heatmapFilter) return all;
-    const now = Date.now();
     return all.filter((a) => {
       if (a.severity !== heatmapFilter.severity) return false;
       return getHourBucket(a.createdAt, now) === heatmapFilter.hour;
     });
-  }, [mergedAlarms, heatmapFilter]);
+  }, [mergedAlarms, heatmapFilter, now]);
 
   // Hour label for the current heatmap filter bucket (e.g. "14:00"). Mirrors the
   // heatmap's labeling so the banner shows the same HH:00 string the user clicked.
   const heatmapFilterLabel = useMemo(() => {
     if (!heatmapFilter) return "";
-    const now = Date.now();
     const bucketMs = now - (23 - heatmapFilter.hour) * 3600_000;
     const hh = String(new Date(bucketMs).getHours()).padStart(2, "0");
     return `${hh}:00`;
-  }, [heatmapFilter]);
+  }, [heatmapFilter, now]);
 
   const selectedCount = validSelectedIds.size;
   const allSelected = actionableIds.length > 0 && actionableIds.every((id) => validSelectedIds.has(id));
@@ -795,9 +788,7 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 function EscalationTimeline({
-  severity,
   escalationLevel,
-  status,
   createdAt,
   acknowledgedAt,
   resolvedAt,

@@ -155,12 +155,12 @@ export function adjustLevelSeriesForDeliveries(
   let capped = 0;
   let applied = 0;
   let di = 0;
-  let prevRaw = sorted[0]!.l;
+  let prevRaw = sorted[0].l;
 
   for (let i = 0; i < sorted.length; i++) {
-    const p = sorted[i]!;
-    while (di < usable.length && usable[di]!.t <= p.t) {
-      const d = usable[di]!;
+    const p = sorted[i];
+    while (di < usable.length && usable[di].t <= p.t) {
+      const d = usable[di];
       di++;
       const headroom =
         Number.isFinite(capacity) && capacity > 0 ? Math.max(0, capacity - prevRaw) : d.volumeLitres;
@@ -247,12 +247,12 @@ export function sanitizeLevelSeries(
   let current: LevelPoint[] = [];
 
   for (let i = 0; i < sorted.length; i++) {
-    const p = sorted[i]!;
+    const p = sorted[i];
     if (i === 0) {
       current = [p];
       continue;
     }
-    const prev = sorted[i - 1]!;
+    const prev = sorted[i - 1];
     const dtH = (p.t - prev.t) / 3_600_000;
     if (dtH <= 0) {
       outliers.n++; // duplicate timestamp
@@ -276,8 +276,8 @@ export function sanitizeLevelSeries(
   if (current.length > 0) segments.push(current);
 
   const byLength = [...segments].sort((a, b) => {
-    const sa = a.length > 1 ? a[a.length - 1]!.t - a[0]!.t : -1;
-    const sb = b.length > 1 ? b[b.length - 1]!.t - b[0]!.t : -1;
+    const sa = a.length > 1 ? a[a.length - 1].t - a[0].t : -1;
+    const sb = b.length > 1 ? b[b.length - 1].t - b[0].t : -1;
     return sb - sa;
   });
   const segment = byLength[0] ?? [];
@@ -289,7 +289,7 @@ export function sanitizeLevelSeries(
     refills: refills.n,
     sampleCount,
     segmentSpanH:
-      segment.length > 1 ? (segment[segment.length - 1]!.t - segment[0]!.t) / 3_600_000 : 0,
+      segment.length > 1 ? (segment[segment.length - 1].t - segment[0].t) / 3_600_000 : 0,
   };
 }
 
@@ -320,8 +320,8 @@ export function sumPlausibleDecreases(
   const sorted = [...points].sort((a, b) => a.t - b.t);
   let total = 0;
   for (let i = 1; i < sorted.length; i++) {
-    const prev = sorted[i - 1]!;
-    const cur = sorted[i]!;
+    const prev = sorted[i - 1];
+    const cur = sorted[i];
     const dtH = (cur.t - prev.t) / 3_600_000;
     if (dtH <= 0) continue;
     const delta = prev.l - cur.l;
@@ -360,14 +360,14 @@ export function pickRateSegment(
   const minSpanH = opts.minSpanH ?? MIN_SPAN_H;
   const minPoints = opts.minPoints ?? MIN_SEGMENT_POINTS;
   const spanOf = (s: readonly LevelPoint[]) =>
-    s.length > 1 ? (s[s.length - 1]!.t - s[0]!.t) / 3_600_000 : 0;
-  const endOf = (s: readonly LevelPoint[]) => (s.length ? s[s.length - 1]!.t : 0);
+    s.length > 1 ? (s[s.length - 1].t - s[0].t) / 3_600_000 : 0;
+  const endOf = (s: readonly LevelPoint[]) => (s.length ? s[s.length - 1].t : 0);
 
   const trustworthy = segments.filter((s) => s.length >= minPoints && spanOf(s) >= minSpanH);
   if (trustworthy.length > 0) {
-    return [...trustworthy].sort((a, b) => endOf(b) - endOf(a))[0]!;
+    return [...trustworthy].sort((a, b) => endOf(b) - endOf(a))[0];
   }
-  return [...segments].sort((a, b) => spanOf(b) - spanOf(a))[0]!;
+  return [...segments].sort((a, b) => spanOf(b) - spanOf(a))[0];
 }
 
 export interface RateEstimate {
@@ -447,7 +447,7 @@ export function estimateDrainRate(
       reason: rejected > 0 ? "all-points-rejected" : "too-few-points",
     };
   }
-  const spanH = (segment[segment.length - 1]!.t - segment[0]!.t) / 3_600_000;
+  const spanH = (segment[segment.length - 1].t - segment[0].t) / 3_600_000;
   if (spanH < minSpanH) {
     // The longest run of plausible samples is shorter than MIN_SPAN_H. If the
     // series was cut up by outliers/refills, that is the real story.
@@ -461,7 +461,7 @@ export function estimateDrainRate(
   if (segment.length < minPoints) return { ...base, spanHours: spanH, reason: "too-few-points" };
 
   const n = segment.length;
-  const t0 = segment[0]!.t;
+  const t0 = segment[0].t;
   let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
   for (const p of segment) {
     const x = (p.t - t0) / 3_600_000;

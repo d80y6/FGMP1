@@ -150,9 +150,14 @@ describe("ingest rejection reasons are countable", () => {
   });
 
   test("rate-limit rejections carry scope and reason", () => {
-    rateLimitRejections.inc({ scope: "login", reason: "degraded_closed" });
+    // A label pair nothing else in the suite uses. The registry is a module
+    // singleton shared by every test file in a `bun test` run, so asserting
+    // `... scope="login"} 1` failed whenever an earlier file had already
+    // incremented the real `login/degraded_closed` series — the assertion was
+    // measuring test order, not label rendering.
+    rateLimitRejections.inc({ scope: "test_isolation", reason: "degraded_closed" });
     expect(registry.render()).toContain(
-      'fgmp_rate_limit_rejections_total{reason="degraded_closed",scope="login"} 1',
+      'fgmp_rate_limit_rejections_total{reason="degraded_closed",scope="test_isolation"} 1',
     );
   });
 });

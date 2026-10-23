@@ -14,8 +14,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { fmtDateTime, timeAgo } from "@/lib/fgmp/format";
 import { cn } from "@/lib/utils";
-import { useT, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
+import type { AuditLogRow } from "@/lib/fgmp/types";
+import { roleLabel } from "@/lib/fgmp/labels";
 import { translate } from "@/lib/fgmp/i18n";
 
 const ACTIONS = ["CREATE", "UPDATE", "DELETE", "CONTROL", "ACK", "RESOLVE", "BULK_ACK", "BULK_RESOLVE", "LOGIN", "LOGOUT", "EXPORT", "CONFIG", "SEED", "OTA", "REBOOT", "DELIVERY_CREATE", "DELIVERY_VERIFY", "DELIVERY_DISPATCH", "TICKET_CREATE", "TICKET_COMPLETE", "NOTIF_DISMISS", "NOTIF_DISMISS_ALL"];
@@ -28,13 +30,6 @@ function auditActionLabel(action: string, lang: Language): string {
   return translated === key ? action.replace(/_/g, " ") : translated;
 }
 
-/** Resolve a user role enum value to its localized display label. */
-function roleLabel(role: string, lang: Language): string {
-  if (!role) return "";
-  const key = `role.${role.toLowerCase()}`;
-  const translated = translate(key, lang);
-  return translated === key ? role.replace(/_/g, " ") : translated;
-}
 
 const ACTION_TONE: Record<string, string> = {
   CONTROL: "border-sky-500/40 bg-sky-500/10 text-sky-600 dark:text-sky-400",
@@ -49,10 +44,9 @@ export function AuditView() {
   const [q, setQ] = useState("");
   const [action, setAction] = useState("all");
   const t = useT();
-  const dir = useDir();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
-  const { data: logs } = useApi<any[]>(`/api/fgmp/audit?limit=500${action !== "all" ? `&action=${action}` : ""}`, { interval: 8000 });
+  const { data: logs } = useApi<AuditLogRow[]>(`/api/fgmp/audit?limit=500${action !== "all" ? `&action=${action}` : ""}`, { interval: 8000 });
 
   const filtered = useMemo(() => {
     let list = logs ?? [];

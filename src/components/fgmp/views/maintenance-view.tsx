@@ -24,8 +24,9 @@ import { fmtDateTime, timeAgo } from "@/lib/fgmp/format";
 import { downloadCsv, exportFilename } from "@/lib/fgmp/csv-export";
 import { cn } from "@/lib/utils";
 import { MaintenanceGantt } from "@/components/fgmp/maintenance-gantt";
-import { useT, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
+import type { GenState, MaintenanceTicketRow, SiteState } from "@/lib/fgmp/types";
 import { translate } from "@/lib/fgmp/i18n";
 import { ResourceError } from "@/components/fgmp/resource-error";
 
@@ -77,13 +78,12 @@ const STATUS_BADGE_DETAIL: Record<string, string> = {
 export function MaintenanceView() {
   const { snapshot, tick } = useFgmp(useShallow((s) => ({ snapshot: s.snapshot, tick: s.tick })));
   const t = useT();
-  const dir = useDir();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
   const [status, setStatus] = useState("OPEN,SCHEDULED,IN_PROGRESS");
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
-  const { data: tickets, error: ticketsError, refetch } = useApi<any[]>(`/api/fgmp/maintenance?status=${status}`, { interval: 8000 });
+  const { data: tickets, error: ticketsError, refetch } = useApi<MaintenanceTicketRow[]>(`/api/fgmp/maintenance?status=${status}`, { interval: 8000 });
 
   const counts = useMemo(() => ({
     open: (tickets ?? []).filter((t) => t.status === "OPEN").length,
@@ -346,10 +346,10 @@ export function MaintenanceView() {
             )}
           </div>
 
-          {(selectedTicket.description || (selectedTicket as any).notes) && (
+          {(selectedTicket.description || selectedTicket.notes) && (
             <div className="mt-3 rounded-lg border bg-muted/30 px-3 py-2">
               <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{t("maintenance.notes")}</p>
-              <p className="mt-0.5 text-sm">{selectedTicket.description || (selectedTicket as any).notes}</p>
+              <p className="mt-0.5 text-sm">{selectedTicket.description || selectedTicket.notes}</p>
             </div>
           )}
         </div>
@@ -359,7 +359,7 @@ export function MaintenanceView() {
 }
 
 function CreateTicketDialog({ open, onOpenChange, sites, generators, onCreated }: {
-  open: boolean; onOpenChange: (v: boolean) => void; sites: any[]; generators: any[]; onCreated: () => void;
+  open: boolean; onOpenChange: (v: boolean) => void; sites: SiteState[]; generators: GenState[]; onCreated: () => void;
 }) {
   const t = useT();
   const [siteId, setSiteId] = useState("");

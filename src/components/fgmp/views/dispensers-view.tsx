@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Fuel, Search, Plus, Pencil, Play, Square, RotateCcw, Lock, Unlock,
-  Trash2, Download, Droplet, Zap, AlertTriangle, Receipt, Wallet,
-  TrendingUp, Gauge, Wifi, CircuitBoard, XCircle, TriangleAlert,
-  Hash, type LucideIcon,
+  Trash2, Download, Droplet, AlertTriangle, Receipt, Wallet,
+  TrendingUp, Gauge, Wifi, XCircle, TriangleAlert,
+  Hash,
 } from "lucide-react";
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell,
@@ -35,7 +35,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { timeAgo, fmtDateTime } from "@/lib/fgmp/format";
-import { useT, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { useT, useArabicNumerals, formatNumber, toArabicNumerals } from "@/lib/fgmp/use-language";
 import { useChartColors } from "@/lib/fgmp/use-chart-colors";
 import type { Language } from "@/lib/fgmp/i18n";
 import { translate } from "@/lib/fgmp/i18n";
@@ -147,18 +147,18 @@ function txnStatusLabel(status: string, lang: Language): string {
 function formatYer(amount: number, lang: Language): string {
   const s = Math.round(amount).toLocaleString("en-US");
   const digits = lang === "ar" ? translate("dispenser.yerSuffix", lang) : "YER";
-  const num = lang === "ar" ? s.replace(/[0-9]/g, (d) => "٠١٢٣٤٥٦٧٨٩"[Number(d)]) : s;
+  const num = toArabicNumerals(s);
   return lang === "ar" ? `${num} ${digits}` : `${num} ${digits}`;
 }
 
 /** Format a duration in seconds as "M:SS" or "H:MM:SS". */
-function formatDuration(sec: number, lang: Language): string {
+function formatDuration(sec: number, _lang: Language): string {
   if (!sec || sec < 1) return "0:00";
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
   const s = sec % 60;
   const out = h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
-  return lang === "ar" ? out.replace(/[0-9]/g, (d) => "٠١٢٣٤٥٦٧٨٩"[Number(d)]) : out;
+  return toArabicNumerals(out);
 }
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -174,7 +174,6 @@ export function DispensersView() {
   const tick = useFgmp((s) => s.tick);
 
   const t = useT();
-  const dir = useDir();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
   const cc = useChartColors();
@@ -204,7 +203,8 @@ export function DispensersView() {
     "/api/fgmp/dispensers/transactions?limit=200",
     { interval: 8000 },
   );
-  const transactions = txnPayload?.rows ?? [];
+  // Stable fallback identity — a bare `?? []` is a new array every render.
+  const transactions = useMemo(() => txnPayload?.rows ?? [], [txnPayload]);
 
   // Filtered dispensers
   const filtered = useMemo(() => {
@@ -1326,8 +1326,9 @@ function AuthorizeDialog({ target, onOpenChange, onConfirm, lang, limitMode = fa
           <Button variant="outline" onClick={() => onOpenChange(false)}>{t("common.cancel")}</Button>
           <Button
             onClick={() => {
+              if (!target) return;
               const raw = inputRef.current?.value ?? "";
-              onConfirm(target!, raw ? Number(raw) : undefined);
+              onConfirm(target, raw ? Number(raw) : undefined);
             }}
             className="bg-emerald-500 hover:bg-emerald-600 text-white"
           >

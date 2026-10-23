@@ -113,12 +113,12 @@ export function totpForStep(
   // Dynamic truncation (RFC 4226 §5.4): the low nibble of the LAST byte selects
   // the 4-byte window. Getting the offset wrong yields plausible numbers that
   // no authenticator will agree with.
-  const offset = hmac[hmac.length - 1]! & 0x0f;
+  const offset = hmac[hmac.length - 1] & 0x0f;
   const binary =
-    ((hmac[offset]! & 0x7f) << 24) |
-    ((hmac[offset + 1]! & 0xff) << 16) |
-    ((hmac[offset + 2]! & 0xff) << 8) |
-    (hmac[offset + 3]! & 0xff);
+    ((hmac[offset] & 0x7f) << 24) |
+    ((hmac[offset + 1] & 0xff) << 16) |
+    ((hmac[offset + 2] & 0xff) << 8) |
+    (hmac[offset + 3] & 0xff);
 
   return (binary % 10 ** digits).toString().padStart(digits, "0");
 }

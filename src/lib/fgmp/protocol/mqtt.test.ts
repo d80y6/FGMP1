@@ -37,7 +37,6 @@ import { InMemoryBroker, topicMatches } from './broker'
 
 const enc = (s: string) => new TextEncoder().encode(s)
 const dec = (b: Uint8Array) => new TextDecoder().decode(b)
-const bytes = (s: string) => ({ topic: '', payload: enc(s), qos: QOS.AT_LEAST_ONCE, retain: false, duplicate: false })
 
 // ── Topic construction and isolation ─────────────────────────────────────────
 

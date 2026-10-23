@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { bootstrap } from "@/lib/fgmp";
 import { asTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
+import { listTenantRegistry, tenantCounts } from "@/lib/fgmp/platform-store";
 import { audit } from "@/lib/fgmp/audit";
 import {
   rateLimitByUser,
@@ -52,34 +53,24 @@ export async function GET(req: NextRequest) {
       applyRateLimitHeaders(res.headers, rl);
       return res;
     }
-    // SUPERADMIN sees all tenants; everyone else only sees their own.
-    // The Tenant model is keyed by its own `id` — it has no `tenantId`
-    // column — so a non-super-admin is pinned on `id`, not `tenantId`.
-    // ── Why this needs a tenant context even though Tenant has no RLS ────────
-    // `Tenant` is keyed by its own `id` and carries no `tenantId` column, so the
-    // row itself is readable unscoped. The `_count` relations are NOT: users,
-    // sites and suppressions all carry `tenantId` and are FORCE-RLS protected,
-    // and Prisma resolves relation counts through nested queries on the
-    // ambient client. Measured:
+    // ── The registry is platform metadata; the COUNTS are tenant data ──────
+    // `Tenant` carries no tenantId and is outside RLS, so the registry itself
+    // can be read unscoped. Its relations cannot: `_count` resolves through
+    // nested queries, and doing that inside `asTenant(me, …)` resolved every
+    // tenant's counts in the CALLER's context. Measured before this change: a
+    // super-admin saw the fleet list with `users: 0` for tenants that had five.
     //
-    //     unscoped -> _count: { users: 0, sites: 0, suppressions: 0 }
-    //     scoped   -> _count: { users: 5, sites: 52, suppressions: 0 }
-    //
-    // So without this the endpoint reported that a 52-site tenant had no users
-    // and no sites — a silent, plausible-looking wrong answer rather than an
-    // error.
-    //
-    // A non-superadmin is still pinned to their own `id`; a superadmin listing
-    // all tenants gets counts scoped to THEIR tenant, which is the honest
-    // answer for counts they are not entitled to see. The tenant list itself is
-    // platform-level and deliberately not scoped.
-    const tenants = await asTenant(user, (tx) =>
-      tx.tenant.findMany({
-        where: isSuperAdminUser(user) ? {} : { id: user.tenantId },
-        orderBy: { name: "asc" },
-        select: tenantSelect,
-      }),
-    );
+    // So the list is read once and the counts are read per tenant, inside that
+    // tenant's own context. A non-superadmin only ever sees their own row, so
+    // the fan-out costs nothing for them.
+    const isSuper = isSuperAdminUser(user);
+    const registry = await listTenantRegistry();
+    const visible = isSuper ? registry : registry.filter((t) => t.id === user.tenantId);
+    const tenants: Array<Record<string, unknown>> = [];
+    for (const t of visible) {
+      const counts = await tenantCounts(t.id);
+      tenants.push({ ...t, _count: counts });
+    }
     const res = NextResponse.json(tenants);
     applyRateLimitHeaders(res.headers, rl);
     return res;

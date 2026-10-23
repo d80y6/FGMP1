@@ -10,7 +10,8 @@
  * would leave the branch that marks a command acknowledged completely unexercised.
  */
 
-import { describe, expect, test, beforeEach } from "bun:test";
+import { expect, test, beforeEach } from "bun:test";
+import { describeDb } from "../test-support/db-required";
 import { withTenant } from "../tenant-context";
 import { engine } from "../engine";
 import type { DispatchOutcome, GeneratorDispatch } from "./types";
@@ -19,7 +20,7 @@ import type { DispatchOutcome, GeneratorDispatch } from "./types";
 function fakeDispatch(outcome: DispatchOutcome, ackCalls: number[] = []): GeneratorDispatch {
   return {
     name: "fake",
-    async dispatch(req) {
+    async dispatch(_req) {
       ackCalls.push(1);
       return { ...outcome, acknowledgement: outcome.acknowledgement };
     },
@@ -79,7 +80,7 @@ async function pickGenerator() {
 // touched a database at all.
 const DB_TEST_TIMEOUT = 60_000;
 
-describe("applyCommand writes PENDING then transitions from the outcome", () => {
+describeDb("applyCommand writes PENDING then transitions from the outcome", () => {
   test("NO_TRANSPORT -> FAILED with a NO_TRANSPORT reason, never EXECUTED", async () => {
     const g = await pickGenerator();
     const r = await engine.applyCommand(g.id, "STOP", await realUserId(), "t", "t-default");
@@ -184,7 +185,7 @@ describe("applyCommand writes PENDING then transitions from the outcome", () => 
   }, DB_TEST_TIMEOUT);
 });
 
-describe("the boundary actually decides", () => {
+describeDb("the boundary actually decides", () => {
   test("the shipped dispatch is asked — swapping it changes the outcome", async () => {
     const g = await pickGenerator();
 
