@@ -270,13 +270,17 @@ export function AppShell() {
   // connection is doing: a missed or dropped event costs at most 5s of
   // latency, never stale-forever data.
   useEffect(() => {
+    if (status !== "authenticated" || !sessionUser) {
+      setMe(null);
+      return;
+    }
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = setInterval(() => {
       if (livePaused) return;
       void refresh();
     }, 5000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [refresh, livePaused]);
+  }, [refresh, livePaused, status]);
 
   // clock lives in <HeaderClock/> (own state) so the 1Hz tick does not
   // re-render AppShell — and therefore the whole view tree — every second.
