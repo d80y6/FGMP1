@@ -14,6 +14,7 @@ import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -75,6 +76,7 @@ export function TenantsView() {
   const [editTarget, setEditTarget] = useState<TenantRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<TenantRow | null>(null);
   const [createAdminTarget, setCreateAdminTarget] = useState<TenantRow | null>(null);
+  const [supportTarget, setSupportTarget] = useState<TenantRow | null>(null);
 
   const { data: tenants, loading, refetch } = useApi<TenantRow[]>("/api/fgmp/tenants", { interval: 30000 });
 
@@ -239,6 +241,10 @@ export function TenantsView() {
                               <UserPlus className="mr-2 h-3.5 w-3.5" />
                               {t("tenants.createAdmin")}
                             </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setSupportTarget(tnt)}>
+                              <ShieldAlert className="mr-2 h-3.5 w-3.5" />
+                              Support access
+                            </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
                               className="text-rose-600 focus:text-rose-700"
@@ -295,6 +301,20 @@ export function TenantsView() {
         onOpenChange={(o) => !o && setCreateAdminTarget(null)}
         onCreated={() => { refetch(); setCreateAdminTarget(null); }}
         lang={numLang}
+      />
+
+      {/* Platform support access. This is the ONLY UI that can open a
+          time-boxed, single-tenant support session — see docs/SUPERADMIN.md.
+          It deliberately asks for a reason up front: the text is shown to the
+          tenant in its own audit log, so it must say what the operator is
+          doing, not "support". */}
+      <SupportAccessDialog
+        // Keyed by tenant so opening it for another tenant REMOUNTS it: the
+        // reason typed for tenant A can never be submitted for tenant B, and
+        // there is no reset-in-an-effect to get wrong.
+        key={supportTarget?.id ?? "none"}
+        target={supportTarget}
+        onOpenChange={(o) => !o && setSupportTarget(null)}
       />
     </div>
   );
@@ -765,6 +785,137 @@ function CreateTenantAdminDialog({
             </DialogFooter>
           </form>
         </Form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+ * Support access
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Open a support session for one tenant.
+ *
+ * The dialog is intentionally heavier than a confirmation: a reason is
+ * mandatory, and write access costs an extra click AND a ticket reference. That
+ * friction is the point — it is the difference between "support looked" and
+ * "somebody clicked a row".
+ */
+function SupportAccessDialog({
+  target,
+  onOpenChange,
+}: {
+  target: TenantRow | null;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const [reason, setReason] = useState("");
+  const [ticketRef, setTicketRef] = useState("");
+  const [write, setWrite] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  const tooShort = reason.trim().length < 10;
+  const writeNeedsTicket = write && ticketRef.trim().length === 0;
+  const disabled = submitting || tooShort || writeNeedsTicket;
+
+  const submit = async () => {
+    if (!target || disabled) return;
+    setSubmitting(true);
+    try {
+      const res = await apiPost("/api/fgmp/platform/support-sessions", {
+        tenantId: target.id,
+        reason: reason.trim(),
+        ticketRef: ticketRef.trim() || undefined,
+        mode: write ? "WRITE" : "READ",
+      });
+      if (res.ok) {
+        toast.success(`Support session opened for ${target.name}`, {
+          description: write
+            ? "Write access. Every change is recorded in the tenant's audit log."
+            : "Read-only. The banner stays visible until you end the session.",
+        });
+        // A full reload is the honest way to pick up the new cookie's effect on
+        // the banner: the banner is mounted at the shell level and polls, and
+        // leaving the operator on a screen that looks unchanged would defeat
+        // the point of opening a session.
+        window.location.reload();
+      } else {
+        toast.error(res.error ?? "Could not open a support session");
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={target !== null} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[460px]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <ShieldAlert className="h-4 w-4 text-amber-600" />
+            Support access
+          </DialogTitle>
+          <DialogDescription>
+            {target
+              ? `Open a time-boxed support session for ${target.name}. One tenant, one session at a time. The reason below is recorded in the tenant's own audit log.`
+              : ""}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="support-reason" className="text-xs">Reason (visible to the tenant)</Label>
+            <Textarea
+              id="support-reason"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="Customer reports missing deliveries since this morning"
+              rows={3}
+              maxLength={500}
+            />
+            <p className="text-[11px] text-muted-foreground">
+              {tooShort ? "At least 10 characters." : `${reason.trim().length}/500`}
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="support-ticket" className="text-xs">
+              Ticket / case reference {write ? "(required for write access)" : "(optional)"}
+            </Label>
+            <Input
+              id="support-ticket"
+              value={ticketRef}
+              onChange={(e) => setTicketRef(e.target.value)}
+              placeholder="INC-1042"
+              maxLength={120}
+            />
+          </div>
+
+          <label className="flex items-start gap-2 rounded-md border p-2.5 text-xs">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-3.5 w-3.5"
+              checked={write}
+              onChange={(e) => setWrite(e.target.checked)}
+            />
+            <span>
+              <span className="font-medium">Request write access</span>
+              <span className="block text-muted-foreground">
+                30 minutes instead of 60, and a ticket reference is required. The only write
+                available is appending a note to this tenant&apos;s audit log.
+              </span>
+            </span>
+          </label>
+        </div>
+
+        <DialogFooter className="pt-2">
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button onClick={submit} disabled={disabled}>
+            {submitting ? "Opening…" : "Open support session"}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
