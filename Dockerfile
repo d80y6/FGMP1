@@ -53,7 +53,7 @@ RUN groupadd --system --gid 1001 nodejs \
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
-# The 16 committed migrations are the schema authority (Phase 1). The runner
+# The committed migrations are the schema authority (Phase 1). The runner
 # needs prisma/migrations/ to deploy them, and the Prisma CLI + engines to run
 # `migrate deploy`. Without these the container could only ever have used the
 # old SQLite bootstrap, which hard-exits against PostgreSQL.

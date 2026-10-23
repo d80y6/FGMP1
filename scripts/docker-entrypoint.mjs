@@ -13,8 +13,8 @@
  * record what it did. It can therefore silently drift the database away from
  * the committed migration history — losing the audit trail of how the schema
  * got here, and making two environments disagree in ways nobody can explain
- * later. The 16 committed migrations under prisma/migrations/ are the
- * authority; `migrate deploy` applies exactly those, in order, and is a no-op
+ * later. The committed migrations under prisma/migrations/ are the authority;
+ * `migrate deploy` applies exactly those, in order, and is a no-op
  * when they are already applied (so it is safe on every boot).
  *
  * ── Why migrations do NOT run in the app process ───────────────────────────
