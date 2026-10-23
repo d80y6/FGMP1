@@ -172,6 +172,16 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      # The seed, the smoke test and the database-backed suites all import
+      # @prisma/client, and an ungenerated client fails at import with
+      # `Cannot find module '.prisma/client/default'`. The migrations below do
+      # NOT need it (the CLI reads schema.prisma), which is why this job got as
+      # far as seeding before failing — so generate explicitly.
+      - name: Generate Prisma client
+        run: bun run db:generate
+        env:
+          DATABASE_URL: postgresql://fgmp_migrate:cimigrate@127.0.0.1:5432/fgmp?schema=public
+
       # ── Roles BEFORE migrations ────────────────────────────────────────
       # All three roles must exist first. The second committed migration does
       # `GRANT … TO fgmp_app, fgmp_ops`; with only fgmp_app created, `migrate
