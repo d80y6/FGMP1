@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import {
   Globe2, Map, MapPin, Plus, Pencil, Trash2,
@@ -365,6 +365,7 @@ export function GeographyView() {
 
       {/* Region create/edit */}
       <NameDialog
+        key={`region-create-${regionCreateOpen}`}
         open={regionCreateOpen}
         onOpenChange={setRegionCreateOpen}
         title="Add Region"
@@ -384,6 +385,7 @@ export function GeographyView() {
         }}
       />
       <NameDialog
+        key={`region-edit-${regionEditTarget?.id ?? "none"}-${!!regionEditTarget}`}
         open={!!regionEditTarget}
         onOpenChange={(o) => !o && setRegionEditTarget(null)}
         title="Edit Region"
@@ -406,6 +408,7 @@ export function GeographyView() {
 
       {/* Governorate create/edit */}
       <NameDialog
+        key={`gov-create-${govCreateOpen}`}
         open={govCreateOpen}
         onOpenChange={setGovCreateOpen}
         title="Add Governorate"
@@ -429,6 +432,7 @@ export function GeographyView() {
         }}
       />
       <NameDialog
+        key={`gov-edit-${govEditTarget?.id ?? "none"}-${!!govEditTarget}`}
         open={!!govEditTarget}
         onOpenChange={(o) => !o && setGovEditTarget(null)}
         title="Edit Governorate"
@@ -451,6 +455,7 @@ export function GeographyView() {
 
       {/* District create/edit */}
       <NameDialog
+        key={`district-create-${districtCreateOpen}`}
         open={districtCreateOpen}
         onOpenChange={setDistrictCreateOpen}
         title="Add District"
@@ -474,6 +479,7 @@ export function GeographyView() {
         }}
       />
       <NameDialog
+        key={`district-edit-${districtEditTarget?.id ?? "none"}-${!!districtEditTarget}`}
         open={!!districtEditTarget}
         onOpenChange={(o) => !o && setDistrictEditTarget(null)}
         title="Edit District"
@@ -648,10 +654,6 @@ function NameDialog({
 }) {
   const [submitting, setSubmitting] = useState(false);
   const [name, setName] = useState(initialName);
-
-  useEffect(() => {
-    if (open) setName(initialName);
-  }, [open, initialName]);
 
   const handleSubmit = async () => {
     if (!name.trim()) {

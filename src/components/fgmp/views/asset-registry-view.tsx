@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import {
   Boxes, Fuel, Zap, BatteryCharging, Cpu, Droplets, Search, Plus,
@@ -526,6 +526,7 @@ function TanksTab({ sites, isAdmin, numLang }: {
       </CardContent>
 
       <TankFormDialog
+        key={`create-${createOpen}`}
         open={createOpen}
         onOpenChange={setCreateOpen}
         target={null}
@@ -534,6 +535,7 @@ function TanksTab({ sites, isAdmin, numLang }: {
         onSaved={() => { refetch(); setCreateOpen(false); }}
       />
       <TankFormDialog
+        key={`edit-${editTarget?.id ?? "none"}-${!!editTarget}`}
         open={!!editTarget}
         onOpenChange={(o) => !o && setEditTarget(null)}
         target={editTarget}
@@ -592,24 +594,6 @@ function TankFormDialog({ open, onOpenChange, target, sites, lang, onSaved }: {
   // poll, so depending on either would wipe the user's in-progress input every
   // 5 seconds (and revert an edit form to create-mode defaults). We key on the
   // record id + `open`, and read `sites` from this render's closure.
-  const targetId = target?.id ?? null;
-  useEffect(() => {
-    if (!open) return;
-    setForm({
-      siteId: target?.siteId ?? sites[0]?.id ?? "",
-      label: target?.label ?? "",
-      fuelType: target?.fuelType ?? "DIESEL",
-      capacityLitres: target?.capacityLitres?.toString() ?? "",
-      currentLitres: target?.currentLitres?.toString() ?? "",
-      lowThreshold: target?.lowThreshold?.toString() ?? "",
-      criticalThreshold: target?.criticalThreshold?.toString() ?? "",
-      status: target?.status ?? "OPERATIONAL",
-    });
-  // Intentionally keyed on identity, not contents: `target` and `sites` are
-  // rebuilt by the 5 s state poll, and re-seeding on them would overwrite
-  // whatever the operator has typed since opening the dialog.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetId, open]);
 
   const onSubmit = async () => {
     if (!form.siteId || !form.label || !form.capacityLitres) {
@@ -872,6 +856,7 @@ function GeneratorsTab({ sites, isAdmin, numLang }: {
       </CardContent>
 
       <GeneratorFormDialog
+        key={`create-${createOpen}`}
         open={createOpen}
         onOpenChange={setCreateOpen}
         target={null}
@@ -880,6 +865,7 @@ function GeneratorsTab({ sites, isAdmin, numLang }: {
         onSaved={() => { refetch(); setCreateOpen(false); }}
       />
       <GeneratorFormDialog
+        key={`edit-${editTarget?.id ?? "none"}-${!!editTarget}`}
         open={!!editTarget}
         onOpenChange={(o) => !o && setEditTarget(null)}
         target={editTarget}
@@ -936,25 +922,6 @@ function GeneratorFormDialog({ open, onOpenChange, target, sites, lang, onSaved 
 
   // Keyed on [targetId, open] only — see TankFormDialog above. `target` and
   // `sites` get a new identity on every 5s store poll and would wipe input.
-  const targetId = target?.id ?? null;
-  useEffect(() => {
-    if (!open) return;
-    setForm({
-      siteId: target?.siteId ?? sites[0]?.id ?? "",
-      label: target?.label ?? "",
-      manufacturer: target?.manufacturer ?? "",
-      model: target?.model ?? "",
-      ratedPowerKw: target?.ratedPowerKw?.toString() ?? "",
-      fuelType: target?.fuelType ?? "DIESEL",
-      status: target?.status ?? "STOPPED",
-      mode: target?.mode ?? "AUTO",
-      runtimeHours: target?.runtimeHours?.toString() ?? "",
-    });
-  // Intentionally keyed on identity, not contents: `target` and `sites` are
-  // rebuilt by the 5 s state poll, and re-seeding on them would overwrite
-  // whatever the operator has typed since opening the dialog.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetId, open]);
 
   const onSubmit = async () => {
     if (!form.siteId || !form.label || !form.manufacturer || !form.model || !form.ratedPowerKw) {
@@ -1217,6 +1184,7 @@ function BatteriesTab({ sites, isAdmin, numLang }: {
       </CardContent>
 
       <BatteryFormDialog
+        key={`create-${createOpen}`}
         open={createOpen}
         onOpenChange={setCreateOpen}
         target={null}
@@ -1225,6 +1193,7 @@ function BatteriesTab({ sites, isAdmin, numLang }: {
         onSaved={() => { refetch(); setCreateOpen(false); }}
       />
       <BatteryFormDialog
+        key={`edit-${editTarget?.id ?? "none"}-${!!editTarget}`}
         open={!!editTarget}
         onOpenChange={(o) => !o && setEditTarget(null)}
         target={editTarget}
@@ -1281,25 +1250,6 @@ function BatteryFormDialog({ open, onOpenChange, target, sites, lang, onSaved }:
 
   // Keyed on [targetId, open] only — see TankFormDialog above. `target` and
   // `sites` get a new identity on every 5s store poll and would wipe input.
-  const targetId = target?.id ?? null;
-  useEffect(() => {
-    if (!open) return;
-    setForm({
-      siteId: target?.siteId ?? sites[0]?.id ?? "",
-      label: target?.label ?? "",
-      chemistry: target?.chemistry ?? "VRLA",
-      capacityAh: target?.capacityAh?.toString() ?? "",
-      nominalVoltage: target?.nominalVoltage?.toString() ?? "48",
-      voltage: target?.voltage?.toString() ?? "",
-      stateOfCharge: target?.stateOfCharge?.toString() ?? "",
-      stateOfHealth: target?.stateOfHealth?.toString() ?? "",
-      status: target?.status ?? "OK",
-    });
-  // Intentionally keyed on identity, not contents: `target` and `sites` are
-  // rebuilt by the 5 s state poll, and re-seeding on them would overwrite
-  // whatever the operator has typed since opening the dialog.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetId, open]);
 
   const onSubmit = async () => {
     if (!form.siteId || !form.label || !form.capacityAh || !form.nominalVoltage) {
@@ -1564,6 +1514,7 @@ function IotTab({ sites, isAdmin, numLang }: {
       </CardContent>
 
       <IotFormDialog
+        key={`create-${createOpen}`}
         open={createOpen}
         onOpenChange={setCreateOpen}
         target={null}
@@ -1572,6 +1523,7 @@ function IotTab({ sites, isAdmin, numLang }: {
         onSaved={() => { refetch(); setCreateOpen(false); }}
       />
       <IotFormDialog
+        key={`edit-${editTarget?.id ?? "none"}-${!!editTarget}`}
         open={!!editTarget}
         onOpenChange={(o) => !o && setEditTarget(null)}
         target={editTarget}
@@ -1623,26 +1575,6 @@ function IotFormDialog({ open, onOpenChange, target, sites, lang, onSaved }: {
 
   // Keyed on [targetId, open] only — see TankFormDialog above. `target` and
   // `sites` get a new identity on every 5s store poll and would wipe input.
-  const targetId = target?.id ?? null;
-  useEffect(() => {
-    if (!open) return;
-    setForm({
-      siteId: target?.siteId ?? sites[0]?.id ?? "",
-      name: target?.name ?? "",
-      type: target?.type ?? "FUEL_SENSOR",
-      protocol: target?.protocol ?? "RS485",
-      vendor: target?.vendor ?? "",
-      serialNo: target?.serialNo ?? "",
-      firmware: target?.firmware ?? "v1.0.0",
-      ipAddress: target?.ipAddress ?? "",
-      modbusUnit: target?.modbusUnit?.toString() ?? "",
-      status: target?.status ?? "ONLINE",
-    });
-  // Intentionally keyed on identity, not contents: `target` and `sites` are
-  // rebuilt by the 5 s state poll, and re-seeding on them would overwrite
-  // whatever the operator has typed since opening the dialog.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetId, open]);
 
   const onSubmit = async () => {
     if (!form.siteId || !form.name || !form.vendor || !form.serialNo) {
@@ -2013,6 +1945,7 @@ function DispensersTab({ sites, isAdmin, numLang }: {
       </CardContent>
 
       <DispenserFormDialog
+        key={`create-${createOpen}`}
         open={createOpen}
         onOpenChange={setCreateOpen}
         target={null}
@@ -2022,6 +1955,7 @@ function DispensersTab({ sites, isAdmin, numLang }: {
         onCreateSubmit={handleCreateSubmit}
       />
       <DispenserFormDialog
+        key={`edit-${editTarget?.id ?? "none"}-${!!editTarget}`}
         open={!!editTarget}
         onOpenChange={(o) => !o && setEditTarget(null)}
         target={editTarget}
@@ -2079,29 +2013,6 @@ function DispenserFormDialog({ open, onOpenChange, target, sites, lang, onSaved,
 
   // Keyed on [targetId, open] only — see TankFormDialog above. `target` and
   // `sites` get a new identity on every 5s store poll and would wipe input.
-  const targetId = target?.id ?? null;
-  useEffect(() => {
-    if (!open) return;
-    setForm({
-      siteId: target?.siteId ?? sites[0]?.id ?? "",
-      label: target?.label ?? "",
-      manufacturer: target?.manufacturer ?? "",
-      model: target?.model ?? "",
-      nozzleCount: target?.nozzleCount?.toString() ?? "1",
-      fuelType: target?.fuelType ?? "DIESEL",
-      maxFlowLpm: target?.maxFlowLpm?.toString() ?? "40",
-      espDeviceId: target?.espDeviceId ?? "",
-      espFirmware: target?.espFirmware ?? "v1.0.0",
-      rs485Baudrate: target?.rs485Baudrate?.toString() ?? "9600",
-      rs485Address: target?.rs485Address?.toString() ?? "1",
-      rs485Parity: target?.rs485Parity ?? "8N1",
-      ipAddress: target?.ipAddress ?? "",
-    });
-  // Intentionally keyed on identity, not contents: `target` and `sites` are
-  // rebuilt by the 5 s state poll, and re-seeding on them would overwrite
-  // whatever the operator has typed since opening the dialog.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetId, open]);
 
   const onSubmit = async () => {
     if (!form.siteId || !form.label || !form.manufacturer || !form.model || !form.espDeviceId) {

@@ -127,6 +127,8 @@ export function SystemHealthView() {
   const [countdown, setCountdown] = useState(POLL_INTERVAL_S);
   // Track previous avgResponseMs to compute trend.
   const prevAvgRef = useRef<number | null>(null);
+  const [avgTrend, setAvgTrend] = useState(0);
+  const [nowMs, setNowMs] = useState(0);
   // Incremented to force a manual refresh; bundled into the fetch effect deps.
   const [manualNonce, setManualNonce] = useState(0);
 
@@ -139,6 +141,14 @@ export function SystemHealthView() {
         return;
       }
       const json = (await res.json()) as HealthResponse;
+      const currentAvg = json.api.avgResponseMs;
+      const previousAvg = prevAvgRef.current;
+      if (currentAvg !== undefined && previousAvg !== null && previousAvg !== 0) {
+        setAvgTrend(Math.round(((currentAvg - previousAvg) / previousAvg) * 100));
+      } else {
+        setAvgTrend(0);
+      }
+      if (currentAvg !== undefined) prevAvgRef.current = currentAvg;
       setData(json);
       setError(null);
       setLastRefresh(Date.now());
@@ -154,8 +164,9 @@ export function SystemHealthView() {
   // (so the UI can render the countdown to next refresh). When countdown
   // reaches 0 we fetch and reset to POLL_INTERVAL_S.
   useEffect(() => {
-    // Initial load + manual refresh trigger.
-    void doFetch();
+    // Defer invocation so the effect only schedules external work.
+    const id = setTimeout(() => void doFetch(), 0);
+    return () => clearTimeout(id);
   }, [doFetch, manualNonce]);
 
   useEffect(() => {
@@ -171,39 +182,26 @@ export function SystemHealthView() {
     return () => clearInterval(id);
   }, [doFetch]);
 
+  useEffect(() => {
+    const initial = setTimeout(() => setNowMs(Date.now()), 0);
+    const interval = setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => { clearTimeout(initial); clearInterval(interval); };
+  }, []);
+
   // Reset the countdown whenever the user manually refreshes.
   const manualRefresh = useCallback(() => {
     setCountdown(POLL_INTERVAL_S);
     setManualNonce((n) => n + 1);
   }, []);
 
-  // Compute trend on avgResponseMs across fetches.
-  const avgTrend = useMemo(() => {
-    const cur = data?.api.avgResponseMs;
-    if (cur === undefined) return 0;
-    const prev = prevAvgRef.current;
-    if (prev === null || prev === 0) {
-      prevAvgRef.current = cur;
-      return 0;
-    }
-    const delta = Math.round(((cur - prev) / prev) * 100);
-    // Only update the ref when we have a new sample (cur differs from prev).
-    if (cur !== prev) prevAvgRef.current = cur;
-    return delta;
-  }, [data?.api.avgResponseMs]);
-
   // Number of errors captured within the last hour (drives the KPI tone).
-  const errorsLastHour = useMemo(() => {
-    if (!data?.errors) return 0;
-    const cutoff = Date.now() - ONE_HOUR_MS;
-    return data.errors.filter((e) => {
-      try {
-        return new Date(e.timestamp).getTime() >= cutoff;
-      } catch {
-        return false;
-      }
-    }).length;
-  }, [data?.errors]);
+  const errorsLastHour = data?.errors?.filter((e) => {
+    try {
+      return new Date(e.timestamp).getTime() >= nowMs - ONE_HOUR_MS;
+    } catch {
+      return false;
+    }
+  }).length ?? 0;
 
   // Heap usage percentage (drives the Progress bar + colour).
   const heapPct = useMemo(() => {
