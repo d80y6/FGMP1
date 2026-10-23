@@ -72,6 +72,25 @@ export async function register(): Promise<void> {
     );
   }
 
+  // ── RLS posture, before the first query ───────────────────────────────────
+  // `db.ts` runs this check at module load too, but in a deployed process
+  // nothing imports the database layer during boot — the scheduler is the only
+  // boot-time consumer and it is disabled in production — so a bypassing
+  // DATABASE_URL produced a healthy socket, a working sign-in screen and a 500
+  // on every data route, discovered only by making a request. Checking here is
+  // what makes `FGMP_REQUIRE_RLS=1` mean what .env.example and compose claim:
+  // the process refuses to start.
+  //
+  // The import is inside the try because the module itself can throw this
+  // error while being evaluated.
+  try {
+    const { assertRlsEnforced } = await import("@/lib/db");
+    assertRlsEnforced();
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
+
   const { simulationDecision } = await import("@/lib/fgmp/simulation");
   const decision = simulationDecision();
 

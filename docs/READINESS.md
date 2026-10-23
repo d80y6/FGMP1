@@ -115,7 +115,7 @@ Two i18n keys were added (`detail.health`, `detail.healthLive`) so the
 | `next build` | **fails** (Google Fonts) | passes, standalone output verified |
 | `npx tsc --noEmit` | 0 errors | 0 errors |
 | `npx eslint .` | 24 errors / 443 warnings | **0 errors / 0 warnings** |
-| `bun test` | 699 pass / 14 fail | **736 pass / 0 fail** (13 skipped without a database) |
+| `bun test` | 699 pass / 14 fail | **747 pass / 0 fail** (13 skipped without a database) |
 | Dependency count | 78 production | **47** production, lockfile regenerated |
 
 The 14 failures were not flaky: they were database-backed suites (RLS row
@@ -288,6 +288,23 @@ database is unreachable it throws — and an unauthenticated request to those
 three routes returned `500` while every other route returned `401`, which reads
 like a server fault rather than "log in". Authorisation now happens first, and
 all three answer `401` (verified against the rebuilt server).
+
+**The RLS gate was checked against a hosted-style connection string.** Pointing
+`DATABASE_URL` at a pooler-shaped URL (`fgmp_app.<project-ref>@…`) with
+`FGMP_REQUIRE_RLS=1` boots; pointing it at the same host with the owner role
+exits 1 and prints the host and role. That check found two defects of its own:
+
+* `assertRlsEnforced()` ran only when something imported the database layer. In
+  a production process nothing does that at boot — the scheduler is the only
+  boot-time consumer and it is disabled in production — so a bypassing
+  `DATABASE_URL` produced a healthy socket, a working sign-in screen and a 500
+  on the first data request. It is now also called from `instrumentation.ts`,
+  which is what makes `FGMP_REQUIRE_RLS=1` mean "refuses to start".
+* its failure message began with the raw `DATABASE_URL`. That message is printed
+  at boot, i.e. into the container log — so the password went with it, one line
+  above the `Detected role:` field that existed precisely to redact it. The
+  message now names the host and the role only, and `db.test.ts` asserts that
+  the credential cannot appear.
 
 **Still not checked by hand:** anything that goes through Prisma — every
 authenticated view, and the seed — for the engine reason above. The
