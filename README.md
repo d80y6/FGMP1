@@ -145,6 +145,7 @@ docs/                       Current documentation (history/ is archived)
 | [`docs/OPERATIONS.md`](docs/OPERATIONS.md) | Health, metrics, scheduler, MQTT, incident checks |
 | [`docs/TESTING.md`](docs/TESTING.md) | Browser verification and automated suites |
 | [`docs/MFA.md`](docs/MFA.md) | MFA design, recovery model and operational notes |
+| [`docs/CONSOLIDATION.md`](docs/CONSOLIDATION.md) | What was removed, merged or moved in the October 2026 cleanup |
 | [`docs/history/`](docs/history/) | Archived reviews, audits and phase records (not normative) |
 
 ## Multi-tenancy, in one paragraph

@@ -170,7 +170,7 @@ Plain `!==` on a shared secret leaks its prefix through timing. Contrast with `s
 
 `next.config.ts:49` — `script-src 'self' 'unsafe-inline' 'unsafe-eval'`. `unsafe-eval` removes the main browser-side mitigation for DOM-XSS-to-RCE escalation; the justification given (dev/HMR) does not hold for a production build.
 
-`next.config.ts:56` — `frame-ancestors 'self' https:` lets **any HTTPS origin** frame the app, a broad clickjacking surface. Note this is *not* rescued by Caddy's `X-Frame-Options: DENY` ([Caddyfile](/home/ubuntu/FGMP1/Caddyfile) line 47): per the CSP3 spec, `frame-ancestors` **takes precedence** over `X-Frame-Options`, so the permissive Next.js header wins and framing stays open. The stated reason is a Z.ai preview iframe — a dev-only concern that should be confined to a dev-only header.
+`next.config.ts:56` — `frame-ancestors 'self' https:` lets **any HTTPS origin** frame the app, a broad clickjacking surface. Note this is *not* rescued by Caddy's `X-Frame-Options: DENY` ([Caddyfile](../../Caddyfile) line 47): per the CSP3 spec, `frame-ancestors` **takes precedence** over `X-Frame-Options`, so the permissive Next.js header wins and framing stays open. The stated reason is a Z.ai preview iframe — a dev-only concern that should be confined to a dev-only header.
 
 **Fix:** ship `script-src 'self'` without `unsafe-eval` in production, and move the wildcard `frame-ancestors` to the dev branch only.
 

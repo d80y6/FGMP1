@@ -157,7 +157,7 @@ docker compose exec fgmp-app bun run db:push
 
 ## 5. Environment variables
 
-See [`.env.example`](./.env.example) for the full list. The most important:
+See [`.env.example`](../../.env.example) for the full list. The most important:
 
 | Variable                  | Required | Default              | Description                            |
 |---------------------------|----------|----------------------|----------------------------------------|

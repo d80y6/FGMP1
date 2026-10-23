@@ -9,7 +9,7 @@
 
 > **تاريخ المراجعة:** 2026-10-19 · **المستودع:** `d80y6/FGMP1` · **الفرع:** `arena/306ba66d-fgmp1`
 > **المرجع:** ملف PDF المرفق (53 صفحة، مستخرج نصياً إلى `/tmp/pdf/page_*.txt`)
-> **الوثائق المرتبطة:** [REVIEW.md](./REVIEW.md) (التدقيق الشامل السابق)، [PRODUCTION.md](./PRODUCTION.md)، [SECURITY-AUDIT.md](./SECURITY-AUDIT.md)
+> **الوثائق المرتبطة:** [REVIEW.md](./codebase-review-2026-10.md) (التدقيق الشامل السابق)، [PRODUCTION.md](./legacy-deploy-guides.md)، [SECURITY-AUDIT.md](./security-audit-2026-10.md)
 
 ---
 
