@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Building2, Loader2 } from "lucide-react";
 
 import {
@@ -114,26 +114,16 @@ function SiteForm({
     [regions, regionId],
   );
   const governorates = useMemo(() => selectedRegion?.governorates ?? [], [selectedRegion]);
+  const validGovernorateId = governorates.some((g) => g.id === governorateId) ? governorateId : "";
   const selectedGovernorate = useMemo(
-    () => governorates.find((g) => g.id === governorateId) ?? null,
-    [governorates, governorateId],
+    () => governorates.find((g) => g.id === validGovernorateId) ?? null,
+    [governorates, validGovernorateId],
   );
   const districts = useMemo(() => selectedGovernorate?.districts ?? [], [selectedGovernorate]);
 
-  // If the selected governorate is no longer in the (possibly changed) region,
-  // reset it + the district. Same for district vs governorate. This keeps the
-  // cascading selects internally consistent without setState-in-render.
-  useEffect(() => {
-    if (governorateId && !governorates.some((g) => g.id === governorateId)) {
-      setGovernorateId("");
-      setDistrictId("");
-    }
-  }, [governorates, governorateId]);
-  useEffect(() => {
-    if (districtId && !districts.some((d) => d.id === districtId)) {
-      setDistrictId("");
-    }
-  }, [districts, districtId]);
+  // Keep the cascading selects consistent if the option tree changes without
+  // synchronously setting state from an effect.
+  const validDistrictId = districts.some((d) => d.id === districtId) ? districtId : "";
 
   // ── Submit ──────────────────────────────────────────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
@@ -143,7 +133,7 @@ function SiteForm({
     // Basic required-field guard. The server re-validates with Zod, but a
     // client-side check gives instant feedback and avoids a round-trip for
     // obvious omissions.
-    if (!code.trim() || !name.trim() || !regionId || !governorateId || !districtId) {
+    if (!code.trim() || !name.trim() || !regionId || !validGovernorateId || !validDistrictId) {
       setError(t("sites.fillRequired"));
       return;
     }
@@ -163,8 +153,8 @@ function SiteForm({
       code: code.trim(),
       name: name.trim(),
       regionId,
-      governorateId,
-      districtId,
+      governorateId: validGovernorateId,
+      districtId: validDistrictId,
       latitude: lat,
       longitude: lng,
       address: address.trim(),
@@ -248,7 +238,7 @@ function SiteForm({
         <div className="space-y-1.5">
           <Label>{t("sites.governorate")}</Label>
           <Select
-            value={governorateId}
+            value={validGovernorateId}
             onValueChange={(v) => { setGovernorateId(v); setDistrictId(""); }}
             disabled={!regionId}
           >
@@ -262,7 +252,7 @@ function SiteForm({
         {/* District */}
         <div className="space-y-1.5 sm:col-span-2">
           <Label>{t("sites.district")}</Label>
-          <Select value={districtId} onValueChange={setDistrictId} disabled={!governorateId}>
+          <Select value={validDistrictId} onValueChange={setDistrictId} disabled={!validGovernorateId}>
             <SelectTrigger><SelectValue placeholder={t("sites.selectDistrict")} /></SelectTrigger>
             <SelectContent>
               {districts.map((d) => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}

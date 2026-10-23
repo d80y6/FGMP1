@@ -30,7 +30,7 @@
  * complete payload. Saves are optimistic-local then confirmed by refetch.
  */
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback } from "react";
 import {
   Settings, Bell, Timer, Palette, Server, Save, RotateCcw, Loader2,
   ShieldAlert, AlertCircle, CheckCircle2,
@@ -207,23 +207,24 @@ function SettingsSection({ category, numLang }: { category: Category; numLang: L
     `/api/fgmp/settings?category=${category}`,
   );
 
-  // Local editable copy — initialized from server data, updated on user
-  // input, and reset when the server data changes (refetch after save).
-  const [draft, setDraft] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (!data) return;
+  // Server values are the baseline. Keep edits tied to the exact response
+  // they were made against; a refetch naturally discards stale edits.
+  const serverDraft = useMemo(() => {
     const next: Record<string, string> = {};
-    for (const f of fields) {
-      const entry = data[f.key];
-      if (!entry) continue;
-      // Booleans render as "true"/"false" strings for the Switch component's
-      // checked state. Numbers and strings are stringified as-is.
-      next[f.key] = String(entry.value);
+    if (data) {
+      for (const f of fields) {
+        const entry = data[f.key];
+        if (entry) next[f.key] = String(entry.value);
+      }
     }
-    setDraft(next);
+    return next;
   }, [data, fields]);
+  const [draftEdits, setDraftEdits] = useState<{
+    source: SettingMap | null | undefined;
+    values: Record<string, string>;
+  }>({ source: undefined, values: {} });
+  const draft = draftEdits.source === data ? draftEdits.values : serverDraft;
+  const [saving, setSaving] = useState(false);
 
   /** Has the user edited any field since the last load? */
   const isDirty = useMemo(() => {
@@ -383,7 +384,7 @@ function SettingsSection({ category, numLang }: { category: Category; numLang: L
                 key={f.key}
                 field={f}
                 value={draft[f.key] ?? ""}
-                onChange={(v) => setDraft((d) => ({ ...d, [f.key]: v }))}
+                onChange={(v) => setDraftEdits({ source: data, values: { ...draft, [f.key]: v } })}
                 numLang={numLang}
                 updatedAt={data?.[f.key]?.updatedAt}
               />

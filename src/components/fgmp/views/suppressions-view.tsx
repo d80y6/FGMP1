@@ -633,8 +633,8 @@ function CreateSuppressionDialog({ open, onOpenChange, onCreated, sites, lang, t
       siteId: ALL_SITES_VALUE,
       alarmType: ALL_TYPES_VALUE,
       reason: "",
-      startsAt: nowLocal(),
-      endsAt: plusHours(2),
+      startsAt: "",
+      endsAt: "",
     },
   });
 

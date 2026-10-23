@@ -166,6 +166,13 @@ function formatDuration(sec: number, _lang: Language): string {
  * ──────────────────────────────────────────────────────────────────────── */
 
 export function DispensersView() {
+  const [nowMs, setNowMs] = useState(0);
+  useEffect(() => {
+    const initial = setTimeout(() => setNowMs(Date.now()), 0);
+    const interval = setInterval(() => setNowMs(Date.now()), 30_000);
+    return () => { clearTimeout(initial); clearInterval(interval); };
+  }, []);
+
   // Subscribe to individual slices: a bare `useFgmp()` re-renders this
   // component on EVERY store write (search keystrokes, view changes,
   // lastTickAt, …) instead of only the slices actually read.
@@ -243,7 +250,7 @@ export function DispensersView() {
   const txnToday = k?.dispenserTransactionsToday ?? 0;
   const volToday = k?.dispenserVolumeTodayL ?? 0;
   // revenue today from transactions
-  const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
+  const startOfToday = new Date(nowMs); startOfToday.setHours(0, 0, 0, 0);
   const todayMs = startOfToday.getTime();
   const revenueToday = useMemo(
     () => transactions.filter((t2) => new Date(t2.startedAt).getTime() >= todayMs && t2.status === "COMPLETED")
@@ -256,7 +263,7 @@ export function DispensersView() {
   // 24h / 7d / 30d period picker.
   const [reportPeriod, setReportPeriod] = useState<"24h" | "7d" | "30d">("7d");
   const periodMs = reportPeriod === "24h" ? 24 * 3600_000 : reportPeriod === "7d" ? 7 * 86400_000 : 30 * 86400_000;
-  const periodStartMs = Date.now() - periodMs;
+  const periodStartMs = nowMs - periodMs;
 
   const periodTxns = useMemo(
     () => transactions.filter((t2) => t2.status === "COMPLETED" && new Date(t2.startedAt).getTime() >= periodStartMs),
@@ -278,10 +285,11 @@ export function DispensersView() {
   const volumeTrend = useMemo(() => {
     const days: { day: string; volume: number; amount: number }[] = [];
     const buckets = reportPeriod === "24h" ? 24 : reportPeriod === "7d" ? 7 : 30;
+    const reportNow = periodStartMs + periodMs;
     for (let i = buckets - 1; i >= 0; i--) {
       const start = reportPeriod === "24h"
-        ? Date.now() - (i + 1) * 3600_000
-        : (() => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - i); return d.getTime(); })();
+        ? reportNow - (i + 1) * 3600_000
+        : (() => { const d = new Date(reportNow); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - i); return d.getTime(); })();
       const end = reportPeriod === "24h" ? start + 3600_000 : start + 86400000;
       const bucketTxns = periodTxns.filter((t2) => {
         const ts = new Date(t2.startedAt).getTime();
@@ -295,7 +303,7 @@ export function DispensersView() {
       days.push({ day: label, volume: Math.round(volume * 10) / 10, amount });
     }
     return days;
-  }, [periodTxns, reportPeriod]);
+  }, [periodTxns, reportPeriod, periodStartMs, periodMs]);
 
   const revenueBySite = useMemo(() => {
     const m = new Map<string, { name: string; amount: number; volume: number }>();
@@ -477,7 +485,7 @@ export function DispensersView() {
                       {filtered.slice(0, 100).map((d) => {
                         const status = d.liveStatus ?? d.status;
                         const dispensing = status === "DISPENSING";
-                        const commsStale = Date.now() - (d.liveLastCommAt ?? 0) > 90_000;
+                        const commsStale = nowMs - (d.liveLastCommAt ?? 0) > 90_000;
                         return (
                           <TableRow key={d.id} className="transition-colors hover:bg-muted/30">
                             <TableCell>
@@ -526,7 +534,7 @@ export function DispensersView() {
                               <div className="flex items-center gap-1 text-[10px]">
                                 <Wifi className={`h-3 w-3 ${commsStale ? "text-rose-500" : "text-emerald-500"}`} />
                                 <span className={commsStale ? "text-rose-500" : "text-muted-foreground"}>
-                                  {timeAgo(d.liveLastCommAt ?? Date.now(), numLang)}
+                                  {timeAgo(d.liveLastCommAt ?? nowMs, numLang)}
                                 </span>
                               </div>
                               <div className="text-[9px] text-muted-foreground tabular-nums" dir="ltr">{formatNumber(d.liveWifiRssi, numLang)} dBm</div>
@@ -898,12 +906,14 @@ export function DispensersView() {
 
       {/* ── Dialogs ─────────────────────────────────────────────────────── */}
       <CreateDispenserDialog
+        key={`create-${createOpen}`}
         open={createOpen}
         onOpenChange={setCreateOpen}
         onCreated={() => { refetchDispensers(); setCreateOpen(false); }}
         lang={numLang}
       />
       <EditDispenserDialog
+        key={editTarget?.id ?? "none"}
         target={editTarget}
         onOpenChange={(o) => !o && setEditTarget(null)}
         onSaved={() => { refetchDispensers(); setEditTarget(null); }}
@@ -1089,30 +1099,24 @@ function CreateDispenserDialog({ open, onOpenChange, onCreated, lang }: {
   const sites = useSiteList();
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({
-    siteId: "", label: "", manufacturer: "Tatsuno", model: "CR-200",
+    siteId: sites[0]?.id ?? "", label: "", manufacturer: "Tatsuno", model: "CR-200",
     nozzleCount: 1, fuelType: "DIESEL", maxFlowLpm: 40,
     espDeviceId: "", espFirmware: "v1.0.0",
     rs485Baudrate: 9600, rs485Address: 1, rs485Parity: "8N1",
     ipAddress: "", macAddress: "",
   });
 
-  useEffect(() => {
-    if (open) {
-      setForm((f) => ({ ...f, siteId: f.siteId || (sites[0]?.id ?? "") }));
-    }
-  }, [open, sites]);
-
   const update = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }));
 
   const onSubmit = async () => {
-    if (!form.siteId || !form.label || !form.espDeviceId) {
+    if (!(form.siteId || sites[0]?.id) || !form.label || !form.espDeviceId) {
       toast.error(t("dispenser.createFailed"), { description: "siteId, label, espDeviceId required" });
       return;
     }
     setSubmitting(true);
     try {
       const res = await apiPost("/api/fgmp/dispensers", {
-        siteId: form.siteId,
+        siteId: form.siteId || sites[0]?.id,
         label: form.label,
         manufacturer: form.manufacturer,
         model: form.model,
@@ -1193,26 +1197,15 @@ function EditDispenserDialog({ target, onOpenChange, onSaved, lang }: {
   const t = useT();
   const sites = useSiteList();
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({
-    siteId: "", label: "", manufacturer: "", model: "",
-    nozzleCount: 1, fuelType: "DIESEL", maxFlowLpm: 40,
-    espDeviceId: "", espFirmware: "v1.0.0",
-    rs485Baudrate: 9600, rs485Address: 1, rs485Parity: "8N1",
-    ipAddress: "", macAddress: "",
-  });
-
-  useEffect(() => {
-    if (target) {
-      setForm({
-        siteId: target.siteId, label: target.label, manufacturer: target.manufacturer, model: target.model,
-        nozzleCount: target.nozzleCount, fuelType: target.fuelType, maxFlowLpm: target.maxFlowLpm,
-        espDeviceId: target.espDeviceId, espFirmware: target.espFirmware,
-        rs485Baudrate: target.rs485Baudrate, rs485Address: target.rs485Address, rs485Parity: target.rs485Parity,
-        ipAddress: target.ipAddress ?? "",
-    macAddress: target.macAddress ?? "",
-      });
-    }
-  }, [target]);
+  const [form, setForm] = useState(() => ({
+    siteId: target?.siteId ?? "", label: target?.label ?? "",
+    manufacturer: target?.manufacturer ?? "", model: target?.model ?? "",
+    nozzleCount: target?.nozzleCount ?? 1, fuelType: target?.fuelType ?? "DIESEL",
+    maxFlowLpm: target?.maxFlowLpm ?? 40, espDeviceId: target?.espDeviceId ?? "",
+    espFirmware: target?.espFirmware ?? "v1.0.0", rs485Baudrate: target?.rs485Baudrate ?? 9600,
+    rs485Address: target?.rs485Address ?? 1, rs485Parity: target?.rs485Parity ?? "8N1",
+    ipAddress: target?.ipAddress ?? "", macAddress: target?.macAddress ?? "",
+  }));
 
   const update = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }));
 

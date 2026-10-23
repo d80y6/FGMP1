@@ -275,6 +275,7 @@ export function TenantsView() {
       </Card>
 
       <CreateTenantDialog
+        key={String(createOpen)}
         open={createOpen}
         onOpenChange={setCreateOpen}
         onCreated={() => { refetch(); setCreateOpen(false); }}
@@ -282,6 +283,7 @@ export function TenantsView() {
       />
 
       <EditTenantDialog
+        key={editTarget?.id ?? "none"}
         target={editTarget}
         onOpenChange={(o) => !o && setEditTarget(null)}
         onSaved={() => { refetch(); setEditTarget(null); }}
@@ -420,11 +422,6 @@ function CreateTenantDialog({
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState<TenantForm>(EMPTY_FORM);
 
-  // Reset the form whenever the dialog is opened.
-  useEffect(() => {
-    if (open) setForm(EMPTY_FORM);
-  }, [open]);
-
   const update = <K extends keyof TenantForm>(k: K, v: TenantForm[K]) =>
     setForm((f) => ({ ...f, [k]: v }));
 
@@ -485,13 +482,9 @@ function EditTenantDialog({
 }) {
   const t = useT();
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState<TenantForm>(EMPTY_FORM);
-
-  useEffect(() => {
-    if (target) {
-      setForm({ name: target.name, code: target.code, country: target.country });
-    }
-  }, [target]);
+  const [form, setForm] = useState<TenantForm>(() => target
+    ? { name: target.name, code: target.code, country: target.country }
+    : EMPTY_FORM);
 
   const update = <K extends keyof TenantForm>(k: K, v: TenantForm[K]) =>
     setForm((f) => ({ ...f, [k]: v }));

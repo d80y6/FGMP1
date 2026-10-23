@@ -20,7 +20,7 @@
  * immediately — losing it means revoking + recreating.
  */
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback } from "react";
 import {
   KeyRound, Plus, Copy, Check, Ban, MoreVertical, ShieldAlert,
   AlertCircle, Loader2, Clock, Globe, ShieldCheck,
@@ -362,6 +362,7 @@ export function ApiKeysView() {
 
       {/* Create dialog */}
       <CreateKeyDialog
+        key={String(createOpen)}
         open={createOpen}
         onOpenChange={setCreateOpen}
         onCreated={(created) => {
@@ -424,16 +425,6 @@ function CreateKeyDialog({
   const [expiresAt, setExpiresAt] = useState("");
   const [ipAllowlist, setIpAllowlist] = useState("");
   const [submitting, setSubmitting] = useState(false);
-
-  // Reset form state each time the dialog opens.
-  useEffect(() => {
-    if (open) {
-      setName("");
-      setScopes(new Set(["read"]));
-      setExpiresAt("");
-      setIpAllowlist("");
-    }
-  }, [open]);
 
   const toggleScope = (code: string) => {
     setScopes((prev) => {
