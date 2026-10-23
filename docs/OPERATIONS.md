@@ -139,6 +139,29 @@ errors are recorded to the in-process ring buffer that feeds `health.errors[]`.
 Log lines carry a request id; correlate a browser failure with the server line by
 timestamp + method + path + status.
 
+### Browser errors
+
+The client error boundary (`src/components/providers/error-boundary.tsx`) shows
+the user a short `errorId` and emits one JSON line per caught render error:
+
+```
+[ErrorBoundary] {"errorId":"…","name":"TypeError","message":"…","stack":"…",
+                 "componentStack":"…","url":"…","occurredAt":"…"}
+```
+
+No SDK is bundled. To forward these to Sentry, Datadog RUM or anything else,
+install the SDK in your own script and assign the hook before the app boots:
+
+```html
+<script>
+  window.__fgmpReportError = (report) => window.Sentry?.captureException(report);
+</script>
+```
+
+The same report is dispatched as a `fgmp:client-error` CustomEvent, so a host
+page can subscribe without touching the app. Both paths are best-effort: a
+throwing reporter is swallowed so the fallback UI still renders.
+
 ## 8. First checks by symptom
 
 | Symptom | Check |
