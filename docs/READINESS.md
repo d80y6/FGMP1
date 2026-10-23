@@ -126,16 +126,19 @@ series. It now uses a label pair unique to that test.
 ```bash
 bun install --frozen-lockfile
 bun run check:env          # expect errors in a bare checkout — that is the point
+bunx prisma generate       # needs a query engine binary (see §7)
 npx tsc --noEmit           # 0 errors
 npx eslint .               # 0 errors
-bun test                   # 714 pass, 13 skip, 0 fail without a database
+bun test                   # 724 pass, 13 skip, 0 fail without a database
 bun run build              # standalone output
 ```
 
-With PostgreSQL (compose or CI):
+With PostgreSQL (compose or CI). Migrations and the seed both use the OWNER
+credential; the app itself never receives it:
 
 ```bash
-bun run db:deploy && bun run db:seed
+FGMP_MIGRATE_DATABASE_URL=postgresql://fgmp_migrate:… bun run db:deploy
+FGMP_MIGRATE_DATABASE_URL=postgresql://fgmp_migrate:… bun run db:seed
 FGMP_REQUIRE_DB_TESTS=1 bun test
 bun run test:rls
 bun run test:smoke

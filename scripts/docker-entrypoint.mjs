@@ -217,10 +217,21 @@ if (res.status !== 0) {
 
 log("migrations applied (or already current) — starting server");
 
-// Run the seed script using the migration or app database URL
+// Run the seed script with the owner credential.
+//
+// BOTH variables are set on purpose. The seed refuses to run without
+// FGMP_MIGRATE_DATABASE_URL (falling back to DATABASE_URL would run it as the
+// RLS-enforced app role and fail on the first insert), while other tooling in
+// the script still reads DATABASE_URL. Passing only DATABASE_URL — as this did
+// before the seeder gained that guard — would make the single-container path
+// skip seeding silently and boot an empty platform.
 const seedRes = spawnSync("bun", ["run", "db:seed"], {
   stdio: "inherit",
-  env: { ...process.env, DATABASE_URL: migrateUrl },
+  env: {
+    ...process.env,
+    DATABASE_URL: migrateUrl,
+    FGMP_MIGRATE_DATABASE_URL: process.env.FGMP_MIGRATE_DATABASE_URL || migrateUrl,
+  },
 });
 
 if (seedRes.status !== 0) {

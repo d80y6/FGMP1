@@ -18,7 +18,6 @@
  * place that needs it; the web app must never be given that credential.
  */
 
-import { PrismaClient } from "@prisma/client";
 import { seedIfNeeded } from "@/lib/fgmp/seed";
 
 function ownerUrl(): string {
@@ -37,32 +36,27 @@ function ownerUrl(): string {
 }
 
 async function main() {
-  // A visible warning beats a silent wrong-role failure. seed.ts already
-  // falls back to the app client when this is absent, which RLS then rejects.
-  const client = new PrismaClient({
-    datasources: { db: { url: ownerUrl() } },
-    log: [
-      { level: "warn", emit: "stdout" as const },
-      { level: "error", emit: "stdout" as const },
-    ],
-  });
+  // Validate the owner credential BEFORE seeding, where the fix is obvious.
+  //
+  // This script used to build an owner PrismaClient and then never use it,
+  // while the seeder built its own client from DATABASE_URL. The seed therefore
+  // connected as fgmp_app and died on the first insert with
+  //   ERROR: new row violates row-level security policy for table "User" —
+  // which reads like a policy bug rather than a missing credential.
+  ownerUrl();
 
-  try {
-    const result = await seedIfNeeded();
-    console.log(`\ndb:seed -> ${JSON.stringify(result)}`);
-    if (result.siteCount === 0) {
-      console.error(
-        "\nFAIL: seeding produced no sites. The platform would serve an empty\n" +
-          "  fleet. Check the owner connection and the migrations above this.\n",
-      );
-      process.exitCode = 1;
-    } else if (result.seeded) {
-      console.log(`  seeded ${result.siteCount} sites`);
-    } else {
-      console.log(`  already seeded (${result.siteCount} sites) — nothing to do`);
-    }
-  } finally {
-    await client.$disconnect();
+  const result = await seedIfNeeded();
+  console.log(`\ndb:seed -> ${JSON.stringify(result)}`);
+  if (result.siteCount === 0) {
+    console.error(
+      "\nFAIL: seeding produced no sites. The platform would serve an empty\n" +
+        "  fleet. Check the owner connection and the migrations above this.\n",
+    );
+    process.exitCode = 1;
+  } else if (result.seeded) {
+    console.log(`  seeded ${result.siteCount} sites`);
+  } else {
+    console.log(`  already seeded (${result.siteCount} sites) — nothing to do`);
   }
 }
 

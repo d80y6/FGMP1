@@ -150,6 +150,7 @@ can write the row bypass the second factor.
 | `fgmp_theft_detections_total` absent | Scheduler refuses to fabricate telemetry |
 | Empty dashboard on a new environment | Honest state without devices; seed the demo topology |
 | Backup job output is a small dump | It ran as `fgmp_app`; RLS-scoped dumps are silently incomplete |
+| `bun test` exits 1 with one `PrismaClientInitializationError` (no failing test) | `prisma generate` could not download a query engine, so importing `src/lib/db.ts` rejects in the background. The suite itself passed. Run `bunx prisma generate` on a machine that can reach `binaries.prisma.sh`; CI does this before testing |
 
 ## 4. Checking the boundary yourself
 
@@ -165,9 +166,13 @@ Then sign in and re-check: the same routes return 200. Sign in as
 ## 5. Seeding a test database
 
 ```bash
-DATABASE_URL="postgresql://fgmp_migrate:…@127.0.0.1:5433/fgmp?schema=public" \
+FGMP_MIGRATE_DATABASE_URL="postgresql://fgmp_migrate:…@127.0.0.1:5433/fgmp?schema=public" \
   bun run db:seed
 ```
 
 Seeding needs the owner role and is idempotent (`{"seeded":false}` when the
-topology exists). See [DEPLOYMENT.md](DEPLOYMENT.md).
+topology exists). The variable is `FGMP_MIGRATE_DATABASE_URL`, not
+`DATABASE_URL`: RLS is `FORCE`-enabled on every tenant-carrying table, so
+`DATABASE_URL` (the `fgmp_app` role) is rejected on the first insert with
+`new row violates row-level security policy`. The seeder refuses to start
+rather than fall back. See [DEPLOYMENT.md](DEPLOYMENT.md).

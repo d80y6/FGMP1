@@ -4,6 +4,7 @@ import type { Prisma } from "@prisma/client";
 import { PrismaClient } from "@prisma/client";
 import type { Criticality, PowerSource, IotProtocol, FuelDeliveryStatus } from "@prisma/client";
 import { db } from "@/lib/db";
+import { hasOwnerDbUrl, resolveOwnerDbUrl } from "@/lib/fgmp/owner-db";
 import { toNum } from "@/lib/fgmp/decimal";
 import bcrypt from "bcryptjs";
 
@@ -33,11 +34,23 @@ import bcrypt from "bcryptjs";
 let ownerClient: PrismaClient | null = null;
 
 function systemDb(): PrismaClient {
-
-  //const url = process.env.FGMP_MIGRATE_DATABASE_URL;
-  const url = process.env.DATABASE_URL;
+  // Precedence lives in resolveOwnerDbUrl() so it is tested. It MUST prefer
+  // FGMP_MIGRATE_DATABASE_URL: DATABASE_URL is the app's RLS-enforced role, and
+  // seeding as that role fails with
+  //   ERROR: new row violates row-level security policy for table "User".
+  const url = resolveOwnerDbUrl();
 
   if (!url) return db;
+  if (!hasOwnerDbUrl()) {
+    // One line, once, naming the consequence. Without it the first write fails
+    // with an RLS error that reads like a policy bug.
+    console.warn(
+      "[seed] FGMP_MIGRATE_DATABASE_URL is not set — falling back to " +
+        "DATABASE_URL. If that is the fgmp_app role, seeding WILL fail: RLS is " +
+        "FORCE-enabled on every tenant-carrying table. Set the owner URL for " +
+        "the deploy-time seed job.",
+    );
+  }
   if (!ownerClient) {
     ownerClient = new PrismaClient({
       datasources: { db: { url } },
