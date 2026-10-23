@@ -6,6 +6,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { fmtDateTime } from "@/lib/fgmp/format";
+import { useNow } from "@/lib/fgmp/use-now";
 
 interface MaintenanceTicket {
   id: string;
@@ -69,8 +70,11 @@ const LABEL_OFFSETS: Record<RangeOption, number[]> = {
   90: [1, 14, 28, 42, 56, 70, 84], // every 14 days
 };
 
+/** A ticket that has a schedule instant — narrowed once, at the split below. */
+type ScheduledTicket = MaintenanceTicket & { scheduledFor: string };
+
 interface HoverState {
-  ticket: MaintenanceTicket;
+  ticket: ScheduledTicket;
   rowIdx: number;
   left: number;
   width: number;
@@ -95,22 +99,25 @@ export function MaintenanceGantt({ tickets, defaultRange = 30, onTicketClick }: 
   const minWidth = MIN_WIDTH_BY_RANGE[range];
   const labelOffsets = LABEL_OFFSETS[range];
 
-  // Timeline anchor: start of (today - pastDays) in local time
-  const startMs = useMemo(() => {
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    return today.getTime() - pastDays * DAY_MS;
-  }, [pastDays]);
-
   const timelineWidth = timelineDays * dayWidth;
-  const now = Date.now();
+  const now = useNow();
+
+  // Timeline anchor: start of (today - pastDays) in local time. Derived from
+  // the shared clock rather than from `new Date()` so the value is a pure
+  // function of render inputs — the compiler's purity check, and a render
+  // replayed by React, both depend on that.
+  const dayStart = new Date(now);
+  dayStart.setHours(0, 0, 0, 0);
+  const startMs = dayStart.getTime() - pastDays * DAY_MS;
 
   // Split scheduled vs unscheduled
   const { scheduled, unscheduled } = useMemo(() => {
-    const sched: MaintenanceTicket[] = [];
+    // `scheduledFor` is optional on the wire shape; narrowing here means every
+    // consumer below (bar geometry, tooltip) can use it as a plain string.
+    const sched: ScheduledTicket[] = [];
     const unsched: MaintenanceTicket[] = [];
     for (const t of tickets) {
-      if (t.scheduledFor) sched.push(t);
+      if (t.scheduledFor) sched.push({ ...t, scheduledFor: t.scheduledFor });
       else unsched.push(t);
     }
     return { scheduled: sched, unscheduled: unsched };
@@ -118,17 +125,15 @@ export function MaintenanceGantt({ tickets, defaultRange = 30, onTicketClick }: 
 
   // Group by site, keep top N by ticket count
   const { rows, hiddenSitesCount } = useMemo(() => {
-    const bySite = new Map<string, { name: string; code: string; tickets: MaintenanceTicket[] }>();
+    const bySite = new Map<string, { name: string; code: string; tickets: ScheduledTicket[] }>();
     for (const t of scheduled) {
       const key = t.siteId;
-      if (!bySite.has(key)) {
-        bySite.set(key, {
-          name: t.site?.name ?? "Unknown",
-          code: t.site?.code ?? "—",
-          tickets: [],
-        });
+      let group = bySite.get(key);
+      if (!group) {
+        group = { name: t.site?.name ?? "Unknown", code: t.site?.code ?? "—", tickets: [] };
+        bySite.set(key, group);
       }
-      bySite.get(key)!.tickets.push(t);
+      group.tickets.push(t);
     }
     const sorted = Array.from(bySite.entries())
       .map(([siteId, v]) => ({ siteId, ...v, count: v.tickets.length }))
@@ -211,8 +216,8 @@ export function MaintenanceGantt({ tickets, defaultRange = 30, onTicketClick }: 
   }
 
   // Compute bar position for a ticket (clamped to visible range)
-  const positionFor = (t: MaintenanceTicket) => {
-    const sched = new Date(t.scheduledFor!).getTime();
+  const positionFor = (t: ScheduledTicket) => {
+    const sched = new Date(t.scheduledFor).getTime();
     const startDay = Math.floor((sched - startMs) / DAY_MS);
     let endDay = startDay + 1; // default: 1-day wide bar
     if (t.status === "DONE" && t.completedAt) {
@@ -449,7 +454,7 @@ export function MaintenanceGantt({ tickets, defaultRange = 30, onTicketClick }: 
                     <p>
                       Scheduled:{" "}
                       <span className="text-foreground">
-                        {fmtDateTime(hovered.ticket.scheduledFor!)}
+                        {fmtDateTime(hovered.ticket.scheduledFor)}
                       </span>
                     </p>
                     {hovered.ticket.completedAt && (

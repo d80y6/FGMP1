@@ -139,7 +139,7 @@ export function AnalyticsView() {
                 <XAxis type="number" dataKey="x" name="kWh" tick={{ fontSize: 9 }} stroke="currentColor" strokeOpacity={0.3} label={{ value: "kWh", position: "insideBottom", offset: -2, fontSize: 9 }} />
                 <YAxis type="number" dataKey="y" name="Litres" tick={{ fontSize: 9 }} stroke="currentColor" strokeOpacity={0.3} />
                 <ZAxis type="number" dataKey="z" range={[40, 40]} />
-                <Tooltip contentStyle={{ fontSize: 11 }} formatter={(v: any, n: string) => [v, n === "y" ? "Litres" : "kWh"]} labelFormatter={() => ""} />
+                <Tooltip contentStyle={{ fontSize: 11 }} formatter={(v: number, n: string) => [v, n === "y" ? "Litres" : "kWh"]} labelFormatter={() => ""} />
                 <Scatter data={scatterData} fill={cc.sky} />
               </ScatterChart>
             </ResponsiveContainer>
@@ -268,7 +268,7 @@ export function AnalyticsView() {
                     <YAxis type="category" dataKey="region" tick={{ fontSize: 9 }} stroke="currentColor" strokeOpacity={0.3} width={110} />
                     <Tooltip
                       contentStyle={{ fontSize: 12 }}
-                      formatter={(v: any) => [`$${formatNumber(Number(v).toLocaleString(), numLang)}`, "Fuel Value"]}
+                      formatter={(v: number) => [`$${formatNumber(Number(v).toLocaleString(), numLang)}`, "Fuel Value"]}
                     />
                     <Bar dataKey="costUsd" radius={[0, 4, 4, 0]} fill="url(#cost-grad)" name="Fuel Value" />
                   </BarChart>
@@ -315,7 +315,7 @@ export function AnalyticsView() {
                           </Pie>
                           <Tooltip
                             contentStyle={{ fontSize: 12 }}
-                            formatter={(v: any, n: string) => [`$${formatNumber(Number(v).toLocaleString(), numLang)}`, n]}
+                            formatter={(v: number, n: string) => [`$${formatNumber(Number(v).toLocaleString(), numLang)}`, n]}
                           />
                         </PieChart>
                       </ResponsiveContainer>

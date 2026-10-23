@@ -314,11 +314,11 @@ export function ShiftHandoverPanel() {
                     </div>
 
                     {/* Acknowledgement reply (if acknowledged) */}
-                    {n.status === "ACKNOWLEDGED" && n.acknowledgedNote && (
+                    {n.status === "ACKNOWLEDGED" && n.acknowledgedNote && n.acknowledgedAt && (
                       <div className="mx-3 mb-2 rounded border border-emerald-500/20 bg-emerald-500/5 p-2">
                         <p className="mb-0.5 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
                           <Check className="h-3 w-3" />
-                          {t("handover.acknowledgedBy")} · {timeAgo(n.acknowledgedAt!, numLang)}
+                          {t("handover.acknowledgedBy")} · {timeAgo(n.acknowledgedAt, numLang)}
                         </p>
                         <p className="whitespace-pre-wrap break-words text-[11px] leading-relaxed text-foreground/80">{n.acknowledgedNote}</p>
                       </div>
@@ -474,7 +474,7 @@ function HandoverComposer({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">{t("handover.shift")}</Label>
-              <Select value={shift} onValueChange={(v) => setShift(v as any)}>
+              <Select value={shift} onValueChange={(v) => setShift(v as "MORNING" | "EVENING" | "NIGHT")}>
                 <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="MORNING">{t("handover.shiftMorning")}</SelectItem>
@@ -485,7 +485,7 @@ function HandoverComposer({
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">{t("handover.priority")}</Label>
-              <Select value={priority} onValueChange={(v) => setPriority(v as any)}>
+              <Select value={priority} onValueChange={(v) => setPriority(v as "P1" | "P2" | "P3")}>
                 <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="P1">P1</SelectItem>

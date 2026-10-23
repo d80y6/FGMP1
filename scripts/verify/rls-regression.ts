@@ -1879,8 +1879,8 @@ async function geographyIsolationAssertions(): Promise<void> {
   // This is the structural reason geography cannot use the generic TABLES
   // fixture: those insert a fresh row per table, whereas these assertions must
   // examine rows the Site fixture depends on.
-  const chainA = chains[SUFFIX]!
-  const chainB = chains[`${SUFFIX}-b`]!
+  const chainA = chains[SUFFIX]
+  const chainB = chains[`${SUFFIX}-b`]
   const govB = chainB.gov
 
   // 1. FAIL CLOSED. With no tenant context the derived policy's subquery
@@ -1921,12 +1921,12 @@ async function geographyIsolationAssertions(): Promise<void> {
       chainA.dist, chainB.dist,
     ),
   )
-  if (inA.length === 1 && inA[0]!.id === chainA.dist) {
+  if (inA.length === 1 && inA[0].id === chainA.dist) {
     pass('geo-own-district-visible', 'tenant A sees its own district')
   } else {
     fail('geo-own-district-visible', `expected only ${chainA.dist}, got ${JSON.stringify(inA)}`)
   }
-  if (inABoth.length === 1 && inABoth[0]!.id === chainA.dist) {
+  if (inABoth.length === 1 && inABoth[0].id === chainA.dist) {
     pass('geo-cross-tenant-district-hidden', "tenant A cannot see tenant B's district")
   } else {
     fail('geo-cross-tenant-district-hidden', `expected only ${chainA.dist}, got ${JSON.stringify(inABoth)}`)
@@ -1938,7 +1938,7 @@ async function geographyIsolationAssertions(): Promise<void> {
       chainA.gov, govB,
     ),
   )
-  if (govA1.length === 1 && govA1[0]!.id === chainA.gov) {
+  if (govA1.length === 1 && govA1[0].id === chainA.gov) {
     pass('geo-cross-tenant-governorate-hidden', "tenant A cannot see tenant B's governorate")
   } else {
     fail('geo-cross-tenant-governorate-hidden', `expected only ${chainA.gov}, got ${JSON.stringify(govA1)}`)

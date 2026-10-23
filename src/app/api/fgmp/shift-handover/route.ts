@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
     ...ROLES.DELIVERY,
     ...ROLES.MAINTENANCE,
     "SUPERADMIN",
-  ] as any);
+  ]);
   if ("error" in auth) return auth.error;
   try {
     const { user } = await bootstrap();

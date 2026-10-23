@@ -450,8 +450,8 @@ async function collectGetRoutes(): Promise<RouteDef[]> {
         // Substitute dynamic segments with ids that EXIST and are of the RIGHT
         // TYPE. A placeholder yields 400; a wrong-type id yields a legitimate-
         // looking 404. Both hide the fact that the handler never ran.
-        p = p.replace(/\[\.\.\.[^\]]+\]/g, IDS["[...slug]"]!);
-        p = p.replace(/\[([a-zA-Z]+)\]/g, (_m, name: string) => IDS[`[${name}]`] ?? ID_BY_PATH[p] ?? IDS_BY_ENTITY[name] ?? IDS["[siteId]"]!);
+        p = p.replace(/\[\.\.\.[^\]]+\]/g, IDS["[...slug]"]);
+        p = p.replace(/\[([a-zA-Z]+)\]/g, (_m, name: string) => IDS[`[${name}]`] ?? ID_BY_PATH[p] ?? IDS_BY_ENTITY[name] ?? IDS["[siteId]"]);
         out.push({ method: "GET", path: p || "/api" });
       }
     }

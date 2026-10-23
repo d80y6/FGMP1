@@ -27,6 +27,21 @@ import { createHmac } from "node:crypto";
 
 const BASE = process.env.FGMP_BASE_URL ?? "http://127.0.0.1:3000";
 
+/**
+ * The subset of the JSON these endpoints return that the probe reads. Written
+ * out rather than `any` so a renamed field is a compile error here, not a
+ * probe that silently checks `undefined` and prints PASS.
+ */
+interface MfaProbeResponse {
+  secret?: string;
+  enrolled?: boolean;
+  code?: string;
+  backupCodes?: string[];
+  challengeToken?: string;
+  verified?: boolean;
+  method?: string;
+}
+
 // ── An INDEPENDENT TOTP implementation ───────────────────────────────────────
 // Deliberately written from RFC 6238 with no import from the code under test.
 // It shares nothing with src/lib/fgmp/mfa/totp.ts except the algorithm.
@@ -56,12 +71,12 @@ function referenceTotp(secret: string, unixSeconds: number, digits = 6): string 
   const counter = Buffer.alloc(8);
   counter.writeBigUInt64BE(BigInt(Math.floor(unixSeconds / 30)));
   const h = createHmac("sha1", base32ToBytes(secret)).update(counter).digest();
-  const off = h[h.length - 1]! & 0x0f;
+  const off = h[h.length - 1] & 0x0f;
   const bin =
-    ((h[off]! & 0x7f) << 24) |
-    ((h[off + 1]! & 0xff) << 16) |
-    ((h[off + 2]! & 0xff) << 8) |
-    (h[off + 3]! & 0xff);
+    ((h[off] & 0x7f) << 24) |
+    ((h[off + 1] & 0xff) << 16) |
+    ((h[off + 2] & 0xff) << 8) |
+    (h[off + 3] & 0xff);
   return String(bin % 10 ** digits).padStart(digits, "0");
 }
 
@@ -85,9 +100,9 @@ async function post(path: string, body: unknown, cookie?: string) {
     },
     body: JSON.stringify(body),
   });
-  let json: any = null;
+  let json: MfaProbeResponse | null = null;
   try {
-    json = await res.json();
+    json = (await res.json()) as MfaProbeResponse;
   } catch {
     /* empty body is fine */
   }
@@ -180,7 +195,7 @@ async function main(): Promise<void> {
     if (p2.json?.challengeToken) {
       const used = await post(
         "/api/fgmp/mfa/challenge",
-        { challengeToken: p2.json.challengeToken, code: backupCodes[0]! },
+        { challengeToken: p2.json.challengeToken, code: backupCodes[0] },
         cookie3,
       );
       record(
@@ -198,7 +213,7 @@ async function main(): Promise<void> {
       if (p3.json?.challengeToken) {
         const replay = await post(
           "/api/fgmp/mfa/challenge",
-          { challengeToken: p3.json.challengeToken, code: backupCodes[0]! },
+          { challengeToken: p3.json.challengeToken, code: backupCodes[0] },
           cookie4,
         );
         record(

@@ -32,6 +32,7 @@ import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, Respons
 import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 import { alarmTypeLabel } from "@/lib/fgmp/labels";
+import { useNow } from "@/lib/fgmp/use-now";
 import { toast } from "sonner";
 
 
@@ -623,10 +624,18 @@ function GenMaintenanceEditor({
 
 function SiteTrendsTab({ data }: { data: any }) {
   const t = useT();
-  const tanks = data?.tanks ?? [];
-  const generators = data?.generators ?? [];
-  const batteries = data?.batteries ?? [];
-  const alarms = data?.alarms ?? [];
+  const now = useNow();
+  // Stable fallback identities — a bare `?? []` is a new array every render,
+  // which would invalidate all four trend memos below on any parent re-render.
+  const { tanks, generators, batteries, alarms } = useMemo(
+    () => ({
+      tanks: data?.tanks ?? [],
+      generators: data?.generators ?? [],
+      batteries: data?.batteries ?? [],
+      alarms: data?.alarms ?? [],
+    }),
+    [data],
+  );
 
   // Build combined fuel level trend from all tanks (last 48 points = ~4h at 5min intervals)
   const fuelTrend = useMemo(() => {
@@ -707,7 +716,6 @@ function SiteTrendsTab({ data }: { data: any }) {
   // Alarm timeline (last 24h by hour)
   const alarmTimeline = useMemo(() => {
     if (alarms.length === 0) return [];
-    const now = Date.now();
     const buckets: { hour: string; count: number; L1: number; L2: number; L3: number }[] = [];
     for (let h = 23; h >= 0; h--) {
       const start = now - (h + 1) * 3600000;
@@ -725,7 +733,7 @@ function SiteTrendsTab({ data }: { data: any }) {
       });
     }
     return buckets;
-  }, [alarms]);
+  }, [alarms, now]);
 
   const hasData = fuelTrend.length > 0 || genLoadTrend.length > 0 || battTrend.length > 0;
 

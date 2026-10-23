@@ -85,7 +85,9 @@ function SiteForm({
 }) {
   const t = useT();
   const snapshot = useFgmp((s) => s.snapshot);
-  const regions = snapshot?.regions ?? [];
+  // Stable fallback identity — a bare `?? []` is a new array on every render,
+  // and `regions` feeds the cascading memos just below.
+  const regions = useMemo(() => snapshot?.regions ?? [], [snapshot]);
 
   const isEdit = !!site;
 
@@ -111,12 +113,12 @@ function SiteForm({
     () => regions.find((r) => r.id === regionId) ?? null,
     [regions, regionId],
   );
-  const governorates = selectedRegion?.governorates ?? [];
+  const governorates = useMemo(() => selectedRegion?.governorates ?? [], [selectedRegion]);
   const selectedGovernorate = useMemo(
     () => governorates.find((g) => g.id === governorateId) ?? null,
     [governorates, governorateId],
   );
-  const districts = selectedGovernorate?.districts ?? [];
+  const districts = useMemo(() => selectedGovernorate?.districts ?? [], [selectedGovernorate]);
 
   // If the selected governorate is no longer in the (possibly changed) region,
   // reset it + the district. Same for district vs governorate. This keeps the
@@ -175,8 +177,8 @@ function SiteForm({
 
     setSubmitting(true);
     try {
-      const res = isEdit
-        ? await apiPatch(`/api/fgmp/sites/${site!.id}`, payload)
+      const res = isEdit && site
+        ? await apiPatch(`/api/fgmp/sites/${site.id}`, payload)
         : await apiPost("/api/fgmp/sites", payload);
       if (res.ok) {
         toast.success(isEdit ? t("sites.updatedToast") : t("sites.createdToast"));

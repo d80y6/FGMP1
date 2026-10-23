@@ -54,8 +54,9 @@ export function AlarmCorrelationPanel({ alarms, onSelectSite }: Props) {
     const map = new Map<string, AlarmGroup>();
     for (const a of alarms) {
       const key = a.siteId;
-      if (!map.has(key)) {
-        map.set(key, {
+      let g = map.get(key);
+      if (!g) {
+        g = {
           key,
           siteName: a.site?.name ?? "Unknown",
           siteCode: a.site?.code ?? "—",
@@ -66,9 +67,9 @@ export function AlarmCorrelationPanel({ alarms, onSelectSite }: Props) {
           firstAt: a.createdAt,
           lastAt: a.createdAt,
           alarms: [],
-        });
+        };
+        map.set(key, g);
       }
-      const g = map.get(key)!;
       g.count++;
       g.types.add(a.type);
       g.severities[a.severity as "L1" | "L2" | "L3"]++;

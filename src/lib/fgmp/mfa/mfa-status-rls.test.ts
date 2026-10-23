@@ -209,7 +209,7 @@ describeDb("MFA audit rows are tenant-scoped, not owner-written", () => {
       }),
     );
     expect(scoped.length).toBeGreaterThan(0);
-    expect(scoped[0]!.tenantId).toBe(TENANT);
+    expect(scoped[0].tenantId).toBe(TENANT);
   });
 
   test("and invisible from a DIFFERENT tenant", async () => {

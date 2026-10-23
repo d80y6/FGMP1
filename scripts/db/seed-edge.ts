@@ -47,7 +47,7 @@ function mulberry32(seed: number) {
   };
 }
 const rnd = mulberry32(20240715);
-function pick<T>(arr: T[]): T { return arr[Math.floor(rnd() * arr.length)]!; }
+function pick<T>(arr: T[]): T { return arr[Math.floor(rnd() * arr.length)]; }
 function range(min: number, max: number) { return min + rnd() * (max - min); }
 function intRange(min: number, max: number) { return Math.floor(range(min, max + 1)); }
 function sha256Fake(version: string): string {
@@ -237,10 +237,10 @@ async function main() {
       { fromVersion: "v2.4.0", toVersion: "v2.5.0-beta", status: "DOWNLOADING", progressPct: 20, daysAgo: 0, durSec: 0, inProgress: true },
     ];
     for (let i = 0; i < targets.length; i++) {
-      const tgt = targets[i]!;
+      const tgt = targets[i];
       const releaseId = releaseIdByVersion.get(tgt.toVersion);
       if (!releaseId || dispensers.length === 0) continue;
-      const disp = dispensers[i % dispensers.length]!;
+      const disp = dispensers[i % dispensers.length];
       // EspFirmwareDeployment inherits tenancy from the dispenser's site, so
       // resolve the owning tenant from the site rather than from the
       // deployment itself (Phase 1 steps 2-5).

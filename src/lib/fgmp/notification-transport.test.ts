@@ -44,7 +44,7 @@ describe("transport resolution — NO_TRANSPORT means never attempted", () => {
   afterEach(() => {
     for (const k of ENV_KEYS) {
       if (saved[k] === undefined) delete process.env[k];
-      else process.env[k] = saved[k]!;
+      else process.env[k] = saved[k];
     }
   });
 

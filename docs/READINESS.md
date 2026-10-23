@@ -89,7 +89,7 @@ the only identifier that ties a browser render to a server stack trace.
 |---|---|---|
 | `next build` | **fails** (Google Fonts) | passes, standalone output verified |
 | `npx tsc --noEmit` | 0 errors | 0 errors |
-| `npx eslint .` | 24 errors / 443 warnings | **0 errors** / 302 warnings |
+| `npx eslint .` | 24 errors / 443 warnings | **0 errors / 57 warnings** |
 | `bun test` | 699 pass / 14 fail | **724 pass / 0 fail** (13 skipped without a database) |
 | Dependency count | 78 production | **47** production, lockfile regenerated |
 
@@ -124,11 +124,41 @@ Two more defects were found by making the gates trustworthy rather than green:
   a client constructed on first USE, so importing is inert and a process that
   never queries never opens a pool.
 
-The remaining 302 warnings are four tracked rules — 184 non-null assertions, 77
-`any`, 25 `exhaustive-deps`, 13 `react-hooks/purity` — each of which needs a
-judgement call per site rather than a mechanical edit, and none of which is
-currently enforced as an error. They are a ratchet backlog, not a claim of
-cleanliness.
+Three of the four rule families that carried the original 302 warnings are now
+at zero and enforced as **errors** in CI:
+
+* **`react-hooks/exhaustive-deps` (25 → 0).** Every site was either a genuine
+  missing dependency or an unstated one. The `const sites = snapshot?.sites ?? []`
+  pattern rebuilt a fresh array on every render and invalidated every downstream
+  `useMemo`, so those now derive from one memo; `effect` sites that read a value
+  they deliberately did not key on either gained the dependency (a no-op when it
+  agrees) or, in the five asset-registry dialogs, carry an explicit
+  `eslint-disable-next-line` that states why re-seeding on the 5 s poll would
+  wipe the operator's typing.
+* **`react-hooks/purity` (13 → 0).** `Date.now()` in a render body or a `useMemo`
+  makes the same inputs produce different output depending on when React runs.
+  All 13 now read the shared clock in `src/lib/fgmp/use-now.ts` (`useSyncExternalStore`
+  over one interval per cadence, 30 s for coarse labels and 5 s for the
+  suppression countdown that replaced its own timer, idle when nothing subscribes,
+  server snapshot `0` so hydration matches).
+* **`@typescript-eslint/no-non-null-assertion` (184 → 0).** 81 were `arr[i]!`
+  on an array, which `tsc` does not even need without `noUncheckedIndexedAccess`
+  — verified by deleting them and compiling. The rest were real: `map.get(k)!`
+  after `has()`, `process.env.X!`, a session fetched from the registry it was
+  just written to, six engine lookups that would have thrown a `TypeError` on an
+  orphaned asset. Each is now a `let` bound to the lookup, or an explicit guard
+  that skips the asset with a comment rather than crashing the tick. Test files
+  and `scripts/verify/` are exempted in `eslint.config.mjs`: a non-null assertion
+  on a fixture is a statement about the test's own data, and a wrong one fails
+  the test.
+
+The 57 remaining warnings are all `@typescript-eslint/no-explicit-any`, in view
+components that consume `useApi<any>` payloads. Clearing them means writing the
+response interfaces for ~12 endpoints and threading them through; it is a
+mechanical but shape-sensitive change and is the one piece of the ratchet still
+open. It is a warning, not an error, so it neither blocks CI nor hides a
+runtime defect — but it is the reason the type gate is honest for the server and
+loose for some of the UI.
 
 ## 7. Not reproducible on this machine, and deliberately not decided here
 

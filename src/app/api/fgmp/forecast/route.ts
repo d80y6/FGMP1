@@ -378,12 +378,12 @@ export async function GET(req: NextRequest) {
         deliveredLitres: Math.round(creditedLitres),
         netLevelChangeLitres:
           rawPoints.length >= 2
-            ? Math.round(rawPoints[rawPoints.length - 1]!.l - rawPoints[0]!.l)
+            ? Math.round(rawPoints[rawPoints.length - 1].l - rawPoints[0].l)
             : null,
         unexplainedRiseLitres: Math.max(0, unexplainedRiseLitres),
         analysisNetLitres:
           segment.length >= 2
-            ? Math.round(segment[segment.length - 1]!.l - segment[0]!.l)
+            ? Math.round(segment[segment.length - 1].l - segment[0].l)
             : 0,
         spanHours: Math.round(estimate.spanHours * 1000) / 1000,
         outliersRejected: clean.outliers,

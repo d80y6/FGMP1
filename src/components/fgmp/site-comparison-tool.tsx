@@ -112,10 +112,16 @@ export function SiteComparisonTool() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [pickerValue, setPickerValue] = useState("");
 
-  const sites = snapshot?.sites ?? [];
-  const tanks = snapshot?.tanks ?? [];
-  const generators = snapshot?.generators ?? [];
-  const batteries = snapshot?.batteries ?? [];
+  // Stable fallback identities — a bare `?? []` is a new array every render.
+  const { sites, tanks, generators, batteries } = useMemo(
+    () => ({
+      sites: snapshot?.sites ?? [],
+      tanks: snapshot?.tanks ?? [],
+      generators: snapshot?.generators ?? [],
+      batteries: snapshot?.batteries ?? [],
+    }),
+    [snapshot],
+  );
 
   const selectedSites = useMemo(
     () => selectedIds.map((id) => sites.find((s) => s.id === id)).filter(Boolean) as SiteState[],

@@ -204,8 +204,12 @@ export function NationalMap({
     for (const s of sites) {
       const govId = govNameToId(s.governorate) ?? s.governorateId;
       if (!govId) continue;
-      if (!map.has(govId)) map.set(govId, []);
-      map.get(govId)!.push(s.status);
+      let statuses = map.get(govId);
+      if (!statuses) {
+        statuses = [];
+        map.set(govId, statuses);
+      }
+      statuses.push(s.status);
     }
     return map;
   }, [sites]);

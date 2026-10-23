@@ -144,7 +144,8 @@ async function main() {
     const mine = matches.find((m) => m.ruleId === rule.id);
     if (mine) {
       // listMatches projects display fields; read the raw row for outcome/count.
-      const url = process.env.FGMP_MIGRATE_DATABASE_URL!;
+      const url = process.env.FGMP_MIGRATE_DATABASE_URL;
+      if (!url) throw new Error("FGMP_MIGRATE_DATABASE_URL is not set");
       const { PrismaClient } = await import("@prisma/client");
       const c = new PrismaClient({ datasources: { db: { url } } });
       const raw = await c.correlationMatch.findUnique({ where: { id: mine.id } });
@@ -241,7 +242,8 @@ async function main() {
     // is best-effort the throw was swallowed into a console warning. The
     // escalation still applied, so every behavioural assertion above passed and
     // the audit trail was EMPTY. A green proof must not be able to hide that.
-    const url2 = process.env.FGMP_MIGRATE_DATABASE_URL!;
+    const url2 = process.env.FGMP_MIGRATE_DATABASE_URL;
+      if (!url2) throw new Error("FGMP_MIGRATE_DATABASE_URL is not set");
     const { PrismaClient: PC2 } = await import("@prisma/client");
     const oc = new PC2({ datasources: { db: { url: url2 } } });
     const auditRows = await oc.auditLog.findMany({

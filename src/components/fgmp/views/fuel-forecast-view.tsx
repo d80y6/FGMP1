@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/table";
 import { fmtLitres, fmtDateTime } from "@/lib/fgmp/format";
 import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { useNow } from "@/lib/fgmp/use-now";
 import type { Language } from "@/lib/fgmp/i18n";
 import type { TankState } from "@/lib/fgmp/types";
 
@@ -97,6 +98,7 @@ export function FuelForecastView() {
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
   const cc = useChartColors();
+  const now = useNow();
 
   const rows = useMemo<ForecastRow[]>(() => {
     if (!snapshot) return [];
@@ -114,7 +116,7 @@ export function FuelForecastView() {
       else if (hoursToCritical < 72) risk = "HIGH";
       else if (hoursToCritical < 168) risk = "MEDIUM";
       else risk = "LOW";
-      const dryOutAt = isFinite(hoursToDry) ? Date.now() + hoursToDry * 3600000 : null;
+      const dryOutAt = isFinite(hoursToDry) ? now + hoursToDry * 3600000 : null;
       return {
         id: tk.id,
         siteId: tk.siteId,
@@ -136,7 +138,7 @@ export function FuelForecastView() {
       }
       return a.hoursToCritical - b.hoursToCritical;
     });
-  }, [snapshot]);
+  }, [snapshot, now]);
 
   if (!snapshot) return null;
 
@@ -243,7 +245,7 @@ export function FuelForecastView() {
                   <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} vertical={false} />
                   <XAxis dataKey="day" tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} />
                   <YAxis tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} />
-                  <Tooltip contentStyle={{ fontSize: 12 }} formatter={(v: any) => [`${formatNumber(Number(v).toLocaleString(), numLang)} L`, ""]} />
+                  <Tooltip contentStyle={{ fontSize: 12 }} formatter={(v: number) => [`${formatNumber(Number(v).toLocaleString(), numLang)} L`, ""]} />
                   <Legend wrapperStyle={{ fontSize: 10 }} />
                   {topRiskTanks.map((r, i) => (
                     <Line
@@ -275,7 +277,7 @@ export function FuelForecastView() {
                 <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} vertical={false} />
                 <XAxis dataKey="name" tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} />
                 <YAxis tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} allowDecimals={false} />
-                <Tooltip contentStyle={{ fontSize: 12 }} formatter={(v: any) => [`${formatNumber(Number(v), numLang)}`, "Tanks"]} />
+                <Tooltip contentStyle={{ fontSize: 12 }} formatter={(v: number) => [`${formatNumber(Number(v), numLang)}`, "Tanks"]} />
                 <Bar dataKey="count" radius={[4, 4, 0, 0]} name="Tanks">
                   {riskDist.map((d) => (
                     <Cell key={d.risk} fill={RISK_BAR_COLOR[d.risk]} />

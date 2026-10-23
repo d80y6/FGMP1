@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -55,10 +55,7 @@ import type {
   CorrelationSeverity as Severity,
   CorrelationRuleScope as RuleScope,
 } from "@/lib/fgmp/correlation-types";
-import {
-  useCorrelationMatches,
-  useTriggerEvaluation,
-} from "@/lib/fgmp/use-correlation-matches";
+import { useCorrelationMatches } from "@/lib/fgmp/use-correlation-matches";
 import { useT } from "@/lib/fgmp/use-language";
 
 interface Props {

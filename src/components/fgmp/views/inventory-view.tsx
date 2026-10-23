@@ -216,7 +216,15 @@ function CreateDeliveryDialog({ open, onOpenChange, onCreated, tanks, sites }: {
   const [tankId, setTankId] = useState("");
   const [supplier, setSupplier] = useState("Yemen Oil Co.");
   const [volume, setVolume] = useState(500);
-  const [scheduled, setScheduled] = useState(new Date(Date.now() + 86400000).toISOString().slice(0, 10));
+  // Tomorrow, computed once at mount. A lazy initialiser keeps the impure
+  // clock read out of the render body — reading it inline makes every render of
+  // the dialog a different render for the same inputs (React Compiler flags
+  // this, and a replayed render would disagree with the server's).
+  const [scheduled, setScheduled] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0, 10);
+  });
   /**
    * EMPTY by default, deliberately.
    *

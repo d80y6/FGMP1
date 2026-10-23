@@ -188,8 +188,8 @@ describe("secret encryption at rest", () => {
     const stored = encryptSecret("secret");
     const parts = stored.split(".");
     // Flip a ciphertext byte. GCM must refuse rather than decrypt to garbage.
-    const ct = Buffer.from(parts[3]!, "base64url");
-    ct[0] = ct[0]! ^ 0xff;
+    const ct = Buffer.from(parts[3], "base64url");
+    ct[0] = ct[0] ^ 0xff;
     parts[3] = ct.toString("base64url");
     expect(() => decryptSecret(parts.join("."))).toThrow(MfaEncryptionError);
   });
@@ -302,10 +302,10 @@ describe("TOTP with a PRODUCTION base32 secret", () => {
       const counter = Buffer.alloc(8);
       counter.writeBigUInt64BE(BigInt(step));
       const h = createHmac("sha1", PRODUCTION_SECRET).update(counter).digest();
-      const off = h[h.length - 1]! & 0x0f;
+      const off = h[h.length - 1] & 0x0f;
       const bin =
-        ((h[off]! & 0x7f) << 24) | ((h[off + 1]! & 0xff) << 16) |
-        ((h[off + 2]! & 0xff) << 8) | (h[off + 3]! & 0xff);
+        ((h[off] & 0x7f) << 24) | ((h[off + 1] & 0xff) << 16) |
+        ((h[off + 2] & 0xff) << 8) | (h[off + 3] & 0xff);
       return String(bin % 10 ** 8).padStart(8, "0");
     })();
     expect(viaBase32).not.toBe(wrong);

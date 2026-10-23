@@ -39,7 +39,11 @@ function generateApiKey(): { raw: string; prefix: string; hash: string } {
 }
 
 /** Parse a comma-separated scope list into a normalized, validated array. */
-function parseScopes(input: unknown): { ok: boolean; scopes?: string[]; error?: string } {
+type ScopeParseResult =
+  | { ok: true; scopes: string[] }
+  | { ok: false; error: string };
+
+function parseScopes(input: unknown): ScopeParseResult {
   if (input == null) return { ok: true, scopes: ["read"] };
   if (!Array.isArray(input) && typeof input !== "string") {
     return { ok: false, error: "scopes must be a string or array" };
@@ -193,7 +197,7 @@ export async function POST(req: NextRequest) {
       applyRateLimitHeaders(res.headers, rl);
       return res;
     }
-    const scopes = scopeRes.scopes!;
+    const { scopes } = scopeRes;
 
     // Parse expiresAt — accept null, ISO string, or yyyy-mm-dd.
     let expiresAt: Date | null = null;

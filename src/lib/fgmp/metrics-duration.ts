@@ -71,14 +71,14 @@ export function hoursWhereRunning<T extends TimedPoint>(
     };
   }
   const sorted = [...points].sort((a, b) => a.t - b.t);
-  const fromMs = sorted[0]!.t;
-  const toMs = sorted[sorted.length - 1]!.t;
+  const fromMs = sorted[0].t;
+  const toMs = sorted[sorted.length - 1].t;
   let ms = 0;
   let intervals = 0;
   let clampedIntervals = 0;
   for (let i = 1; i < sorted.length; i++) {
-    const prev = sorted[i - 1]!;
-    const cur = sorted[i]!;
+    const prev = sorted[i - 1];
+    const cur = sorted[i];
     const dt = cur.t - prev.t;
     if (dt <= 0) continue; // duplicate timestamp — no interval to credit
     if (!isRunning(cur)) continue;
@@ -110,8 +110,8 @@ export function kwhFromPoints(
   const sorted = [...points].sort((a, b) => a.t - b.t);
   let kwh = 0;
   for (let i = 1; i < sorted.length; i++) {
-    const prev = sorted[i - 1]!;
-    const cur = sorted[i]!;
+    const prev = sorted[i - 1];
+    const cur = sorted[i];
     const dt = cur.t - prev.t;
     if (dt <= 0) continue;
     const load = Number.isFinite(prev.load) ? prev.load : 0;

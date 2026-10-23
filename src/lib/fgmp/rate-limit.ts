@@ -120,7 +120,7 @@ export function getClientIp(req: NextRequest | Request): string {
   const cf = h.get("cf-connecting-ip");
   if (cf) return cf.trim();
   const xff = h.get("x-forwarded-for");
-  if (xff) return xff.split(",")[0]!.trim();
+  if (xff) return xff.split(",")[0].trim();
   const xri = h.get("x-real-ip");
   if (xri) return xri.trim();
   return "anon";

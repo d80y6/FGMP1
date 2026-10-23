@@ -51,7 +51,7 @@ const enc = (s: string) => new TextEncoder().encode(s)
 async function brokerReachable(): Promise<boolean> {
   try {
     const probe = new MqttTenantConnection({
-      credentials: CREDS["tenant-a"]!,
+      credentials: CREDS["tenant-a"],
       clientId: `probe-${Date.now()}`,
       url: BROKER_URL,
       connectTimeoutMs: 3_000,
@@ -84,7 +84,7 @@ if (!available) {
 
     const connectAs = async (who: string): Promise<MqttTenantConnection> => {
       const c = new MqttTenantConnection({
-        credentials: CREDS[who]!,
+        credentials: CREDS[who],
         clientId: `${who}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
         url: BROKER_URL,
         connectTimeoutMs: 5_000,
@@ -147,7 +147,7 @@ if (!available) {
 
     const connectAs = async (who: string): Promise<MqttTenantConnection> => {
       const c = new MqttTenantConnection({
-        credentials: CREDS[who]!,
+        credentials: CREDS[who],
         clientId: `${who}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
         url: BROKER_URL,
         connectTimeoutMs: 5_000,
@@ -286,7 +286,7 @@ if (!available) {
 
     const connectAs = async (who: string): Promise<MqttTenantConnection> => {
       const c = new MqttTenantConnection({
-        credentials: CREDS[who]!,
+        credentials: CREDS[who],
         clientId: `${who}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
         url: BROKER_URL,
         connectTimeoutMs: 5_000,

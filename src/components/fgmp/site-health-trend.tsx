@@ -4,6 +4,7 @@ import {
   bandFor,
   computeSiteHealth as computeCanonicalSiteHealth,
 } from "@/lib/health/site-health-score";
+import type { SiteHealthInput } from "@/lib/health/site-health-score";
 import { useMemo } from "react";
 import { Activity, TrendingUp, TrendingDown } from "lucide-react";
 import {
@@ -18,10 +19,13 @@ import { useChartColors } from "@/lib/fgmp/use-chart-colors";
 
 interface SiteHealthTrendProps {
   siteId: string;
-  tanks: any[];      // current tanks at site (with .current, .capacity)
-  generators: any[]; // current generators (with .status)
-  batteries: any[];  // current batteries (with .voltage)
-  alarms: any[];     // alarms for this site (with .createdAt, .severity)
+  // Taken from the scorer's own input type rather than re-declared: the trend
+  // and the score badge must agree on what a tank/generator/battery is.
+  tanks: SiteHealthInput["tanks"];
+  generators: SiteHealthInput["generators"];
+  batteries: SiteHealthInput["batteries"];
+  /** Only the count is used — hence the deliberately open element type. */
+  alarms: readonly unknown[];
   siteStatus: string; // ONLINE / DEGRADED / OFFLINE / MAINTENANCE
 }
 

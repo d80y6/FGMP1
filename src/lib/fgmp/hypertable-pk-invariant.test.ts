@@ -62,7 +62,7 @@ function modelRegion(schema: string, model: string): string {
   const lines = before.split("\n");
   let first = lines.length;
   for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i]!.trim();
+    const line = lines[i].trim();
     if (line === "" || line.startsWith("//")) { first = i; continue; }
     break;
   }
@@ -74,7 +74,7 @@ function modelRegion(schema: string, model: string): string {
 function modelBody(schema: string, model: string): string {
   const m = new RegExp(`^model ${model} \\{([\\s\\S]*?)^\\}`, "m").exec(schema);
   if (!m) throw new Error(`model ${model} not found in schema.prisma`);
-  return m[1]!;
+  return m[1];
 }
 
 function migrationSql(name: string): string {

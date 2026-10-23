@@ -53,7 +53,9 @@ export function QuickAccessPopover() {
   const clearRecent = useFavorites((s) => s.clearRecent);
   const [open, setOpen] = useState(false);
 
-  const allSites = snapshot?.sites ?? [];
+  // Stable fallback identity — see command-palette: a bare `?? []` is a new
+  // array on every render, which defeats the memos below.
+  const allSites = useMemo(() => snapshot?.sites ?? [], [snapshot]);
   const pinnedSites = useMemo(
     () => resolvePinnedSites(pinnedIds, allSites),
     [pinnedIds, allSites],

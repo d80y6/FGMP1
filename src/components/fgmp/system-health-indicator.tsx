@@ -39,6 +39,7 @@ import {
   formatNumber,
 } from "@/lib/fgmp/use-language";
 import { cn } from "@/lib/utils";
+import { useNow } from "@/lib/fgmp/use-now";
 import {
   Tooltip,
   TooltipContent,
@@ -95,6 +96,7 @@ export function SystemHealthIndicator({ onClick }: SystemHealthIndicatorProps) {
   const dir = useDir();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
+  const now = useNow();
 
   // ── Poll /api/fgmp/health every 30s ───────────────────────────────────
   // useApi sends `credentials: "include"` so the NextAuth session cookie
@@ -133,7 +135,6 @@ export function SystemHealthIndicator({ onClick }: SystemHealthIndicatorProps) {
   const realtimeConnected = data?.realtime?.connected === true;
   const errorsLastHour = (() => {
     if (!data?.errors) return 0;
-    const now = Date.now();
     return data.errors.filter((e) => {
       if (!e?.timestamp) return false;
       const ts = new Date(e.timestamp).getTime();

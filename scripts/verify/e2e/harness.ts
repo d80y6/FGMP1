@@ -112,7 +112,7 @@ export async function sessionCookieFor(
     redirect: "manual",
     headers: {
       "content-type": "application/x-www-form-urlencoded",
-      cookie: csrfCookie.split(";")[0]!,
+      cookie: csrfCookie.split(";")[0],
     },
     body: new URLSearchParams({ csrfToken, email, password }).toString(),
   });
@@ -138,7 +138,7 @@ export async function sessionCookieFor(
     );
   }
   // Strip attributes; only name=value belongs in a Cookie header.
-  return session.split(";")[0]!;
+  return session.split(";")[0];
 }
 
 /** A tenant that owns nothing, for negative-path tests. */

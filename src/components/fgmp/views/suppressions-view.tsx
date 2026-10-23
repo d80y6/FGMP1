@@ -35,6 +35,7 @@ import { z } from "zod";
 import { useFgmp } from "@/lib/fgmp/store";
 import { useApi, apiPost, apiPatch, apiDelete } from "@/lib/fgmp/use-api";
 import { SectionHeader } from "@/components/fgmp/section-header";
+import { useLiveNow } from "@/lib/fgmp/use-now";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -151,24 +152,18 @@ export function SuppressionsView() {
   // Phase 5 task 4 — confirm dialog state.
   const confirmDelete = useDestructiveConfirm();
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
-  // Tick to force re-render of countdowns every 5s without re-fetching.
-  const [, setTick] = useState(0);
+  // Countdowns tick from the shared 5 s clock instead of a bespoke timer, so
+  // every card in the list agrees on "now" and no component owns an interval.
+  const now = useLiveNow();
 
   const { data: suppressions, loading, refetch } = useApi<SuppressionRow[]>(
     "/api/fgmp/suppressions",
     { interval: 30000 },
   );
 
-  // Local clock — re-render every 5s so countdowns update smoothly.
-  useEffect(() => {
-    const i = setInterval(() => setTick((n) => n + 1), 5000);
-    return () => clearInterval(i);
-  }, []);
-
   const sites = snapshot?.sites ?? [];
 
   const { active, expired } = useMemo(() => {
-    const now = Date.now();
     const list = suppressions ?? [];
     const activeList: SuppressionRow[] = [];
     const expiredList: SuppressionRow[] = [];
@@ -184,10 +179,9 @@ export function SuppressionsView() {
       }
     }
     return { active: activeList, expired: expiredList.slice(0, 50) };
-  }, [suppressions]);
+  }, [suppressions, now]);
 
   const stats = useMemo(() => {
-    const now = Date.now();
     const activeNow = active.filter((s) => {
       const start = new Date(s.startsAt).getTime();
       const end = new Date(s.endsAt).getTime();
@@ -198,7 +192,7 @@ export function SuppressionsView() {
       tenantWide: active.filter((s) => s.siteId === null).length,
       expiredTotal: (suppressions ?? []).length - active.length,
     };
-  }, [active, suppressions]);
+  }, [active, suppressions, now]);
 
   // RBAC gate — only the three roles listed in the spec may manage
   // suppressions. Other authenticated users (e.g. FIELD_ENGINEER /
@@ -481,7 +475,7 @@ interface ActiveCardProps {
 
 function ActiveCard({ row, lang, onExtend, onCancel, onDelete, canDelete }: ActiveCardProps) {
   const t = useT();
-  const now = Date.now();
+  const now = useLiveNow();
   const start = new Date(row.startsAt).getTime();
   const end = new Date(row.endsAt).getTime();
   const tone = toneFor(now, end, start);

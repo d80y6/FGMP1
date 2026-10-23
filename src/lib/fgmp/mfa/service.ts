@@ -163,7 +163,7 @@ function randomBackupCode(): string {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   const bytes = randomBytes(10);
   let out = "";
-  for (let i = 0; i < 10; i++) out += alphabet[bytes[i]! % alphabet.length];
+  for (let i = 0; i < 10; i++) out += alphabet[bytes[i] % alphabet.length];
   return out;
 }
 

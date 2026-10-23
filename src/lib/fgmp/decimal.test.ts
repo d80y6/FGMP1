@@ -199,8 +199,8 @@ describe("decimalsToJson", () => {
       tanks: [{ capacityLitres: new Prisma.Decimal("100.500") }],
       meta: { totals: { volumeLitres: new Prisma.Decimal("7.250") } },
     });
-    expect(typeof out.tanks[0]!.capacityLitres).toBe("number");
-    expect(out.tanks[0]!.capacityLitres).toBe(100.5);
+    expect(typeof out.tanks[0].capacityLitres).toBe("number");
+    expect(out.tanks[0].capacityLitres).toBe(100.5);
     expect(out.meta.totals.volumeLitres).toBe(7.25);
   });
 

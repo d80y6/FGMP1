@@ -31,6 +31,7 @@ import { useCorrelationMatches } from "@/lib/fgmp/use-correlation-matches";
 import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 import { alarmTypeLabel } from "@/lib/fgmp/labels";
+import { useNow } from "@/lib/fgmp/use-now";
 import { ResourceError } from "@/components/fgmp/resource-error";
 
 const TYPES = ["FUEL_THEFT", "FUEL_REFILL", "FUEL_LOW", "FUEL_CRITICAL", "GEN_OFFLINE", "GEN_FAILURE", "GEN_OVERHEAT", "BATT_LOW_VOLTAGE", "BATT_FAILURE", "COMM_LOSS"];
@@ -39,6 +40,7 @@ const TYPES = ["FUEL_THEFT", "FUEL_REFILL", "FUEL_LOW", "FUEL_CRITICAL", "GEN_OF
 const ACTIONABLE_STATUSES = new Set(["OPEN", "ACKNOWLEDGED", "ESCALATED"]);
 
 export function AlarmsView() {
+  const now = useNow();
   // Subscribe to individual slices: a bare `useFgmp()` re-renders this
   // component on EVERY store write (search keystrokes, view changes,
   // lastTickAt, …) instead of only the slices actually read.
@@ -128,22 +130,20 @@ export function AlarmsView() {
   const filteredAlarms = useMemo(() => {
     const all = mergedAlarms ?? [];
     if (!heatmapFilter) return all;
-    const now = Date.now();
     return all.filter((a) => {
       if (a.severity !== heatmapFilter.severity) return false;
       return getHourBucket(a.createdAt, now) === heatmapFilter.hour;
     });
-  }, [mergedAlarms, heatmapFilter]);
+  }, [mergedAlarms, heatmapFilter, now]);
 
   // Hour label for the current heatmap filter bucket (e.g. "14:00"). Mirrors the
   // heatmap's labeling so the banner shows the same HH:00 string the user clicked.
   const heatmapFilterLabel = useMemo(() => {
     if (!heatmapFilter) return "";
-    const now = Date.now();
     const bucketMs = now - (23 - heatmapFilter.hour) * 3600_000;
     const hh = String(new Date(bucketMs).getHours()).padStart(2, "0");
     return `${hh}:00`;
-  }, [heatmapFilter]);
+  }, [heatmapFilter, now]);
 
   const selectedCount = validSelectedIds.size;
   const allSelected = actionableIds.length > 0 && actionableIds.every((id) => validSelectedIds.has(id));

@@ -203,7 +203,8 @@ export function DispensersView() {
     "/api/fgmp/dispensers/transactions?limit=200",
     { interval: 8000 },
   );
-  const transactions = txnPayload?.rows ?? [];
+  // Stable fallback identity — a bare `?? []` is a new array every render.
+  const transactions = useMemo(() => txnPayload?.rows ?? [], [txnPayload]);
 
   // Filtered dispensers
   const filtered = useMemo(() => {
@@ -1325,8 +1326,9 @@ function AuthorizeDialog({ target, onOpenChange, onConfirm, lang, limitMode = fa
           <Button variant="outline" onClick={() => onOpenChange(false)}>{t("common.cancel")}</Button>
           <Button
             onClick={() => {
+              if (!target) return;
               const raw = inputRef.current?.value ?? "";
-              onConfirm(target!, raw ? Number(raw) : undefined);
+              onConfirm(target, raw ? Number(raw) : undefined);
             }}
             className="bg-emerald-500 hover:bg-emerald-600 text-white"
           >

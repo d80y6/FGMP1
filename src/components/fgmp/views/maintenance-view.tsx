@@ -345,10 +345,10 @@ export function MaintenanceView() {
             )}
           </div>
 
-          {(selectedTicket.description || (selectedTicket as any).notes) && (
+          {(selectedTicket.description || selectedTicket.notes) && (
             <div className="mt-3 rounded-lg border bg-muted/30 px-3 py-2">
               <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{t("maintenance.notes")}</p>
-              <p className="mt-0.5 text-sm">{selectedTicket.description || (selectedTicket as any).notes}</p>
+              <p className="mt-0.5 text-sm">{selectedTicket.description || selectedTicket.notes}</p>
             </div>
           )}
         </div>

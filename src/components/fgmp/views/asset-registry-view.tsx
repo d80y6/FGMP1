@@ -605,6 +605,10 @@ function TankFormDialog({ open, onOpenChange, target, sites, lang, onSaved }: {
       criticalThreshold: target?.criticalThreshold?.toString() ?? "",
       status: target?.status ?? "OPERATIONAL",
     });
+  // Intentionally keyed on identity, not contents: `target` and `sites` are
+  // rebuilt by the 5 s state poll, and re-seeding on them would overwrite
+  // whatever the operator has typed since opening the dialog.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetId, open]);
 
   const onSubmit = async () => {
@@ -946,6 +950,10 @@ function GeneratorFormDialog({ open, onOpenChange, target, sites, lang, onSaved 
       mode: target?.mode ?? "AUTO",
       runtimeHours: target?.runtimeHours?.toString() ?? "",
     });
+  // Intentionally keyed on identity, not contents: `target` and `sites` are
+  // rebuilt by the 5 s state poll, and re-seeding on them would overwrite
+  // whatever the operator has typed since opening the dialog.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetId, open]);
 
   const onSubmit = async () => {
@@ -1287,6 +1295,10 @@ function BatteryFormDialog({ open, onOpenChange, target, sites, lang, onSaved }:
       stateOfHealth: target?.stateOfHealth?.toString() ?? "",
       status: target?.status ?? "OK",
     });
+  // Intentionally keyed on identity, not contents: `target` and `sites` are
+  // rebuilt by the 5 s state poll, and re-seeding on them would overwrite
+  // whatever the operator has typed since opening the dialog.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetId, open]);
 
   const onSubmit = async () => {
@@ -1626,6 +1638,10 @@ function IotFormDialog({ open, onOpenChange, target, sites, lang, onSaved }: {
       modbusUnit: target?.modbusUnit?.toString() ?? "",
       status: target?.status ?? "ONLINE",
     });
+  // Intentionally keyed on identity, not contents: `target` and `sites` are
+  // rebuilt by the 5 s state poll, and re-seeding on them would overwrite
+  // whatever the operator has typed since opening the dialog.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetId, open]);
 
   const onSubmit = async () => {
@@ -2081,6 +2097,10 @@ function DispenserFormDialog({ open, onOpenChange, target, sites, lang, onSaved,
       rs485Parity: target?.rs485Parity ?? "8N1",
       ipAddress: target?.ipAddress ?? "",
     });
+  // Intentionally keyed on identity, not contents: `target` and `sites` are
+  // rebuilt by the 5 s state poll, and re-seeding on them would overwrite
+  // whatever the operator has typed since opening the dialog.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetId, open]);
 
   const onSubmit = async () => {

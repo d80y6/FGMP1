@@ -45,7 +45,7 @@ function assertLabelValues(name: string, labels: Labels): void {
 
 function labelKey(labels: Labels): string {
   const keys = Object.keys(labels).sort();
-  return keys.map((k) => `${k}="${escapeLabel(labels[k]!)}"`).join(",");
+  return keys.map((k) => `${k}="${escapeLabel(labels[k])}"`).join(",");
 }
 
 function escapeLabel(v: string): string {
@@ -142,7 +142,7 @@ class Histogram extends Metric {
     const k = labelKey(labels);
     let placed = false;
     for (let i = 0; i < this.buckets.length; i++) {
-      if (value <= this.buckets[i]!) {
+      if (value <= this.buckets[i]) {
         this.counts[i] = (this.counts[i] ?? 0) + 1;
         placed = true;
       }

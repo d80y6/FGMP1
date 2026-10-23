@@ -101,12 +101,14 @@ export function ConsumptionPatternsView() {
       const siteOf = (id: string) => snapshot.sites.find((s) => s.id === id);
       for (const tk of snapshot.tanks) {
         bucketTankHistory(tk, m);
-        if (!siteMap.has(tk.siteId)) {
-          siteMap.set(tk.siteId, Array.from({ length: 7 }, () =>
+        let buckets = siteMap.get(tk.siteId);
+        if (!buckets) {
+          buckets = Array.from({ length: 7 }, () =>
             Array.from({ length: 24 }, () => ({ sum: 0, count: 0 })),
-          ));
+          );
+          siteMap.set(tk.siteId, buckets);
         }
-        bucketTankHistory(tk, siteMap.get(tk.siteId)!);
+        bucketTankHistory(tk, buckets);
       }
       const stats: SiteStat[] = [];
       for (const [siteId, sm] of siteMap) {
@@ -318,7 +320,7 @@ export function ConsumptionPatternsView() {
                 <YAxis tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} />
                 <Tooltip
                   contentStyle={{ fontSize: 12 }}
-                  formatter={(v: any) => [`${formatNumber(Number(v).toFixed(2), numLang)} L/h`, "Avg"]}
+                  formatter={(v: number) => [`${formatNumber(Number(v).toFixed(2), numLang)} L/h`, "Avg"]}
                 />
                 <Bar dataKey="avg" radius={[3, 3, 0, 0]} name="L/h">
                   {hourChartData.map((d, i) => {
@@ -347,7 +349,7 @@ export function ConsumptionPatternsView() {
                 <YAxis tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} />
                 <Tooltip
                   contentStyle={{ fontSize: 12 }}
-                  formatter={(v: any) => [`${formatNumber(Number(v).toFixed(2), numLang)} L/h`, "Avg"]}
+                  formatter={(v: number) => [`${formatNumber(Number(v).toFixed(2), numLang)} L/h`, "Avg"]}
                 />
                 <Bar dataKey="avg" radius={[4, 4, 0, 0]} name="L/h">
                   {dayChartData.map((d, i) => {

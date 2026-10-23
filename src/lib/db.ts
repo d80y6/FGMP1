@@ -135,7 +135,7 @@ function getClient(): PrismaClient {
 }
 
 export const db: PrismaClient = new Proxy({} as PrismaClient, {
-  get(_target, prop, receiver) {
+  get(_target, prop, _receiver) {
     // Never look thenable: awaiting `db` itself is a mistake, not a query.
     if (prop === 'then') return undefined
     const client = getClient() as unknown as Record<PropertyKey, unknown>

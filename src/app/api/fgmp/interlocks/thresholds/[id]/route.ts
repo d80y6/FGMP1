@@ -124,8 +124,11 @@ export async function PATCH(
     const newSiteId = v.data.siteId === null ? undefined : v.data.siteId;
     if (newSiteId !== undefined && newSiteId !== existing.siteId) {
       if (v.data.siteId) {
+        // Captured as a plain string: the closure below runs outside the
+        // narrowing above, where `newSiteId` is still `string | undefined`.
+        const siteId = newSiteId;
         const site = await asTenant(me, (tx) =>
-          tx.site.findFirst({ where: { id: newSiteId!, tenantId: me.tenantId } }),
+          tx.site.findFirst({ where: { id: siteId, tenantId: me.tenantId } }),
         )
         if (!site) {
           const res = NextResponse.json({ error: "Site not found" }, { status: 404 });

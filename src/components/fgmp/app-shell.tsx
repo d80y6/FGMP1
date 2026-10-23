@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useEffect, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef, type ComponentType } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   LayoutDashboard, Building2, Droplet, Zap, BatteryCharging, Siren,
@@ -41,7 +41,11 @@ const ViewLoader = () => (
     <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
   </div>
 );
-const dyn = (imp: () => Promise<any>) => dynamic(imp, { loading: ViewLoader, ssr: false });
+// The views take no props (they read the store), so the loader contract is a
+// component with none — written out rather than `any`, which would let a
+// renamed or prop-taking export slip past the type gate.
+const dyn = (imp: () => Promise<{ default: ComponentType<Record<string, never>> }>) =>
+  dynamic(imp, { loading: ViewLoader, ssr: false });
 const DashboardView = dyn(() => import("@/components/fgmp/views/dashboard-view").then(m => ({ default: m.DashboardView })));
 const SitesView = dyn(() => import("@/components/fgmp/views/sites-view").then(m => ({ default: m.SitesView })));
 const FuelView = dyn(() => import("@/components/fgmp/views/fuel-view").then(m => ({ default: m.FuelView })));
@@ -280,7 +284,7 @@ export function AppShell() {
   useEffect(() => {
     const v = searchParams.get("view") as ViewKey | null;
     if (v && VIEW_COMPONENTS[v] && v !== view) setView(v);
-  }, [searchParams]);
+  }, [searchParams, view, setView]);
 
   const navigate = (v: ViewKey) => {
     setView(v);

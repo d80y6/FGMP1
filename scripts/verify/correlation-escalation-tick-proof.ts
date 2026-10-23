@@ -188,7 +188,8 @@ async function main() {
     }
 
     // ── 5. THE AUDIT ROW SURVIVES THE TICKS ────────────────────────────────
-    const url = process.env.FGMP_MIGRATE_DATABASE_URL!;
+    const url = process.env.FGMP_MIGRATE_DATABASE_URL;
+      if (!url) throw new Error("FGMP_MIGRATE_DATABASE_URL is not set");
     const { PrismaClient } = await import("@prisma/client");
     const oc = new PrismaClient({ datasources: { db: { url } } });
     const auditRows = await oc.auditLog.findMany({
