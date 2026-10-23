@@ -17,13 +17,13 @@ interface MaintenanceTicket {
   status: string;
   priority: string;
   title: string;
-  description?: string;
-  assignedToId?: string;
+  description?: string | null;
+  assignedToId?: string | null;
   scheduledFor?: string | null;
   completedAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
-  site?: { name: string; code: string };
+  site?: { name: string; code?: string | null } | null;
   assignedTo?: { name?: string } | null;
 }
 

@@ -40,6 +40,8 @@ import { timeAgo } from "@/lib/fgmp/format";
 import { csvFilename, type CsvColumn } from "@/lib/fgmp/csv-export";
 import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
+import type { AnalyticsPayload } from "@/lib/fgmp/types";
+import type { AlarmRow } from "@/lib/fgmp/types";
 import { translate } from "@/lib/fgmp/i18n";
 import { ResourceError } from "@/components/fgmp/resource-error";
 
@@ -63,9 +65,9 @@ export function DashboardView() {
   // Single alarms fetch (polled every 6s) feeds both the live alarm feed
   // and the derived "Top Critical Alarms" triage list. limit=50 keeps a
   // wide enough pool of OPEN alarms to pick the 5 most urgent from.
-  const { data: alarms, error: alarmsError, refetch: refetchAlarms } = useApi<any[]>("/api/fgmp/alarms?status=OPEN,ACKNOWLEDGED,ESCALATED&limit=50", { interval: 6000 });
+  const { data: alarms, error: alarmsError, refetch: refetchAlarms } = useApi<AlarmRow[]>("/api/fgmp/alarms?status=OPEN,ACKNOWLEDGED,ESCALATED&limit=50", { interval: 6000 });
   const [range, setRange] = useState<DashboardRange>("24h");
-  const { data: analytics, error: analyticsError, refetch: refetchAnalytics } = useApi<any>(`/api/fgmp/analytics?range=${range}`, { interval: 15000, deps: [range] });
+  const { data: analytics, error: analyticsError, refetch: refetchAnalytics } = useApi<AnalyticsPayload>(`/api/fgmp/analytics?range=${range}`, { interval: 15000, deps: [range] });
   const cc = useChartColors();
   const [regionSheet, setRegionSheet] = useState<string | null>(null);
 
@@ -190,7 +192,7 @@ export function DashboardView() {
   const fuelSpark: number[] = (() => {
     if (consumption.length === 0) return [];
     const n = consumption.length;
-    if (n <= 5) return consumption.map((c: any) => Number(c.litres ?? 0));
+    if (n <= 5) return consumption.map((c) => Number(c.litres ?? 0));
     const out: number[] = [];
     for (let i = 0; i < 5; i++) {
       const idx = Math.floor((i / 4) * (n - 1));
@@ -493,7 +495,7 @@ export function DashboardView() {
           <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-sm"><GaugeIcon className="h-4 w-4 text-amber-500" /> {t("dash.regionBreakdownTitle")}</CardTitle></CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {(analytics?.regionBreakdown ?? []).map((r: any) => (
+              {(analytics?.regionBreakdown ?? []).map((r) => (
                 <button
                   key={r.region}
                   type="button"
@@ -552,13 +554,13 @@ export function DashboardView() {
 
       {/* Region performance trend — full width */}
       <RegionPerformanceTrend
-        regions={(analytics?.regionBreakdown ?? []) as any}
+        regions={analytics?.regionBreakdown ?? []}
         totalSites={k.totalSites}
       />
 
       {/* Region performance leaderboard — full width */}
       <RegionLeaderboard
-        regions={(analytics?.regionBreakdown ?? []) as any}
+        regions={analytics?.regionBreakdown ?? []}
         totalSites={k.totalSites}
         onSelectRegion={(r) => setRegionSheet(r)}
       />

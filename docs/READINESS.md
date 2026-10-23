@@ -89,7 +89,7 @@ the only identifier that ties a browser render to a server stack trace.
 |---|---|---|
 | `next build` | **fails** (Google Fonts) | passes, standalone output verified |
 | `npx tsc --noEmit` | 0 errors | 0 errors |
-| `npx eslint .` | 24 errors / 443 warnings | **0 errors / 57 warnings** |
+| `npx eslint .` | 24 errors / 443 warnings | **0 errors / 0 warnings** |
 | `bun test` | 699 pass / 14 fail | **724 pass / 0 fail** (13 skipped without a database) |
 | Dependency count | 78 production | **47** production, lockfile regenerated |
 
@@ -124,8 +124,8 @@ Two more defects were found by making the gates trustworthy rather than green:
   a client constructed on first USE, so importing is inert and a process that
   never queries never opens a pool.
 
-Three of the four rule families that carried the original 302 warnings are now
-at zero and enforced as **errors** in CI:
+All four rule families that carried the original 302 warnings are now at zero
+and enforced as **errors** in CI:
 
 * **`react-hooks/exhaustive-deps` (25 → 0).** Every site was either a genuine
   missing dependency or an unstated one. The `const sites = snapshot?.sites ?? []`
@@ -152,13 +152,21 @@ at zero and enforced as **errors** in CI:
   on a fixture is a statement about the test's own data, and a wrong one fails
   the test.
 
-The 57 remaining warnings are all `@typescript-eslint/no-explicit-any`, in view
-components that consume `useApi<any>` payloads. Clearing them means writing the
-response interfaces for ~12 endpoints and threading them through; it is a
-mechanical but shape-sensitive change and is the one piece of the ratchet still
-open. It is a warning, not an error, so it neither blocks CI nor hides a
-runtime defect — but it is the reason the type gate is honest for the server and
-loose for some of the UI.
+* **`@typescript-eslint/no-explicit-any` (77 → 0).** Every remaining site was a
+  view consuming a `useApi<any>` payload and then re-annotating each callback
+  parameter as `any`. The payloads are now declared in `src/lib/fgmp/types.ts`
+  (`AlarmRow`, `AnalyticsPayload`, `SiteDetailPayload`, `DeliveryRow`,
+  `MaintenanceTicketRow`, `AuditLogRow`, `ReportsPayload`, …) and read from the
+  route handlers rather than guessed. This was not cosmetic: typing
+  `SiteDetailPayload` immediately exposed a live defect — the battery trend
+  chart summed `h.c` from history rows that only carry `soc`, and the `?? 0`
+  swallowed it, so the charge line had been a flat zero for every battery for
+  as long as the chart has existed. `bun test` could not see it; the type gate
+  could, once the array stopped being `any[]`.
+
+`eslint .` now prints nothing at all: no errors, no warnings, on the whole
+repository, and CI runs it that way. Rules that are off are off on purpose and
+say so in the config.
 
 ## 7. Not reproducible on this machine, and deliberately not decided here
 

@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 import { MaintenanceGantt } from "@/components/fgmp/maintenance-gantt";
 import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
+import type { GenState, MaintenanceTicketRow, SiteState } from "@/lib/fgmp/types";
 import { translate } from "@/lib/fgmp/i18n";
 import { ResourceError } from "@/components/fgmp/resource-error";
 
@@ -82,7 +83,7 @@ export function MaintenanceView() {
   const [status, setStatus] = useState("OPEN,SCHEDULED,IN_PROGRESS");
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
-  const { data: tickets, error: ticketsError, refetch } = useApi<any[]>(`/api/fgmp/maintenance?status=${status}`, { interval: 8000 });
+  const { data: tickets, error: ticketsError, refetch } = useApi<MaintenanceTicketRow[]>(`/api/fgmp/maintenance?status=${status}`, { interval: 8000 });
 
   const counts = useMemo(() => ({
     open: (tickets ?? []).filter((t) => t.status === "OPEN").length,
@@ -358,7 +359,7 @@ export function MaintenanceView() {
 }
 
 function CreateTicketDialog({ open, onOpenChange, sites, generators, onCreated }: {
-  open: boolean; onOpenChange: (v: boolean) => void; sites: any[]; generators: any[]; onCreated: () => void;
+  open: boolean; onOpenChange: (v: boolean) => void; sites: SiteState[]; generators: GenState[]; onCreated: () => void;
 }) {
   const t = useT();
   const [siteId, setSiteId] = useState("");

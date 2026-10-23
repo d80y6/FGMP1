@@ -19,6 +19,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
+import type { IoTDeviceRow } from "@/lib/fgmp/types";
 import { translate } from "@/lib/fgmp/i18n";
 import { ResourceError } from "@/components/fgmp/resource-error";
 
@@ -44,7 +45,7 @@ export function IotView() {
   const t = useT();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
-  const { data: devices, error: devicesError, refetch } = useApi<any[]>("/api/fgmp/iot", { interval: 8000 });
+  const { data: devices, error: devicesError, refetch } = useApi<IoTDeviceRow[]>("/api/fgmp/iot", { interval: 8000 });
   const [q, setQ] = useState("");
   const [protocol, setProtocol] = useState("all");
   const [type, setType] = useState("all");

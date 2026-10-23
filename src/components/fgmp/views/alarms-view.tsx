@@ -30,6 +30,7 @@ import { useCorrelationRulesHydration } from "@/lib/fgmp/use-correlation-rules-s
 import { useCorrelationMatches } from "@/lib/fgmp/use-correlation-matches";
 import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
+import type { AlarmRow } from "@/lib/fgmp/types";
 import { alarmTypeLabel } from "@/lib/fgmp/labels";
 import { useNow } from "@/lib/fgmp/use-now";
 import { ResourceError } from "@/components/fgmp/resource-error";
@@ -66,7 +67,7 @@ export function AlarmsView() {
   // cross-tab synced. Calling this unconditionally at the top so the rules
   // button badge count can read an up-to-date rule list.
   useCorrelationRulesHydration();
-  const { data: alarms, loading: alarmsLoading, error: alarmsError, refetch } = useApi<any[]>(`/api/fgmp/alarms?status=${status}&severity=${severity === "all" ? "" : severity}&type=${type === "all" ? "" : type}&limit=300`, { interval: 6000 });
+  const { data: alarms, loading: alarmsLoading, error: alarmsError, refetch } = useApi<AlarmRow[]>(`/api/fgmp/alarms?status=${status}&severity=${severity === "all" ? "" : severity}&type=${type === "all" ? "" : type}&limit=300`, { interval: 6000 });
 
   // ── Optimistic updates (#20) ──────────────────────────────────────────────
   // Local overlay patches applied on top of the polled alarm list so ack/resolve
@@ -75,7 +76,7 @@ export function AlarmsView() {
   // reconciled with the polled data via the derived `mergedAlarms` below —
   // once the server returns the new status, the patch is auto-evicted and the
   // row returns to full opacity. On error the patch is rolled back.
-  const [optimisticPatches, setOptimisticPatches] = useState<Record<string, Partial<any>>>({});
+  const [optimisticPatches, setOptimisticPatches] = useState<Record<string, Partial<AlarmRow>>>({});
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
 
   // Active patches = patches that haven't yet been absorbed by the polled data.
@@ -84,9 +85,9 @@ export function AlarmsView() {
   // react-hooks/set-state-in-effect).
   const activePatches = useMemo(() => {
     const list = alarms ?? [];
-    const polled = new Map<string, any>();
+    const polled = new Map<string, AlarmRow>();
     for (const a of list) polled.set(a.id, a);
-    const out: Record<string, Partial<any>> = {};
+    const out: Record<string, Partial<AlarmRow>> = {};
     for (const [id, p] of Object.entries(optimisticPatches)) {
       const server = polled.get(id);
       if (!server) continue; // alarm rolled out of view — drop patch

@@ -131,7 +131,7 @@ export function BatteriesView() {
                       <p className="truncate font-medium">{b.label}</p>
                       <p className="text-[10px] text-muted-foreground">{b.site} · {formatNumber(b.voltage, numLang)}V</p>
                     </div>
-                    <Sparkline data={b.history?.slice(-30).map((h: any) => h.v) ?? []} width={60} height={18} color="#f59e0b" />
+                    <Sparkline data={b.history?.slice(-30).map((h) => h.v) ?? []} width={60} height={18} color="#f59e0b" />
                   </div>
                 ))}
                 {low.length === 0 && <p className="py-4 text-center text-xs text-muted-foreground">{t("batteries.allInRange")}</p>}

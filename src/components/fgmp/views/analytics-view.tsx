@@ -16,6 +16,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { timeAgo } from "@/lib/fgmp/format";
 import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
+import type { AnalyticsPayload } from "@/lib/fgmp/types";
 
 /**
  * Render a currency figure that is null when no FX rate is configured.
@@ -38,7 +39,7 @@ export function AnalyticsView() {
   const t = useT();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
-  const { data: a } = useApi<any>("/api/fgmp/analytics", { interval: 15000 });
+  const { data: a } = useApi<AnalyticsPayload>("/api/fgmp/analytics", { interval: 15000 });
   const cc = useChartColors();
 
   if (!snapshot) return null;
@@ -48,13 +49,13 @@ export function AnalyticsView() {
   const forecast = a?.forecast ?? [];
   const regions = a?.regionBreakdown ?? [];
 
-  const totalConsumed = consumption.reduce((s: number, c: any) => s + c.litres, 0);
-  const totalRunning = consumption.reduce((s: number, c: any) => s + c.running, 0);
-  const avgEfficiency = efficiency.length ? (efficiency.reduce((s: number, e: any) => s + e.efficiency, 0) / efficiency.length) : 0;
+  const totalConsumed = consumption.reduce((s: number, c) => s + c.litres, 0);
+  const totalRunning = consumption.reduce((s: number, c) => s + c.running, 0);
+  const avgEfficiency = efficiency.length ? (efficiency.reduce((s: number, e) => s + e.efficiency, 0) / efficiency.length) : 0;
   const topConsumers = [...efficiency].sort((x, y) => y.consumed - x.consumed).slice(0, 10);
 
   // anomaly scatter: consumed vs kwh
-  const scatterData = efficiency.map((e: any) => ({ x: e.kwh, y: e.consumed, name: e.site, z: 1 }));
+  const scatterData = efficiency.map((e) => ({ x: e.kwh, y: e.consumed, name: e.site, z: 1 }));
 
   return (
     <div className="space-y-4">
@@ -70,7 +71,7 @@ export function AnalyticsView() {
         <KpiCard label={t("analytics.avgEfficiency")} value={`${formatNumber(avgEfficiency.toFixed(2), numLang)}`} unit="L/kWh" icon={<GaugeIcon className="h-4 w-4" />} tone={avgEfficiency > 0.4 ? "warn" : "good"} />
         <KpiCard label={t("analytics.theftEvents")} value={formatNumber(theftEvents.length, numLang)} icon={<AlertTriangle className="h-4 w-4" />} tone={theftEvents.length ? "danger" : "good"} />
         <KpiCard label={t("analytics.sitesAnalyzed")} value={formatNumber(efficiency.length, numLang)} icon={<MapIcon className="h-4 w-4" />} />
-        <KpiCard label={t("analytics.forecast7d")} value={`${formatNumber((forecast.reduce((s: number, f: any) => s + f.litres, 0) / 1000).toFixed(1), numLang)}k`} unit="L" icon={<Brain className="h-4 w-4" />} tone="info" />
+        <KpiCard label={t("analytics.forecast7d")} value={`${formatNumber((forecast.reduce((s: number, f) => s + f.litres, 0) / 1000).toFixed(1), numLang)}k`} unit="L" icon={<Brain className="h-4 w-4" />} tone="info" />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -104,7 +105,7 @@ export function AnalyticsView() {
                 <YAxis tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} />
                 <Tooltip contentStyle={{ fontSize: 12 }} />
                 <Bar dataKey="litres" radius={[4, 4, 0, 0]}>
-                  {forecast.map((_: any, i: number) => <Cell key={i} fill={cc.amber} />)}
+                  {forecast.map((_f, i: number) => <Cell key={i} fill={cc.amber} />)}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -123,7 +124,7 @@ export function AnalyticsView() {
                 <YAxis type="category" dataKey="site" tick={{ fontSize: 9 }} stroke="currentColor" strokeOpacity={0.3} width={120} />
                 <Tooltip contentStyle={{ fontSize: 12 }} />
                 <Bar dataKey="consumed" radius={[0, 4, 4, 0]} name={t("fuel.litresConsumed")}>
-                  {topConsumers.map((e: any, i: number) => <Cell key={i} fill={e.efficiency > 0.45 ? cc.rose : e.efficiency > 0.35 ? cc.amber : cc.emerald} />)}
+                  {topConsumers.map((e, i: number) => <Cell key={i} fill={e.efficiency > 0.45 ? cc.rose : e.efficiency > 0.35 ? cc.amber : cc.emerald} />)}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -154,7 +155,7 @@ export function AnalyticsView() {
           <CardContent className="p-3">
             <ScrollArea className="h-[220px]">
               <div className="space-y-1.5">
-                {theftEvents.slice(0, 20).map((e: any, i: number) => (
+                {theftEvents.slice(0, 20).map((e, i: number) => (
                   <div key={i} className="flex items-start gap-2 rounded border border-rose-500/20 bg-rose-500/5 p-2 text-[11px]">
                     <Badge variant="outline" className="h-4 shrink-0 px-1 text-[8px] border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400">{t("fuel.theft")}</Badge>
                     <div className="min-w-0 flex-1"><p className="line-clamp-2">{e.message}</p><p className="text-[10px] text-muted-foreground">{timeAgo(e.ts, numLang)}</p></div>

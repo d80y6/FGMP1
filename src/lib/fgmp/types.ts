@@ -323,3 +323,209 @@ export interface Snapshot {
   gateways: GatewayState[];
   regions: { id: string; name: string; governorates: { id: string; name: string; districts: { id: string; name: string }[] }[] }[];
 }
+
+/**
+ * An alarm as `/api/fgmp/alarms` returns it: the Prisma row plus the fields the
+ * UI reads, with dates already serialised to ISO strings by `NextResponse.json`.
+ *
+ * Declared once, here, because four views fetch that endpoint. Each previously
+ * typed its own `useApi<any[]>` and then re-annotated every callback parameter
+ * as `any`, which meant a renamed column was a runtime `undefined` rather than
+ * a compile error. Optional fields are optional because they are nullable in
+ * the schema (`acknowledgedAt`, `resolvedAt`, the joined `site`).
+ */
+export interface AlarmRow {
+  id: string;
+  siteId: string;
+  type: string;
+  severity: Severity;
+  status: string;
+  message: string;
+  createdAt: string;
+  escalationLevel: number;
+  value?: number | null;
+  threshold?: number | null;
+  acknowledgedAt?: string | null;
+  acknowledgedById?: string | null;
+  resolvedAt?: string | null;
+  resolvedById?: string | null;
+  resolution?: string | null;
+  /**
+   * Always present: the route joins it with `include` and drops any row whose
+   * site did not resolve inside the tenant, so a null here would mean an empty
+   * list rather than a half-populated alarm.
+   */
+  site?: { name: string; code: string };
+}
+
+/** A fuel delivery as `/api/fgmp/deliveries` and site detail return it. */
+export interface MaintenanceTicketRow {
+  id: string;
+  siteId: string;
+  title: string;
+  status: string;
+  /** Required by the gantt, which indexes its tone maps by these. */
+  type: string;
+  assetKind: string;
+  assetId: string;
+  priority: string;
+  description?: string | null;
+  notes?: string | null;
+  scheduledFor?: string | null;
+  completedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  assignedToId?: string | null;
+  assignedTo?: { name?: string } | null;
+  site?: { name: string; code?: string } | null;
+}
+
+export interface DeliveryRow {
+  id: string;
+  siteId: string;
+  status: string;
+  supplier?: string | null;
+  scheduledAt: string;
+  volumeOrderedLitres: number;
+  volumeDeliveredLitres?: number | null;
+  doNumber?: string | null;
+  vehiclePlate?: string | null;
+  driverName?: string | null;
+  site?: { name: string } | null;
+  tank?: { label?: string | null } | null;
+}
+
+/**
+ * `GET /api/fgmp/sites/[id]` — the site plus its children, assembled from live
+ * engine state (tanks/generators/batteries/iot) and the child tables
+ * (alarms/deliveries/tickets). `site` is optional because the engine lookup can
+ * miss a row that exists in the database.
+ */
+export interface SiteDetailPayload {
+  site?: SiteState;
+  tanks: TankState[];
+  generators: GenState[];
+  batteries: BattState[];
+  iot: IoTDeviceState[];
+  alarms: AlarmRow[];
+  deliveries: DeliveryRow[];
+  tickets: MaintenanceTicketRow[];
+}
+
+/** One region row of `GET /api/fgmp/analytics` (also the leaderboard's shape). */
+export interface RegionBreakdownRow {
+  region: string;
+  sites: number;
+  fuel: number;
+  alarms: number;
+  running: number;
+  consumed: number;
+  /** Null when no tank in the region has usable capacity. */
+  fuelPct: number | null;
+}
+
+/**
+ * `GET /api/fgmp/analytics` — only the fields the UI reads are declared. The
+ * endpoint returns more (generator-hours detail, projection meta, the cost
+ * basis strings); adding a field here is how a view earns the right to read it.
+ *
+ * Currency fields are `number | null` on purpose: they are null whenever no
+ * FX/fuel rate is configured, which is a different statement from "$0".
+ */
+export interface AnalyticsPayload {
+  consumptionTrend: { t: string; litres: number; running: number }[];
+  siteEfficiency: {
+    siteId: string;
+    site: string;
+    code: string;
+    region: string;
+    consumed: number;
+    kwh: number;
+    efficiency: number;
+    fuelPct: number;
+  }[];
+  theftEvents: EventItem[];
+  refillEvents: EventItem[];
+  forecast: { day: string; litres: number }[];
+  regionBreakdown: RegionBreakdownRow[];
+  fuelCost: {
+    pricePerLitre: number | null;
+    currency: "USD";
+    pricePerLitreYer: number | null;
+    fxRate: number | null;
+    fxAsOf: string | null;
+    currencyAvailable: boolean;
+    consumedTodayUsd: number | null;
+    stolenValueUsd: number | null;
+    deliveredValueUsd: number | null;
+    theftLitres: number;
+    forecastCostUsd: number | null;
+    costByRegion: {
+      region: string;
+      costUsd: number | null;
+      fuelStockOnHandPct: number | null;
+      consumedLitres: number;
+      consumedCostUsd: number | null;
+      sites: number;
+    }[];
+    dailyCost: {
+      day: string;
+      dateKey: string | null;
+      litres: number | null;
+      cost: number | null;
+      samples: number;
+    }[];
+  };
+  siteHealth: {
+    overall: number;
+    factors: { label: string; value: number; weight: number; icon: string; good: boolean }[];
+  };
+}
+
+/** A row of `GET /api/fgmp/audit`; `details` is parsed JSON, not a string. */
+export interface AuditLogRow {
+  id: string;
+  action: string;
+  entity: string;
+  entityId?: string | null;
+  details: unknown;
+  user?: { name: string; role: string } | null;
+  ip?: string | null;
+  createdAt: string;
+}
+
+/** An IoT device with the site name the list view searches on. */
+export interface IoTDeviceRow extends IoTDeviceState {
+  site?: { name: string } | null;
+  /** The status the list view renders; present on every GET row. */
+  liveStatus: string;
+}
+
+/** A row of `GET /api/fgmp/reports`. */
+export interface ReportsPayload {
+  summary: {
+    period: string;
+    from: string;
+    to: string;
+    totalSites: number;
+    totalGenerators: number;
+    totalTanks: number;
+    totalFuelLitres: number;
+    totalCapacityLitres: number;
+    fuelPct: number;
+    alarmsTotal: number;
+    alarmsBySeverity: { L1: number; L2: number; L3: number };
+    deliveriesTotal: number;
+    deliveriesVerified: number;
+    volumeDelivered: number;
+    ticketsTotal: number;
+    ticketsDone: number;
+    commandsTotal: number;
+    generatorsRunning: number;
+  };
+  alarms: AlarmRow[];
+  deliveries: DeliveryRow[];
+  tickets: MaintenanceTicketRow[];
+  commands: { id: string; command: string; status: string; issuedAt: string; generator?: { label: string } | null }[];
+  auditLogs: AuditLogRow[];
+}

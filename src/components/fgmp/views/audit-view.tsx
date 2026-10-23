@@ -16,6 +16,7 @@ import { fmtDateTime, timeAgo } from "@/lib/fgmp/format";
 import { cn } from "@/lib/utils";
 import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
+import type { AuditLogRow } from "@/lib/fgmp/types";
 import { roleLabel } from "@/lib/fgmp/labels";
 import { translate } from "@/lib/fgmp/i18n";
 
@@ -45,7 +46,7 @@ export function AuditView() {
   const t = useT();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
-  const { data: logs } = useApi<any[]>(`/api/fgmp/audit?limit=500${action !== "all" ? `&action=${action}` : ""}`, { interval: 8000 });
+  const { data: logs } = useApi<AuditLogRow[]>(`/api/fgmp/audit?limit=500${action !== "all" ? `&action=${action}` : ""}`, { interval: 8000 });
 
   const filtered = useMemo(() => {
     let list = logs ?? [];

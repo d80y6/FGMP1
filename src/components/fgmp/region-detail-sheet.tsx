@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import { useT, useArabicNumerals } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
+import type { AlarmRow } from "@/lib/fgmp/types";
 import { alarmTypeLabel } from "@/lib/fgmp/labels";
 
 
@@ -215,7 +216,7 @@ export function RegionDetailSheet({ region, onOpenChange }: RegionDetailSheetPro
   const cc = useChartColors();
   // Fetch open/ack/escalated alarms for the region drilldown. Reuse the same
   // endpoint pattern as dashboard-view's live alarm feed.
-  const { data: alarms } = useApi<any[]>(
+  const { data: alarms } = useApi<AlarmRow[]>(
     "/api/fgmp/alarms?status=OPEN,ACKNOWLEDGED,ESCALATED&limit=500",
     { interval: 10000 },
   );

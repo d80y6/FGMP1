@@ -21,11 +21,16 @@ import { toast } from "sonner";
 import { fmtDateTime, fmtLitres } from "@/lib/fgmp/format";
 import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
+import type { AnalyticsPayload, DeliveryRow, SiteState, TankState } from "@/lib/fgmp/types";
 import { translate } from "@/lib/fgmp/i18n";
 import { ResourceError } from "@/components/fgmp/resource-error";
 
-/** Resolve a supplier brand string to its localized form. Falls back to the raw name. */
-function supplierLabel(supplier: string, lang: Language): string {
+/**
+ * Resolve a supplier brand string to its localized form, falling back to the
+ * raw name. `supplier` is nullable in the schema — the empty check was already
+ * there, so the parameter type was the only thing pretending otherwise.
+ */
+function supplierLabel(supplier: string | null | undefined, lang: Language): string {
   if (!supplier) return "";
   // Known brand mapping
   const map: Record<string, string> = {
@@ -45,8 +50,8 @@ export function InventoryView() {
   const t = useT();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
-  const { data: deliveries, error: deliveriesError, refetch } = useApi<any[]>("/api/fgmp/deliveries", { interval: 8000 });
-  const { data: analytics, error: analyticsError, refetch: refetchAnalytics } = useApi<any>("/api/fgmp/analytics", { interval: 15000 });
+  const { data: deliveries, error: deliveriesError, refetch } = useApi<DeliveryRow[]>("/api/fgmp/deliveries", { interval: 8000 });
+  const { data: analytics, error: analyticsError, refetch: refetchAnalytics } = useApi<AnalyticsPayload>("/api/fgmp/analytics", { interval: 15000 });
   const [createOpen, setCreateOpen] = useState(false);
   const [verify, setVerify] = useState<{ id: string; vol: number } | null>(null);
 
@@ -155,7 +160,7 @@ export function InventoryView() {
                   <YAxis tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} />
                   <Tooltip contentStyle={{ fontSize: 12 }} />
                   <Bar dataKey="litres" radius={[4, 4, 0, 0]}>
-                    {forecast.map((_: any, i: number) => <Cell key={i} fill={i === 0 ? "#10b981" : "#34d399"} />)}
+                    {forecast.map((_f, i: number) => <Cell key={i} fill={i === 0 ? "#10b981" : "#34d399"} />)}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -207,7 +212,7 @@ export function InventoryView() {
 }
 
 function CreateDeliveryDialog({ open, onOpenChange, onCreated, tanks, sites }: {
-  open: boolean; onOpenChange: (v: boolean) => void; onCreated: () => void; tanks: any[]; sites: any[];
+  open: boolean; onOpenChange: (v: boolean) => void; onCreated: () => void; tanks: TankState[]; sites: SiteState[];
 }) {
   const t = useT();
   const useArabicNums = useArabicNumerals();

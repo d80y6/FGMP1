@@ -31,6 +31,7 @@ import type { GenCommand } from "@/lib/fgmp/types";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
+import type { SiteDetailPayload } from "@/lib/fgmp/types";
 import { alarmTypeLabel } from "@/lib/fgmp/labels";
 import { useNow } from "@/lib/fgmp/use-now";
 import { toast } from "sonner";
@@ -40,7 +41,7 @@ export function SiteDetailSheet({ siteId, open, onOpenChange }: { siteId: string
   const t = useT();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
-  const { data, loading, refetch } = useApi<any>(siteId ? `/api/fgmp/sites/${siteId}` : null, { interval: 6000, deps: [siteId] });
+  const { data, loading, refetch } = useApi<SiteDetailPayload>(siteId ? `/api/fgmp/sites/${siteId}` : null, { interval: 6000, deps: [siteId] });
   const { tick, me } = useFgmp(useShallow((s) => ({ tick: s.tick, me: s.me })));
   const [ctrl, setCtrl] = useState<{ id: string; label: string; cmd: GenCommand } | null>(null);
 
@@ -105,7 +106,7 @@ export function SiteDetailSheet({ siteId, open, onOpenChange }: { siteId: string
                 <ScrollArea className="flex-1">
                   <div className="p-4">
                     <TabsContent value="tanks" className="mt-0 space-y-2">
-                      {(data?.tanks ?? []).map((tk: any) => {
+                      {(data?.tanks ?? []).map((tk) => {
                         const pct = (tk.current / tk.capacity) * 100;
                         return (
                           <Card key={tk.id}>
@@ -129,7 +130,7 @@ export function SiteDetailSheet({ siteId, open, onOpenChange }: { siteId: string
                               <div className="mt-2"><BarGauge value={pct} showLabel /></div>
                               <div className="mt-1.5 flex items-center justify-between text-[10px] text-muted-foreground">
                                 <span>{t("detail.low")}: {Math.round(tk.low)}L · {t("detail.criticalLevel")}: {Math.round(tk.critical)}L</span>
-                                <Sparkline data={tk.history?.map((h: any) => h.l).slice(-48) ?? []} width={80} height={20} color="#0ea5e9" />
+                                <Sparkline data={tk.history?.map((h) => h.l).slice(-48) ?? []} width={80} height={20} color="#0ea5e9" />
                               </div>
                             </CardContent>
                           </Card>
@@ -138,7 +139,7 @@ export function SiteDetailSheet({ siteId, open, onOpenChange }: { siteId: string
                     </TabsContent>
 
                     <TabsContent value="gens" className="mt-0 space-y-2">
-                      {(data?.generators ?? []).map((g: any) => (
+                      {(data?.generators ?? []).map((g) => (
                         <Card key={g.id}>
                           <CardContent className="p-3">
                             <div className="flex items-center justify-between">
@@ -184,7 +185,7 @@ export function SiteDetailSheet({ siteId, open, onOpenChange }: { siteId: string
                     </TabsContent>
 
                     <TabsContent value="batt" className="mt-0 space-y-2">
-                      {(data?.batteries ?? []).map((b: any) => (
+                      {(data?.batteries ?? []).map((b) => (
                         <Card key={b.id}>
                           <CardContent className="p-3">
                             <div className="flex items-center justify-between">
@@ -207,7 +208,7 @@ export function SiteDetailSheet({ siteId, open, onOpenChange }: { siteId: string
                     </TabsContent>
 
                     <TabsContent value="iot" className="mt-0 space-y-2">
-                      {(data?.iot ?? []).map((d: any) => (
+                      {(data?.iot ?? []).map((d) => (
                         <div key={d.id} className="flex items-center justify-between rounded-lg border p-2.5 text-xs">
                           <div className="flex items-center gap-2">
                             <Cpu className="h-4 w-4 text-muted-foreground" />
@@ -229,7 +230,7 @@ export function SiteDetailSheet({ siteId, open, onOpenChange }: { siteId: string
                         <Truck className="h-4 w-4 text-emerald-500" />
                         <span className="font-medium">{t("detail.deliveries")}</span>
                       </div>
-                      {(data?.deliveries ?? []).slice(0, 5).map((d: any) => (
+                      {(data?.deliveries ?? []).slice(0, 5).map((d) => (
                         <div key={d.id} className="flex items-center justify-between rounded border p-2 text-[11px]">
                           <span>{fmtDateTime(d.scheduledAt, numLang)} · {formatNumber(Math.round(d.volumeOrderedLitres), numLang)}L</span>
                           <StatusBadge value={d.status} className="h-5 text-[9px]" />
@@ -239,7 +240,7 @@ export function SiteDetailSheet({ siteId, open, onOpenChange }: { siteId: string
                         <Siren className="h-4 w-4 text-rose-500" />
                         <span className="font-medium">{t("detail.recentAlarms")}</span>
                       </div>
-                      {(data?.alarms ?? []).slice(0, 8).map((a: any) => (
+                      {(data?.alarms ?? []).slice(0, 8).map((a) => (
                         <div key={a.id} className="flex items-start gap-2 rounded border p-2 text-[11px]">
                           <span className={cn("mt-1 h-1.5 w-1.5 shrink-0 rounded-full", severityDot(a.severity))} />
                           <div className="min-w-0 flex-1">
@@ -622,7 +623,7 @@ function GenMaintenanceEditor({
   );
 }
 
-function SiteTrendsTab({ data }: { data: any }) {
+function SiteTrendsTab({ data }: { data: SiteDetailPayload | null }) {
   const t = useT();
   const now = useNow();
   // Stable fallback identities — a bare `?? []` is a new array every render,
@@ -640,7 +641,7 @@ function SiteTrendsTab({ data }: { data: any }) {
   // Build combined fuel level trend from all tanks (last 48 points = ~4h at 5min intervals)
   const fuelTrend = useMemo(() => {
     if (tanks.length === 0) return [];
-    const maxLen = Math.max(...tanks.map((t: any) => t.history?.length ?? 0), 0);
+    const maxLen = Math.max(...tanks.map((t) => t.history?.length ?? 0), 0);
     const result: { t: string; litres: number; pct: number }[] = [];
     for (let i = 0; i < Math.min(maxLen, 48); i++) {
       let totalL = 0;
@@ -664,7 +665,7 @@ function SiteTrendsTab({ data }: { data: any }) {
   // Generator load trend
   const genLoadTrend = useMemo(() => {
     if (generators.length === 0) return [];
-    const maxLen = Math.max(...generators.map((g: any) => g.history?.length ?? 0), 0);
+    const maxLen = Math.max(...generators.map((g) => g.history?.length ?? 0), 0);
     const result: { t: string; load: number; temp: number }[] = [];
     for (let i = 0; i < Math.min(maxLen, 48); i++) {
       let totalLoad = 0;
@@ -690,7 +691,7 @@ function SiteTrendsTab({ data }: { data: any }) {
   // Battery voltage trend
   const battTrend = useMemo(() => {
     if (batteries.length === 0) return [];
-    const maxLen = Math.max(...batteries.map((b: any) => b.history?.length ?? 0), 0);
+    const maxLen = Math.max(...batteries.map((b) => b.history?.length ?? 0), 0);
     const result: { t: string; voltage: number; charge: number }[] = [];
     for (let i = 0; i < Math.min(maxLen, 48); i++) {
       let totalV = 0;
@@ -701,7 +702,10 @@ function SiteTrendsTab({ data }: { data: any }) {
         const h = b.history?.[b.history.length - 48 + i] ?? b.history?.[i];
         if (h) {
           totalV += h.v ?? 0;
-          totalC += h.c ?? 0;
+          // The history rows carry `soc`, not `c`. This read `h.c` and the
+          // `?? 0` swallowed it, so the charge line was a flat zero for every
+          // battery, forever — the classic cost of an untyped `any[]`.
+          totalC += h.soc ?? 0;
           count++;
           if (!time) time = new Date(h.t).toISOString().slice(11, 16);
         }
@@ -720,16 +724,16 @@ function SiteTrendsTab({ data }: { data: any }) {
     for (let h = 23; h >= 0; h--) {
       const start = now - (h + 1) * 3600000;
       const end = now - h * 3600000;
-      const hourAlarms = alarms.filter((a: any) => {
+      const hourAlarms = alarms.filter((a) => {
         const t = new Date(a.createdAt).getTime();
         return t >= start && t < end;
       });
       buckets.push({
         hour: new Date(end).toISOString().slice(11, 16),
         count: hourAlarms.length,
-        L1: hourAlarms.filter((a: any) => a.severity === "L1").length,
-        L2: hourAlarms.filter((a: any) => a.severity === "L2").length,
-        L3: hourAlarms.filter((a: any) => a.severity === "L3").length,
+        L1: hourAlarms.filter((a) => a.severity === "L1").length,
+        L2: hourAlarms.filter((a) => a.severity === "L2").length,
+        L3: hourAlarms.filter((a) => a.severity === "L3").length,
       });
     }
     return buckets;

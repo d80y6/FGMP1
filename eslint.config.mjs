@@ -13,15 +13,14 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
     // body, an effect depending on its own state).
     //
     // Rules that are genuinely clean today are re-enabled as ERRORS and are
-    // now enforced in CI. Rules with a known backlog are re-enabled as
-    // WARNINGS so they surface new violations without blocking: each warning
-    // is visible in CI output and ratcheting them to "error" is the plan as
-    // the backlog is cleared.
+    // now enforced in CI. There is no longer a warned-but-tolerated rule:
+    // every rule below that was ever off is either enforced or off on purpose
+    // and documented. `eslint .` exits non-zero on a single finding.
     "react-hooks/rules-of-hooks": "error",        // was off — now clean, enforced
     "react-hooks/exhaustive-deps": "error",        // was off; backlog cleared, now enforced
     "react-hooks/purity": "error",                 // was off; wall-clock randers now use useNow()
     "react/no-unescaped-entities": "warn",
-    "@typescript-eslint/no-explicit-any": "warn",  // 77 known; was off
+    "@typescript-eslint/no-explicit-any": "error",  // was off; backlog cleared, now enforced
     // A leading underscore is the project's way of saying "deliberately
     // unused" — a callback's positional argument that a signature requires, or
     // an interface kept for compatibility. Without these patterns the rule
@@ -33,7 +32,7 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
       caughtErrorsIgnorePattern: "^_",
       destructuredArrayIgnorePattern: "^_",
     }],
-    "@typescript-eslint/no-non-null-assertion": "warn",
+    "@typescript-eslint/no-non-null-assertion": "error",  // was off; backlog cleared
     "no-debugger": "error",
     "no-fallthrough": "warn",
     "no-unreachable": "warn",
@@ -183,7 +182,7 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
   // intent for either a redundant if-branch per line or a cast, and a wrong
   // assertion fails the test anyway — which is the point of a test.
   //
-  // The exemptions do NOT extend to `no-explicit-any` or to the React rules:
+  // The exemption does NOT extend to `no-explicit-any` or to the React rules:
   // a fixture typed `any` can hide a contract break just as easily in a test.
   files: ["**/*.test.ts", "**/*.test.tsx", "**/__tests__/**/*.ts", "**/__tests__/**/*.tsx", "scripts/verify/**/*.ts"],
   rules: {
