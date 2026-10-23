@@ -1,5 +1,24 @@
 export const runtime = "nodejs";
 
+type NodeProcessApi = {
+  exit(code?: number): never;
+  once(signal: "SIGTERM" | "SIGINT", listener: () => void): unknown;
+};
+
+/**
+ * Access process lifecycle APIs only after the Node-runtime guard. Instrumentation
+ * is analyzed for multiple runtimes during the build, so direct process.exit/once
+ * references trigger Edge Runtime warnings even though register() returns early
+ * there.
+ */
+function getNodeProcessApi(): NodeProcessApi {
+  const nodeProcess = (
+    globalThis as typeof globalThis & { process?: NodeProcessApi }
+  ).process;
+  if (!nodeProcess) throw new Error("Node process APIs are unavailable in this runtime");
+  return nodeProcess;
+}
+
 /**
  * Server startup hook (Phase 2, vertical 5).
  *
@@ -62,7 +81,7 @@ export async function register(): Promise<void> {
       // "Failed to prepare server", marks the hook failed and keeps the port
       // open, so an orchestrator sees a healthy socket on a process that will
       // 500 every request. Exiting is the only honest signal.
-      process.exit(1);
+      return getNodeProcessApi().exit(1);
     }
   })();
   const warnings = envIssues.filter((i) => i.severity === "warn");
@@ -90,7 +109,7 @@ export async function register(): Promise<void> {
     assertRlsEnforced();
   } catch (err) {
     console.error(err instanceof Error ? err.message : String(err));
-    process.exit(1);
+    getNodeProcessApi().exit(1);
   }
 
   const { simulationDecision } = await import("@/lib/fgmp/simulation");
@@ -153,8 +172,8 @@ export async function register(): Promise<void> {
       }
     };
 
-    process.once("SIGTERM", () => void shutdown("SIGTERM"));
-    process.once("SIGINT", () => void shutdown("SIGINT"));
+    getNodeProcessApi().once("SIGTERM", () => void shutdown("SIGTERM"));
+    getNodeProcessApi().once("SIGINT", () => void shutdown("SIGINT"));
   } catch (err) {
     // Never take the server down because the scheduler failed to start. The
     // platform still serves every read; it simply is not advancing.

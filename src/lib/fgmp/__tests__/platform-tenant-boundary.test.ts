@@ -61,7 +61,10 @@ describe("client/server and deployment build boundaries", () => {
 
   test("production builds generate Prisma Client and instrumentation targets Node", () => {
     expect(source("package.json")).toContain("prisma generate && next build");
-    expect(source("src/instrumentation.ts")).toContain('export const runtime = "nodejs"');
+    const instrumentation = source("src/instrumentation.ts");
+    expect(instrumentation).toContain('export const runtime = "nodejs"');
+    expect(instrumentation).not.toContain("process.exit(");
+    expect(instrumentation).not.toContain("process.once(");
   });
 });
 
@@ -107,6 +110,7 @@ describe("global state and service credentials", () => {
 
   test("cross-tenant request-scoped database contexts are limited to named user administration", () => {
     const userAdmin = source("src/app/api/fgmp/users/route.ts");
+    expect(userAdmin).toContain("import { asTenant, asTenantForAnotherTenant, resolveTenantScope }");
     expect(userAdmin).toContain("resolveTenantScope(me, searchParams.get(\"tenant\"))");
     expect(userAdmin).toContain("asTenantForAnotherTenant(me, tenantId");
 

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { bootstrap } from "@/lib/fgmp";
-import { asTenantForAnotherTenant, resolveTenantScope } from "@/lib/fgmp/route-tenant";
+import { asTenant, asTenantForAnotherTenant, resolveTenantScope } from "@/lib/fgmp/route-tenant";
 import {
   requireRole,
   ROLES,
