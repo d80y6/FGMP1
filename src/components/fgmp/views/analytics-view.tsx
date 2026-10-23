@@ -34,6 +34,24 @@ function formatUsd(
   return `$${formatNumber(v.toFixed(opts.scale ? 1 : 2), numLang)}${opts.suffix ?? ""}`;
 }
 
+/**
+ * What a currency chart shows when no rate is configured.
+ *
+ * The section note above claims a zeroed chart is never drawn — these two were
+ * the exception: the donut coalesced null USD values to 0 and rendered
+ * "$0 consumed / $0 stolen / $0 delivered", and the regional bar chart drew an
+ * axis of $0k. Both state a measurement the platform does not have, which is the
+ * one thing the dash in the KPI cards exists to avoid.
+ */
+function NoCurrencyNotice() {
+  const t = useT();
+  return (
+    <p className="flex h-[200px] items-center justify-center px-6 text-center text-[11px] leading-relaxed text-muted-foreground">
+      {t("analytics.noFxRateConfigured")}
+    </p>
+  );
+}
+
 export function AnalyticsView() {
   const snapshot = useFgmp((s) => s.snapshot);
   const t = useT();
@@ -252,6 +270,9 @@ export function AnalyticsView() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
+                {a.fuelCost.currencyAvailable === false ? (
+                  <NoCurrencyNotice />
+                ) : (
                 <ResponsiveContainer width="100%" height={240}>
                   <BarChart
                     data={a.fuelCost.costByRegion}
@@ -274,6 +295,7 @@ export function AnalyticsView() {
                     <Bar dataKey="costUsd" radius={[0, 4, 4, 0]} fill="url(#cost-grad)" name="Fuel Value" />
                   </BarChart>
                 </ResponsiveContainer>
+                )}
               </CardContent>
             </Card>
 
@@ -285,10 +307,10 @@ export function AnalyticsView() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {(() => {
-                  // Null when no rate is configured. Coalesce to 0 for the
-                  // chart geometry only — the section is hidden below unless
-                  // the data is real, so a zeroed pie is never shown.
+                {a.fuelCost.currencyAvailable === false ? (
+                  <NoCurrencyNotice />
+                ) : (() => {
+                  // Reached only when a rate exists, so these are real USD.
                   const consumed = a.fuelCost.consumedTodayUsd ?? 0;
                   const stolen = a.fuelCost.stolenValueUsd ?? 0;
                   const delivered = a.fuelCost.deliveredValueUsd ?? 0;
