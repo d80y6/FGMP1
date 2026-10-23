@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Siren, CheckCircle2, AlertOctagon, ShieldCheck, Bell, CheckCheck, X, Keyboard, ShieldAlert, Loader2 } from "lucide-react";
 import { useFgmp } from "@/lib/fgmp/store";
+import { hasCapability } from "@/lib/fgmp/rbac-core";
 import { useApi, apiPost } from "@/lib/fgmp/use-api";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
@@ -51,6 +52,9 @@ export function AlarmsView() {
   const setView = useFgmp((s) => s.setView);
   const view = useFgmp((s) => s.view);
   const me = useFgmp((s) => s.me);
+  const role = me?.role ?? "READONLY";
+  const canManageRules = hasCapability(role, "alarm:configure");
+  const canViewSuppressions = hasCapability(role, "view:suppressions");
 
   const t = useT();
   const useArabicNums = useArabicNumerals();
@@ -63,10 +67,9 @@ export function AlarmsView() {
   const [heatmapFilter, setHeatmapFilter] = useState<{ hour: number; severity: string } | null>(null);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"alarms" | "suppressions">("alarms");
-  // Hydrate the correlation-rules store from localStorage on mount + keep
-  // cross-tab synced. Calling this unconditionally at the top so the rules
-  // button badge count can read an up-to-date rule list.
-  useCorrelationRulesHydration();
+  // Only load the rules API for roles allowed to author correlation rules.
+  // The Rules button and its data request share the same capability.
+  useCorrelationRulesHydration(canManageRules);
   const { data: alarms, loading: alarmsLoading, error: alarmsError, refetch } = useApi<AlarmRow[]>(`/api/fgmp/alarms?status=${status}&severity=${severity === "all" ? "" : severity}&type=${type === "all" ? "" : type}&limit=300`, { interval: 6000 });
 
   // ── Optimistic updates (#20) ──────────────────────────────────────────────
@@ -375,12 +378,7 @@ export function AlarmsView() {
     return () => window.removeEventListener("keydown", onKey);
   }, [view, activeTab, validSelectedIds, selectedCount, heatmapFilter, selected]);
 
-  // Role-gate the Rules button: ADMIN (full CRUD) + REGIONAL_MANAGER
-  // (view + toggle, proxy for SUPERVISOR since the Role enum has no
-  // SUPERVISOR literal). All other roles: button hidden.
-  const role = me?.role ?? "READONLY";
-  const canManageRules = role === "ADMIN" || role === "REGIONAL_MANAGER";
-
+  // canManageRules was derived from the same capability used by the API.
   // Triggered-rule count for the Rules button badge.
   //
   // Phase 2: this used to call `evaluateAllRules` in the browser, which meant
@@ -389,7 +387,7 @@ export function AlarmsView() {
   // persisted, so the number an operator sees is the number the platform
   // actually acted on. Placed BEFORE the early `if (!snapshot)` return so the
   // hook order is stable on every render.
-  const { matches: serverMatches } = useCorrelationMatches();
+  const { matches: serverMatches } = useCorrelationMatches(0, canManageRules);
   const triggeredRuleCount = useMemo(() => {
     if (!canManageRules) return 0;
     // Distinct rules that fired, counted from persisted matches.
@@ -409,10 +407,16 @@ export function AlarmsView() {
   return (
     <div className="space-y-4">
       <ResourceError error={alarmsError} onRetry={refetch} />
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "alarms" | "suppressions")} className="gap-4">
+      <Tabs
+        value={activeTab === "suppressions" && !canViewSuppressions ? "alarms" : activeTab}
+        onValueChange={(v) => setActiveTab(v as "alarms" | "suppressions")}
+        className="gap-4"
+      >
         <TabsList>
           <TabsTrigger value="alarms">{t("alarms.tabAlarms")}</TabsTrigger>
-          <TabsTrigger value="suppressions">{t("alarms.tabSuppressions")}</TabsTrigger>
+          {canViewSuppressions && (
+            <TabsTrigger value="suppressions">{t("alarms.tabSuppressions")}</TabsTrigger>
+          )}
         </TabsList>
         <TabsContent value="alarms" className="space-y-4 outline-none">
       <SectionHeader
@@ -765,15 +769,19 @@ export function AlarmsView() {
         </>
       )}
         </TabsContent>
-        <TabsContent value="suppressions" className="outline-none">
-          <SuppressionsView />
-        </TabsContent>
+        {canViewSuppressions && (
+          <TabsContent value="suppressions" className="outline-none">
+            <SuppressionsView />
+          </TabsContent>
+        )}
       </Tabs>
 
       {/* Correlation Rules editor dialog — mounted at the bottom so it doesn't
           remount when the alarms table re-renders. The dialog itself decides
           whether to render based on the `open` prop. */}
-      <CorrelationRulesEditor open={rulesOpen} onOpenChange={setRulesOpen} />
+      {canManageRules && rulesOpen && (
+        <CorrelationRulesEditor open={rulesOpen} onOpenChange={setRulesOpen} />
+      )}
     </div>
   );
 }

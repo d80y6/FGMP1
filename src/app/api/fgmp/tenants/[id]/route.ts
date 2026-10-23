@@ -40,7 +40,7 @@ const updateTenantSchema = z.object({
  * Returns a single tenant by id with counts. Any authenticated session.
  */
 export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await requireAuth();
+  const auth = await requireAuth(req);
   if ("error" in auth) return auth.error;
   const me = auth.user;
   try {

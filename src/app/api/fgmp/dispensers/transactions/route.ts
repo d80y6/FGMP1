@@ -8,6 +8,7 @@ import {
   parseIntParam,
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
+import { decimalsToJson } from "@/lib/fgmp/decimal";
 import { requireAuth, siteTenantWhere } from "@/lib/fgmp/auth-helpers";
 
 export const dynamic = "force-dynamic";
@@ -30,7 +31,7 @@ export const dynamic = "force-dynamic";
  * round-trip.
  */
 export async function GET(req: NextRequest) {
-  const auth = await requireAuth();
+  const auth = await requireAuth(req);
   if ("error" in auth) return auth.error;
   const me = auth.user;
   try {
@@ -90,7 +91,9 @@ export async function GET(req: NextRequest) {
     ]),
     );
 
-    const res = NextResponse.json({ rows, total, limit, offset });
+    // Prisma Decimal columns serialize to JSON strings by default. Keep the
+    // client contract numeric (volumeLitres is formatted with toFixed there).
+    const res = NextResponse.json(decimalsToJson({ rows, total, limit, offset }));
     applyRateLimitHeaders(res.headers, rl);
     return res;
   } catch (err) {

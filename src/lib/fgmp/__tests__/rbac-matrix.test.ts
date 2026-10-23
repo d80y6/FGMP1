@@ -1,8 +1,9 @@
 /**
  * Phase 5 task 2 — the RBAC matrix, encoded as a constraint.
  *
- * The defect this prevents: READONLY held `view:roles` and `view:system-health`
- * while REGIONAL_MANAGER lacked `view:audit` and `view:iot`; EXECUTIVE could
+ * The defect this prevents: READONLY held `view:roles` and was advertised
+ * `view:system-health` although the endpoint is ADMIN-only; REGIONAL_MANAGER
+ * lacked `view:audit` and `view:iot`; EXECUTIVE could
  * read a national fuel figure but could not navigate to the site it came from;
  * FIELD_ENGINEER could not see alarm suppressions. Every one of those is an
  * inversion — a role seeing strictly less than a less-privileged one — and none
@@ -22,16 +23,11 @@ const caps = (r: Role): Set<string> => new Set(ROLE_PERMISSIONS[r].capabilities)
 // capabilities for SUPERADMIN.
 const has = (r: Role, c: string): boolean => caps(r).has(c);
 
-/** Capabilities that grant power rather than visibility. */
-const CONTROL_ACTIONS = [
-  "alarm:ack",
-  "delivery:approve",
-  "delivery:verify",
-  "ticket:create",
-  "ticket:assign",
-  "ticket:complete",
-  "simul:tick",
-];
+/** Every capability that grants power rather than visibility, derived from the matrix. */
+const CONTROL_ACTIONS = [...new Set(
+  ALL_ROLES.flatMap((role) => ROLE_PERMISSIONS[role].capabilities)
+    .filter((capability) => capability !== "*" && !capability.startsWith("view:")),
+)];
 
 describe("the specific inversions the audit found", () => {
   test("READONLY cannot see the permission matrix", () => {
@@ -60,6 +56,18 @@ describe("the specific inversions the audit found", () => {
   test("REGIONAL_MANAGER can see the audit log and IoT devices", () => {
     expect(has("REGIONAL_MANAGER", "view:audit")).toBe(true);
     expect(has("REGIONAL_MANAGER", "view:iot")).toBe(true);
+  });
+
+  test("capabilities match role-gated delivery, maintenance and dispenser actions", () => {
+    for (const role of ["ADMIN", "REGIONAL_MANAGER", "FIELD_ENGINEER"] as Role[]) {
+      expect(has(role, "delivery:manage")).toBe(true);
+      expect(has(role, "ticket:manage")).toBe(true);
+    }
+    for (const role of ["ADMIN", "NOC_OPERATOR", "FIELD_ENGINEER"] as Role[]) {
+      expect(has(role, "dispenser:control")).toBe(true);
+    }
+    expect(has("NOC_OPERATOR", "alarm:configure")).toBe(false);
+    expect(has("REGIONAL_MANAGER", "alarm:configure")).toBe(true);
   });
 });
 
@@ -107,27 +115,20 @@ describe("no role sees strictly less than a less privileged one", () => {
   });
 
   test("every view capability held by one non-admin role is held by REGIONAL_MANAGER", () => {
-    // view:system-health is exempt and asserted explicitly below: it is an
-    // infrastructure surface (RTOs, RSS, DB reachability) that an operator
-    // running the platform needs and a regional manager does not. It was the
-    // one legitimate READONLY-only capability after the fixes.
-    const INFRASTRUCTURE_ONLY = ["view:system-health"];
+    // System health is excluded from READONLY in this RBAC pass because the
+    // endpoint deliberately restricts process/database diagnostics to admins.
     for (const role of ORDER) {
       if (role === "REGIONAL_MANAGER") continue;
       const missing = [...caps(role)].filter(
         (c) => c.startsWith("view:") && !caps("REGIONAL_MANAGER").has(c),
-      ).filter((c) => !INFRASTRUCTURE_ONLY.includes(c));
+      );
       expect(missing, `REGIONAL_MANAGER is missing: ${missing.join(", ")}`).toEqual([]);
     }
   });
 
-  test("view:system-health is the only non-management-exclusive capability", () => {
-    // Named explicitly so that adding a second one fails here rather than
-    // being absorbed into the exemption list above.
-    const exclusive = [...caps("READONLY")].filter(
-      (c) => c.startsWith("view:") && !caps("REGIONAL_MANAGER").has(c),
-    );
-    expect(exclusive).toEqual(["view:system-health"]);
+  test("READONLY cannot see the ADMIN-only system health surface", () => {
+    expect(has("READONLY", "view:system-health")).toBe(false);
+    expect(has("ADMIN", "view:system-health")).toBe(true);
   });
 });
 

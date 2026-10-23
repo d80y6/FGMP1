@@ -179,7 +179,7 @@ export function DispensersView() {
   const cc = useChartColors();
 
   const isAdmin = me?.role === "ADMIN";
-  const canControl = me?.role === "ADMIN" || me?.role === "NOC_OPERATOR";
+  const canControl = me?.role === "ADMIN" || me?.role === "NOC_OPERATOR" || me?.role === "FIELD_ENGINEER";
 
   const [tab, setTab] = useState<"registry" | "transactions" | "reports">("registry");
   const [q, setQ] = useState("");

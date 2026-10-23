@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { isSuperAdminUser, requireAuth } from "@/lib/fgmp/auth-helpers";
 import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import {
@@ -41,8 +41,8 @@ export const dynamic = "force-dynamic";
  * session and compares the requested channel exactly. This route returning
  * a channel name does not authorize anything by itself.
  */
-export async function GET() {
-  const auth = await requireAuth();
+export async function GET(req: NextRequest) {
+  const auth = await requireAuth(req);
   if ("error" in auth) return auth.error;
 
   // Same gate, same order as the channel-auth route: a PENDING MFA session

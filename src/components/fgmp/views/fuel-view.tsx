@@ -31,7 +31,7 @@ export function FuelView() {
   const numLang: Language = useArabicNums ? "ar" : "en";
   const [q, setQ] = useState("");
   const [sort, setSort] = useState("pct-asc");
-  const { data: analytics } = useApi<AnalyticsPayload>("/api/fgmp/analytics", { interval: 15000 });
+  const { data: analytics } = useApi<AnalyticsPayload>("/api/fgmp/analytics?projection=fuel", { interval: 15000 });
   const cc = useChartColors();
 
   const tanks = useMemo(() => {

@@ -18,7 +18,7 @@ import { requireAuth } from "@/lib/fgmp/auth-helpers";
  * button in the header is hidden behind the login gate.
  */
 export async function GET(req: NextRequest) {
-  const auth = await requireAuth();
+  const auth = await requireAuth(req);
   if ("error" in auth) return auth.error;
   try {
     const user = auth.user;

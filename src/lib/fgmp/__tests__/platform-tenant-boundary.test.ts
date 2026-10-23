@@ -115,6 +115,11 @@ describe("global state and service credentials", () => {
     expect(route).not.toContain("process.env.IOT_API_KEY");
   });
 
+  test("tenant snapshots exclude events whose ownership cannot be proven", () => {
+    const engine = source("src/lib/fgmp/engine.ts");
+    expect(engine).toContain("return typeof sid === \"string\" && siteIds.has(sid)");
+  });
+
   test("platform tenant detail counts use the explicitly named tenant scope", () => {
     const route = source("src/app/api/fgmp/tenants/[id]/route.ts");
     expect(route).toContain("getTenantMeta(id)");

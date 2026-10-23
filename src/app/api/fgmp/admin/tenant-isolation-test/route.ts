@@ -85,7 +85,7 @@ export const dynamic = "force-dynamic";
  * can serve that. Only the enumeration is exempt — see `ops()`.
  */
 export async function GET(req: NextRequest) {
-  const auth = await requireAuth();
+  const auth = await requireAuth(req);
   if ("error" in auth) return auth.error;
   if (!isSuperAdminUser(auth.user)) {
     return NextResponse.json(

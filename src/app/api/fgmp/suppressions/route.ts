@@ -28,7 +28,7 @@ export const dynamic = "force-dynamic";
  * mutations below (POST/PATCH/DELETE) are still enforced server-side.
  */
 export async function GET(req: NextRequest) {
-  const auth = await requireAuth();
+  const auth = await requireAuth(req);
   if ("error" in auth) return auth.error;
   try {
     const { user } = await bootstrap();

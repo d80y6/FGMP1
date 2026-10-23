@@ -32,7 +32,7 @@ const bodySchema = z.object({
  * this endpoint is deliberately not the path. The two-person break-glass reset is.
  */
 export async function POST(req: NextRequest) {
-  const auth = await requireAuth();
+  const auth = await requireAuth(req);
   if ("error" in auth) return auth.error;
   try {
     const rl = await rateLimitByUser(req, auth.user.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);

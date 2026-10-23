@@ -22,7 +22,7 @@ export const dynamic = "force-dynamic";
  * DISP-FW-GW — Edge & Firmware view → Gateways tab.
  */
 export async function GET(req: NextRequest) {
-  const auth = await requireAuth();
+  const auth = await requireAuth(req);
   if ("error" in auth) return auth.error;
   try {
     const me = auth.user;

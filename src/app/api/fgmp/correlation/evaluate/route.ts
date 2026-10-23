@@ -38,11 +38,11 @@ export const dynamic = "force-dynamic";
  * writes to a single `app.tenant_id`.
  */
 export async function POST(req: NextRequest) {
-  const auth = await requireAuth();
+  const auth = await requireAuth(req);
   if ("error" in auth) return auth.error;
   const me = auth.user;
 
-  const guard = await requireRole(req, ROLES.ALARM_OPS);
+  const guard = await requireRole(req, ROLES.ALARM_RULES);
   if ("error" in guard) return guard.error;
 
   try {

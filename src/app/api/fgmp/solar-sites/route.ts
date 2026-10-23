@@ -24,7 +24,7 @@ const createSolarSiteSchema = z.object({
  * List the tenant's solar sites with their arrays.
  */
 export async function GET(req: NextRequest) {
-  const auth = await requireAuth();
+  const auth = await requireAuth(req);
   if ("error" in auth) return auth.error;
   const me = auth.user;
 

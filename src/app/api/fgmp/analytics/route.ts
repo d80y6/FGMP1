@@ -11,6 +11,7 @@ import {
   READ_LIMIT,
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
+import { hasCapability, type Role } from "@/lib/fgmp/rbac-core";
 import {
   requireAuth,
   tenantWhereOrAll,
@@ -74,7 +75,7 @@ const round1 = (n: number) => Math.round(n * 10) / 10;
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export async function GET(req: NextRequest) {
-  const auth = await requireAuth();
+  const auth = await requireAuth(req);
   if ("error" in auth) return auth.error;
   const me = auth.user;
   try {
@@ -90,6 +91,9 @@ export async function GET(req: NextRequest) {
     // Optional time range for the consumption-trend chart. Defaults to 24h so
     // existing callers (analytics-view, fuel-view) are unaffected.
     const range = searchParams.get("range") ?? "24h"; // 1h | 24h | 7d
+    // The same route serves several views; this projection limits the response
+    // to the fields authorized for the caller's requested surface.
+    const projection = searchParams.get("projection") ?? "analytics";
 
     // ONE configurable fuel price (metrics-fuel.ts). This route used to
     // hardcode 1.85 USD/L while engine.ts hardcodes 520 YER/L.
@@ -572,7 +576,7 @@ export async function GET(req: NextRequest) {
       },
     };
 
-    const res = NextResponse.json({
+    const fullPayload = {
       consumptionTrend: trendBuckets,
       siteEfficiency,
       theftEvents,
@@ -596,7 +600,27 @@ export async function GET(req: NextRequest) {
         dailyCostReadingsTruncated: dailyReadingsForCost.truncated,
         maxDailyReadings: MAX_DAILY_READINGS,
       },
-    });
+    };
+    const responsePayload = projection === "dashboard"
+      ? {
+          consumptionTrend: fullPayload.consumptionTrend,
+          regionBreakdown: fullPayload.regionBreakdown,
+          siteHealth: fullPayload.siteHealth,
+        }
+      : projection === "fuel"
+        ? {
+            consumptionTrend: fullPayload.consumptionTrend,
+            theftEvents: fullPayload.theftEvents,
+            refillEvents: fullPayload.refillEvents,
+          }
+        : projection === "inventory"
+          ? {
+              forecast: hasCapability(me.role as Role, "view:fuel-forecast")
+                ? fullPayload.forecast
+                : [],
+            }
+          : fullPayload;
+    const res = NextResponse.json(responsePayload);
     applyRateLimitHeaders(res.headers, rl);
     return res;
   } catch (err) {

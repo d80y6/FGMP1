@@ -8,6 +8,7 @@ import {
 } from "@/lib/fgmp/rate-limit";
 import { toNum } from "@/lib/fgmp/decimal";
 import { errorResponse } from "@/lib/fgmp/api-error";
+import { hasCapability, type Role } from "@/lib/fgmp/rbac-core";
 import {
   requireAuth,
   tenantWhereOrAll,
@@ -17,7 +18,7 @@ import {
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const auth = await requireAuth();
+  const auth = await requireAuth(req);
   if ("error" in auth) return auth.error;
   const me = auth.user;
   try {
@@ -39,6 +40,27 @@ export async function GET(req: NextRequest) {
       case "monthly": from.setMonth(from.getMonth() - 1); break;
       case "quarterly": from.setMonth(from.getMonth() - 3); break;
       case "annual": from.setFullYear(from.getFullYear() - 1); break;
+    }
+
+    // The generator screen also shows command history, but that does not grant
+    // access to the full reports payload (which includes audit, alarm,
+    // delivery, and maintenance records). For generator-only roles, perform
+    // only the allowed command-history query and return only that projection.
+    if (!hasCapability(me.role as Role, "view:reports")) {
+      const commands = await asTenant(me, (tx) =>
+        tx.controlCommand.findMany({
+          where: {
+            issuedAt: { gte: from },
+            generator: { site: { ...tenantWhereOrAll(me) } },
+          },
+          include: { generator: { select: { label: true } } },
+          orderBy: { issuedAt: "desc" },
+          take: 500,
+        }),
+      );
+      const res = NextResponse.json({ commands });
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
     }
 
     // All five reads move inside ONE asTenant transaction. Four of them carry

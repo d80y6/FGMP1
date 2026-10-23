@@ -24,7 +24,7 @@ export const dynamic = "force-dynamic";
  * what this endpoint projects into the `{ commands }` shape.
  */
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireAuth();
+  const auth = await requireAuth(req);
   if ("error" in auth) return auth.error;
   const me = auth.user;
   try {

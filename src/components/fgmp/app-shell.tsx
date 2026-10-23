@@ -317,13 +317,27 @@ export function AppShell() {
   // clock lives in <HeaderClock/> (own state) so the 1Hz tick does not
   // re-render AppShell — and therefore the whole view tree — every second.
 
-  // sync view from URL
+  const role = me?.role ?? "READONLY";
+
+  // URL parameters, keyboard shortcuts and child components are all untrusted
+  // navigation inputs. Never mount a view unless the effective role has its
+  // view capability; normalize denied URLs to the dashboard.
   useEffect(() => {
-    const v = searchParams.get("view") as ViewKey | null;
-    if (v && VIEW_COMPONENTS[v] && v !== view) setView(v);
-  }, [searchParams, view, setView]);
+    if (!me) return; // Wait for the session-derived effective role.
+    const requested = searchParams.get("view") as ViewKey | null;
+    if (!requested || !VIEW_COMPONENTS[requested]) return;
+    const allowed = hasCapability(role, `view:${requested}`);
+    const destination = allowed ? requested : "dashboard";
+    if (destination !== view) setView(destination);
+    if (!allowed) {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("view", "dashboard");
+      router.replace(`/?${params.toString()}`, { scroll: false });
+    }
+  }, [me, role, searchParams, view, setView, router]);
 
   const navigate = (v: ViewKey) => {
+    if (!hasCapability(role, `view:${v}`)) return;
     setView(v);
     const params = new URLSearchParams(searchParams.toString());
     params.set("view", v);
@@ -344,10 +358,8 @@ export function AppShell() {
     },
   });
 
-  const role = me?.role ?? "READONLY";
-  // Task 49 — tenants view is SUPERADMIN-only. The cap on the NAV item is
-  // `view:tenants` which both ADMIN and SUPERADMIN satisfy (both have
-  // capabilities: ["*"]), so we additionally filter it out for non-super-admins.
+  // Tenant registry and isolation views are platform-level surfaces; the
+  // capability matrix grants them only through SUPERADMIN's wildcard.
   const visibleNav = useMemo(
     () => NAV.filter((n) => hasCapability(role, n.cap))
       .filter((n) => n.key !== "tenants" || role === "SUPERADMIN")
@@ -361,7 +373,8 @@ export function AppShell() {
   }, [visibleNav]);
 
   const k = snapshot?.kpis;
-  const ViewComponent = VIEW_COMPONENTS[view] ?? DashboardView;
+  const safeView = hasCapability(role, `view:${view}`) ? view : "dashboard";
+  const ViewComponent = VIEW_COMPONENTS[safeView] ?? DashboardView;
   const hasSnapshot = snapshot !== null;
   const liveToggleLabel = livePaused ? t("common.paused") : t("common.live");
 
@@ -573,7 +586,13 @@ export function AppShell() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {me.roles.map((r) => {
+                  {(
+                    Array.isArray(me.roles)
+                      ? me.roles
+                      : typeof role === "string"
+                        ? [role]
+                        : []
+                  ).map((r) => {
                     const roleKey = `role.${r.toLowerCase()}`;
                     const roleTr = t(roleKey);
                     const label = roleTr === roleKey ? r.replace(/_/g, " ") : roleTr;

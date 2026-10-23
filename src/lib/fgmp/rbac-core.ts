@@ -77,8 +77,11 @@ export const ROLE_PERMISSIONS: Record<Role, {
       "view:roles", "view:geography", "view:system-settings", "view:api-keys",
       // Actions — mirrors ROLES.ALARM_OPS / CONTROL / DELIVERY / MAINTENANCE /
       // NOTIFICATION / EDGE_MANAGE / DISPENSER_CONTROL in auth-helpers.ts.
-      "alarm:ack", "alarm:resolve", "gen:control", "ticket:create", "ticket:assign",
-      "ticket:complete", "delivery:verify", "delivery:approve", "dispenser:control",
+      "alarm:ack", "alarm:resolve", "alarm:suppress", "alarm:configure",
+      "gen:control", "ticket:create", "ticket:assign", "ticket:complete", "ticket:manage",
+      "delivery:verify", "delivery:approve", "delivery:manage", "dispenser:control",
+      "notification:manage", "edge:manage", "asset:manage", "geography:manage",
+      "settings:manage", "api-key:manage", "role:preview",
       // Advancing the telemetry simulation (POST /api/fgmp/tick) is an
       // operator action, gated server-side on ROLES.TICK. The client uses this
       // capability to decide whether to poll /tick or fall back to a plain
@@ -100,7 +103,8 @@ export const ROLE_PERMISSIONS: Record<Role, {
       "view:suppressions", "view:preferences", "view:dispensers",
       "view:asset-registry", "view:edge-firmware", "view:fuel-forecast",
       "view:consumption-patterns",
-      "alarm:ack", "alarm:resolve", "gen:control", "ticket:create", "delivery:verify",
+      "alarm:ack", "alarm:resolve", "alarm:suppress",
+      "gen:control", "ticket:create", "delivery:verify", "notification:manage",
       "dispenser:control",
       // Matches ROLES.TICK in auth-helpers.ts.
       "simul:tick",
@@ -118,7 +122,8 @@ export const ROLE_PERMISSIONS: Record<Role, {
       "view:suppressions", "view:preferences", "view:dispensers",
       "view:asset-registry", "view:edge-firmware", "view:fuel-forecast",
       "view:consumption-patterns", "view:audit", "view:iot",
-      "alarm:ack", "delivery:approve", "ticket:create", "ticket:assign",
+      "alarm:ack", "alarm:suppress", "alarm:configure", "delivery:approve",
+      "delivery:manage", "ticket:create", "ticket:assign", "ticket:manage",
       // Matches ROLES.TICK in auth-helpers.ts.
       "simul:tick",
     ],
@@ -134,7 +139,8 @@ export const ROLE_PERMISSIONS: Record<Role, {
       "view:alarms", "view:inventory", "view:iot", "view:maintenance",
       "view:preferences", "view:dispensers", "view:suppressions",
       "view:asset-registry", "view:edge-firmware",
-      "ticket:complete", "delivery:verify",
+      "ticket:complete", "ticket:manage", "delivery:verify", "delivery:manage",
+      "dispenser:control",
     ],
   },
   EXECUTIVE: {
@@ -190,10 +196,9 @@ export const ROLE_PERMISSIONS: Record<Role, {
       "view:alarms", "view:inventory", "view:iot", "view:maintenance", "view:analytics",
       "view:reports", "view:audit", "view:preferences", "view:dispensers",
       "view:asset-registry", "view:edge-firmware", "view:fuel-forecast",
-      "view:consumption-patterns", "view:system-health",
-      // Phase 5 task 2: added. Every other role had it, so a read-only observer
-      // could not tell a muted alarm from a real one — the same blindness this
-      // task fixed for FIELD_ENGINEER.
+      "view:consumption-patterns",
+      // A read-only user must not see the system-health surface: it exposes
+      // process, database-size and error diagnostics and the API is ADMIN-only.
       "view:suppressions",
     ],
   },
@@ -202,6 +207,252 @@ export const ROLE_PERMISSIONS: Record<Role, {
 export const ALL_ROLES: Role[] = [
   "SUPERADMIN", "ADMIN", "NOC_OPERATOR", "REGIONAL_MANAGER", "FIELD_ENGINEER", "EXECUTIVE", "READONLY",
 ];
+
+/**
+ * Read API route policy. These capabilities mirror the corresponding view
+ * permissions and are checked both in the browser (to avoid forbidden fetches)
+ * and by `requireAuth` before a handler reaches its database query. An endpoint
+ * used by multiple screens accepts any listed capability; this matters for
+ * shared dashboard widgets and report exports.
+ */
+const API_READ_RULES: readonly { prefix: string; capabilities: readonly string[] }[] = [
+  { prefix: "/api/fgmp/admin/tenant-isolation-test", capabilities: ["view:tenant-isolation"] },
+  { prefix: "/api/fgmp/alarms", capabilities: ["view:alarms"] },
+  { prefix: "/api/fgmp/api-keys", capabilities: ["view:api-keys"] },
+  { prefix: "/api/fgmp/audit", capabilities: ["view:audit"] },
+  { prefix: "/api/fgmp/batteries", capabilities: ["view:batteries"] },
+  { prefix: "/api/fgmp/correlation/rules", capabilities: ["alarm:configure"] },
+  { prefix: "/api/fgmp/correlation/matches", capabilities: ["alarm:configure"] },
+  { prefix: "/api/fgmp/correlation", capabilities: ["view:alarms"] },
+  { prefix: "/api/fgmp/deliveries", capabilities: ["view:inventory"] },
+  { prefix: "/api/fgmp/dispensers", capabilities: ["view:dispensers"] },
+  { prefix: "/api/fgmp/edge", capabilities: ["view:edge-firmware"] },
+  { prefix: "/api/fgmp/forecast", capabilities: ["view:fuel-forecast"] },
+  { prefix: "/api/fgmp/fuel/runout-eta", capabilities: ["view:dashboard", "view:fuel-forecast"] },
+  { prefix: "/api/fgmp/generators", capabilities: ["view:generators"] },
+  { prefix: "/api/fgmp/geography", capabilities: ["view:geography"] },
+  { prefix: "/api/fgmp/health", capabilities: ["view:system-health"] },
+  { prefix: "/api/fgmp/history", capabilities: ["view:sites", "view:fuel", "view:generators", "view:batteries", "view:asset-registry"] },
+  { prefix: "/api/fgmp/interlocks/thresholds", capabilities: ["view:system-settings"] },
+  { prefix: "/api/fgmp/iot/ingest", capabilities: [] },
+  { prefix: "/api/fgmp/iot", capabilities: ["view:iot"] },
+  { prefix: "/api/fgmp/realtime/snapshot", capabilities: [] },
+  { prefix: "/api/fgmp/maintenance", capabilities: ["view:maintenance"] },
+  { prefix: "/api/fgmp/metrics", capabilities: ["alarm:ack"] },
+  { prefix: "/api/fgmp/ops/alerts", capabilities: ["alarm:ack"] },
+  { prefix: "/api/fgmp/notifications", capabilities: ["view:dashboard"] },
+  { prefix: "/api/fgmp/patterns", capabilities: ["view:consumption-patterns"] },
+  { prefix: "/api/fgmp/platform/audit", capabilities: ["view:tenants"] },
+  { prefix: "/api/fgmp/platform/grants", capabilities: ["view:tenants"] },
+  { prefix: "/api/fgmp/platform/support-sessions", capabilities: ["view:tenants"] },
+  { prefix: "/api/fgmp/platform/support/", capabilities: ["view:tenants"] },
+  { prefix: "/api/fgmp/preferences/", capabilities: ["view:users"] },
+  { prefix: "/api/fgmp/reports", capabilities: ["view:reports", "view:generators"] },
+  { prefix: "/api/fgmp/settings", capabilities: ["view:system-settings"] },
+  { prefix: "/api/fgmp/shift-handover", capabilities: ["view:dashboard"] },
+  { prefix: "/api/fgmp/sites", capabilities: ["view:sites"] },
+  { prefix: "/api/fgmp/solar-arrays", capabilities: ["view:sites", "view:asset-registry"] },
+  { prefix: "/api/fgmp/solar-sites", capabilities: ["view:sites", "view:asset-registry"] },
+  { prefix: "/api/fgmp/state", capabilities: ["view:dashboard"] },
+  { prefix: "/api/fgmp/tick", capabilities: ["simul:tick"] },
+  { prefix: "/api/fgmp/suppressions", capabilities: ["view:suppressions"] },
+  { prefix: "/api/fgmp/tanks", capabilities: ["view:fuel", "view:inventory"] },
+  { prefix: "/api/fgmp/tenants", capabilities: ["view:tenants"] },
+  { prefix: "/api/fgmp/users", capabilities: ["view:users"] },
+];
+
+/** Return the any-of capabilities required to read an FGMP API URL. */
+export function apiReadCapabilities(url: string | URL): readonly string[] | null {
+  let parsed: URL;
+  try {
+    parsed = url instanceof URL ? url : new URL(url, "https://fgmp.invalid");
+  } catch {
+    return null;
+  }
+  const pathname = parsed.pathname.replace(/\/+$/, "") || "/";
+
+  if (pathname === "/api/fgmp/analytics") {
+    // This shared endpoint is projected to the requesting view. Do not let a
+    // dashboard/fuel/inventory role inherit the full analytics payload.
+    switch (parsed.searchParams.get("projection")) {
+      case "dashboard": return ["view:dashboard"];
+      case "fuel": return ["view:fuel"];
+      case "inventory": return ["view:inventory"];
+      case "analytics":
+      default: return ["view:analytics"];
+    }
+  }
+
+  if (pathname === "/api/fgmp/reports") {
+    // The generators view requests only its daily command-history slice. Do not
+    // let that support request grant non-report roles the full report API.
+    return (parsed.searchParams.get("period") ?? "daily") === "daily"
+      ? ["view:reports", "view:generators"]
+      : ["view:reports"];
+  }
+
+  if (pathname === "/api/fgmp/export") {
+    const exportViews: Record<string, readonly string[]> = {
+      sites: ["view:sites", "view:reports", "view:iot", "view:inventory"],
+      tanks: ["view:fuel", "view:reports"],
+      generators: ["view:generators", "view:reports"],
+      batteries: ["view:batteries", "view:reports"],
+      alarms: ["view:alarms", "view:reports"],
+      deliveries: ["view:inventory", "view:reports"],
+    };
+    return exportViews[parsed.searchParams.get("type") ?? "sites"] ?? ["view:reports"];
+  }
+
+  // Read access to control-command history is restricted to the same operators
+  // who may issue the command, even though the parent generators view is wider.
+  if (/^\/api\/fgmp\/generators\/[^/]+\/control\/[^/]+$/.test(pathname)) {
+    return ["gen:control"];
+  }
+
+  const rule = API_READ_RULES.find(({ prefix }) =>
+    pathname === prefix || pathname.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`),
+  );
+  return rule?.capabilities ?? null;
+}
+
+const API_WRITE_RULES: readonly { method: string; prefix: string; capabilities: readonly string[] }[] = [
+  { method: "POST", prefix: "/api/fgmp/alarms", capabilities: ["alarm:ack", "alarm:resolve"] },
+  { method: "PATCH", prefix: "/api/fgmp/alarms", capabilities: ["alarm:ack", "alarm:resolve"] },
+  { method: "POST", prefix: "/api/fgmp/api-keys", capabilities: ["api-key:manage"] },
+  { method: "PATCH", prefix: "/api/fgmp/api-keys", capabilities: ["api-key:manage"] },
+  { method: "DELETE", prefix: "/api/fgmp/api-keys", capabilities: ["api-key:manage"] },
+  { method: "POST", prefix: "/api/fgmp/batteries", capabilities: ["asset:manage"] },
+  { method: "PATCH", prefix: "/api/fgmp/batteries", capabilities: ["asset:manage"] },
+  { method: "DELETE", prefix: "/api/fgmp/batteries", capabilities: ["asset:manage"] },
+  { method: "POST", prefix: "/api/fgmp/correlation", capabilities: ["alarm:configure"] },
+  { method: "PATCH", prefix: "/api/fgmp/correlation", capabilities: ["alarm:configure"] },
+  { method: "DELETE", prefix: "/api/fgmp/correlation", capabilities: ["alarm:configure"] },
+  { method: "POST", prefix: "/api/fgmp/deliveries", capabilities: ["delivery:manage"] },
+  { method: "POST", prefix: "/api/fgmp/dispensers", capabilities: ["asset:manage"] },
+  { method: "PATCH", prefix: "/api/fgmp/dispensers", capabilities: ["asset:manage"] },
+  { method: "DELETE", prefix: "/api/fgmp/dispensers", capabilities: ["asset:manage"] },
+  { method: "POST", prefix: "/api/fgmp/dispensers/", capabilities: ["dispenser:control"] },
+  { method: "PATCH", prefix: "/api/fgmp/dispensers/", capabilities: ["asset:manage"] },
+  { method: "DELETE", prefix: "/api/fgmp/dispensers/", capabilities: ["asset:manage"] },
+  { method: "POST", prefix: "/api/fgmp/edge/esp", capabilities: ["dispenser:control"] },
+  { method: "POST", prefix: "/api/fgmp/edge/firmware/deploy", capabilities: ["dispenser:control"] },
+  { method: "POST", prefix: "/api/fgmp/edge/gateways", capabilities: ["edge:manage"] },
+  { method: "PATCH", prefix: "/api/fgmp/edge/gateways", capabilities: ["edge:manage"] },
+  { method: "DELETE", prefix: "/api/fgmp/edge/gateways", capabilities: ["edge:manage"] },
+  { method: "POST", prefix: "/api/fgmp/edge/firmware", capabilities: ["platform:firmware"] },
+  { method: "DELETE", prefix: "/api/fgmp/edge/firmware", capabilities: ["platform:firmware"] },
+  { method: "POST", prefix: "/api/fgmp/generators", capabilities: ["asset:manage"] },
+  { method: "POST", prefix: "/api/fgmp/generators/", capabilities: ["gen:control", "asset:manage"] },
+  { method: "PATCH", prefix: "/api/fgmp/generators", capabilities: ["asset:manage"] },
+  { method: "DELETE", prefix: "/api/fgmp/generators", capabilities: ["asset:manage"] },
+  { method: "POST", prefix: "/api/fgmp/geography", capabilities: ["geography:manage"] },
+  { method: "PATCH", prefix: "/api/fgmp/geography", capabilities: ["geography:manage"] },
+  { method: "DELETE", prefix: "/api/fgmp/geography", capabilities: ["geography:manage"] },
+  { method: "POST", prefix: "/api/fgmp/interlocks/thresholds", capabilities: ["settings:manage"] },
+  { method: "PATCH", prefix: "/api/fgmp/interlocks/thresholds", capabilities: ["settings:manage"] },
+  { method: "DELETE", prefix: "/api/fgmp/interlocks/thresholds", capabilities: ["settings:manage"] },
+  { method: "PATCH", prefix: "/api/fgmp/iot", capabilities: ["edge:manage"] },
+  { method: "POST", prefix: "/api/fgmp/iot/ingest", capabilities: [] },
+  { method: "POST", prefix: "/api/fgmp/iot", capabilities: ["edge:manage"] },
+  { method: "POST", prefix: "/api/fgmp/maintenance", capabilities: ["ticket:manage"] },
+  { method: "POST", prefix: "/api/fgmp/maintenance/", capabilities: ["ticket:manage"] },
+  { method: "POST", prefix: "/api/fgmp/me/preview-role", capabilities: ["role:preview"] },
+  { method: "POST", prefix: "/api/fgmp/notifications", capabilities: ["notification:manage"] },
+  { method: "POST", prefix: "/api/fgmp/seed", capabilities: ["asset:manage"] },
+  { method: "POST", prefix: "/api/fgmp/shift-handover", capabilities: ["alarm:ack", "delivery:manage", "ticket:manage"] },
+  { method: "PATCH", prefix: "/api/fgmp/shift-handover", capabilities: ["alarm:ack", "delivery:manage", "ticket:manage"] },
+  { method: "DELETE", prefix: "/api/fgmp/shift-handover", capabilities: ["settings:manage"] },
+  { method: "POST", prefix: "/api/fgmp/sites", capabilities: ["asset:manage"] },
+  { method: "PATCH", prefix: "/api/fgmp/sites", capabilities: ["asset:manage"] },
+  { method: "DELETE", prefix: "/api/fgmp/sites", capabilities: ["asset:manage"] },
+  { method: "POST", prefix: "/api/fgmp/solar-arrays", capabilities: ["asset:manage"] },
+  { method: "PATCH", prefix: "/api/fgmp/solar-arrays", capabilities: ["asset:manage"] },
+  { method: "DELETE", prefix: "/api/fgmp/solar-arrays", capabilities: ["asset:manage"] },
+  { method: "POST", prefix: "/api/fgmp/solar-sites", capabilities: ["asset:manage"] },
+  { method: "PATCH", prefix: "/api/fgmp/solar-sites", capabilities: ["asset:manage"] },
+  { method: "DELETE", prefix: "/api/fgmp/solar-sites", capabilities: ["asset:manage"] },
+  { method: "POST", prefix: "/api/fgmp/suppressions", capabilities: ["alarm:suppress"] },
+  { method: "PATCH", prefix: "/api/fgmp/suppressions", capabilities: ["alarm:suppress"] },
+  { method: "DELETE", prefix: "/api/fgmp/suppressions", capabilities: ["settings:manage"] },
+  { method: "POST", prefix: "/api/fgmp/tanks", capabilities: ["asset:manage"] },
+  { method: "PATCH", prefix: "/api/fgmp/tanks", capabilities: ["asset:manage"] },
+  { method: "DELETE", prefix: "/api/fgmp/tanks", capabilities: ["asset:manage"] },
+  { method: "PATCH", prefix: "/api/fgmp/settings", capabilities: ["settings:manage"] },
+  { method: "POST", prefix: "/api/fgmp/platform/support-sessions", capabilities: ["tenant:manage"] },
+  { method: "DELETE", prefix: "/api/fgmp/platform/support-sessions", capabilities: ["tenant:manage"] },
+  { method: "POST", prefix: "/api/fgmp/platform/support/", capabilities: ["tenant:manage"] },
+  { method: "PUT", prefix: "/api/fgmp/preferences/", capabilities: ["user:manage"] },
+  { method: "POST", prefix: "/api/fgmp/tenants", capabilities: ["tenant:manage"] },
+  { method: "PATCH", prefix: "/api/fgmp/tenants", capabilities: ["tenant:manage"] },
+  { method: "DELETE", prefix: "/api/fgmp/tenants", capabilities: ["tenant:manage"] },
+  { method: "POST", prefix: "/api/fgmp/users", capabilities: ["user:manage"] },
+  { method: "PATCH", prefix: "/api/fgmp/users", capabilities: ["user:manage"] },
+  { method: "PUT", prefix: "/api/fgmp/users", capabilities: ["user:manage"] },
+  { method: "DELETE", prefix: "/api/fgmp/users", capabilities: ["user:manage"] },
+  { method: "POST", prefix: "/api/fgmp/mfa/reset", capabilities: ["user:manage"] },
+  { method: "GET", prefix: "/api/fgmp/tick", capabilities: ["simul:tick"] },
+  { method: "POST", prefix: "/api/fgmp/tick", capabilities: ["simul:tick"] },
+];
+
+/** Return the any-of capabilities required for an API request, if mapped. */
+export function apiRequestCapabilities(method: string, url: string | URL): readonly string[] | null {
+  const normalizedMethod = method.toUpperCase();
+  if (normalizedMethod === "GET") return apiReadCapabilities(url);
+  let parsed: URL;
+  try {
+    parsed = url instanceof URL ? url : new URL(url, "https://fgmp.invalid");
+  } catch {
+    return null;
+  }
+  const pathname = parsed.pathname.replace(/\/+$/, "") || "/";
+  const rule = API_WRITE_RULES
+    .filter((entry) =>
+      entry.method === normalizedMethod &&
+      (pathname === entry.prefix || pathname.startsWith(`${entry.prefix}/`) || (entry.prefix.endsWith("/") && pathname.startsWith(entry.prefix))),
+    )
+    .sort((a, b) => b.prefix.length - a.prefix.length)[0];
+  return rule?.capabilities ?? null;
+}
+
+const AUTH_ONLY_API_RULES: readonly { method: string; path: string }[] = [
+  { method: "GET", path: "/api/fgmp/me" },
+  { method: "DELETE", path: "/api/fgmp/me/preview-role" },
+  { method: "GET", path: "/api/fgmp/preferences" },
+  { method: "PUT", path: "/api/fgmp/preferences" },
+  { method: "POST", path: "/api/fgmp/mfa/challenge" },
+  { method: "POST", path: "/api/fgmp/mfa/challenge-request" },
+  { method: "POST", path: "/api/fgmp/mfa/disable" },
+  { method: "POST", path: "/api/fgmp/mfa/enrol" },
+  { method: "GET", path: "/api/fgmp/mfa/status" },
+  { method: "POST", path: "/api/fgmp/mfa/verify-enrol" },
+  { method: "GET", path: "/api/fgmp/proposal" },
+  { method: "GET", path: "/api/fgmp/realtime/channel" },
+  { method: "POST", path: "/api/fgmp/realtime/auth" },
+];
+
+/**
+ * Shared browser/server policy check. Unknown FGMP endpoints fail closed; only
+ * the explicitly listed account/auth flows are intentionally role-agnostic.
+ * This prevents a newly added route from silently becoming a client-accessible
+ * API until its view/action policy has been reviewed.
+ */
+export function canAccessApi(role: Role | string | undefined | null, url: string | URL, method = "GET"): boolean {
+  let parsed: URL;
+  try {
+    parsed = url instanceof URL ? url : new URL(url, "https://fgmp.invalid");
+  } catch {
+    return false;
+  }
+  const pathname = parsed.pathname.replace(/\/+$/, "") || "/";
+  const normalizedMethod = method.toUpperCase();
+  const required = apiRequestCapabilities(normalizedMethod, parsed);
+  if (required === null) {
+    if (!pathname.startsWith("/api/fgmp/")) return true;
+    return AUTH_ONLY_API_RULES.some((rule) => rule.method === normalizedMethod && rule.path === pathname);
+  }
+  if (!role || !(role in ROLE_PERMISSIONS)) return false;
+  return required.some((capability) => hasCapability(role as Role, capability));
+}
 
 /**
  * SUPERADMIN-only capability keys.

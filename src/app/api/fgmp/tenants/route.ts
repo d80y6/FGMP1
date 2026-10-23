@@ -37,12 +37,13 @@ const createTenantSchema = z.object({
 
 /**
  * GET /api/fgmp/tenants
- * Returns all tenants (sorted by name ASC) with counts of users, sites and
- * suppressions. Any authenticated session may list tenants — ADMIN-only
- * mutations are enforced on POST/PATCH/DELETE.
+ * Returns tenant registry metadata (sorted by name ASC) with scoped counts.
+ * Listing the platform tenant registry is SUPERADMIN-only, matching the
+ * tenant-management navigation capability; tenant-scoped users do not make
+ * this request. POST/PATCH/DELETE are also SUPERADMIN-only.
  */
 export async function GET(req: NextRequest) {
-  const auth = await requireAuth();
+  const auth = await requireAuth(req);
   if ("error" in auth) return auth.error;
   try {
     const { user } = await bootstrap();

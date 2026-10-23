@@ -42,7 +42,7 @@ const VERIFY_FROM: FuelDeliveryStatus[] = ["SCHEDULED", "IN_TRANSIT", "DELIVERED
 const DISPATCH_FROM: FuelDeliveryStatus[] = ["SCHEDULED"];
 
 export async function GET(req: NextRequest) {
-  const auth = await requireAuth();
+  const auth = await requireAuth(req);
   if ("error" in auth) return auth.error;
   const me = auth.user;
   try {
