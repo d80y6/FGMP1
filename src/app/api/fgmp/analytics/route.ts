@@ -93,7 +93,7 @@ export async function GET(req: NextRequest) {
     const range = searchParams.get("range") ?? "24h"; // 1h | 24h | 7d
     // The same route serves several views; this projection limits the response
     // to the fields authorized for the caller's requested surface.
-    const projection = searchParams.get("projection") ?? "analytics";
+    const viewProjection = searchParams.get("projection") ?? "analytics";
 
     // ONE configurable fuel price (metrics-fuel.ts). This route used to
     // hardcode 1.85 USD/L while engine.ts hardcodes 520 YER/L.
@@ -601,19 +601,19 @@ export async function GET(req: NextRequest) {
         maxDailyReadings: MAX_DAILY_READINGS,
       },
     };
-    const responsePayload = projection === "dashboard"
+    const responsePayload = viewProjection === "dashboard"
       ? {
           consumptionTrend: fullPayload.consumptionTrend,
           regionBreakdown: fullPayload.regionBreakdown,
           siteHealth: fullPayload.siteHealth,
         }
-      : projection === "fuel"
+      : viewProjection === "fuel"
         ? {
             consumptionTrend: fullPayload.consumptionTrend,
             theftEvents: fullPayload.theftEvents,
             refillEvents: fullPayload.refillEvents,
           }
-        : projection === "inventory"
+        : viewProjection === "inventory"
           ? {
               forecast: hasCapability(me.role as Role, "view:fuel-forecast")
                 ? fullPayload.forecast
