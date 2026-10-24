@@ -7,7 +7,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useFgmp } from "@/lib/fgmp/store";
-import { useApi, apiPost, apiPatch } from "@/lib/fgmp/use-api";
+import { useApi, apiPost, apiPatch, apiPut } from "@/lib/fgmp/use-api";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -691,24 +691,22 @@ function EditUserDialog({
     if (!target) return;
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/fgmp/users/${target.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: values.name,
-          role: values.role,
-          phone: values.phone || null,
-          active: values.active,
-        }),
-        credentials: "include",
+      // apiPut runs the capability check before the request is issued; the
+      // server repeats it. Assigning a role is additionally constrained there
+      // by grant-guards (self-grant, last-admin, last-superadmin).
+      const res = await apiPut(`/api/fgmp/users/${target.id}`, {
+        name: values.name,
+        role: values.role,
+        phone: values.phone || null,
+        active: values.active,
       });
       if (res.ok) {
         toast.success(t("users.updateSuccess"));
         onSaved();
       } else {
-        const json = await res.json().catch(() => ({}));
-        const code = (json as { code?: string }).code;
-        const err = (json as { error?: string }).error;
+        const json = (res.data ?? {}) as { code?: string; error?: string };
+        const code = json.code;
+        const err = json.error;
         if (code === "CANNOT_MODIFY_SUPERADMIN") {
           toast.error(t("users.cannotEditSuperadmin"));
         } else if (code === "CANNOT_ASSIGN_SUPERADMIN" || err === "CANNOT_ASSIGN_SUPERADMIN") {

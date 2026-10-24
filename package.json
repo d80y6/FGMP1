@@ -19,6 +19,8 @@
     "db:seed": "bun run scripts/db/seed.ts",
     "user:set-password": "bun run scripts/set-password.ts",
     "test:rls": "bun run scripts/verify/rls-regression.ts",
+    "test:authz": "bun run scripts/verify/route-inventory.ts && bun test src/lib/fgmp/__tests__/route-authorization-contract.test.ts src/lib/fgmp/__tests__/store-identity.test.ts src/lib/fgmp/__tests__/rbac-api-access.test.ts src/lib/fgmp/__tests__/rbac-matrix.test.ts",
+    "test:authz:live": "bun run scripts/verify/authz-live.ts",
     "test:db-connections": "bun run scripts/verify/db-connection-regression.ts",
     "test:smoke": "bun run scripts/verify/smoke-postgres.ts",
     "seed:admin": "bun run scripts/db/seed-admin.ts",

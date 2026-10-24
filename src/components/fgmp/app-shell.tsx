@@ -204,9 +204,15 @@ export function AppShell() {
   // Only seed the engine + start polling once we have an authenticated
   // session. Unauthenticated/loading users see a LoginDialog / spinner
   // instead of the app shell.
+  //
+  // `me` is in the dependency list because the store now refuses to fetch
+  // `/api/fgmp/state` for an identity it does not know (see store.loadState).
+  // These two effects run in declaration order, so on a fresh sign-in this one
+  // fires while `me` is still null; it must run AGAIN once the effect below has
+  // established the identity, or the dashboard would never receive a snapshot.
   useEffect(() => {
-    if (status === "authenticated") init();
-  }, [init, status]);
+    if (status === "authenticated" && me) init();
+  }, [init, status, me]);
 
   // Push the session user into the Zustand store so legacy consumers
   // (command-palette, site-notes-panel, users-view, …) keep reading `me`
@@ -319,6 +325,7 @@ export function AppShell() {
 
   const role = me?.role ?? "READONLY";
 
+
   // URL parameters, keyboard shortcuts and child components are all untrusted
   // navigation inputs. Never mount a view unless the effective role has its
   // view capability; normalize denied URLs to the dashboard.
@@ -404,6 +411,26 @@ export function AppShell() {
           </div>
         </div>
         <LoginDialog open />
+      </div>
+    );
+  }
+
+  // ── Identity gate (D-1) ───────────────────────────────────────────────────
+  // Reaching here means NextAuth has a session AND a session user. It does NOT
+  // mean this component knows the EFFECTIVE identity: `me` is populated by the
+  // effect above, which runs after this render. Without this gate the shell
+  // paints one frame with `role = "READONLY"` over whatever `snapshot` the
+  // previous identity left in the store — one tenant's data (or, for a former
+  // SUPERADMIN, every tenant's) shown to the account that just signed in.
+  //
+  // `me?.role ?? "READONLY"` below is still the right fallback for a RESOLVED
+  // identity whose role is somehow absent; it is not a stand-in for "not
+  // resolved yet".
+  if (!me) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">{t("auth.signingIn")}</p>
       </div>
     );
   }

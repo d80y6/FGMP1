@@ -18,6 +18,7 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { useFgmp } from "@/lib/fgmp/store";
+import { canAccessApi } from "@/lib/fgmp/rbac-core";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -133,6 +134,16 @@ export function SystemHealthView() {
   const doFetch = useCallback(async () => {
     setRefreshing(true);
     try {
+      // /api/fgmp/health requires view:system-health (ADMIN). The view is
+      // navigable only by roles that hold it, but this fetch ran on a timer with
+      // no capability check of its own, so a role change or a stale mount would
+      // keep polling an endpoint the user is no longer entitled to.
+      if (!canAccessApi(useFgmp.getState().me?.role, "/api/fgmp/health", "GET")) {
+        setData(null);
+        setError(null);
+        setLoading(false);
+        return;
+      }
       const res = await fetch("/api/fgmp/health", { credentials: "include" });
       if (!res.ok) {
         setError(`HTTP ${res.status}`);

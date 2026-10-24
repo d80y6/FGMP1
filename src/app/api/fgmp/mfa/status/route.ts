@@ -26,8 +26,16 @@ export const dynamic = "force-dynamic";
  * Both are hashed or encrypted at rest and neither is recoverable, which is the
  * property that makes them safe; a status endpoint must not undo it.
  */
-export async function GET(_req: NextRequest) {
-  const auth = await requireAuth();
+export async function GET(req: NextRequest) {
+  // The request is passed so `requireAuth` can run the endpoint capability
+  // policy. A bare `requireAuth()` authenticates and then stops: the whole
+  // Layer-1 check is skipped, so this route would keep answering even if its
+  // entry in AUTH_ONLY_API_RULES were later removed, and it would not be covered
+  // by the "an unmapped /api/fgmp path is denied" guarantee. `GET
+  // /api/fgmp/mfa/status` is deliberately role-agnostic — every role may read
+  // its own MFA state — and it is listed as such, so passing the request
+  // changes no behaviour today; it removes the class of bug.
+  const auth = await requireAuth(req);
   if ("error" in auth) return auth.error;
   try {
     const configured = mfaEncryptionConfigured();

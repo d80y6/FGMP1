@@ -215,6 +215,21 @@ export const ALL_ROLES: Role[] = [
  * used by multiple screens accepts any listed capability; this matters for
  * shared dashboard widgets and report exports.
  */
+/**
+ * Sentinel capability list for an endpoint that NO session role may call.
+ *
+ * An empty list matches no capability, so the endpoint is denied to every role
+ * that arrives with a NextAuth session. That is the correct answer for
+ * device-facing routes — `/api/fgmp/iot/ingest` authenticates with a per-tenant
+ * API key and `/api/fgmp/realtime/snapshot` with a service token — but as a
+ * bare `[]` it is indistinguishable from somebody starting a rule and never
+ * finishing it, which is the kind of ambiguity that later gets "fixed" by
+ * adding a capability nobody thought about. Naming it makes the intent
+ * greppable, and the route-inventory contract check asserts it is used only on
+ * routes that actually carry their own non-session credential.
+ */
+export const NO_SESSION_ROLE: readonly string[] = [];
+
 const API_READ_RULES: readonly { prefix: string; capabilities: readonly string[] }[] = [
   { prefix: "/api/fgmp/admin/tenant-isolation-test", capabilities: ["view:tenant-isolation"] },
   { prefix: "/api/fgmp/alarms", capabilities: ["view:alarms"] },
@@ -234,9 +249,9 @@ const API_READ_RULES: readonly { prefix: string; capabilities: readonly string[]
   { prefix: "/api/fgmp/health", capabilities: ["view:system-health"] },
   { prefix: "/api/fgmp/history", capabilities: ["view:sites", "view:fuel", "view:generators", "view:batteries", "view:asset-registry"] },
   { prefix: "/api/fgmp/interlocks/thresholds", capabilities: ["view:system-settings"] },
-  { prefix: "/api/fgmp/iot/ingest", capabilities: [] },
+  { prefix: "/api/fgmp/iot/ingest", capabilities: NO_SESSION_ROLE },
   { prefix: "/api/fgmp/iot", capabilities: ["view:iot"] },
-  { prefix: "/api/fgmp/realtime/snapshot", capabilities: [] },
+  { prefix: "/api/fgmp/realtime/snapshot", capabilities: NO_SESSION_ROLE },
   { prefix: "/api/fgmp/maintenance", capabilities: ["view:maintenance"] },
   { prefix: "/api/fgmp/metrics", capabilities: ["alarm:ack"] },
   { prefix: "/api/fgmp/ops/alerts", capabilities: ["alarm:ack"] },
@@ -352,7 +367,7 @@ const API_WRITE_RULES: readonly { method: string; prefix: string; capabilities: 
   { method: "PATCH", prefix: "/api/fgmp/interlocks/thresholds", capabilities: ["settings:manage"] },
   { method: "DELETE", prefix: "/api/fgmp/interlocks/thresholds", capabilities: ["settings:manage"] },
   { method: "PATCH", prefix: "/api/fgmp/iot", capabilities: ["edge:manage"] },
-  { method: "POST", prefix: "/api/fgmp/iot/ingest", capabilities: [] },
+  { method: "POST", prefix: "/api/fgmp/iot/ingest", capabilities: NO_SESSION_ROLE },
   { method: "POST", prefix: "/api/fgmp/iot", capabilities: ["edge:manage"] },
   { method: "POST", prefix: "/api/fgmp/maintenance", capabilities: ["ticket:manage"] },
   { method: "POST", prefix: "/api/fgmp/maintenance/", capabilities: ["ticket:manage"] },
@@ -414,7 +429,16 @@ export function apiRequestCapabilities(method: string, url: string | URL): reado
   return rule?.capabilities ?? null;
 }
 
-const AUTH_ONLY_API_RULES: readonly { method: string; path: string }[] = [
+/**
+ * Endpoints that every AUTHENTICATED role may call, regardless of capability.
+ *
+ * Exported because it is half of the authorization contract: `canAccessApi`
+ * denies an unmapped `/api/fgmp/**` path, and this list is the only way a route
+ * can be reachable without a capability entry. The contract check in
+ * scripts/verify/route-inventory.ts must be able to read it to tell "deliberately
+ * role-agnostic" apart from "somebody forgot to write a policy".
+ */
+export const AUTH_ONLY_API_RULES: readonly { method: string; path: string }[] = [
   { method: "GET", path: "/api/fgmp/me" },
   { method: "DELETE", path: "/api/fgmp/me/preview-role" },
   { method: "GET", path: "/api/fgmp/preferences" },

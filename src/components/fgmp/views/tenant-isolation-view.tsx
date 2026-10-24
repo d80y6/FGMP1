@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useFgmp } from "@/lib/fgmp/store";
 import { useApi } from "@/lib/fgmp/use-api";
+import { canAccessApi } from "@/lib/fgmp/rbac-core";
 import { useT } from "@/lib/fgmp/use-language";
 
 // ── Types (mirror the API response) ────────────────────────────────────────
@@ -101,6 +102,12 @@ export function TenantIsolationView() {
     setRunning(true);
     setLocalReport(null);
     try {
+      // SUPERADMIN-only (view:tenant-isolation). The render guard above hides the
+      // view, and useApi refuses to fetch for anyone else; this click path needs
+      // the same gate so a stale handler cannot issue the request either.
+      if (!canAccessApi(me?.role, "/api/fgmp/admin/tenant-isolation-test", "GET")) {
+        throw new Error("insufficient capability");
+      }
       const r = await fetch("/api/fgmp/admin/tenant-isolation-test", { credentials: "include" });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const data = (await r.json()) as IsolationReport;
@@ -110,7 +117,7 @@ export function TenantIsolationView() {
     } finally {
       setRunning(false);
     }
-  }, []);
+  }, [me?.role]);
 
   // Access guard — only SUPERADMIN
   if (me && me.role !== "SUPERADMIN") {

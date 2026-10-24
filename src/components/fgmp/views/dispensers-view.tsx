@@ -12,7 +12,7 @@ import {
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { useFgmp } from "@/lib/fgmp/store";
-import { useApi, apiPost, apiPatch } from "@/lib/fgmp/use-api";
+import { useApi, apiPost, apiPatch, apiDelete } from "@/lib/fgmp/use-api";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { StatusBadge } from "@/components/fgmp/status-badge";
@@ -1353,16 +1353,12 @@ function DeleteConfirmDialog({ target, onOpenChange, onDeleted, lang }: {
     if (!target) return;
     setDeleting(true);
     try {
-      const res = await fetch(`/api/fgmp/dispensers/${target.id}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
+      const res = await apiDelete(`/api/fgmp/dispensers/${target.id}`);
       if (res.ok) {
         toast.success(t("dispenser.deleted"));
         onDeleted();
       } else {
-        const json = await res.json().catch(() => ({}));
-        toast.error((json as { error?: string }).error ?? t("dispenser.deleteFailed"));
+        toast.error(res.error ?? t("dispenser.deleteFailed"));
       }
     } finally {
       setDeleting(false);

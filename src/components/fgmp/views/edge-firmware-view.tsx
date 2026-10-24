@@ -11,7 +11,7 @@ import {
   Tooltip, XAxis, YAxis,
 } from "recharts";
 import { useFgmp } from "@/lib/fgmp/store";
-import { useApi, apiPatch } from "@/lib/fgmp/use-api";
+import { useApi, apiPatch, apiPost } from "@/lib/fgmp/use-api";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { StatusBadge } from "@/components/fgmp/status-badge";
@@ -877,17 +877,14 @@ function RebootTab({ gateways, loading, numLang, onReboot, isAdmin }: {
         res = await apiPatch(`/api/fgmp/dispensers/${confirmTarget.id}`, {
           status: "OFFLINE", // mark offline while it reboots
         });
-        // Then issue a control RESET via POST (best-effort).
-        try {
-          await fetch(`/api/fgmp/dispensers/${confirmTarget.id}/control`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ command: "RESET" }),
-            credentials: "include",
-          });
-        } catch {
-          /* swallow — already marked offline */
-        }
+        // Then issue a control RESET via POST (best-effort). apiPost refuses it
+        // locally when the role lacks dispenser:control, which is the point: the
+        // PATCH above is asset:manage and the control POST is a different,
+        // narrower capability. Best-effort failure is still swallowed, only now
+        // a denial is a value rather than an exception.
+        await apiPost(`/api/fgmp/dispensers/${confirmTarget.id}/control`, {
+          command: "RESET",
+        });
       }
       if (res.ok) {
         toast.success(`Reboot sent to ${confirmTarget.espId}`);

@@ -9,7 +9,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useFgmp } from "@/lib/fgmp/store";
-import { useApi, apiPost, apiPatch } from "@/lib/fgmp/use-api";
+import { useApi, apiPost, apiPatch, apiDelete } from "@/lib/fgmp/use-api";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -560,16 +560,15 @@ function DeleteTenantDialog({
     if (!target) return;
     setDeleting(true);
     try {
-      const res = await fetch(`/api/fgmp/tenants/${target.id}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
+      // Gated client-side as well as server-side: a non-SUPERADMIN cannot even
+      // reach this dialog, but a stale handler or a keyboard shortcut must not
+      // be able to issue the request either.
+      const res = await apiDelete(`/api/fgmp/tenants/${target.id}`);
       if (res.ok) {
         toast.success("Tenant deleted");
         onDeleted();
       } else {
-        const json = await res.json().catch(() => ({}));
-        toast.error((json as { error?: string }).error ?? "Delete failed");
+        toast.error(res.error ?? "Delete failed");
       }
     } finally {
       setDeleting(false);
