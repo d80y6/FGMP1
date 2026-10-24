@@ -173,6 +173,15 @@ export function useApi<T>(
 
 type ApiMutationResult = { ok: boolean; data?: unknown; error?: string; status: number };
 
+/**
+ * Client-side mirror of the server's capability check.
+ *
+ * The server is the authority — it re-runs `canAccessApi` inside
+ * `requireAuth(req)` — but a denied request that never leaves the tab is better
+ * than a denied request that does: it costs no connection, leaks nothing about
+ * whether the resource exists, and it stops a stale handler, a keyboard shortcut
+ * or a re-enabled button from reaching a route the user is not entitled to.
+ */
 function localApiDenial(url: string, method: string): ApiMutationResult | null {
   const role = useFgmp.getState().me?.role;
   if (canAccessApi(role, url, method)) return null;
@@ -184,52 +193,57 @@ function localApiDenial(url: string, method: string): ApiMutationResult | null {
   };
 }
 
-export async function apiPost(url: string, body: unknown): Promise<ApiMutationResult> {
-  const denied = localApiDenial(url, "POST");
+/**
+ * One gated request path for every mutation.
+ *
+ * `apiPost` / `apiPatch` / `apiPut` / `apiDelete` were three copy-pasted bodies
+ * with the same denial check, and nine call sites in the views bypassed all of
+ * them with a raw `fetch()`. Collapsing them here means a caller cannot
+ * accidentally choose the ungated path while still looking like it uses the
+ * helpers — and the HTTP method is a parameter rather than a second
+ * implementation.
+ */
+export async function apiRequest(
+  method: "POST" | "PATCH" | "PUT" | "DELETE",
+  url: string,
+  body?: unknown,
+): Promise<ApiMutationResult> {
+  const denied = localApiDenial(url, method);
   if (denied) return denied;
   try {
     const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      method,
+      ...(body === undefined
+        ? {}
+        : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
       credentials: "include",
     });
     const json = await res.json().catch(() => ({}));
-    return { ok: res.ok, data: json, status: res.status, error: res.ok ? undefined : (json.error ?? `HTTP ${res.status}`) };
+    return {
+      ok: res.ok,
+      data: json,
+      status: res.status,
+      error: res.ok ? undefined : ((json as { error?: string }).error ?? `HTTP ${res.status}`),
+    };
   } catch (e) {
     return { ok: false, error: String(e), status: 0 };
   }
 }
 
-export async function apiPatch(url: string, body: unknown): Promise<ApiMutationResult> {
-  const denied = localApiDenial(url, "PATCH");
-  if (denied) return denied;
-  try {
-    const res = await fetch(url, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      credentials: "include",
-    });
-    const json = await res.json().catch(() => ({}));
-    return { ok: res.ok, data: json, status: res.status, error: res.ok ? undefined : (json.error ?? `HTTP ${res.status}`) };
-  } catch (e) {
-    return { ok: false, error: String(e), status: 0 };
-  }
+export function apiPost(url: string, body: unknown): Promise<ApiMutationResult> {
+  return apiRequest("POST", url, body);
 }
 
-/** DELETE a resource; returns the same result envelope as apiPost/apiPatch. */
-export async function apiDelete(url: string): Promise<ApiMutationResult> {
-  const denied = localApiDenial(url, "DELETE");
-  if (denied) return denied;
-  try {
-    const res = await fetch(url, {
-      method: "DELETE",
-      credentials: "include",
-    });
-    const json = await res.json().catch(() => ({}));
-    return { ok: res.ok, data: json, status: res.status, error: res.ok ? undefined : (json.error ?? `HTTP ${res.status}`) };
-  } catch (e) {
-    return { ok: false, error: String(e), status: 0 };
-  }
+export function apiPatch(url: string, body: unknown): Promise<ApiMutationResult> {
+  return apiRequest("PATCH", url, body);
+}
+
+/** `PUT` — full replacement. `users/[id]` accepts PUT for profile updates. */
+export function apiPut(url: string, body: unknown): Promise<ApiMutationResult> {
+  return apiRequest("PUT", url, body);
+}
+
+/** DELETE a resource; same result envelope as the other verbs. */
+export function apiDelete(url: string): Promise<ApiMutationResult> {
+  return apiRequest("DELETE", url);
 }

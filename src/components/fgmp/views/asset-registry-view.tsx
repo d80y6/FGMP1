@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { useFgmp } from "@/lib/fgmp/store";
 import { hasCapability } from "@/lib/fgmp/rbac-core";
-import { useApi, apiPost, apiPatch } from "@/lib/fgmp/use-api";
+import { useApi, apiPost, apiPatch, apiDelete } from "@/lib/fgmp/use-api";
 import { cn } from "@/lib/utils";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
@@ -549,16 +549,17 @@ function TanksTab({ sites, isAdmin, numLang }: {
         targetLabel={deleteTarget?.label ?? ""}
         onConfirm={async () => {
           if (!deleteTarget) return;
-          const res = await fetch(`/api/fgmp/tanks/${deleteTarget.id}`, {
-            method: "DELETE", credentials: "include",
-          });
+          // apiDelete runs the same capability check the server does, before
+          // the request leaves the tab: a role that cannot delete an asset gets
+          // a local 403 and NO network call. A raw fetch() here would reach the
+          // server and rely on it alone.
+          const res = await apiDelete(`/api/fgmp/tanks/${deleteTarget.id}`);
           if (res.ok) {
             toast.success("Tank deleted");
             setDeleteTarget(null);
             refetch();
           } else {
-            const json = await res.json().catch(() => ({}));
-            toast.error((json as { error?: string }).error ?? "Failed to delete");
+            toast.error(res.error ?? "Failed to delete");
           }
         }}
       />
@@ -895,16 +896,17 @@ function GeneratorsTab({ sites, isAdmin, numLang }: {
         targetLabel={deleteTarget?.label ?? ""}
         onConfirm={async () => {
           if (!deleteTarget) return;
-          const res = await fetch(`/api/fgmp/generators/${deleteTarget.id}`, {
-            method: "DELETE", credentials: "include",
-          });
+          // apiDelete runs the same capability check the server does, before
+          // the request leaves the tab: a role that cannot delete an asset gets
+          // a local 403 and NO network call. A raw fetch() here would reach the
+          // server and rely on it alone.
+          const res = await apiDelete(`/api/fgmp/generators/${deleteTarget.id}`);
           if (res.ok) {
             toast.success("Generator deleted");
             setDeleteTarget(null);
             refetch();
           } else {
-            const json = await res.json().catch(() => ({}));
-            toast.error((json as { error?: string }).error ?? "Failed to delete");
+            toast.error(res.error ?? "Failed to delete");
           }
         }}
       />
@@ -1240,16 +1242,17 @@ function BatteriesTab({ sites, isAdmin, numLang }: {
         targetLabel={deleteTarget?.label ?? ""}
         onConfirm={async () => {
           if (!deleteTarget) return;
-          const res = await fetch(`/api/fgmp/batteries/${deleteTarget.id}`, {
-            method: "DELETE", credentials: "include",
-          });
+          // apiDelete runs the same capability check the server does, before
+          // the request leaves the tab: a role that cannot delete an asset gets
+          // a local 403 and NO network call. A raw fetch() here would reach the
+          // server and rely on it alone.
+          const res = await apiDelete(`/api/fgmp/batteries/${deleteTarget.id}`);
           if (res.ok) {
             toast.success("Battery deleted");
             setDeleteTarget(null);
             refetch();
           } else {
-            const json = await res.json().catch(() => ({}));
-            toast.error((json as { error?: string }).error ?? "Failed to delete");
+            toast.error(res.error ?? "Failed to delete");
           }
         }}
       />
@@ -1865,10 +1868,7 @@ function DispensersTab({ sites, isAdmin, numLang }: {
     setSavingIds((prev) => new Set(prev).add(target.id));
     setDeleteTarget(null);
 
-    const res = await fetch(`/api/fgmp/dispensers/${target.id}`, {
-      method: "DELETE",
-      credentials: "include",
-    });
+    const res = await apiDelete(`/api/fgmp/dispensers/${target.id}`);
     setSavingIds((prev) => {
       const n = new Set(prev); n.delete(target.id); return n;
     });
@@ -1880,8 +1880,7 @@ function DispensersTab({ sites, isAdmin, numLang }: {
       setPendingDeleteIds((prev) => {
         const n = new Set(prev); n.delete(target.id); return n;
       });
-      const json = await res.json().catch(() => ({}));
-      toast.error(t("common.optimisticError"), { description: (json as { error?: string }).error ?? t("dispenser.deleteFailed") });
+      toast.error(t("common.optimisticError"), { description: res.error ?? t("dispenser.deleteFailed") });
     }
   };
 

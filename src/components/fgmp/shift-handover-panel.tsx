@@ -46,7 +46,7 @@ import {
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useFgmp } from "@/lib/fgmp/store";
-import { useApi, apiPost, apiPatch } from "@/lib/fgmp/use-api";
+import { useApi, apiPost, apiPatch, apiDelete } from "@/lib/fgmp/use-api";
 import { cn } from "@/lib/utils";
 import { timeAgo } from "@/lib/fgmp/format";
 import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
@@ -168,15 +168,16 @@ export function ShiftHandoverPanel() {
 
   async function handleDelete(id: string) {
     if (typeof window !== "undefined" && !window.confirm(t("handover.confirmDelete"))) return;
-    const res = await fetch(`/api/fgmp/shift-handover/${id}`, {
-      method: "DELETE",
-      credentials: "include",
-    });
+    // DELETE /api/fgmp/shift-handover/[id] is ADMIN-only (settings:manage).
+    // apiDelete refuses it locally for every other role, so the request is never
+    // issued even if this handler is reached by a stale render or a confirmation
+    // dialog that was opened before a role change.
+    const res = await apiDelete(`/api/fgmp/shift-handover/${id}`);
     if (res.ok) {
       toast.success(t("handover.deletedToast"));
       refetch();
     } else {
-      toast.error(t("handover.deleteFailed"));
+      toast.error(t("handover.deleteFailed"), { description: res.error });
     }
   }
 
