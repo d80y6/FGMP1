@@ -96,12 +96,31 @@ async function dialogBox(page: Page) {
   return box;
 }
 
+/** A failure of "the shell did not appear" must say what DID appear. */
+async function dumpState(page: Page): Promise<string> {
+  const state = await page.evaluate(() => ({
+    url: location.href,
+    text: document.body.innerText.replace(/\s+/g, " ").slice(0, 400),
+    navs: [...document.querySelectorAll("nav")].map(
+      (n) => `${n.getAttribute("aria-label") ?? "(unnamed)"}:${(n.textContent ?? "").trim().slice(0, 120)}`,
+    ),
+    anchors: [...document.querySelectorAll("a")].slice(0, 8).map((a) => a.getAttribute("href") ?? ""),
+    dialogs: document.querySelectorAll('[role="dialog"]').length,
+  }));
+  return JSON.stringify(state);
+}
+
 async function signIn(page: Page, who: { email: string; password: string }): Promise<void> {
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel(/email/i).fill(who.email);
   await dialog.getByLabel(/password/i).fill(who.password);
   await dialog.getByRole("button", { name: /sign in|تسجيل الدخول/i }).click();
-  await expect(page.getByRole("navigation", { name: /primary navigation|التنقل الرئيسي/i })).toBeVisible({ timeout: 30_000 });
+  const nav = page.getByRole("navigation", { name: /primary navigation|التنقل الرئيسي/i });
+  try {
+    await expect(nav).toBeVisible({ timeout: 30_000 });
+  } catch {
+    throw new Error(`sign-in did not reach the shell. page state: ${await dumpState(page)}`);
+  }
 }
 
 test.describe("public · sign-in surface", () => {
@@ -168,15 +187,25 @@ test.describe("authenticated · shell and navigation", () => {
     await page.goto("/");
     await signIn(page, SUPERADMIN);
 
-    const links = page.getByRole("navigation", { name: /primary navigation/i }).getByRole("link");
-    expect(await links.count()).toBeGreaterThan(20);
+    const nav = page.getByRole("navigation", { name: /primary navigation/i });
+    const links = nav.getByRole("link");
+    const count = await links.count();
+    // Dump the rendered nav when the count is wrong, rather than leaving a bare
+    // "expected > 20, received 0" to be guessed at.
+    if (count <= 20) throw new Error(`nav has ${count} links: ${await dumpState(page)}`);
 
     // Every nav destination is addressable, not just clickable: a real href is
     // what makes middle-click, "open in new tab" and bookmarking work.
-    const first = links.first();
-    expect(await first.getAttribute("href")).toMatch(/^\/\?view=/);
+    expect(await links.first().getAttribute("href")).toMatch(/^\/\?view=/);
 
-    const sites = page.getByRole("link", { name: /sites|المواقع/i });
+    // Each link's accessible name comes from its visible label. (The old
+    // `aria-label` duplicated it and hid the alarm count.)
+    const unnamed = await links.evaluateAll((els) =>
+      els.filter((el) => !(el.textContent ?? "").trim()).length,
+    );
+    expect(unnamed, "nav links with no accessible name").toBe(0);
+
+    const sites = nav.locator('a[href="/?view=sites"]');
     await sites.click();
     await expect(page).toHaveURL(/view=sites/);
     await expect(sites).toHaveAttribute("aria-current", "page");
@@ -202,7 +231,7 @@ test.describe("authenticated · shell and navigation", () => {
     // A dialog with no accessible name is announced as just "dialog".
     expect((await sheet.getAttribute("aria-label")) ?? (await sheet.innerText())).toBeTruthy();
 
-    await sheet.getByRole("link", { name: /fuel|الوقود/i }).first().click();
+    await sheet.locator('a[href="/?view=fuel"]').click();
     await expect(sheet).toBeHidden();
   });
 
@@ -212,8 +241,9 @@ test.describe("authenticated · shell and navigation", () => {
     await page.goto("/");
     await signIn(page, READONLY);
 
-    for (const name of [/^users$|المستخدمون/i, /^tenants$|المستأجرون/i, /^api keys$|مفاتيح/i]) {
-      await expect(page.getByRole("navigation", { name: /primary navigation/i }).getByRole("link", { name })).toHaveCount(0);
+    const nav = page.getByRole("navigation", { name: /primary navigation/i });
+    for (const view of ["users", "tenants", "api-keys", "roles", "system-settings"]) {
+      await expect(nav.locator(`a[href="/?view=${view}"]`), `${view} must not be offered`).toHaveCount(0);
     }
     expect(requested.filter((u) => /\/api\/fgmp\/(users|tenants|api-keys)\b/.test(u))).toEqual([]);
   });
