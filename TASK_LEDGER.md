@@ -417,7 +417,29 @@ actually exists:
 
 ---
 
-### 6. Files changed
+### 5b. Role assignments: none changed, and why that is the finding
+
+The brief asks for corrected role assignments with justification. **Nothing was granted, revoked,
+or moved between roles in this task**, and that is a conclusion rather than an omission:
+
+- Every capability in `ROLE_PERMISSIONS` already mapped to a route that permits it and to a view
+  that renders it. The drift detector (§3 A-3) found no route whose allow-list disagreed with its
+  policy, in either direction.
+- No route needed a new capability to work. Nothing here was "granted so the page loads".
+- The two assignments that *look* questionable from the outside — `EXECUTIVE` holding
+  `view:maintenance`/`view:iot`, and `DELETE /suppressions/[id]` being ADMIN-only — are both cases
+  where changing them would **widen** access on the strength of a guess. They are recorded as
+  open decisions (B-3, B-4), not silently altered. The brief's rule is explicit: never resolve an
+  ambiguous entitlement by granting.
+- No role was given the wildcard, and `SUPERADMIN` remains the only holder (asserted by a test).
+
+What *did* change is where the client asks: the browser now refuses to issue a request the
+effective role could not make, and the guards are covered by tests that fail when they regress.
+The permission model is unchanged; its enforcement is not.
+
+---
+
+## 6. Files changed
 
 No migration, no schema change, no data change, no new environment variable.
 `git diff --stat 424ed2c` = **14 files changed, 308 insertions(+), 145 deletions(-)**, plus 6 new

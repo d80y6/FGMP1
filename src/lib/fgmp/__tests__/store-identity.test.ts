@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { useFgmp, identityKey, type Me } from "../store";
 import type { Role } from "../types";
 
@@ -61,8 +61,14 @@ beforeEach(() => {
     loading: true,
     error: null,
   });
-  // Restore fetch after each test file run.
-  (globalThis as { __realFetch?: typeof fetch }).__realFetch = realFetch;
+});
+
+// `fetch` is process-global and other test files may share the process, so put it
+// back. A stubbed fetch leaking out of this file would make an unrelated suite
+// silently stop reaching the network — the sort of cross-file contamination that
+// shows up later as an inexplicable pass.
+afterAll(() => {
+  globalThis.fetch = realFetch;
 });
 
 // ── identityKey ─────────────────────────────────────────────────────────────
