@@ -340,12 +340,13 @@ services:
       - -c
       - |
         set -e
+        : "$${FGMP_MIGRATE_DATABASE_URL:?FGMP_MIGRATE_DATABASE_URL is required for migrations}"
         echo "fgmp-migrate: installing dependencies…"
         bun install --frozen-lockfile
         echo "fgmp-migrate: generating Prisma client…"
         bun run db:generate
-        echo "fgmp-migrate: applying migrations…"
-        bun run db:deploy
+        echo "fgmp-migrate: applying migrations as the dedicated migration role…"
+        DATABASE_URL="$$FGMP_MIGRATE_DATABASE_URL" bun run db:deploy
         echo "fgmp-migrate: done."
     environment:
       - DATABASE_URL=postgresql://fgmp_app:${PGAPP_PASSWORD}@fgmp-db:5432/fgmp?schema=public
@@ -372,12 +373,13 @@ services:
       - -c
       - |
         set -e
+        : "$${FGMP_MIGRATE_DATABASE_URL:?FGMP_MIGRATE_DATABASE_URL is required for migrations and seeding}"
         echo "fgmp-seed: installing dependencies…"
         bun install --frozen-lockfile
         echo "fgmp-seed: generating Prisma client…"
         bun run db:generate
-        echo "fgmp-seed: applying migrations…"
-        bun run db:deploy
+        echo "fgmp-seed: applying migrations as the dedicated migration role…"
+        DATABASE_URL="$$FGMP_MIGRATE_DATABASE_URL" bun run db:deploy
         echo "fgmp-seed: seeding…"
         bun run db:seed
         echo "fgmp-seed: done."

@@ -19,6 +19,7 @@
     "db:seed": "bun run scripts/db/seed.ts",
     "user:set-password": "bun run scripts/set-password.ts",
     "test:rls": "bun run scripts/verify/rls-regression.ts",
+    "test:db-connections": "bun run scripts/verify/db-connection-regression.ts",
     "test:smoke": "bun run scripts/verify/smoke-postgres.ts",
     "seed:admin": "bun run scripts/db/seed-admin.ts",
     "docker:build": "docker-compose build",

@@ -1,9 +1,27 @@
 import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient } from '@prisma/client'
 
+interface PgPoolStatsSource {
+  readonly totalCount?: number
+  readonly idleCount?: number
+  readonly waitingCount?: number
+  readonly options?: { readonly max?: number }
+}
+
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
   prismaUrl: string | undefined
+  pgPool: PgPoolStatsSource | undefined
+}
+
+/** Process-local snapshot of the actual node-postgres pool behind PrismaPg. */
+export interface AppPgPoolStats {
+  totalConnections: number
+  idleConnections: number
+  inUseConnections: number
+  waitingClients: number
+  maxConnections: number
+  saturationRatio: number
 }
 
 export type PoolEnv = Record<string, string | undefined>
@@ -121,10 +139,14 @@ export interface PgAdapterConfig {
  *
  * Prisma's Rust engine understands URL options such as `schema`,
  * `connection_limit`, and `pool_timeout`; node-postgres uses explicit pool
- * options instead. Keep the existing URL defaults, transfer the schema and
- * timeouts, and pass a bounded pool to PrismaPg. Workerd/serverless connections
- * are retired after one checkout so a Worker never reuses a TCP socket across
- * requests. `max: 1` also bounds parallel DB work per client to one connection.
+ * options instead. `pg.Pool` exposes one `connectionTimeoutMillis` for both
+ * opening a socket and waiting for a checked-out client, rather than Prisma's
+ * separate `connect_timeout` and `pool_timeout` controls. Use the stricter of
+ * the two so neither configured deadline is silently discarded. Keep the
+ * existing URL defaults, transfer the schema and timeouts, and pass a bounded
+ * pool to PrismaPg. Workerd/serverless connections are retired after one
+ * checkout so a Worker never reuses a TCP socket across requests. `max: 1`
+ * also bounds parallel DB work per client to one connection.
  */
 export function configurePgAdapter(
   rawUrl: string,
@@ -146,6 +168,8 @@ export function configurePgAdapter(
   const configuredLimit = parsePositiveInt(url.searchParams.get('connection_limit') ?? undefined) ?? 1
   const connectTimeoutSeconds =
     parsePositiveInt(url.searchParams.get('connect_timeout') ?? undefined) ?? 5
+  const poolTimeoutSeconds =
+    parsePositiveInt(url.searchParams.get('pool_timeout') ?? undefined) ?? connectTimeoutSeconds
   const isServerless = isServerlessRuntime(options.env ?? process.env)
 
   for (const parameter of ['schema', 'connection_limit', 'pool_timeout', 'connect_timeout']) {
@@ -162,7 +186,7 @@ export function configurePgAdapter(
     // remain the existing three.
     max: Math.min(configuredLimit, isServerless ? 1 : 3),
     ...(isServerless ? { maxUses: 1 } : {}),
-    connectionTimeoutMillis: connectTimeoutSeconds * 1_000,
+    connectionTimeoutMillis: Math.min(connectTimeoutSeconds, poolTimeoutSeconds) * 1_000,
     idleTimeoutMillis: isServerless ? 1_000 : 300_000,
   }
 }
@@ -186,6 +210,67 @@ export function createPgAdapter(
 const logLevels = process.env.DEBUG_PRISMA === '1'
   ? [{ level: 'query' as const, emit: 'stdout' as const }, { level: 'warn' as const, emit: 'stdout' as const }, { level: 'error' as const, emit: 'stdout' as const }]
   : [{ level: 'warn' as const, emit: 'stdout' as const }, { level: 'error' as const, emit: 'stdout' as const }]
+
+/**
+ * Capture the actual pg.Pool exposed by PrismaPg's public adapter API.
+ *
+ * Keeping the pool reference is observation only: application queries continue
+ * through this same adapter and `DATABASE_URL`; this does not create a second
+ * connection or bypass tenant context. If a future adapter removes
+ * `underlyingDriver()`, query service remains unaffected and the metric remains
+ * absent rather than being estimated from request counts.
+ */
+function observePrismaPgPool(adapter: PrismaPg): PrismaPg {
+  return new Proxy(adapter, {
+    get(target, property) {
+      if (property === 'connect') {
+        return async () => {
+          const connection = await target.connect()
+          try {
+            globalForPrisma.pgPool = connection.underlyingDriver() as unknown as PgPoolStatsSource
+          } catch {
+            globalForPrisma.pgPool = undefined
+          }
+          return connection
+        }
+      }
+      const value = Reflect.get(target, property, target)
+      return typeof value === 'function' ? value.bind(target) : value
+    },
+  })
+}
+
+function nonnegativeCount(value: number | undefined): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : 0
+}
+
+/**
+ * Read process-local counters from the real app-role pg.Pool, or null before
+ * Prisma has connected / if a future adapter no longer exposes compatible
+ * pool statistics. This performs no SQL and never publishes URL/role details.
+ */
+export function getAppPgPoolStats(): AppPgPoolStats | null {
+  const pool = globalForPrisma.pgPool
+  const maxConnections = pool?.options?.max
+  if (!pool || typeof maxConnections !== 'number' || !Number.isFinite(maxConnections) || maxConnections <= 0) {
+    return null
+  }
+
+  const totalConnections = nonnegativeCount(pool.totalCount)
+  const idleConnections = Math.min(totalConnections, nonnegativeCount(pool.idleCount))
+  const inUseConnections = Math.max(0, totalConnections - idleConnections)
+  const waitingClients = nonnegativeCount(pool.waitingCount)
+  return {
+    totalConnections,
+    idleConnections,
+    inUseConnections,
+    waitingClients,
+    maxConnections,
+    saturationRatio: Math.min(1, inUseConnections / maxConnections),
+  }
+}
 
 /**
  * Row Level Security (Phase 1, step 7).
@@ -340,8 +425,9 @@ function getClient(): PrismaClient {
     !globalForPrisma.prisma ||
     globalForPrisma.prismaUrl !== configuredUrl
   ) {
+    globalForPrisma.pgPool = undefined
     globalForPrisma.prisma = new PrismaClient({
-      adapter: createPgAdapter(databaseUrl),
+      adapter: observePrismaPgPool(createPgAdapter(databaseUrl)),
       log: logLevels,
     })
     globalForPrisma.prismaUrl = configuredUrl

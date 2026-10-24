@@ -23,11 +23,11 @@
  * credential would make the entire RLS boundary decorative: any injection bug
  * would inherit owner rights.
  *
- * So this entrypoint is only a fallback for single-container / local use, where
- * no separate migrate job exists. In any real deployment the migration runs as
- * its own one-shot job (docker-compose's `migrate` service, or CI) against
- * FGMP_MIGRATE_DATABASE_URL, and the app is started with a command that skips
- * this entirely. Both paths are supported; neither silently changes the schema.
+ * This entrypoint supports three explicit modes: local/single-container
+ * startup (migrate, seed, then serve), one-shot deployment migration
+ * (`FGMP_MIGRATE_ONLY=1`), and the web process (`FGMP_SKIP_MIGRATE=1`) after a
+ * separate migration job has completed. Compose has its own direct one-shot
+ * migration command. Each path keeps the schema-owner URL out of the app server.
  */
 
 import { spawnSync } from "node:child_process";
@@ -45,8 +45,9 @@ const SERVER = "server.js";
  * FGMP_SKIP_MIGRATE=1 starts the server without touching the schema.
  *
  * This is the correct setting for the app container in any deployment where a
- * separate one-shot job owns migrations (docker-compose's `migrate` service, or
- * CI). It guarantees the web process never needs — or holds — DDL rights, which
+ * separate one-shot job owns migrations (docker-compose's `migrate` service,
+ * Render's `fgmp-migrate` job, or CI). It guarantees the web process never
+ * needs — or holds — DDL rights, which
  * is what keeps the RLS boundary meaningful: `fgmp_app` is not the owner and
  * cannot alter the schema even if an attacker reached application code.
  *
@@ -54,11 +55,17 @@ const SERVER = "server.js";
  * a working database with no extra ceremony.
  */
 const SKIP_MIGRATE = process.env.FGMP_SKIP_MIGRATE === "1";
+const MIGRATE_ONLY = process.env.FGMP_MIGRATE_ONLY === "1";
+
+if (SKIP_MIGRATE && MIGRATE_ONLY) {
+  fail("FGMP_SKIP_MIGRATE=1 and FGMP_MIGRATE_ONLY=1 are mutually exclusive.");
+}
 
 /**
  * The environment the SERVER runs with.
  *
- * `FGMP_MIGRATE_DATABASE_URL` is deleted unconditionally, in BOTH branches.
+ * `FGMP_MIGRATE_DATABASE_URL` is deleted whenever the web server is spawned,
+ * in either of the server-starting modes.
  *
  * ── WHY THIS IS NOT DEFENCE IN DEPTH BUT THE ACTUAL BOUNDARY ────────────────
  * Verified by p0-impl against the built image: with the migration credential
@@ -68,17 +75,18 @@ const SKIP_MIGRATE = process.env.FGMP_SKIP_MIGRATE === "1";
  *     escalate to: {"u":"fgmp_migrate"}
  *     DDL SUCCEEDED as {"u":"fgmp_migrate"}
  *
- * `fgmp_migrate` is the schema owner and a SUPERUSER, so it bypasses RLS
- * outright. Any injection bug inheriting that credential would make every policy
- * in this project decorative.
+ * In the isolated Compose/test cluster, `fgmp_migrate` is both the schema owner
+ * and a SUPERUSER (confirmed from `pg_roles`); hosted role flags are not verified.
+ * A superuser bypasses RLS outright, and any schema-owner DDL credential can
+ * alter policies/settings. Never use either privilege for ordinary queries.
  *
- * The honest position before this change: the RLS boundary rested on the
- * operator NOT passing the owner URL to the app container. Compose documents
- * that, and the app credential alone cannot do DDL — but "documented" is not
- * "enforced", and anyone passing it in innocently, exactly as p0-impl did to
- * test migrations, silently defeats the whole design.
+ * The server receives a sanitized environment, and the checked-in Compose and
+ * Render configurations keep the migration URL out of their web/bridge
+ * services. Those controls must still be verified against the live provider;
+ * do not assume an environment group or hand-edited deployment matches them.
  *
- * The credential is needed for exactly one `spawnSync` below. It has no reason
+ * The credential is needed only by the migration subprocess and, in the
+ * local/single-container mode, the explicit seed subprocess. It has no reason
  * to exist for the lifetime of the process that serves traffic.
  */
 function serverEnv() {
@@ -88,21 +96,21 @@ function serverEnv() {
 }
 
 if (SKIP_MIGRATE) {
-  // No migration credential is required here on purpose. In the split model the
-  // app container is the one place that MUST NOT hold the owner URL
-  // (docker-compose deliberately never passes FGMP_MIGRATE_DATABASE_URL to it),
-  // so preflight runs against DATABASE_URL — a SELECT-only check that needs no
-  // DDL rights. Requiring the owner credential here contradicted the security
-  // model and made the documented "app starts with FGMP_SKIP_MIGRATE=1" path
-  // impossible to boot.
-  const checkUrl =
-    process.env.FGMP_MIGRATE_DATABASE_URL || process.env.DATABASE_URL || "";
+  // This process is the web entrypoint, not a migration job; discard even an
+  // accidentally injected owner credential before importing any app code.
+  delete process.env.FGMP_MIGRATE_DATABASE_URL;
+
+  // The schema preflight must use DATABASE_URL (the app role) only. Never use
+  // FGMP_MIGRATE_DATABASE_URL as a fallback here, even for a read-only check:
+  // a broken/missing app credential must fail closed instead of masking the
+  // deployment error with a privileged connection.
+  const checkUrl = process.env.DATABASE_URL || "";
   if (!checkUrl) {
     fail(
-      "FGMP_SKIP_MIGRATE=1 is set but neither FGMP_MIGRATE_DATABASE_URL nor " +
-        "DATABASE_URL was supplied, so the schema cannot be verified. Run the " +
-        "migration job first (docker compose --profile migrate run --rm fgmp-migrate), " +
-        "then start the app.",
+      "FGMP_SKIP_MIGRATE=1 is set but DATABASE_URL was not supplied, so the " +
+        "schema cannot be verified as the app role. Run the migration job first " +
+        "(docker compose --profile migrate run --rm fgmp-migrate), then start " +
+        "the app with its fgmp_app DATABASE_URL.",
     );
   }
 
@@ -181,23 +189,22 @@ const isPostgres = /^postgres(ql)?:\/\//i.test(migrateUrl);
 const isSqlite = /^file:/i.test(migrateUrl);
 
 if (!isPostgres && !isSqlite) {
-  fail(
-    `DATABASE_URL does not look like a PostgreSQL or file: URL ` +
-      `(got: ${migrateUrl.slice(0, 12)}…). Refusing to guess.`,
-  );
+  fail("FGMP_MIGRATE_DATABASE_URL must be a PostgreSQL or file: URL. Refusing to guess.");
 }
 
+// Never print a connection string (even with its password masked): hosts and
+// usernames are unnecessary in routine logs, and string redaction is brittle.
 log(
   `applying migrations via ${isPostgres ? "PostgreSQL" : "SQLite"} ` +
-    `(${migrateUrl.replace(/:[^:@/]*@/, ":***@")})`,
+    "using the dedicated migration URL",
 );
 
 const res = spawnSync(process.execPath, [cli, "migrate", "deploy"], {
   stdio: "inherit",
-  env: { 
-    ...process.env, 
+  env: {
+    ...process.env,
     DATABASE_URL: migrateUrl, // Forces Prisma to use the migration URL
-    FGMP_MIGRATE_DATABASE_URL: migrateUrl 
+    FGMP_MIGRATE_DATABASE_URL: migrateUrl,
   },
 });
 
@@ -215,7 +222,15 @@ if (res.status !== 0) {
   );
 }
 
-log("migrations applied (or already current) — starting server");
+if (MIGRATE_ONLY) {
+  log(
+    "migrations applied (or already current); FGMP_MIGRATE_ONLY=1 — " +
+      "exiting without seeding or starting the server",
+  );
+  process.exit(0);
+}
+
+log("migrations applied (or already current) — continuing startup");
 
 // Run the seed script with the owner credential.
 //

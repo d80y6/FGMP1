@@ -47,7 +47,7 @@
  */
 
 import { PrismaClient } from '@prisma/client'
-import { db, rlsEnforced, createPgAdapter } from '@/lib/db'
+import { createPgAdapter, db, rlsEnforced } from '@/lib/db'
 import {
   withTenant,
   currentTenantId,
@@ -1682,6 +1682,122 @@ function assertTenantContextUnits(): void {
   }
 }
 
+/** Run overlapping transactions for two tenants against the same app pool. */
+async function assertConcurrentTenantTransactions(): Promise<void> {
+  currentTable = '(concurrent tenant isolation)'
+  const siteA = siteIdFor(SUFFIX)
+  const siteB = siteIdFor(`${SUFFIX}-b`)
+  const tasks = Array.from({ length: 12 }, (_, index) => {
+    const tenantId = index % 2 === 0 ? TENANT_A : TENANT_B
+    const expectedSite = index % 2 === 0 ? siteA : siteB
+    return withTenant(tenantId, async (tx) => {
+      const context = await rawTenantSetting(tx)
+      // Hold each transaction open briefly so both tenants overlap while
+      // waiting for/reusing the three-connection app pool.
+      await tx.$queryRawUnsafe('SELECT 1::int AS delay FROM pg_sleep(0.02)')
+      const rows = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id::text AS id FROM "Site"
+         WHERE id IN (${siteA}, ${siteB})
+         ORDER BY id
+      `
+      return { tenantId, expectedSite, context, ids: rows.map((row) => row.id) }
+    })
+  })
+
+  let results: Awaited<(typeof tasks)[number]>[]
+  try {
+    results = await Promise.all(tasks)
+  } catch (err) {
+    fail('concurrent-tenant-transactions', `a real PostgreSQL transaction failed: ${(err as Error).message}`)
+    return
+  }
+
+  const wrong = results.filter(
+    (result) => result.context !== result.tenantId || result.ids.length !== 1 || result.ids[0] !== result.expectedSite,
+  )
+  if (wrong.length === 0) {
+    pass('concurrent-tenant-transactions', '12 overlapping app-role transactions saw only their own tenant Site row')
+  } else {
+    fail(
+      'concurrent-tenant-transactions',
+      `${wrong.length}/12 transactions had a wrong GUC or cross-tenant/missing Site result`,
+    )
+  }
+
+  // Probe the pool repeatedly after all transactions have returned. If any
+  // client retained a session-level tenant GUC, one of these borrows can expose
+  // it; transaction-local settings must leave every borrower unset.
+  const after = await Promise.all(Array.from({ length: 6 }, () => currentTenantId()))
+  if (after.every((tenantId) => tenantId === null)) {
+    pass('concurrent-context-reset', 'six post-transaction borrows all had no tenant context')
+  } else {
+    fail('concurrent-context-reset', 'tenant context remained visible after concurrent transactions')
+  }
+}
+
+/** Prove a server-side transaction failure rolls back cleanly and the pool recovers. */
+async function assertRollbackRecovery(): Promise<void> {
+  currentTable = '(rollback / recovery)'
+  let contextBeforeFailure: string | null = null
+  let failedOnPostgres = false
+  try {
+    await withTenant(TENANT_A, async (tx) => {
+      contextBeforeFailure = await rawTenantSetting(tx)
+      // Division by zero is an intentional, read-only server error. The
+      // interactive transaction must roll back before its pooled connection
+      // can safely serve another tenant.
+      await tx.$queryRawUnsafe('SELECT 1 / 0 AS intentional_failure')
+    })
+  } catch {
+    failedOnPostgres = true
+  }
+
+  if (contextBeforeFailure === TENANT_A) {
+    pass('rollback-context-was-set', 'tenant A was set locally before the induced PostgreSQL error')
+  } else {
+    fail('rollback-context-was-set', 'tenant A context was not visible before the induced failure')
+  }
+  if (failedOnPostgres) {
+    pass('rollback-server-error', 'intentional PostgreSQL division-by-zero failed the transaction as expected')
+  } else {
+    fail('rollback-server-error', 'the intentional PostgreSQL error unexpectedly succeeded')
+  }
+
+  const afterFailure = await Promise.all(Array.from({ length: 6 }, () => currentTenantId()))
+  if (afterFailure.every((tenantId) => tenantId === null)) {
+    pass('rollback-clears-context', 'six post-rollback pool borrows all had no tenant context')
+  } else {
+    fail('rollback-clears-context', 'tenant context remained visible after PostgreSQL rollback')
+  }
+
+  try {
+    const recovered = await withTenant(TENANT_B, async (tx) => {
+      const context = await rawTenantSetting(tx)
+      const rows = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id::text AS id FROM "Site"
+         WHERE id IN (${siteIdFor(SUFFIX)}, ${siteIdFor(`${SUFFIX}-b`)})
+         ORDER BY id
+      `
+      return { context, ids: rows.map((row) => row.id) }
+    })
+    const expectedSite = siteIdFor(`${SUFFIX}-b`)
+    if (recovered.context === TENANT_B && recovered.ids.length === 1 && recovered.ids[0] === expectedSite) {
+      pass('rollback-followup-transaction', 'tenant B recovered on the app pool and saw only its own Site row')
+    } else {
+      fail('rollback-followup-transaction', 'post-rollback tenant B context or RLS-filtered Site result was incorrect')
+    }
+  } catch (err) {
+    fail('rollback-followup-transaction', `app pool did not recover after rollback: ${(err as Error).message}`)
+  }
+
+  const afterRecovery = await Promise.all(Array.from({ length: 6 }, () => currentTenantId()))
+  if (afterRecovery.every((tenantId) => tenantId === null)) {
+    pass('recovery-clears-context', 'six post-recovery pool borrows all had no tenant context')
+  } else {
+    fail('recovery-clears-context', 'tenant context remained visible after the recovered transaction committed')
+  }
+}
+
 // ── Main ────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -1700,6 +1816,41 @@ async function main(): Promise<void> {
     pass('preflight-connect', 'connected to PostgreSQL')
   } catch (err) {
     fail('preflight-connect', (err as Error).message)
+    report()
+    return
+  }
+
+  // Validate the role PostgreSQL actually authenticated, not just the username
+  // parsed from DATABASE_URL. This prevents a pooler or role alias from making
+  // the suite report RLS success under a bypass-capable database principal.
+  currentTable = '(database role)'
+  try {
+    const roles = await q<{
+      role_name: string
+      is_superuser: boolean
+      bypass_rls: boolean
+    }>(
+      `SELECT current_user::text AS role_name,
+              r.rolsuper AS is_superuser,
+              r.rolbypassrls AS bypass_rls
+         FROM pg_roles r
+        WHERE r.rolname = current_user`,
+    )
+    const actual = roles[0]
+    if (actual?.role_name === 'fgmp_app' && !actual.is_superuser && !actual.bypass_rls) {
+      pass('live-app-role', 'PostgreSQL reports current_user=fgmp_app, rolsuper=false, rolbypassrls=false')
+    } else {
+      fail(
+        'live-app-role',
+        `expected fgmp_app with no superuser/BYPASSRLS; received role=${actual?.role_name ?? '(missing)'}, ` +
+          `rolsuper=${actual?.is_superuser ?? '(missing)'}, rolbypassrls=${actual?.bypass_rls ?? '(missing)'}`,
+      )
+      report()
+      return
+    }
+  } catch (err) {
+    fail('live-app-role', `could not verify PostgreSQL role attributes: ${(err as Error).message}`)
+    report()
     return
   }
 
@@ -1908,6 +2059,8 @@ async function main(): Promise<void> {
     fail('no-context-reads-zero', `expected 0 rows without context, got ${leakCheck[0]?.n}`)
   }
 
+  await assertConcurrentTenantTransactions()
+  await assertRollbackRecovery()
   await geographyIsolationAssertions()
   await teardownFixtures()
   report()

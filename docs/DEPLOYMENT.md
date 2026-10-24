@@ -1,8 +1,9 @@
 # Deployment
 
 How to run FGMP with Docker Compose or Render, how migrations and seeding are
-split from the app, and how to back up and restore. Every command here was run
-against this repository's compose files.
+split from the app, and how to back up and restore. Commands below target the
+checked-in configuration; the Render environment and a live Docker deployment
+are not available in this connection assessment.
 
 ## 1. The deployment model: three one-shot jobs, one long-running app
 
@@ -18,11 +19,20 @@ therefore run as separate one-shot containers with their own credentials.
 | `fgmp-backup` | `backup` (in `docker-compose.backup.yml`) | `fgmp_ops` (`BYPASSRLS`) | `pg_dump` + checksum |
 | `fgmp-app` | — | `fgmp_app` (non-owner, RLS enforced) | Next.js standalone server |
 
+Compose migration/seed jobs keep the normal `DATABASE_URL` set to `fgmp_app`,
+but scope `DATABASE_URL="$FGMP_MIGRATE_DATABASE_URL"` to the `db:deploy`
+child process because Prisma's migration CLI reads that name. The shell requires
+`FGMP_MIGRATE_DATABASE_URL` explicitly and does not fall back to the app role.
+The seed script consumes the separately named migration URL; ordinary app
+queries remain on `DATABASE_URL`/`fgmp_app`.
+
 The app starts with `FGMP_SKIP_MIGRATE=1` and **never receives the owner URL**.
-At boot, `scripts/docker-entrypoint.mjs` runs `scripts/db-preflight.mjs`, a
-SELECT-only check that the expected tables exist. If the schema is missing the
-container exits with an explanation instead of serving a half-configured
-platform. Migration credentials are not needed for this check.
+At boot, `scripts/docker-entrypoint.mjs` discards any accidentally inherited
+migration URL, then runs `scripts/db-preflight.mjs`, a SELECT-only check that
+the expected tables exist, using only `DATABASE_URL` as `fgmp_app`. If that URL
+is missing or the schema is missing, the container exits instead of trying a
+migration/ops credential or serving a half-configured platform. Migration
+credentials are not needed for this check.
 
 ## 2. First deployment (Compose)
 
@@ -93,6 +103,14 @@ orchestrator health probes and looks like a crash loop.
 | Variable | Requirement / purpose |
 |---|---|
 | `PGMIGRATE_PASSWORD`, `PGAPP_PASSWORD`, `PGOPS_PASSWORD` | Three distinct roles: owner/migrate, app (RLS), ops (BYPASSRLS). The compose DB refuses to start without them. |
+| `DATABASE_URL` | Ordinary web/API traffic only; must authenticate as `fgmp_app` so RLS applies. |
+| `FGMP_MIGRATE_DATABASE_URL` | Separate one-shot migration/seed credential. Never a runtime app fallback; migration jobs fail if it is absent. |
+| `FGMP_OPS_DATABASE_URL` | Separate `fgmp_ops` credential for approved backup/support operations; never ordinary tenant queries. |
+| `FGMP_REQUIRE_RLS` | Defaults to `1`; app refuses a configured URL that is not recognized as `fgmp_app`. |
+| `FGMP_SKIP_MIGRATE` | Set to `1` on the web service when a separate one-shot migration job owns schema changes; startup performs a SELECT-only preflight, not DDL. |
+| `FGMP_MIGRATE_ONLY` | Set to `1` on a migration-job container; applies migrations and exits without seeding or starting the server. Mutually exclusive with `FGMP_SKIP_MIGRATE=1`. |
+| `FGMP_DB_CONNECTION_LIMIT` | Optional per-client default override. Keep the current cap unless the live provider's connection budget is verified. |
+| `FGMP_DB_POOL_TIMEOUT` | Optional pool-acquisition deadline in seconds. The adapter uses the stricter of it and `connect_timeout` because `pg.Pool` has one shared timeout. |
 | `NEXTAUTH_SECRET` | Signs session JWTs. `openssl rand -base64 32`. |
 | `NEXTAUTH_URL` | Canonical origin; callback URLs depend on it. |
 | `IOT_API_KEYS` | Optional bridge-only JSON map of `tenantId` to raw tenant API keys. Create keys in the API-key manager with `write` scope; the app validates them against each submitted site's tenant. |
@@ -111,10 +129,12 @@ misconfigured `DATABASE_URL` silently disabling tenant isolation.
 Prisma otherwise creates a pool sized from the host's reported CPU count for
 every `PrismaClient`. That is a poor default for Netlify Functions: each warm
 function instance can keep its own pool open, and this app also has narrowly
-scoped ops/auth clients. With a hosted database capped at 15 concurrent
+scoped ops/auth clients. For example, if a hosted database were capped at 15 concurrent
 connections, a few simultaneous function instances and several `new
-PrismaClient()` call sites can consume the whole allowance before the dashboard
-loads.
+PrismaClient()` call sites could consume the whole allowance before the dashboard
+loads. **The 15-connection figure is illustrative, not a verified provider limit
+for this deployment.** Confirm the actual provider, endpoint/pooler mode, and
+connection allowance before sizing concurrency.
 
 The app now adds bounded Prisma URL parameters unless explicitly supplied:
 
@@ -122,10 +142,16 @@ The app now adds bounded Prisma URL parameters unless explicitly supplied:
   client `connection_limit=1`.
 - Long-lived app server: app limit 3; shared privileged ops client limit 1.
 - `FGMP_DB_CONNECTION_LIMIT` and `FGMP_DB_POOL_TIMEOUT` override defaults; URL
-  values always take precedence.
+  values always take precedence. The pg adapter exposes one
+  `connectionTimeoutMillis` for both new socket establishment and acquisition
+  wait, so FGMP applies the stricter of `pool_timeout` and `connect_timeout`.
 - Auth, audit, scheduler, seed, health and the site→tenant realtime resolver
   reuse a process-wide privileged client per DSN instead of each opening its
   own Prisma pool.
+- `GET /api/fgmp/metrics` samples the real process-local `pg.Pool` counters
+  (saturation and total/idle/in-use/waiting/max) after its existing ALARM_OPS
+  authorization. Scrape each instance for per-process readings; the metric is
+  not a database-wide or cross-replica connection total.
 
 This is a per-function/process cap, not a global cap across serverless
 instances. Keep the deployment's aggregate function concurrency below the
@@ -148,12 +174,25 @@ directly.
 3. Run the migration job once before the first deploy, and after every deploy
    that adds a migration.
 
-The blueprint creates a **job** service for this. From the dashboard, open
-`fgmp-migrate` → *Run job*. It executes `bun run db:deploy` with the owner URL,
-which is supplied only to that job.
+The blueprint declares a **job** service for this. It receives the separate
+`FGMP_MIGRATE_DATABASE_URL` and `FGMP_MIGRATE_ONLY=1`; the image entrypoint
+maps that URL to `DATABASE_URL` for Prisma and exits after migrations, without
+seeding or starting the web server. The web service sets `FGMP_SKIP_MIGRATE=1`
+and a service-level empty `FGMP_MIGRATE_DATABASE_URL` override so it runs only
+the app-role schema preflight and cannot inherit that credential from the
+shared `fgmp1` environment group. The API-only IoT bridge similarly clears
+`DATABASE_URL`, `FGMP_MIGRATE_DATABASE_URL`, `FGMP_OPS_DATABASE_URL`, and the
+legacy `FGPS_OPS_DATABASE_URL` rather than receiving unused database secrets.
 
-If you prefer a Render Shell, `bun run db:deploy` works there too — but only if
-the shell's environment has the owner URL. Do not add it to the web service.
+The live Render environment is not available in this assessment. Before relying
+on the manifest, verify the effective service variables and run the one-shot job
+in staging; confirm the app process sees no migration URL and the job exits
+without launching the web server. Do not route ordinary application queries
+through the migration URL.
+
+If you prefer a Render Shell, `bun run db:deploy` works there only when that
+process is explicitly given the migration URL as `DATABASE_URL`. Keep the URL
+out of the web service and never fall back to it when app access fails.
 
 `healthCheckPath` is `/api/health/ready` — unauthenticated, and it fails until
 the database is reachable and the migrations are applied. Do **not** point it at
@@ -231,7 +270,14 @@ gets slow.
 * The IoT bridge (`mini-services/iot-bridge`) is stateless; restart it freely.
   It retries ingest on the next interval.
 
-## 7. Cloudflare Workers (OpenNext)
+## 7. Cloudflare Workers (OpenNext) — optional, not runtime-verified
+
+The repository has a Cloudflare build path, but this assessment did not establish
+that production runs on Workers. The locked Next.js/OpenNext versions do not
+currently establish a supported combination, and `wrangler.jsonc` has no
+Hyperdrive binding. Do not treat the instructions below as evidence of a working
+or active Cloudflare deployment; verify the platform and compatibility before
+using them.
 
 The Cloudflare build uses the tracked `wrangler.jsonc` and `open-next.config.ts`;
 this avoids Wrangler's automatic migration deriving a self-reference service
