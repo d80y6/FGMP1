@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { bootstrap } from "@/lib/fgmp";
 import { asTenant, tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
-import { listTenantRegistry, tenantCounts } from "@/lib/fgmp/platform-store";
+import { listTenantRegistry, tenantCountsAll } from "@/lib/fgmp/platform-store";
 import { audit } from "@/lib/fgmp/audit";
 import {
   rateLimitByUser,
@@ -67,11 +67,16 @@ export async function GET(req: NextRequest) {
     const isSuper = isSuperAdminUser(user);
     const registry = await listTenantRegistry();
     const visible = isSuper ? registry : registry.filter((t) => t.id === user.tenantId);
-    const tenants: Array<Record<string, unknown>> = [];
-    for (const t of visible) {
-      const counts = await tenantCounts(t.id);
-      tenants.push({ ...t, _count: counts });
-    }
+    // THREE queries for the whole page, not three per tenant. `tenantCountsAll`
+    // groups by tenantId on the ops connection (aggregate NUMBERS only, never a
+    // row set — see its doc comment and docs/SECURITY.md §3). The previous loop
+    // opened one transaction per tenant, so this endpoint got slower as the
+    // platform gained customers.
+    const counts = await tenantCountsAll(visible.map((t) => t.id));
+    const tenants: Array<Record<string, unknown>> = visible.map((t) => ({
+      ...t,
+      _count: counts.get(t.id) ?? { users: 0, sites: 0, suppressions: 0 },
+    }));
     const res = NextResponse.json(tenants);
     applyRateLimitHeaders(res.headers, rl);
     return res;

@@ -393,6 +393,70 @@ export async function verifyChallenge(
   return { ok: false, reason: "INVALID_CODE" };
 }
 
+/**
+ * Exchange a VERIFIED challenge for exactly one full session.
+ *
+ * ── WHY THIS EXISTS ─────────────────────────────────────────────────────────
+ * Verifying the second factor used to be a dead end: /api/fgmp/mfa/challenge
+ * answered `nextStep: "reauthenticate"`, but a password-only re-authentication
+ * hits the MFA gate in `authorize()` and produces another PENDING session. With
+ * the gate actually working (see `hasMfaEnabled`), an enrolled operator could
+ * never reach a full session at all.
+ *
+ * So the challenge token doubles as a login proof: once the code has been
+ * verified the row carries `usedAt`, and the credentials callback presents the
+ * token as `mfaProof` alongside the password it re-checks. This function decides
+ * whether that proof may mint a session:
+ *
+ *   * the token must hash to a row IN THE GIVEN TENANT (RLS-scoped read, never
+ *     an ambient one) and belong to THIS user — a proof is not transferable;
+ *   * the row must have been verified (`usedAt` set) and not failed;
+ *   * verification must be RECENT (LOGIN_PROOF_TTL_MS). A verified challenge
+ *     proves "this person had the factor two hours ago"; the session it mints
+ *     must follow immediately from the login that asked for it;
+ *   * `loginIssuedAt` must still be NULL, and the conditional UPDATE is what
+ *     enforces that. Two concurrent logins presenting the same token: exactly
+ *     one matches `loginIssuedAt IS NULL` and gets a session.
+ *
+ * The password is still required — this is an additional proof, never a
+ * replacement — so a stolen challenge token alone does not authenticate.
+ */
+export const LOGIN_PROOF_TTL_MS = 120_000;
+
+export async function consumeLoginProof(
+  tenantId: string,
+  userId: string,
+  proof: string,
+): Promise<boolean> {
+  if (!proof || proof.length > 200) return false;
+  const tokenHash = hashChallengeToken(proof);
+  const now = new Date();
+  const notBefore = new Date(now.getTime() - LOGIN_PROOF_TTL_MS);
+
+  const row = await withTenant(tenantId, (tx) =>
+    tx.mfaChallenge.findFirst({
+      where: {
+        tokenHash,
+        userId,
+        failedAt: null,
+        usedAt: { gt: notBefore },
+        loginIssuedAt: null,
+      },
+      select: { id: true },
+    }),
+  );
+  if (!row) return false;
+
+  // Single-use: the conditional UPDATE is the authority, not the read above.
+  const claimed = await withTenant(tenantId, (tx) =>
+    tx.mfaChallenge.updateMany({
+      where: { id: row.id, loginIssuedAt: null },
+      data: { loginIssuedAt: now },
+    }),
+  );
+  return claimed.count === 1;
+}
+
 /** Issue a challenge for an authenticated-but-unverified user. */
 export async function issueChallenge(
   tenantId: string,
@@ -428,17 +492,42 @@ export async function issueChallenge(
 /**
  * Does this user have an enabled factor?
  *
- * Used by the login callback to decide whether to issue a pending session. A
- * missing encryption key means "not enrolled", because enrolment is refused
- * without one — the two can never disagree.
+ * Used by the login callback to decide whether to issue a pending session, so a
+ * wrong answer here is the difference between "second factor required" and
+ * "password is enough".
+ *
+ * ── THE BUG THIS FIXES (Critical, found 2026-10) ───────────────────────────
+ * This read used the AMBIENT client: `db.mfaEnrollment.findUnique({ where:
+ * { userId } })`. `MfaEnrollment` is FORCE-RLS protected and the ambient
+ * connection carries no tenant context, so the row is filtered out and this
+ * function returned `false` for EVERY user — including a user whose enrolment
+ * was confirmed seconds earlier.
+ *
+ * Measured on the running server before the fix: a probe account completed
+ * `POST /api/fgmp/mfa/verify-enrol` (200, enrolled), then signed in with the
+ * password ONLY and received a full ADMIN session — `/api/fgmp/me` reported
+ * `role: "ADMIN"`, `mfaPending: undefined`, and `/api/fgmp/state` answered 200.
+ * The second factor was never asked for. Enrolling an authenticator bought an
+ * operator exactly nothing, which is worse than not offering MFA at all: it
+ * advertises a control that is not there.
+ *
+ * This is the same RLS gotcha the project already fixed twice — the challenge
+ * token lookup (`findChallengeTenantByToken`) and `describeOwnEnrollment` — and
+ * it is why the assertion in `mfa-status-rls.test.ts` exists. The fix is the
+ * same shape: state the tenant the caller is asking about, and read inside it.
+ *
+ * A missing encryption key still means "not enrolled": enrolment is refused
+ * without a key, so the two decisions cannot disagree.
  */
 export async function hasMfaEnabled(tenantId: string, userId: string): Promise<boolean> {
   const available = mfaAvailable();
   if (!available.ok) return false;
-  const row = await db.mfaEnrollment.findUnique({
-    where: { userId },
-    select: { enabled: true },
-  });
+  const row = await withTenant(tenantId, (tx) =>
+    tx.mfaEnrollment.findUnique({
+      where: { userId },
+      select: { enabled: true },
+    }),
+  );
   return row?.enabled === true;
 }
 
@@ -578,6 +667,16 @@ export async function approveMfaReset(
     await tx.mfaResetRequest.update({
       where: { id: resetId },
       data: { status: "APPLIED", appliedAt: new Date() },
+    });
+    // Revoke the target's existing sessions in the same transaction.
+    //
+    // A break-glass reset exists for "this account may be compromised / this
+    // person lost their authenticator". Leaving the old sessions alive would
+    // make the reset decorative: the second factor is disabled, but whatever
+    // token was already issued keeps its authority until it expires.
+    await tx.user.update({
+      where: { id: request.userId },
+      data: { sessionEpoch: { increment: 1 } },
     });
     return { ok: true as const };
   });

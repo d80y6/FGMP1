@@ -8,6 +8,7 @@ import {
 } from "@/lib/fgmp/rate-limit";
 import { issueChallenge } from "@/lib/fgmp/mfa/service";
 import { auditMfa } from "@/lib/fgmp/mfa/service";
+import { getSessionState } from "@/lib/auth-identity";
 
 export const dynamic = "force-dynamic";
 
@@ -53,17 +54,29 @@ export async function POST(req: NextRequest) {
       return res;
     }
 
-    if (!auth.user.tenantId) {
-      // See above: a pending session has no tenant to scope a challenge row.
-      return errorResponse(
-        forbidden(
-          "A pending session cannot request a new challenge. It should already hold " +
-            "a challenge token issued at login.",
-        ),
-      );
+    // ── A PENDING session may ASK for its challenge (fix, 2026-10) ──────────
+    // A pending session carries no tenant BY DESIGN, so this used to answer 403
+    // and point at "the challenge token issued at login" — which `authorize()`
+    // never issued. The result was a closed loop: no token at login, no way to
+    // request one afterwards, and (once the enforcement bug in
+    // `hasMfaEnabled` was fixed) no way for an enrolled operator to sign in at
+    // all.
+    //
+    // The caller is already password-authenticated — that is what a pending
+    // session means — so its tenant is resolved from the user row through the
+    // same narrow privileged read the login path uses. It is never taken from
+    // the request body, and the identity is re-checked (active, not deleted)
+    // before a challenge is issued.
+    let tenantId = auth.user.tenantId;
+    if (!tenantId) {
+      const state = await getSessionState(auth.user.id);
+      if (!state || !state.active) {
+        return errorResponse(forbidden("This account is not active."));
+      }
+      tenantId = state.tenantId;
     }
 
-    const result = await issueChallenge(auth.user.tenantId, auth.user.id);
+    const result = await issueChallenge(tenantId, auth.user.id);
     if (!result.ok) {
       const res = NextResponse.json(
         { error: "No MFA enrolment", code: result.reason },
@@ -75,7 +88,7 @@ export async function POST(req: NextRequest) {
 
     await auditMfa({
       userId: auth.user.id,
-      tenantId: auth.user.tenantId,
+      tenantId,
       action: "MFA_CHALLENGE_ISSUED",
       entity: "MfaChallenge",
       entityId: auth.user.id,

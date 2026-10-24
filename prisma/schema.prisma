@@ -530,6 +530,8 @@ model Tenant {
   // Phase 4 — Solar
   solarSites              SolarSite[]
   solarArrays             SolarArray[]
+  // Tenant-scoped configuration overrides (SystemSetting.tenantId).
+  systemSettings          SystemSetting[]
 
   mfaEnrollments    MfaEnrollment[]
   mfaBackupCodes    MfaBackupCode[]
@@ -556,6 +558,17 @@ model User {
   // the account is locked for 15 minutes; a successful login resets both.
   failedLoginAttempts  Int       @default(0)
   lockedUntil          DateTime?
+  // ── Session revocation counter ─────────────────────────────────────────
+  // Carried in the session JWT as `sv`. Every authenticated request compares it
+  // with this column; a mismatch means the session was revoked and the request
+  // is refused. Bumped by: password change/reset, MFA reset/disable, and
+  // deactivation (so a re-activated account does not resurrect old sessions).
+  //
+  // Role and `active` are NOT protected by this counter — they are re-read from
+  // this row on every request, so a demotion or deactivation takes effect
+  // immediately. The counter exists for changes that cannot be derived from the
+  // row itself (a new password invalidates sessions that used the old one).
+  sessionEpoch         Int       @default(0)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -1508,23 +1521,48 @@ model ShiftHandover {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// System Settings (Task 35-E) — global platform configuration key-value store
+// System Settings (Task 35-E) — configuration key-value store
 // ──────────────────────────────────────────────────────────────────────────
-// Simple key-value table for global settings (alarm thresholds, escalation
-// timers, branding colors, etc.). Each row is one setting; the UI groups them
-// by category. Values are stored as strings; the API coerces to the right type.
+// Key-value settings grouped by category (alarm thresholds, escalation timers,
+// branding, platform flags, forecast tuning). Values are stored as strings; the
+// API coerces them to the declared type.
 //
-// category: ALARM | ESCALATION | BRANDING | PLATFORM | FORECAST
+// ── TENANCY (security fix, 2026-10) ────────────────────────────────────────
+// This table used to be GLOBAL: `key` was unique platform-wide and the table
+// carried no `tenantId`. The settings routes are tenant-scoped
+// (`PATCH /api/fgmp/settings` is ADMIN-only for the caller's tenant), so any
+// tenant administrator's change silently rewrote the configuration of EVERY
+// other tenant — verified by patching `platformName` as tenant A and reading it
+// back as tenant B. Configuration is tenant data.
+//
+// The model now carries a nullable `tenantId`:
+//   * tenantId = <tenant>  → that tenant's own override. Uniqueness is
+//                            (tenantId, key), so two tenants may hold the same
+//                            key independently.
+//   * tenantId = NULL      → a PLATFORM default inherited by every tenant.
+//                            Rows in this state are readable by all tenants (as
+//                            they were before the fix) but the application role
+//                            cannot write them: the RLS WITH CHECK requires a
+//                            tenant match, so platform defaults are managed by
+//                            the seed/owner path only.
+//
+// Existing rows are migrated with tenantId = NULL, which preserves today's
+// values as shared defaults instead of guessing which tenant owned a global row.
 model SystemSetting {
   id        String   @id @default(cuid())
+  tenantId  String?
   category  SystemSettingCategory
-  key       String   @unique
+  key       String
   value     String
   type      String   @default("string") // string | number | boolean | json
   updatedAt DateTime @updatedAt
   createdAt DateTime @default(now())
 
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, key])
   @@index([category])
+  @@index([tenantId, category])
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -2026,6 +2064,10 @@ model MfaChallenge {
   /// single try per issued token.
   attempts      Int      @default(0)
   failedAt      DateTime?
+  /// Set when this VERIFIED challenge was exchanged for a full session by the
+  /// credentials callback (`mfaProof`). The conditional update on it is what
+  /// makes that exchange single-use. NULL means "verified but not yet used".
+  loginIssuedAt DateTime?
 
   createdAt     DateTime @default(now())
 

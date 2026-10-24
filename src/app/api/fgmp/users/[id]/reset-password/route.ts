@@ -131,7 +131,15 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         select: { id: true },
       });
       if (!owner) throw new CrossTenantResetError();
-      await tx.user.update({ where: { id: owner.id }, data: { passwordHash } });
+      await tx.user.update({
+        where: { id: owner.id },
+        // `sessionEpoch` is incremented in the SAME statement as the new hash:
+        // a password reset is the recovery path for a suspected compromise, so
+        // sessions that used the old password must stop working. Doing it in a
+        // second statement could leave a window in which the new password is
+        // live and so is the attacker's token.
+        data: { passwordHash, sessionEpoch: { increment: 1 } },
+      });
       wrote = true;
     });
   } catch (err) {

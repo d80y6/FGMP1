@@ -1,7 +1,7 @@
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
-import { hasMfaEnabled } from "./fgmp/mfa/service";
+import { hasMfaEnabled, consumeLoginProof } from "./fgmp/mfa/service";
 import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { resolveSessionConfig } from "@/lib/auth-session";
 import { evaluateDemoCredential } from "./fgmp/demo-credentials";
@@ -107,6 +107,12 @@ export interface SessionUser {
   tenantId?: string;
   /** TRUE when the password verified but the second factor has not. */
   mfaPending?: boolean;
+  /**
+   * Session revocation counter at issue time. `requireAuth` compares it with
+   * `User.sessionEpoch` on every request; a mismatch means the session was
+   * revoked (password changed, MFA reset) and the request is refused.
+   */
+  sessionEpoch?: number;
 }
 
 // ── NextAuth type augmentation ──────────────────────────────────────────────
@@ -119,6 +125,8 @@ declare module "next-auth" {
     tenantId?: string;
     /** Set by authorize() when MFA is enabled and still outstanding. */
     mfaPending?: boolean;
+    /** Session revocation counter at issue time (see SessionUser.sessionEpoch). */
+    sessionEpoch?: number;
   }
   interface Session {
     user: SessionUser;
@@ -140,6 +148,8 @@ declare module "next-auth/jwt" {
     id?: string;
     role?: string;
     tenantId?: string;
+    /** Session revocation counter (`User.sessionEpoch`) at issue time. */
+    sessionEpoch?: number;
     /**
      * Carried on the token so the pending state survives a page reload and is
      * re-evaluated server-side on every request rather than trusted from client
@@ -309,13 +319,35 @@ export const authOptions: NextAuthOptions = {
         const mfaEnabled = user.tenantId ? await hasMfaEnabled(tenantIdOrThrow(user.tenantId), user.id) : false;
 
         if (mfaEnabled) {
-          return {
-            id: user.id,
-            name: user.name,
-            email: user.email,
-            // Intentionally NO role, NO tenantId. See above.
-            mfaPending: true,
-          };
+          // ── COMPLETING THE SECOND FACTOR ──────────────────────────────────
+          // The client sends back the challenge token it just verified as
+          // `mfaProof`. `consumeLoginProof` checks that the token belongs to
+          // THIS user, in THIS tenant, was verified seconds ago, and has never
+          // been exchanged before (single-use conditional UPDATE). Only then is
+          // a full session minted; otherwise the caller gets the PENDING session
+          // and must go and verify.
+          //
+          // The password above is still required, so the proof is an additional
+          // factor, not a substitute: a stolen challenge token does not log in.
+          //
+          // Without this branch the platform advertised MFA it could never
+          // complete — the challenge endpoint answered `nextStep:
+          // "reauthenticate"` and re-authenticating landed right back here.
+          // `credentials` is typed as the two declared fields; the provider
+          // forwards any extra field the client sends, so read it explicitly.
+          const supplied = (credentials as Record<string, unknown> | undefined)?.mfaProof;
+          const proof = typeof supplied === "string" ? supplied : "";
+          const proofTenant = tenantIdOrThrow(user.tenantId);
+          const proved = proof ? await consumeLoginProof(proofTenant, user.id, proof) : false;
+          if (!proved) {
+            return {
+              id: user.id,
+              name: user.name,
+              email: user.email,
+              // Intentionally NO role, NO tenantId. See above.
+              mfaPending: true,
+            };
+          }
         }
 
         return {
@@ -324,6 +356,9 @@ export const authOptions: NextAuthOptions = {
           email: user.email,
           role: user.role,
           tenantId: tenantIdOrThrow(user.tenantId),
+          // Carried so a password change can revoke this token without a
+          // session store. See requireAuth()'s revalidation block.
+          sessionEpoch: user.sessionEpoch,
         };
       },
     }),
@@ -335,6 +370,7 @@ export const authOptions: NextAuthOptions = {
         token.id = user.id;
         token.role = user.role;
         token.tenantId = user.tenantId;
+        token.sessionEpoch = user.sessionEpoch ?? 0;
         // Carried on the SIGNED token so the pending state survives a reload
         // and is re-evaluated server-side on every request rather than trusted
         // from client storage.
@@ -379,6 +415,7 @@ export const authOptions: NextAuthOptions = {
         if (fresh) {
           token.role = fresh.role;
           token.tenantId = fresh.tenantId;
+          token.sessionEpoch = fresh.sessionEpoch;
         }
       }
       return token;
@@ -399,6 +436,10 @@ export const authOptions: NextAuthOptions = {
         } else {
           session.user.role = token.role ?? "READONLY";
           session.user.tenantId = token.tenantId ?? "";
+          // Absent on tokens minted before the revocation counter existed, which
+          // is read as 0 — the default epoch of every pre-existing user, so an
+          // upgrade does not sign anyone out.
+          session.user.sessionEpoch = token.sessionEpoch ?? 0;
         }
       }
       return session;

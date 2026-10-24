@@ -12,6 +12,7 @@ import { ApiError } from "@/lib/fgmp/api-error";
 import type { Role } from "@/lib/fgmp/types";
 import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { PREVIEW_COOKIE, verifyPreviewToken } from "@/lib/fgmp/role-preview";
+import { getSessionState } from "@/lib/auth-identity";
 
 /**
  * Server-side auth helpers (Task 31-A)
@@ -72,6 +73,72 @@ export async function requireAuth(_request?: Request): Promise<AuthResult> {
     };
   }
 
+  // ── Session revalidation (security fix, 2026-10) ────────────────────────
+  // A JWT is a claim about the PAST: it carries the role, tenant and identity
+  // from sign-in time and, with an 8-hour lifetime and no session store, nothing
+  // took them away again. Measured on a live server before this block existed:
+  //
+  //   • `UPDATE "User" SET role='READONLY'` — the signed-in session still
+  //     reported REGIONAL_MANAGER and still passed REGIONAL_MANAGER checks.
+  //   • `UPDATE "User" SET active=false`    — the deactivated account kept full
+  //     access (GET /api/fgmp/state 200) until the token expired.
+  //   • a password reset did not terminate the sessions that used the old one.
+  //
+  // So every authenticated request now re-reads the authoritative account state.
+  // This is one primary-key lookup, and it is deliberately NOT cached: a cached
+  // answer is a window in which a revoked session still works.
+  //
+  // The DB values REPLACE the token's for role and tenant. That makes a demotion
+  // effective on the next request instead of on the next login — the alternative
+  // (reject only when the token is stale) would force a re-login to apply a
+  // permission reduction, which is precisely what an attacker holding a stolen
+  // token wants.
+  const state = await getSessionState(session.user.id);
+  if (!state) {
+    return {
+      error: NextResponse.json(
+        { error: "Unauthorized", code: "ACCOUNT_NOT_FOUND" },
+        { status: 401 },
+      ),
+    };
+  }
+  if (!state.active) {
+    return {
+      error: NextResponse.json(
+        {
+          error: "This account has been deactivated.",
+          code: "ACCOUNT_DISABLED",
+        },
+        { status: 401 },
+      ),
+    };
+  }
+  // Tokens minted before the counter existed carry no value; that is read as 0,
+  // the default epoch of every existing user, so an upgrade does not sign
+  // anybody out. Any later bump does.
+  if ((session.user.sessionEpoch ?? 0) !== state.sessionEpoch) {
+    return {
+      error: NextResponse.json(
+        {
+          error: "This session is no longer valid. Sign in again.",
+          code: "SESSION_REVOKED",
+        },
+        { status: 401 },
+      ),
+    };
+  }
+  // A PENDING (MFA) session deliberately carries no role/tenant. It must keep
+  // carrying none: the only paths it may reach are the MFA completion endpoints,
+  // and handing it the DB role here would be the escalation the pending state
+  // exists to prevent.
+  const revalidated: SessionUser = session.user.mfaPending
+    ? session.user
+    : {
+        ...session.user,
+        role: state.role,
+        tenantId: state.tenantId,
+      };
+
   // ── Role preview overlay (proposal §8.16) ──────────────────────
   // A valid preview token temporarily overlays the session role.
   // It is signed, expiry-bound and user-bound, and it NEVER writes
@@ -79,8 +146,8 @@ export async function requireAuth(_request?: Request): Promise<AuthResult> {
   // login automatically returns to it. verifyPreviewToken fails
   // closed (null) on any inconsistency, leaving the permanent role
   // in charge.
-  const overlayRole = await applyRolePreview(session.user);
-  const user = overlayRole ?? session.user;
+  const overlayRole = await applyRolePreview(revalidated);
+  const user = overlayRole ?? revalidated;
 
   // Endpoint policies are capability-based and applied here, before handlers
   // perform database work. Matching client-side gates avoid making these
@@ -112,6 +179,16 @@ export async function requireAuth(_request?: Request): Promise<AuthResult> {
  */
 async function applyRolePreview(sessionUser: SessionUser): Promise<SessionUser | null> {
   if (!sessionUser.id || !sessionUser.role) return null;
+  // ── The preview overlay needs a CURRENT admin behind it (security fix) ────
+  // The token is minted only for a permanent admin, but it outlives the role
+  // that justified it: it is signed for 15 minutes and nothing re-checks the
+  // caller's authority when it is USED. Demote an admin mid-preview and, before
+  // this guard, the overlay kept handing back the previewed role — including a
+  // role ABOVE the demoted one — until the token expired. A permission a user
+  // has already lost must not survive in a cookie, so the DB role (which
+  // `requireAuth` has just re-read) gates the overlay itself. Fails closed: no
+  // overlay, and the caller keeps exactly its current role.
+  if (!isSuperAdmin(sessionUser.role) && sessionUser.role !== "ADMIN") return null;
   let token: string | undefined;
   try {
     const store = await cookies();

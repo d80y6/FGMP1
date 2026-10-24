@@ -3055,7 +3055,10 @@ async controlDispenser(
     // The container runs UTC while the platform timezone is Asia/Aden (UTC+3),
     // so `setHours(0,0,0,0)` pushed the 00:00–03:00 Aden window into
     // "yesterday". `startOfZonedDay` resolves the configured zone.
-    const todayMs = startOfZonedDay(this.now, await resolvePlatformTimezone());
+    // `snapshotForTenant(tenantId)` may span tenants (tenantId === null), in
+    // which case "today" must come from the platform default timezone only —
+    // resolvePlatformTimezone(null) reads just the `tenantId IS NULL` row.
+    const todayMs = startOfZonedDay(this.now, await resolvePlatformTimezone(tenantId));
     const txnsToday = fuelTransactions.filter((t) => t.startedAt >= todayMs);
     const dispenserTransactionsToday = txnsToday.length;
     const dispenserVolumeTodayL = Math.round(
