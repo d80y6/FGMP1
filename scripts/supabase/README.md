@@ -254,8 +254,14 @@ hosted database does not give you.
 
    ```bash
    bun run scripts/set-password.ts superadmin@fgmp.telecom '<new-password>'
-   # …and the same for the five demo users (admin@, noc@, regional@, field@, exec@,
-   # readonly@ — all seeded with Admin@2026).
+   # …and the same for the five demo accounts, all seeded with Admin@2026:
+   #   admin@fgmp.telecom            (ADMIN)
+   #   noc.operator@fgmp.telecom     (NOC_OPERATOR)
+   #   regional.manager@fgmp.telecom (REGIONAL_MANAGER)
+   #   field.engineer@fgmp.telecom   (FIELD_ENGINEER)
+   #   cto@fgmp.telecom              (EXECUTIVE)
+   # There is no READONLY account in the seed; a READONLY user is created through
+   # the UI (Users → New user).
    ```
 
    If that script cannot reach the database from where you are, rotate in SQL.

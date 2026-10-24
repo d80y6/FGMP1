@@ -30,7 +30,10 @@ const AXE =
 const AUTH = process.env.FGMP_E2E_AUTH === "1";
 const SUPERADMIN = { email: "superadmin@fgmp.telecom", password: "Super@2026" };
 const ADMIN = { email: "admin@fgmp.telecom", password: "Admin@2026" };
-const READONLY = { email: "readonly@fgmp.telecom", password: "Admin@2026" };
+// The least-privileged account the seed actually creates. There is no READONLY
+// user in either seeder — a READONLY account is made through the UI — so a test
+// that signed in as one would be testing an account that does not exist.
+const FIELD_ENGINEER = { email: "field.engineer@fgmp.telecom", password: "Admin@2026" };
 
 const VIEWPORTS = [
   [320, 568],
@@ -240,11 +243,11 @@ test.describe("authenticated · shell and navigation", () => {
     await expect(sheet).toBeHidden();
   });
 
-  test("READONLY never receives administrative navigation or requests", async ({ page }) => {
+  test("a non-administrative role receives no administrative navigation or requests", async ({ page }) => {
     const requested: string[] = [];
     page.on("request", (r) => requested.push(r.url()));
     await page.goto("/");
-    await signIn(page, READONLY);
+    await signIn(page, FIELD_ENGINEER);
 
     const nav = page.getByRole("navigation", { name: /primary navigation/i });
     for (const view of ["users", "tenants", "api-keys", "roles", "system-settings"]) {
