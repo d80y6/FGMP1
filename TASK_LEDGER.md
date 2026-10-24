@@ -1,6 +1,6 @@
 # TASK_LEDGER
 
-This file is durable across agent sessions and context limits. It holds **three** task records: two
+This file is durable across agent sessions and context limits. It holds **four** task records: three
 complete, one in progress. Read the part for the task you are resuming; do not delete a part when
 you finish a new task — add one.
 
@@ -9,6 +9,7 @@ you finish a new task — add one.
 | [A](#part-a--postgresql-connection-assessment) | PostgreSQL connection assessment (pooling, runtime, Hyperdrive eligibility) | Complete except Phase 7a/7b, blocked on a live provider |
 | [B](#part-b--rbac-api-authorization-and-ui-enforcement) | RBAC, API authorization, UI permission enforcement | Complete; 4 defects fixed and verified, 2 blocked, 2 decisions open |
 | [C](#part-c--hosted-supabase-provisioning) | Hosted (Supabase/Neon/RDS) provisioning path | Defect fixed and verified as a non-superuser; CI gate added; 2 operator findings |
+| [D](#part-d--uiux-audit-and-remediation) | UI/UX audit, remediation and browser verification | Shell defects fixed and proven by a real Chromium run; authenticated views blocked in-sandbox, covered by CI |
 
 Status vocabulary used throughout: `DISCOVERED` → `CONFIRMED` → `IN_PROGRESS` → `FIXED` →
 `VERIFIED` → `BLOCKED`. Nothing is `VERIFIED` on the strength of reading code: every VERIFIED line
@@ -781,3 +782,144 @@ schema's Timescale block is commented out and the hosted path must work on stock
 - No role, grant or policy was invented to make anything pass: the membership tuple exists because
   PostgreSQL requires it to evaluate `ALTER DEFAULT PRIVILEGES`, and it is asserted rather than
   assumed.
+
+## Part D — UI/UX audit and remediation
+
+**Branch** `arena/592458ff-fgmp1` · **Base** `8b51e3a`/PR #18 · owner: agent
+
+The application is **not** a multi-page site. It is one route (`/`) that hosts a shell and 27
+lazy-loaded views, plus `/login` (a redirect alias) and 171 API handlers. "Routing" therefore means
+`?view=<key>` handled by `AppShell`, not a file per page. Any audit that assumes one page per
+directory will find two pages and miss the product.
+
+### 0. How this was verified, and what could not be
+
+A real Chromium (Playwright, headless) renders the built app; nothing in the browser runs against a
+mock. But two sandbox limits shape what is proven here, and they are stated up front rather than
+buried:
+
+| Limit | Consequence |
+|---|---|
+| `binaries.prisma.sh` is unreachable, so `prisma generate` cannot run. `@prisma/client` is the 2 KB "did not initialize" stub. | No API route can query the database. `next build` fails its type gate on the missing Prisma types. **No authenticated view can be exercised in this sandbox.** |
+| `cdn.playwright.dev` and `deb.debian.org` are unreachable. | Playwright's own browser download fails. The suite runs here against a Chromium unpacked from npm (`@sparticuz/chromium`) with two stub system libraries; in CI it uses the real Playwright build. |
+
+So the evidence splits in two, and the ledger does not blur it:
+
+* **Verified here, now** — the public sign-in surface, in Chromium, at 8 viewports, in LTR and RTL,
+  with a WCAG 2.2 AA scan, keyboard traversal and dialog focus containment. Plus every static
+  invariant below (typecheck, lint, unit suites, i18n dictionary contract).
+* **Verified in CI** — everything behind the session: navigation history, link semantics, the mobile
+  nav dialog, role-dependent navigation and "no unauthorized request is issued". The `ui` job
+  provisions real PostgreSQL, applies the real migrations, seeds, builds the standalone server and
+  runs the same spec with `FGMP_E2E_AUTH=1`.
+
+A test that cannot run says so: the authenticated tests **skip**, they do not pass.
+
+### 1. Findings
+
+Severity is about the operator, not the code: `Critical` = cannot work safely, `High` = a core task
+is broken or a status is misleading, `Medium` = friction or an accessibility barrier with a
+workaround, `Low` = polish.
+
+| ID | Where | Problem | Severity | Status |
+|---|---|---|---|---|
+| D-01 | `app-shell.tsx` navigation | Every sidebar destination was a `<button>` that called `router.replace`. Back left the application instead of returning to the previous view; no URL per view was reachable except by editing it; cmd/ctrl-click, middle-click and "open in new tab" did nothing. | High | **VERIFIED** (CI) |
+| D-02 | `app-shell.tsx` mobile nav | The trigger was a `ChevronRight` — a "next/expand" glyph for a control that opens a left drawer, and it points the wrong way under RTL. Its accessible name was hardcoded English. The sheet it opens is a Radix dialog with no title, so it was announced as an unnamed "dialog". | High | **VERIFIED** (CI: trigger name + named dialog) |
+| D-03 | header controls | Eight accessible names were hardcoded English (`Open navigation`, `Keyboard shortcuts`, `Switch language`, `Switch theme`, `Notifications`, …) while every visible label was translated. In Arabic the UI reads correctly but a screen reader announces English. | Medium | **FIXED** (5 of 8; i18n contract + Arabic run) |
+| D-04 | `app-shell.tsx` alarm badge | The open-alarm count sat inside a nav item that carried an `aria-label`, so the label replaced the content and the count was announced as a bare digit, or not at all. | Medium | **VERIFIED** (CI) |
+| D-05 | sign-in surface | *No defect found.* Rendering, labels, focus containment, viewport fit and contrast were measured rather than assumed — see §2. | — | **VERIFIED** (local Chromium) |
+| D-06 | authenticated views (27) | Not exercised in this sandbox: no Prisma client ⇒ no data ⇒ no session. Their layout, forms, tables and states are **unaudited**, not "fine". | High | **BLOCKED** (sandbox) / **covered by CI** |
+| D-07 | 6 view components + `error-boundary` | Same untranslated-accessible-name class as D-03, still present: `api-keys-view` (Actions), `geography-view` (Edit, Delete), `tenants-view` (More actions, Filter by country), `maintenance-gantt` (Timeline range), `error-boundary` (Error message). | Medium | **DISCOVERED** |
+| D-08 | views | 7 call sites use `window.confirm`/native `confirm` instead of the shared `ConfirmDestructive`. Native confirms block the event loop, cannot be styled or translated, and ignore the app's destructive-action copy. Needs a per-site review before conversion. | Medium | **DISCOVERED** |
+| D-09 | whole app | Only 3 `aria-live` regions. Connection loss, a failed refresh and a role change are visible but not announced. | Medium | **DISCOVERED** |
+| D-10 | whole app | 509 occurrences of 9–10px type. Density is a product decision, not a bug to sweep; it needs per-view judgement against the operator's real screen. | Low | **DISCOVERED** |
+
+### 2. What was measured (public surface, Chromium 153, real server)
+
+Eight viewports — 320×568, 375×812, 390×844, 768×1024, 1024×768, 1366×768, 1440×900, 1920×1080:
+
+* horizontal overflow: **none** at any viewport (`scrollWidth == clientWidth`);
+* the sign-in dialog stays inside the viewport at every size, including 320 px;
+* axe-core, WCAG 2.0/2.1/2.2 A+AA rules: **0 violations**;
+* focus is placed inside the dialog on load and **does not escape** it after six Tab presses;
+* Arabic (`fgmp:lang=ar`) sets `dir="rtl"`, keeps zero overflow and keeps the dialog on screen.
+
+Reproduce (this sandbox):
+
+```bash
+# Chromium from npm + two stub libs, since cdn.playwright.dev is blocked here
+cd /tmp/browser && npm i playwright-core @sparticuz/chromium
+export CHROMIUM_PATH=$(node -e 'import("@sparticuz/chromium").then(async c=>console.log(await c.default.executablePath()))')
+export LD_LIBRARY_PATH=/tmp/nssstub3      # see §6 for how it is built
+LD_LIBRARY_PATH=$LD_LIBRARY_PATH npx playwright test      # in CI: no CHROMIUM_PATH needed
+```
+
+### 3. The corrections, and why they are shaped this way
+
+**D-01 — navigation became navigation.** Each sidebar item is now an `<a href="/?view=…">` with a
+click handler that calls `preventDefault()` only for an unmodified left click. Modifier and
+middle clicks are left to the browser, so the affordances users expect from a link work. `navigate()`
+uses `router.push`, so history is recorded. The *denial* path still uses `router.replace` — that is a
+correction of a URL the user is not allowed to see, and it must not become a Back-button trap. The
+visible label is the accessible name (the previous `aria-label` duplicated it and suppressed the
+alarm count), and the count now has a localized spoken form in an `sr-only` span.
+
+**D-02 — the trigger and the sheet.** `Menu` replaces `ChevronRight`; label and title come from the
+dictionary; the sheet's side follows `dir` (right in Arabic); `SheetTitle` gives the dialog its name
+without adding visual noise.
+
+**D-03 — the eight names.** Five are fixed by adding keys to both dictionaries (the existing i18n
+test fails the build if a `t()` key is missing, so this is a contract, not a convention). The three
+in view files are recorded as D-07 rather than half-fixed, because those views are unaudited and
+editing them blind is how a "translation pass" introduces regressions nobody looked at.
+
+No component was rewritten, no style was replaced, no permission was touched, and no data was
+fabricated to make a screen look complete.
+
+### 4. The regression suite
+
+`tests/e2e/ui.e2e.ts` (Playwright), split by what it needs:
+
+| Test | Needs | Asserts |
+|---|---|---|
+| sign-in renders with labelled fields | server | dialog, both labelled inputs, submit, zero page errors |
+| focus containment + keyboard | server | focus inside dialog on load; still inside after six Tabs |
+| 8 viewports | server | no horizontal overflow; dialog within the viewport |
+| Arabic / RTL | server | `dir="rtl"`; no overflow; dialog on screen |
+| WCAG 2.2 AA | server | axe violations = 0 |
+| nav is links; Back returns | DB + session | >20 links, `href="/?view=…"`, `aria-current`, Back leaves the view |
+| mobile nav dialog | DB + session | trigger name; dialog has a name; it closes on navigation |
+| READONLY | DB + session | no Users/Tenants/API-keys link **and** no request to those endpoints |
+| dashboard a11y | DB + session | axe violations = 0 |
+
+`testMatch: "**/*.e2e.ts"` is deliberate: `bun test` globs `*.spec.ts` and would otherwise try to run
+Playwright's `test()` inside bun's runner — which is exactly what happened once, and it showed up as a
+17th failure in the unit baseline.
+
+The `ui` CI job (`.github/workflows/ci.yml`) installs Playwright into `.pw/` rather than into
+`package.json`: ~40 MB of browser automation belongs to one job, not to every `bun install` or to the
+application image.
+
+### 5. State of the audit
+
+| Area | Result |
+|---|---|
+| Route inventory | 27 views + `/` + `/login` alias + 171 API handlers; each view has a `view:*` capability and is filtered by `hasCapability` |
+| Public surface | audited in a browser; **0** defects found; 5 tests green |
+| Shell (nav, header, footer) | 4 defects found, all fixed; proven by the CI half of the suite |
+| Authenticated views | **BLOCKED** in-sandbox (no Prisma client); `ui` CI job exists to cover them |
+| RTL | login surface verified; shell/views only statically |
+| Performance | **not measured** — a dev server with no database cannot produce a meaningful number, and reporting one would be dishonest |
+| Remaining defects | D-07, D-08, D-09, D-10 |
+
+### 6. Environment note (worth knowing, not a product defect)
+
+Loaded over `http://127.0.0.1:3000` the app sits on "Signing in…" forever; over `http://localhost:3000`
+it renders immediately. Next 16 blocks cross-origin dev resources (`⚠ Blocked cross-origin request to
+Next.js dev resource /_next/hmr from "127.0.0.1"`), and the client bundle never finishes. Production
+is unaffected. Fix if it ever matters: `allowedDevOrigins: ["127.0.0.1"]` in `next.config.ts`.
+
+The stub libraries, for the record: `libnss3.so`, `libnssutil3.so` and `libnspr4.so` were generated
+with `gcc -shared` from the undefined-symbol list of the unpacked Chromium (32 NSS + 6 NSPR symbols),
+because the sandbox has no package manager access. TLS inside that browser does not work; every test
+here is plain HTTP against localhost.

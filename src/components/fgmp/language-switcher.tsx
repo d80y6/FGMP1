@@ -11,7 +11,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import { useLanguage } from "@/lib/fgmp/use-language";
+import { useLanguage, useT } from "@/lib/fgmp/use-language";
 import { cn } from "@/lib/utils";
 
 const OPTIONS = [
@@ -35,6 +35,7 @@ function getServerSnapshot(): boolean {
 }
 
 export function LanguageSwitcher() {
+  const t = useT();
   const mounted = useSyncExternalStore(subscribeNoop, getClientSnapshot, getServerSnapshot);
   const { lang, setLang } = useLanguage();
   // Local "open" state so we can animate the chevron + render the dropdown
@@ -55,8 +56,8 @@ export function LanguageSwitcher() {
           variant="outline"
           size="icon"
           className="relative"
-          aria-label="Switch language"
-          title="Switch language"
+          aria-label={t("common.switchLanguage")}
+          title={t("common.switchLanguage")}
           data-testid="language-switcher"
         >
           {/* Icon:Languages on left + tiny "AR"/"EN" badge bottom-right */}

@@ -5,10 +5,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   LayoutDashboard, Building2, Droplet, Zap, BatteryCharging, Siren,
   Truck, TrendingUp, FileText, Cpu, Wrench, ScrollText, Fuel, Users,
-  Pause, Play, Activity, ChevronRight, ShieldCheck, Radio, Command, Search, Keyboard,
+  Pause, Play, Activity, ShieldCheck, Radio, Command, Search, Keyboard,
   Loader2, LogOut, ShieldOff, Bell,
   HardDrive, GitBranch, BarChart3, Map, KeyRound,
-  Settings, Layers,
+  Settings, Layers, Menu,
 } from "lucide-react";
 import { useSession, signOut } from "next-auth/react";
 import { toast } from "sonner";
@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useTheme } from "next-themes";
 import { useState } from "react";
 import { hasCapability, ROLE_PERMISSIONS } from "@/lib/fgmp/rbac-core";
@@ -86,7 +86,7 @@ import { LanguageSwitcher } from "@/components/fgmp/language-switcher";
 import { SupportSessionBanner } from "@/components/fgmp/support-session-banner";
 import { useKeyboardShortcuts } from "@/lib/fgmp/use-keyboard-shortcuts";
 import { useRealtime } from "@/lib/fgmp/use-realtime";
-import { useT, useLanguageHydration, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { useT, useTF, useLanguageHydration, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 
 // Nav items use i18n keys; the `label` is a fallback (English) for SSR before hydration.
@@ -348,7 +348,11 @@ export function AppShell() {
     setView(v);
     const params = new URLSearchParams(searchParams.toString());
     params.set("view", v);
-    router.replace(`/?${params.toString()}`, { scroll: false });
+    // `push`, not `replace`: with `replace` the fifteen-hop trip through the
+    // sidebar left no history at all, so Back left the application instead of
+    // returning to the previous view. Denied URLs are still normalised with
+    // `replace` in the effect above — that is a correction, not a navigation.
+    router.push(`/?${params.toString()}`, { scroll: false });
     setMobileNavOpen(false);
   };
 
@@ -451,11 +455,25 @@ export function AppShell() {
           {/* Mobile nav trigger */}
           <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="lg:hidden" aria-label="Open navigation">
-                <ChevronRight className="h-5 w-5" />
+              {/* A hamburger, not a chevron. `ChevronRight` on a left drawer reads as
+                  "expand"/"next step" and, under RTL, points at the wrong edge
+                  entirely — the one control a phone user needs to find the other
+                  27 views was the least recognisable icon in the header. */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="lg:hidden"
+                aria-label={t("common.openNavigation")}
+                title={t("common.openNavigation")}
+              >
+                <Menu className="h-5 w-5" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="w-72 p-0">
+            <SheetContent side={dir === "rtl" ? "right" : "left"} className="w-72 p-0">
+              {/* Radix dialogs have no accessible name without a title; the sheet
+                  is a dialog, so the mobile navigation was announced as just
+                  "dialog". Visually hidden, not omitted. */}
+              <SheetTitle className="sr-only">{t("nav.primary")}</SheetTitle>
               <SidebarContent grouped={grouped} view={view} navigate={navigate} me={me} />
             </SheetContent>
           </Sheet>
@@ -565,7 +583,7 @@ export function AppShell() {
           <LanguageSwitcher />
 
           {/* Keyboard shortcuts help */}
-          <Button variant="outline" size="icon" onClick={() => setHelpOpen(true)} aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">
+          <Button variant="outline" size="icon" onClick={() => setHelpOpen(true)} aria-label={t("common.keyboardShortcuts")} title={`${t("common.keyboardShortcuts")} (?)`}>
             <Keyboard className="h-4 w-4" />
           </Button>
 
@@ -712,7 +730,7 @@ function SidebarContent({ grouped, view, navigate, me }: {
   const dir = useDir();
   return (
     <div className="flex h-full flex-col">
-      <nav className="flex-1 overflow-y-auto px-2 py-3">
+      <nav aria-label={t("nav.primary")} className="flex-1 overflow-y-auto px-2 py-3">
         {Object.entries(grouped).map(([group, items]) => (
           <div key={group} className="mb-3">
             <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60" dir={dir === "rtl" ? "rtl" : undefined}>
@@ -725,9 +743,17 @@ function SidebarContent({ grouped, view, navigate, me }: {
               const desc = t(descKey);
               const hasDesc = desc && desc !== descKey;
               return (
-                <button
+                <a
                   key={item.key}
-                  onClick={() => navigate(item.key)}
+                  href={`/?view=${item.key}`}
+                  onClick={(e) => {
+                    // A real link, not a button: cmd/ctrl-click, middle-click and
+                    // "open in new tab" now work, and the element announces itself
+                    // as navigation rather than as a button.
+                    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                    e.preventDefault();
+                    navigate(item.key);
+                  }}
                   className={cn(
                     "group relative mb-0.5 flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-all duration-150",
                     active
@@ -737,8 +763,7 @@ function SidebarContent({ grouped, view, navigate, me }: {
                     "hover:translate-x-0",
                   )}
                   dir={dir === "rtl" ? "rtl" : undefined}
-                  title={hasDesc ? desc : undefined}
-                  aria-label={hasDesc ? `${t(item.tKey)} — ${desc}` : t(item.tKey)}
+                  title={hasDesc ? `${t(item.tKey)} — ${desc}` : undefined}
                   aria-current={active ? "page" : undefined}
                 >
                   {/* Active item: subtle left-border accent (3px) in the primary color.
@@ -752,7 +777,7 @@ function SidebarContent({ grouped, view, navigate, me }: {
                   <Icon className={cn("h-4 w-4 shrink-0 transition-transform duration-150 group-hover:translate-x-0.5 rtl:group-hover:-translate-x-0.5", active && "text-primary")} />
                   <span className="truncate">{t(item.tKey)}</span>
                   {item.key === "alarms" && <AlarmCountBadge />}
-                </button>
+                </a>
               );
             })}
           </div>
@@ -788,15 +813,19 @@ function AlarmCountBadge() {
   // Derived scalar selector: re-renders only when the count itself changes,
   // rather than on every unrelated store write.
   const n = useFgmp((s) => s.snapshot?.kpis.openAlarms ?? 0);
+  const tFmt = useTF();
   if (n === 0) return null;
   // Refreshed badge style: rounded-full, min-width to center single/double
   // digits, subtle rose drop-shadow so the alarm count pops at a glance.
   return (
     <span
       className="ml-auto inline-flex min-w-[20px] items-center justify-center rounded-full bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-rose-600 shadow-sm shadow-rose-500/20 dark:text-rose-400"
-      aria-label={`${n} open alarms`}
     >
-      {n}
+      <span aria-hidden="true">{n}</span>
+      {/* The visible digit alone would be read as "3" inside the nav link.
+          The link's name is its text content, so the count needs a spoken
+          form — localized, and hidden from the visual layout. */}
+      <span className="sr-only">{tFmt("nav.openAlarms", { n })}</span>
     </span>
   );
 }

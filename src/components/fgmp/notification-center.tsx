@@ -113,7 +113,8 @@ export function NotificationCenter() {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="icon" className="relative" aria-label="Notifications">
+        <Button variant="outline" size="icon" className="relative" aria-label={t("common.notifications")}
+          title={t("common.notifications")}>
           <Bell className={cn("h-4 w-4 transition-colors", unreadCount > 0 && "text-amber-500")} />
           {unreadCount > 0 && (
             <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-bold text-white animate-in zoom-in-50 duration-200">
