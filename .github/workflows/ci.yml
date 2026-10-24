@@ -265,6 +265,69 @@ jobs:
           python3 scripts/ci/publish-logs.py "rls: migration + isolation logs"
           /tmp/migrate.log /tmp/seed.log /tmp/smoke.log /tmp/dbtests.log /tmp/rls.log
 
+  # ── The HOSTED provisioning path ────────────────────────────────────────
+  # `scripts/supabase/{01..04}.sql` are what a customer runs against Supabase,
+  # Neon or RDS when they have no route to Prisma's engine. Nothing ran them in
+  # CI: the `rls` job provisions the docker path (pg-init-roles.sql + migrate
+  # deploy) as a superuser, which is a different set of statements with different
+  # privileges. So 01-roles.sql shipped a statement that needs a superuser, and a
+  # real deployment died at line 117 with `permission denied to change default
+  # privileges` — followed by `permission denied to set role "fgmp_migrate"` in
+  # 02 and the same in 04.
+  #
+  # This job reproduces the hosted shape and asserts the whole chain, including
+  # that the role it all runs as is NOT a superuser — otherwise every statement
+  # below would pass for the wrong reason. See scripts/verify/supabase-provisioning.ts.
+  provisioning:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [verify]
+
+    services:
+      postgres:
+        # Plain PostgreSQL, not TimescaleDB: the schema's Timescale block is
+        # commented out and the hosted path must work on stock PG.
+        image: postgres:17
+        env:
+          POSTGRES_USER: ci_admin
+          POSTGRES_PASSWORD: ci_admin
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci_admin -d postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # A superuser ONLY to create the non-superuser provisioner and a database
+      # owned by it. After that the scripts run as `fgmp_provisioner`.
+      FGMP_PG_ADMIN_URL: postgresql://ci_admin:ci_admin@127.0.0.1:5432/postgres
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+
+      - name: Confirm the client is available
+        run: psql --version
+
+      - name: Hosted provisioning contract (non-superuser, 01 → 04)
+        run: |
+          set -o pipefail
+          bun run test:provisioning 2>&1 | tee /tmp/provisioning.log
+
+      - name: Publish failure diagnostics
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >
+          python3 scripts/ci/publish-logs.py "provisioning: supabase scripts"
+          /tmp/provisioning.log
+
   docker:
     runs-on: ubuntu-latest
     timeout-minutes: 40

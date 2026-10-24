@@ -15,6 +15,7 @@ const PROD = {
   NEXTAUTH_SECRET: "a".repeat(48),
   NEXTAUTH_URL: "https://fgmp.example.ye",
   FGMP_REQUIRE_RLS: "1",
+  FGMP_OPS_DATABASE_URL: "postgresql://fgmp_ops:pw@db:5432/fgmp?schema=public",
   FGMP_MFA_ENCRYPTION_KEY: "c".repeat(48),
   REALTIME_SERVICE_TOKEN: "d".repeat(32),
   APINATOR_APP_ID: "app",
@@ -25,6 +26,37 @@ const PROD = {
 describe("env validation", () => {
   test("a complete production environment has no errors or warnings", () => {
     expect(collectEnvIssues(PROD)).toEqual([]);
+  });
+
+  test("production without an owner/ops credential is an ERROR, not a warning", () => {
+    // Sign-in reads "User" by email, which cannot be tenant-scoped, so it cannot
+    // run on the RLS-enforced app role. Without an owner credential the lookup
+    // returns no row and EVERY login is a 401 that looks like a wrong password.
+    // An app nobody can sign in to must not report itself as started.
+    const issues = collectEnvIssues({ ...PROD, FGMP_OPS_DATABASE_URL: "" });
+    const e = envErrors(issues);
+    expect(e.map((i) => i.name)).toContain("FGMP_OPS_DATABASE_URL");
+  });
+
+  test("…and FGMP_MIGRATE_DATABASE_URL is an accepted substitute", () => {
+    const issues = collectEnvIssues({
+      ...PROD,
+      FGMP_OPS_DATABASE_URL: "",
+      FGMP_MIGRATE_DATABASE_URL: "postgresql://fgmp_migrate:pw@db:5432/fgmp",
+    });
+    expect(envErrors(issues).map((i) => i.name)).not.toContain("FGMP_OPS_DATABASE_URL");
+  });
+
+  test("…but outside production the same gap is only a warning", () => {
+    const issues = collectEnvIssues({
+      ...PROD,
+      NODE_ENV: "development",
+      FGMP_OPS_DATABASE_URL: "",
+    });
+    expect(envErrors(issues).map((i) => i.name)).not.toContain("FGMP_OPS_DATABASE_URL");
+    expect(
+      issues.filter((i) => i.name === "FGMP_OPS_DATABASE_URL").map((i) => i.severity),
+    ).toEqual(["warn"]);
   });
 
   test("missing DATABASE_URL is an error", () => {

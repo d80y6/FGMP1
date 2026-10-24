@@ -1,13 +1,14 @@
 # TASK_LEDGER
 
-This file is durable across agent sessions and context limits. It holds **two** completed task
-records. Read the part for the task you are resuming; do not delete a part when you finish a new
-task — add one.
+This file is durable across agent sessions and context limits. It holds **three** task records: two
+complete, one in progress. Read the part for the task you are resuming; do not delete a part when
+you finish a new task — add one.
 
 | Part | Task | Outcome |
 |---|---|---|
 | [A](#part-a--postgresql-connection-assessment) | PostgreSQL connection assessment (pooling, runtime, Hyperdrive eligibility) | Complete except Phase 7a/7b, blocked on a live provider |
 | [B](#part-b--rbac-api-authorization-and-ui-enforcement) | RBAC, API authorization, UI permission enforcement | Complete; 4 defects fixed and verified, 2 blocked, 2 decisions open |
+| [C](#part-c--hosted-supabase-provisioning) | Hosted (Supabase/Neon/RDS) provisioning path | Defect fixed and verified as a non-superuser; CI gate added; 2 operator findings |
 
 Status vocabulary used throughout: `DISCOVERED` → `CONFIRMED` → `IN_PROGRESS` → `FIXED` →
 `VERIFIED` → `BLOCKED`. Nothing is `VERIFIED` on the strength of reading code: every VERIFIED line
@@ -682,3 +683,101 @@ effective gate: the intersection of the route's own allow-list and the capabilit
 | `GET /health/ready` | none **⚠** | **UNMAPPED** | SUPERADMIN, ADMIN, NOC_OPERATOR, REGIONAL_MANAGER, FIELD_ENGINEER, EXECUTIVE, READONLY |
 
 171 handlers.
+
+## Part C — Hosted (Supabase) provisioning
+
+**Branch** `arena/592458ff-fgmp1` · **Base** `8b51e3a` (merge of PR #17) · owner: agent
+
+The `scripts/supabase/01-roles.sql → 04-verify.sql` chain is the path a customer runs against a
+managed PostgreSQL (Supabase, Neon, RDS) where Prisma's engine cannot be used. It had never been
+executed against the role a hosted provider actually gives you — the database owner, which on
+Supabase is `postgres`: `CREATEROLE` + `BYPASSRLS`, **not** `SUPERUSER`. It failed on the first
+statement of consequence.
+
+### 1. The defect
+
+| | |
+|---|---|
+| **Symptom** (reported from the real deploy) | `psql -v ON_ERROR_STOP=1 -f 01-roles.sql` → `ERROR: permission denied to change default privileges`, line 117 |
+| **Consequence** | 02 then fails on `set role fgmp_migrate`, 04 fails on `set local role fgmp_app`. The half-applied run leaves `CHANGE_ME_*` passwords in place, so the app cannot connect either. |
+| **Root cause** | `ALTER DEFAULT PRIVILEGES … FOR ROLE fgmp_migrate` requires **USAGE** on that role. A non-superuser that merely *creates* a role receives ADMIN, not membership — and `SET ROLE` alone is not enough for a default-privileges check. |
+| **Fix** | `grant fgmp_app, fgmp_ops, fgmp_migrate to current_user with inherit true, set true;` — `INHERIT` is the part that matters. `with inherit false` reproduces the exact production error while `set role` still succeeds, which is why the first attempt looked correct. |
+| **Failure mode removed** | `01` now ends with a `pg_has_role(…, 'set')`/`'usage'` report and raises if `fgmp_migrate` cannot be assumed. The next failure, if any, is a sentence that names the cause. |
+| **Also fixed** | A literal `postgres` role inside a `DO` block → `role "postgres" does not exist` on any cluster whose superuser is named otherwise (`undefined_object`, so an `insufficient_privilege` handler does not catch it). Now `current_user` + `format(%I)`. |
+
+Status: **VERIFIED** (see §3) — reproduced first, then fixed, then proven by a negative control.
+
+### 2. Why it reached a customer
+
+Nothing ran these files. CI's `rls` job provisions the *docker* path (`scripts/db/pg-init-roles.sql`
++ `prisma migrate deploy`) as a superuser — a different set of statements, executed with privileges
+the hosted path does not have. The two paths could disagree indefinitely, and did.
+
+### 3. Proof
+
+`scripts/verify/supabase-provisioning.ts` (`bun run test:provisioning`) reproduces the hosted shape
+end to end: it creates a **non-superuser** `CREATEROLE BYPASSRLS` role, gives it a database it owns,
+runs `01 → 04` as that role, and asserts 22 things — including that the running role is *not* a
+superuser, that default privileges are actually recorded (2 rows for `fgmp_migrate`), that `01`
+re-runs silently (idempotent), and that `fgmp_app` still sees `0 sites with no tenant context` and
+`cannot create tables` afterwards.
+
+| Run | Result |
+|---|---|
+| Fixed `01-roles.sql` | `Provisioning contract: OK — the hosted/admin path works as a non-superuser.` — **22 ✓, exit 0** |
+| Pre-fix `01-roles.sql` (negative control) | **15 assertions failed, exit 1** — the harness is not passing by accident |
+| Chain output as a non-superuser | `45 tables, 40 with FORCE RLS, 55 policies`; `2 tenants, 6 users, 8 sites, 8 tanks, 8 generators, 8 dispensers, 5 alarms, 12 fuel transactions`; `FGMP deployment verified.` |
+
+The harness exits **2**, not 0, when the cluster already holds the FGMP roles in another database:
+a "first run" that is really a re-run measures a different scenario, and pretending otherwise would
+be a green tick on the wrong fact.
+
+CI now has a `provisioning` job that runs exactly this against `postgres:17` (plain PostgreSQL — the
+schema's Timescale block is commented out and the hosted path must work on stock PG).
+
+### 4. Two things an operator must do that the scripts cannot
+
+1. **`FGMP_OPS_DATABASE_URL` is required for sign-in.** The email → user lookup cannot be
+   tenant-scoped, so it cannot run as `fgmp_app`; `"User"` is `FORCE ROW LEVEL SECURITY` and an
+   unscoped `SELECT` matches zero rows. Without an ops credential every login returns **401** —
+   with no server error and nothing in the response to distinguish it from a wrong password.
+   `src/lib/auth-identity.ts` had claimed since the 2026-10 fix that "the boot-time warning in
+   `src/lib/env.ts` tells the operator why". There was no such check. There is now: an **error**
+   in production (the server refuses to start with a message that names the cause), a warning
+   elsewhere, and `FGMP_MIGRATE_DATABASE_URL` is accepted as a substitute — which is what
+   `owner-db.ts` already does at runtime. Three tests in `src/lib/env.test.ts`; two of them fail
+   against the previous `env.ts` (checked by restoring it and re-running).
+2. **Rotate the passwords.** `01-roles.sql` creates roles with `CHANGE_ME_*` literals and does not
+   rotate them, and the seeders publish demo account passwords in this repository. Leaving both is
+   how a deployment becomes reachable with credentials anyone can read. Rotation SQL is in
+   `scripts/supabase/README.md`.
+
+### 5. What changed
+
+- `scripts/supabase/01-roles.sql` — membership block; default privileges via `current_user` +
+  `format(%I)`; guarded; fatal if the migration role cannot be assumed.
+- `scripts/supabase/README.md` — run-as table (each file, and as whom), the `ADMIN_URL` warning,
+  `set role fgmp_ops;` for the seed, expected NOTICE output, rotation SQL. A stale bullet claiming
+  the seed "keeps working only because it runs as a superuser" was corrected: it runs as `fgmp_ops`
+  (`BYPASSRLS`), and `FORCE RLS` is precisely why ownership does not help.
+- `scripts/verify/supabase-provisioning.ts` — new.
+- `.github/workflows/ci.yml` — new `provisioning` job.
+- `package.json` — `test:provisioning` script.
+- `src/lib/env.ts` + `src/lib/env.test.ts` — the identity-credential check described above.
+- `.env.example` — why the ops URL is not optional, and the demo-credential policy.
+- `render.yaml` — the web service now declares `FGMP_OPS_DATABASE_URL` (`sync: false`, so
+  Render prompts for it). It previously declared the variable only as *empty* on the IoT
+  bridge, which documents the shape of the credential without ever supplying the one the
+  web container needs. `FGMP_MIGRATE_DATABASE_URL` stays blanked there: that one *is* the
+  schema owner and must not reach a request-serving container.
+
+### 6. Not claimed
+
+- The scripts were **not** run against the user's Supabase project from this sandbox (egress to
+  Supabase is blocked). They were run against PostgreSQL 16/17 clusters as a role with the same
+  privilege set as Supabase's `postgres`; the production failure was reproduced exactly first.
+- The CI job has not yet run on GitHub at the time of writing — it is added here, and its first
+  result is reported separately.
+- No role, grant or policy was invented to make anything pass: the membership tuple exists because
+  PostgreSQL requires it to evaluate `ALTER DEFAULT PRIVILEGES`, and it is asserted rather than
+  assumed.
