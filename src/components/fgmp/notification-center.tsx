@@ -138,7 +138,7 @@ export function NotificationCenter() {
             {unreadCount > 0 && (
               <Button variant="ghost" size="sm" className="h-7 px-2 text-[10px]" onClick={markAllRead}>
                 <CheckCheck className="mr-1 h-3 w-3" />
-                Mark all read
+                {t("notifications.markAllRead")}
               </Button>
             )}
             {canDismissNotifications && (

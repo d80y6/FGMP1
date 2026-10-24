@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useFgmp } from "@/lib/fgmp/store";
 import { useApi } from "@/lib/fgmp/use-api";
 import { canAccessApi } from "@/lib/fgmp/rbac-core";
-import { useT } from "@/lib/fgmp/use-language";
+import { useT, useTF } from "@/lib/fgmp/use-language";
 
 // ── Types (mirror the API response) ────────────────────────────────────────
 interface TenantCensus {
@@ -91,6 +91,7 @@ const COUNT_LABELS: Record<string, string> = {
 
 export function TenantIsolationView() {
   const t = useT();
+  const tFmt = useTF();
   const me = useFgmp((s) => s.me);
   const { data: report, loading, error, refetch } = useApi<IsolationReport>("/api/fgmp/admin/tenant-isolation-test");
   const [running, setRunning] = useState(false);
@@ -126,9 +127,7 @@ export function TenantIsolationView() {
         <Card className="max-w-md p-8 text-center">
           <ShieldAlert className="mx-auto mb-4 h-12 w-12 text-amber-500" />
           <h2 className="mb-2 text-xl font-semibold">{t("tenants.superadminOnly")}</h2>
-          <p className="text-sm text-muted-foreground">
-            Tenant isolation testing is restricted to platform super-admins.
-          </p>
+          <p className="text-sm text-muted-foreground">{t("isolation.superadminOnly")}</p>
         </Card>
       </div>
     );
@@ -153,7 +152,7 @@ export function TenantIsolationView() {
           {running || loading ? (
             <><RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Running...</>
           ) : (
-            <><Play className="mr-2 h-4 w-4" /> Run Isolation Test</>
+            <><Play className="mr-2 h-4 w-4" /> {t("isolation.runTest")}</>
           )}
         </Button>
       </div>
@@ -162,7 +161,7 @@ export function TenantIsolationView() {
         <Card className="border-rose-500/30 bg-rose-500/5 p-4">
           <div className="flex items-center gap-2 text-rose-600">
             <AlertCircle className="h-5 w-5" />
-            <span className="font-medium">Failed to load report:</span>
+            <span className="font-medium">{t("isolation.loadFailed")}</span>
             <span className="text-sm">{error}</span>
           </div>
         </Card>
@@ -232,9 +231,7 @@ export function TenantIsolationView() {
           {/* Per-tenant census */}
           <Card className="p-5">
             <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold">
-              <Building2 className="h-5 w-5 text-primary" />
-              Per-Tenant Resource Census
-            </h2>
+              <Building2 className="h-5 w-5 text-primary" />{t("isolation.census")}</h2>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -271,9 +268,7 @@ export function TenantIsolationView() {
           {/* Cross-tenant test results */}
           <Card className="p-5">
             <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold">
-              <ShieldAlert className="h-5 w-5 text-primary" />
-              Cross-Tenant Access Simulation
-            </h2>
+              <ShieldAlert className="h-5 w-5 text-primary" />{t("isolation.crossTenant")}</h2>
             <p className="mb-4 text-sm text-muted-foreground">
               For each tenant pair, sampled rows are tested against ownership helpers.
               These are helper-level checks only: a super-admin helper result is not
@@ -307,7 +302,7 @@ export function TenantIsolationView() {
                         </div>
                         <div className="flex shrink-0 gap-4 text-xs">
                           {!test.recordFound ? (
-                            <span className="text-amber-600" title={test.reason}>Not measured — no sample row</span>
+                            <span className="text-amber-600" title={test.reason}>{t("isolation.notMeasured")}</span>
                           ) : (
                             <>
                               <span className={test.crossTenantDenied ? "text-emerald-600" : "text-rose-600"}>
@@ -326,9 +321,7 @@ export function TenantIsolationView() {
               ))}
               {current.crossTenantTests.length === 0 && (
                 <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-                  <AlertCircle className="mx-auto mb-2 h-8 w-8" />
-                  No cross-tenant tests run. Need at least 2 tenants with resources.
-                </div>
+                  <AlertCircle className="mx-auto mb-2 h-8 w-8" />{t("isolation.noTests")}</div>
               )}
             </div>
           </Card>
@@ -336,14 +329,9 @@ export function TenantIsolationView() {
           {/* List-view scoping audit */}
           <Card className="p-5">
             <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold">
-              <Users className="h-5 w-5 text-primary" />
-              List-View Tenant Scoping Audit
-            </h2>
+              <Users className="h-5 w-5 text-primary" />{t("isolation.scopingAudit")}</h2>
             <p className="mb-4 text-sm text-muted-foreground">
-              For each tenant, the <code className="rounded bg-muted px-1">tenantWhereOrAll</code> /{" "}
-              <code className="rounded bg-muted px-1">siteTenantWhereOrAll</code> filter is applied
-              to the list queries. The counts below should match the census above — confirming
-              that a tenant admin&apos;s list query returns only their own tenant&apos;s rows.
+              {tFmt("isolation.scopingAuditDesc", { fn1: "tenantWhereOrAll", fn2: "siteTenantWhereOrAll" })}
             </p>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -399,12 +387,12 @@ export function TenantIsolationView() {
       {!current && !running && !loading && !error && (
         <Card className="p-12 text-center">
           <ShieldCheck className="mx-auto mb-4 h-16 w-16 text-muted-foreground/50" />
-          <h3 className="mb-2 text-lg font-semibold">No report loaded</h3>
+          <h3 className="mb-2 text-lg font-semibold">{t("isolation.noReport")}</h3>
           <p className="mb-4 text-sm text-muted-foreground">
-            Click <strong>Run Isolation Test</strong> to verify cross-tenant data isolation.
+            {t("isolation.noReportHint")}
           </p>
           <Button onClick={runTest}>
-            <Play className="mr-2 h-4 w-4" /> Run Test
+            <Play className="mr-2 h-4 w-4" /> {t("isolation.run")}
           </Button>
         </Card>
       )}

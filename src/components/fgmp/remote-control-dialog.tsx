@@ -12,6 +12,7 @@ import { Zap, AlertOctagon, RotateCcw, Power } from "lucide-react";
 import { apiPost } from "@/lib/fgmp/use-api";
 import { toast } from "sonner";
 import type { GenCommand } from "@/lib/fgmp/types";
+import { useT, useTF } from "@/lib/fgmp/use-language";
 
 interface Props {
   open: boolean;
@@ -31,6 +32,8 @@ const CMD_META: Record<GenCommand, { title: string; icon: typeof Zap; tone: stri
 };
 
 export function RemoteControlDialog({ open, onOpenChange, generatorId, generatorLabel, siteName, command, onDone }: Props) {
+  const t = useT();
+  const tFmt = useTF();
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const meta = CMD_META[command];
@@ -61,23 +64,23 @@ export function RemoteControlDialog({ open, onOpenChange, generatorId, generator
             {meta.title}
           </DialogTitle>
           <DialogDescription>
-            Confirm remote control command on <b className="text-foreground">{generatorLabel}</b> at <b className="text-foreground">{siteName}</b>.
+            {tFmt("remoteControl.confirmOn", { generator: generatorLabel, site: siteName })}
           </DialogDescription>
         </DialogHeader>
 
         {isEmergency && (
           <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 p-3 text-xs text-rose-600 dark:text-rose-400">
-            <AlertOctagon className="mb-1 inline h-4 w-4" /> Emergency stop will immediately halt the generator and lock it in FAULT state until manually reset. This action is fully audited.
+            <AlertOctagon className="mb-1 inline h-4 w-4" /> {t("remoteControl.emergencyNote")}
           </div>
         )}
 
         <div className="space-y-2">
-          <Label htmlFor="reason" className="text-xs">Reason / ticket reference</Label>
-          <Textarea id="reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Grid restored, scheduled test, maintenance TK-1234" rows={2} />
+          <Label htmlFor="reason" className="text-xs">{t("remoteControl.reasonLabel")}</Label>
+          <Textarea id="reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder={t("remoteControl.reasonPlaceholder")} rows={2} />
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>Cancel</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>{t("common.cancel")}</Button>
           <Button onClick={submit} disabled={busy} className={`text-white ${meta.tone}`}>
             {busy ? "Executing…" : meta.confirm}
           </Button>

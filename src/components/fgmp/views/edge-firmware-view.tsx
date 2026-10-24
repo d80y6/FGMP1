@@ -231,17 +231,13 @@ export function EdgeFirmwareView() {
             Gateways
           </TabsTrigger>
           <TabsTrigger value="firmware" className="text-xs">
-            <HardDriveDownload className="mr-1.5 h-3.5 w-3.5" />
-            ESP Firmware
-          </TabsTrigger>
+            <HardDriveDownload className="mr-1.5 h-3.5 w-3.5" />{t("firmware.espFirmware")}</TabsTrigger>
           <TabsTrigger value="rs485" className="text-xs">
             <Radio className="mr-1.5 h-3.5 w-3.5" />
             RS485 Diagnostics
           </TabsTrigger>
           <TabsTrigger value="reboot" className="text-xs">
-            <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
-            ESP Reboot
-          </TabsTrigger>
+            <RefreshCw className="mr-1.5 h-3.5 w-3.5" />{t("firmware.espReboot")}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="gateways" className="mt-4">
@@ -350,8 +346,8 @@ function GatewaysTab({ gateways, loading, numLang }: {
                   <TableHead className="w-[80px]">Source</TableHead>
                   <TableHead className="hidden lg:table-cell w-[100px]">{t("iot.firmware")}</TableHead>
                   <TableHead className="w-[130px]">RS485</TableHead>
-                  <TableHead className="w-[90px]">WiFi RSSI</TableHead>
-                  <TableHead className="hidden md:table-cell w-[120px]">Last Comm</TableHead>
+                  <TableHead className="w-[90px]">{t("firmware.wifiRssi")}</TableHead>
+                  <TableHead className="hidden md:table-cell w-[120px]">{t("firmware.lastComm")}</TableHead>
                   <TableHead className="w-[100px]">{t("common.status")}</TableHead>
                 </TableRow>
               </TableHeader>
@@ -467,7 +463,7 @@ function FirmwareTab({ gateways, loading, onRefresh }: {
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
             <Activity className="h-4 w-4 text-emerald-500" />
-            Firmware Version Distribution
+            {t("firmware.versionDistribution")}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -518,7 +514,7 @@ function FirmwareTab({ gateways, loading, onRefresh }: {
       {/* Devices grouped by firmware */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm">Devices by Firmware Version</CardTitle>
+          <CardTitle className="text-sm">{t("firmware.devicesByVersion")}</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           {loading && gateways.length === 0 ? (
@@ -534,7 +530,7 @@ function FirmwareTab({ gateways, loading, onRefresh }: {
                     <TableHead className="hidden md:table-cell">{t("common.site")}</TableHead>
                     <TableHead className="w-[100px]">Current</TableHead>
                     <TableHead className="w-[100px]">Target</TableHead>
-                    <TableHead className="w-[120px]">OTA Status</TableHead>
+                    <TableHead className="w-[120px]">{t("firmware.otaStatus")}</TableHead>
                     <TableHead className="w-[90px] text-right">Action</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -587,12 +583,8 @@ function FirmwareTab({ gateways, loading, onRefresh }: {
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <HardDriveDownload className="h-4 w-4 text-emerald-500" />
-              OTA Firmware Update
-            </DialogTitle>
-            <DialogDescription>
-              Queue a firmware update for the selected ESP device.
-            </DialogDescription>
+              <HardDriveDownload className="h-4 w-4 text-emerald-500" />{t("firmware.otaUpdate")}</DialogTitle>
+            <DialogDescription>{t("firmware.otaDesc")}</DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
             <p className="text-xs text-muted-foreground">
@@ -614,7 +606,7 @@ function FirmwareTab({ gateways, loading, onRefresh }: {
             </Button>
             <Button onClick={startOta} className="bg-emerald-500 hover:bg-emerald-600 text-white">
               <HardDriveDownload className="mr-1.5 h-4 w-4" />
-              Deploy OTA
+              {t("iot.deployOta")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -702,7 +694,7 @@ function Rs485Tab({ gateways, loading, numLang }: {
           <CardContent className="p-4">
             <div className="flex items-center gap-2">
               <Radio className="h-4 w-4 text-emerald-500" />
-              <p className="text-xs text-muted-foreground">Total Buses</p>
+              <p className="text-xs text-muted-foreground">{t("firmware.totalBuses")}</p>
             </div>
             <p className="mt-1 text-2xl font-semibold tabular-nums">
               {formatNumber(totalBuses, numLang)}
@@ -717,7 +709,7 @@ function Rs485Tab({ gateways, loading, numLang }: {
               ) : (
                 <AlertTriangle className="h-4 w-4 text-rose-500" />
               )}
-              <p className="text-xs text-muted-foreground">Address Conflicts</p>
+              <p className="text-xs text-muted-foreground">{t("firmware.addressConflicts")}</p>
             </div>
             <p className={"mt-1 text-2xl font-semibold tabular-nums " + (totalConflicts > 0 ? "text-rose-500" : "text-emerald-500")}>
               {formatNumber(totalConflicts, numLang)}
@@ -728,7 +720,7 @@ function Rs485Tab({ gateways, loading, numLang }: {
           <CardContent className="p-4">
             <div className="flex items-center gap-2">
               <Cpu className="h-4 w-4 text-emerald-500" />
-              <p className="text-xs text-muted-foreground">Total RS485 Devices</p>
+              <p className="text-xs text-muted-foreground">{t("firmware.totalRs485")}</p>
             </div>
             <p className="mt-1 text-2xl font-semibold tabular-nums">
               {formatNumber(gateways.length, numLang)}
@@ -740,7 +732,7 @@ function Rs485Tab({ gateways, loading, numLang }: {
       {/* Bus table */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm">RS485 Bus Health per Site</CardTitle>
+          <CardTitle className="text-sm">{t("firmware.rs485Health")}</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           {loading && gateways.length === 0 ? (
@@ -753,10 +745,10 @@ function Rs485Tab({ gateways, loading, numLang }: {
                 <TableHeader className="sticky top-0 bg-card">
                   <TableRow>
                     <TableHead>{t("common.site")}</TableHead>
-                    <TableHead className="w-[120px]">Bus Config</TableHead>
+                    <TableHead className="w-[120px]">{t("firmware.busConfig")}</TableHead>
                     <TableHead className="w-[60px]">Devices</TableHead>
                     <TableHead className="w-[200px]">Addresses</TableHead>
-                    <TableHead className="w-[150px]">Signal Quality</TableHead>
+                    <TableHead className="w-[150px]">{t("firmware.signalQuality")}</TableHead>
                     <TableHead className="w-[110px]">{t("common.status")}</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -902,9 +894,7 @@ function RebootTab({ gateways, loading, numLang, onReboot, isAdmin }: {
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="text-sm flex items-center gap-2">
-          <RefreshCw className="h-4 w-4 text-emerald-500" />
-          ESP Device Reboot
-        </CardTitle>
+          <RefreshCw className="h-4 w-4 text-emerald-500" />{t("firmware.deviceReboot")}</CardTitle>
       </CardHeader>
       <CardContent className="p-0">
         {loading && gateways.length === 0 ? (
@@ -919,7 +909,7 @@ function RebootTab({ gateways, loading, numLang, onReboot, isAdmin }: {
                   <TableHead>ESP Device ID</TableHead>
                   <TableHead className="hidden md:table-cell">{t("common.site")}</TableHead>
                   <TableHead className="hidden lg:table-cell w-[100px]">{t("iot.firmware")}</TableHead>
-                  <TableHead className="w-[120px]">Last Comm</TableHead>
+                  <TableHead className="w-[120px]">{t("firmware.lastComm")}</TableHead>
                   <TableHead className="w-[100px]">{t("common.status")}</TableHead>
                   <TableHead className="w-[110px] text-right">Action</TableHead>
                 </TableRow>
@@ -963,11 +953,9 @@ function RebootTab({ gateways, loading, numLang, onReboot, isAdmin }: {
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
               <RefreshCw className="h-4 w-4 text-amber-500" />
-              Confirm ESP Reboot
+              {t("firmware.confirmReboot")}
             </AlertDialogTitle>
-            <AlertDialogDescription>
-              This will send a reboot command to the ESP device. It will be temporarily unavailable during the restart.
-              <br />
+            <AlertDialogDescription>{t("firmware.rebootConfirm")}<br />
               <span className="font-mono text-[11px] text-foreground">{confirmTarget?.espId}</span>
               {" · "}
               <span className="text-xs">{confirmTarget?.siteName}</span>

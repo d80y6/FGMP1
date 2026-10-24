@@ -150,10 +150,8 @@ export function GeographyView() {
       <div className="mx-auto max-w-2xl py-10">
         <Alert variant="destructive">
           <ShieldAlert className="h-4 w-4" />
-          <AlertTitle>Access denied</AlertTitle>
-          <AlertDescription>
-            Only administrators can manage the geographic hierarchy. Contact your platform administrator if you need access.
-          </AlertDescription>
+          <AlertTitle>{t("common.accessDenied")}</AlertTitle>
+          <AlertDescription>{t("geography.adminOnly")}</AlertDescription>
         </Alert>
       </div>
     );
@@ -315,9 +313,7 @@ export function GeographyView() {
         <CardContent className="p-0">
           {selectedDistrict ? (
             districtSites.length === 0 ? (
-              <div className="py-10 text-center text-sm text-muted-foreground">
-                No sites in this district yet.
-              </div>
+              <div className="py-10 text-center text-sm text-muted-foreground">{t("geography.noSitesDistrict")}</div>
             ) : (
               <ScrollArea className="max-h-[420px]">
                 <Table>
@@ -356,9 +352,7 @@ export function GeographyView() {
               </ScrollArea>
             )
           ) : (
-            <div className="py-10 text-center text-sm text-muted-foreground">
-              Select a district above to see its sites.
-            </div>
+            <div className="py-10 text-center text-sm text-muted-foreground">{t("geography.selectDistrict")}</div>
           )}
         </CardContent>
       </Card>
@@ -578,6 +572,9 @@ function ListItem({
   dir: "rtl" | "ltr";
 }) {
   void dir;
+  // Module-scope component: the translate hook has to be called here, not
+  // inherited from the view that renders it.
+  const t = useT();
   return (
     <div
       role="button"
@@ -602,7 +599,7 @@ function ListItem({
               variant="ghost"
               className="h-6 w-6"
               onClick={(e) => { e.stopPropagation(); onEdit(); }}
-              aria-label="Edit"
+              aria-label={t("common.edit")}
             >
               <Pencil className="h-3 w-3" />
             </Button>
@@ -613,7 +610,7 @@ function ListItem({
               variant="ghost"
               className="h-6 w-6 text-rose-500 hover:text-rose-600 hover:bg-rose-500/10"
               onClick={(e) => { e.stopPropagation(); onDelete(); }}
-              aria-label="Delete"
+              aria-label={t("common.delete")}
             >
               <Trash2 className="h-3 w-3" />
             </Button>

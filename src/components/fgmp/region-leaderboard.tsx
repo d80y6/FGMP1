@@ -100,7 +100,7 @@ export function RegionLeaderboard({ regions, totalSites, onSelectRegion }: Regio
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
           <Trophy className="h-4 w-4 text-amber-500" />
-          Region Performance Leaderboard
+          {t("leaderboard.title")}
         </CardTitle>
         <div className="flex items-center gap-2">
           <Badge variant="outline" className="text-[10px]">

@@ -20,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { ConfirmDestructive, useDestructiveConfirm } from "@/components/fgmp/confirm-destructive";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -166,13 +167,24 @@ export function ShiftHandoverPanel() {
     }
   }
 
-  async function handleDelete(id: string) {
-    if (typeof window !== "undefined" && !window.confirm(t("handover.confirmDelete"))) return;
+  // The last `window.confirm` in the application. It blocked the event loop,
+  // could not be styled or translated (the string it showed was only correct in
+  // the language the page loaded in), and gave the operator no consequence
+  // beyond "are you sure". Split into ask/perform so the shared dialog can own
+  // the confirmation — the shape every other destructive action already uses.
+  const confirmDelete = useDestructiveConfirm();
+  // Which note is being confirmed. Kept beside the dialog rather than inside it
+  // because the confirm handler needs the id after the dialog has closed.
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+
+  async function performDelete(id: string) {
+    confirmDelete.setBusy(true);
     // DELETE /api/fgmp/shift-handover/[id] is ADMIN-only (settings:manage).
     // apiDelete refuses it locally for every other role, so the request is never
     // issued even if this handler is reached by a stale render or a confirmation
     // dialog that was opened before a role change.
     const res = await apiDelete(`/api/fgmp/shift-handover/${id}`);
+    confirmDelete.settle();
     if (res.ok) {
       toast.success(t("handover.deletedToast"));
       refetch();
@@ -360,7 +372,15 @@ export function ShiftHandoverPanel() {
                               size="sm"
                               variant="ghost"
                               className="h-7 w-7 p-0 text-muted-foreground hover:bg-rose-500/10 hover:text-rose-600"
-                              onClick={() => handleDelete(n.id)}
+                              onClick={() => {
+                                setPendingDeleteId(n.id);
+                                confirmDelete.ask({
+                                  title: t("handover.delete"),
+                                  description: t("handover.confirmDelete"),
+                                  cancelLabel: t("common.cancel"),
+                                  confirmLabel: t("common.delete"),
+                                });
+                              }}
                             >
                               <Trash2 className="h-3 w-3" />
                             </Button>
@@ -400,6 +420,19 @@ export function ShiftHandoverPanel() {
           </ScrollArea>
         )}
       </CardContent>
+
+      <ConfirmDestructive
+        {...confirmDelete.dialogProps}
+        onCancel={() => {
+          setPendingDeleteId(null);
+          confirmDelete.settle();
+        }}
+        onConfirm={() => {
+          const id = pendingDeleteId;
+          setPendingDeleteId(null);
+          if (id) void performDelete(id);
+        }}
+      />
 
       {composerOpen && (
         <HandoverComposer

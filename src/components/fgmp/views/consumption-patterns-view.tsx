@@ -309,7 +309,7 @@ export function ConsumptionPatternsView() {
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-sm">
               <Clock className="h-4 w-4 text-amber-500" />
-              Average Consumption by Hour
+              {t("consumption.avgByHour")}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -338,7 +338,7 @@ export function ConsumptionPatternsView() {
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-sm">
               <Calendar className="h-4 w-4 text-emerald-500" />
-              Average Consumption by Day of Week
+              {t("consumption.avgByDayOfWeek")}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -367,9 +367,7 @@ export function ConsumptionPatternsView() {
       {/* Top 5 sites by variance */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm">
-            Top 5 Sites by Consumption Variance
-          </CardTitle>
+          <CardTitle className="text-sm">{t("consumption.top5Variance")}</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
@@ -413,9 +411,7 @@ export function ConsumptionPatternsView() {
               })}
               {siteStats.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-8 text-center text-xs text-muted-foreground">
-                    No consumption data available in current tank history.
-                  </TableCell>
+                  <TableCell colSpan={6} className="py-8 text-center text-xs text-muted-foreground">{t("consumption.noData")}</TableCell>
                 </TableRow>
               )}
             </TableBody>

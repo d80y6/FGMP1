@@ -143,10 +143,8 @@ export function SystemSettingsView() {
       <div className="mx-auto max-w-2xl py-10">
         <Alert variant="destructive">
           <ShieldAlert className="h-4 w-4" />
-          <AlertTitle>Access denied</AlertTitle>
-          <AlertDescription>
-            Only platform administrators may view or edit system settings.
-          </AlertDescription>
+          <AlertTitle>{t("common.accessDenied")}</AlertTitle>
+          <AlertDescription>{t("settings.adminOnly")}</AlertDescription>
         </Alert>
       </div>
     );
@@ -200,6 +198,7 @@ export function SystemSettingsView() {
 
 function SettingsSection({ category, numLang }: { category: Category; numLang: Language }) {
   const meta = CATEGORY_META[category];
+  const t = useT();
   const fields = FIELDS[category];
   const Icon = meta.icon;
 
@@ -333,7 +332,7 @@ function SettingsSection({ category, numLang }: { category: Category; numLang: L
           <div className="flex flex-wrap items-center gap-2">
             {isDirty && (
               <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px]">
-                Unsaved changes
+                {t("settings.unsavedChanges")}
               </Badge>
             )}
             <Button
@@ -343,7 +342,7 @@ function SettingsSection({ category, numLang }: { category: Category; numLang: L
               disabled={loading || saving}
             >
               <RotateCcw className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Reset to Defaults</span>
+              <span className="hidden sm:inline">{t("rules.resetToDefaults")}</span>
               <span className="sm:hidden">Reset</span>
             </Button>
             <Button
@@ -362,7 +361,7 @@ function SettingsSection({ category, numLang }: { category: Category; numLang: L
         {error && (
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Failed to load settings</AlertTitle>
+            <AlertTitle>{t("settings.loadFailed")}</AlertTitle>
             <AlertDescription className="text-xs">{error}</AlertDescription>
           </Alert>
         )}

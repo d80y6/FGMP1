@@ -829,13 +829,15 @@ workaround, `Low` = polish.
 |---|---|---|---|---|
 | D-01 | `app-shell.tsx` navigation | Every sidebar destination was a `<button>` that called `router.replace`. Back left the application instead of returning to the previous view; no URL per view was reachable except by editing it; cmd/ctrl-click, middle-click and "open in new tab" did nothing. | High | **VERIFIED** (CI) |
 | D-02 | `app-shell.tsx` mobile nav | The trigger was a `ChevronRight` — a "next/expand" glyph for a control that opens a left drawer, and it points the wrong way under RTL. Its accessible name was hardcoded English. The sheet it opens is a Radix dialog with no title, so it was announced as an unnamed "dialog". | High | **VERIFIED** (CI: trigger name + named dialog) |
-| D-03 | header controls | Eight accessible names were hardcoded English (`Open navigation`, `Keyboard shortcuts`, `Switch language`, `Switch theme`, `Notifications`, …) while every visible label was translated. In Arabic the UI reads correctly but a screen reader announces English. | Medium | **FIXED** (5 of 8; i18n contract + Arabic run) |
+| D-03 | header controls | Eight accessible names were hardcoded English (`Open navigation`, `Keyboard shortcuts`, `Switch language`, `Switch theme`, `Notifications`, …) while every visible label was translated. In Arabic the UI reads correctly but a screen reader announces English. | Medium | **FIXED** (8 of 8; the tree now contains **zero** English `aria-label` literals, enforced by test) |
 | D-04 | `app-shell.tsx` alarm badge | The open-alarm count sat inside a nav item that carried an `aria-label`, so the label replaced the content and the count was announced as a bare digit, or not at all. | Medium | **VERIFIED** (CI) |
 | D-05 | sign-in surface | *No defect found.* Rendering, labels, focus containment, viewport fit and contrast were measured rather than assumed — see §2. | — | **VERIFIED** (local Chromium) |
 | D-06 | authenticated views (27) | Not exercised in this sandbox: no Prisma client ⇒ no data ⇒ no session. Their layout, forms, tables and states are **unaudited**, not "fine". | High | **BLOCKED** (sandbox) / **covered by CI** |
-| D-07 | 6 view components + `error-boundary` | Same untranslated-accessible-name class as D-03, still present: `api-keys-view` (Actions), `geography-view` (Edit, Delete), `tenants-view` (More actions, Filter by country), `maintenance-gantt` (Timeline range), `error-boundary` (Error message). | Medium | **DISCOVERED** |
-| D-08 | views | 7 call sites use `window.confirm`/native `confirm` instead of the shared `ConfirmDestructive`. Native confirms block the event loop, cannot be styled or translated, and ignore the app's destructive-action copy. Needs a per-site review before conversion. | Medium | **DISCOVERED** |
-| D-09 | whole app | Only 3 `aria-live` regions. Connection loss, a failed refresh and a role change are visible but not announced. | Medium | **DISCOVERED** |
+| D-07 | 6 view components + `error-boundary` | Same untranslated-accessible-name class as D-03: `api-keys-view` (Actions), `geography-view` (Edit, Delete), `tenants-view` (More actions, Filter by country), `maintenance-gantt` (Timeline range), `error-boundary` (Error message). | Medium | **FIXED** — six new dictionary keys, both languages; the guard test fails on a regression |
+| D-08 | views | 7 call sites used `window.confirm`/native `confirm` instead of the shared `ConfirmDestructive`. Native confirms block the event loop, cannot be styled or translated, and ignore the app's destructive-action copy. | Medium | **FIXED** — the last one (`shift-handover-panel`) converted to `useDestructiveConfirm`; a source grep for `window.confirm(` now returns only comments |
+| D-09 | whole app | Only 3 `aria-live` regions. Connection loss, a failed refresh and a role change are visible but not announced. | Medium | **PARTIAL** — `role="status"`/`aria-live="polite"` added to the header connection pill and to `system-status-banner`; a role change is still unannounced (it re-renders the whole shell, which the current structure cannot narrate) |
+| D-14 | 20 components | **The Arabic UI was only partly Arabic.** 76 English *sentences* were JSX text nodes with no `t()` at all — the fuel-delivery timeline, the API-key table, the tenant support dialog, the maintenance toolbar — plus 5 components that never imported the translate hook. In Arabic mode they rendered left-to-right English inside an RTL layout. | High | **FIXED** — 179 keys added in both languages; measured count of English JSX prose in `src/components` is now **0**, enforced by `untranslated-text.test.ts` |
+| D-15 | 26 components | 33 English `title=` / `placeholder=` literals remain (dialogs, empty-state titles, per-view data examples). Announced by screen readers and visible on hover, so the same class as D-14, but not yet swept. | Low | **OPEN** — ratcheted at 33 in the same test so it cannot grow; inventory printed by the failing assertion |
 | D-10 | whole app | 509 occurrences of 9–10px type. Density is a product decision, not a bug to sweep; it needs per-view judgement against the operator's real screen. | Low | **DISCOVERED** |
 | D-11 | `app-shell.tsx` sign-in | **CRITICAL.** `signIn({redirect:false})` resolves when the cookie is set, but nothing pushed the new session into `<SessionProvider>`, which still held the "nobody" it fetched at mount. The dialog stayed on top of an authenticated session; the server log recorded six successful sign-ins while the browser still showed the form. `LoginDialog` had an `onSuccess` hook that `AppShell` never passed. | Critical | **VERIFIED** (CI: 4 authenticated tests reach the shell) |
 | D-12 | shell / dashboard | Six colour-contrast failures (WCAG 1.4.3, serious) on the rendered dashboard: sidebar group headings at 60% opacity (4), the KPI chip label at 70% (1), the 8px EN/AR badge (white on `emerald-500` = 2.3:1) (1). | High | **VERIFIED** (CI: axe 6 → 0) |
@@ -899,6 +901,13 @@ fabricated to make a screen look complete.
 | READONLY | DB + session | no Users/Tenants/API-keys link **and** no request to those endpoints |
 | dashboard a11y | DB + session | axe violations = 0 |
 
+The **unit** half of the same defence is `src/lib/fgmp/__tests__/untranslated-text.test.ts`, which reads
+`src/components` and fails on: English prose in a JSX text node (ceiling **0**), an English `aria-label`
+literal (ceiling **0**), or growth in English `title`/`placeholder` literals (ceiling **33**, D-15). It
+scans with a small JSX-aware pass rather than a regex on raw text, because the naive regex also matched
+code that happened to sit between two angle brackets (`>= 3; return (`) — 376 false hits against 127
+real ones. Comments are blanked but newlines preserved, so the reported line numbers point at the file.
+
 `testMatch: "**/*.e2e.ts"` is deliberate: `bun test` globs `*.spec.ts` and would otherwise try to run
 Playwright's `test()` inside bun's runner — which is exactly what happened once, and it showed up as a
 17th failure in the unit baseline.
@@ -917,7 +926,8 @@ application image.
 | Authenticated views | Shell, navigation and the dashboard's a11y are **VERIFIED in CI**. The 27 views' individual layouts/forms/tables are **still unaudited** — the suite covers the shell, not every view. |
 | RTL | login surface verified; shell/views only statically |
 | Performance | **not measured** — a dev server with no database cannot produce a meaningful number, and reporting one would be dishonest |
-| Remaining defects | D-07, D-08, D-09, D-10, plus per-view audits |
+| i18n | **0** English JSX prose and **0** English `aria-label` literals remain in `src/components`; 179 dictionary keys added; both guarded by `src/lib/fgmp/__tests__/untranslated-text.test.ts` (ceiling 0 for prose and labels, 33 for `title`/`placeholder`) |
+| Remaining defects | D-09 (partial), D-10 (product decision), D-15 (33 literals), D-06 (per-view layouts: still BLOCKED locally, covered by the CI half) |
 
 ### 6. Environment note (worth knowing, not a product defect)
 

@@ -428,7 +428,7 @@ function TanksTab({ sites, isAdmin, numLang }: {
           {isAdmin && (
             <Button size="sm" onClick={() => setCreateOpen(true)}>
               <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline">Add Tank</span>
+              <span className="hidden sm:inline">{t("assets.addTank")}</span>
             </Button>
           )}
         </div>
@@ -450,7 +450,7 @@ function TanksTab({ sites, isAdmin, numLang }: {
                   <TableHead>Tank</TableHead>
                   <TableHead className="hidden md:table-cell">{t("common.site")}</TableHead>
                   <TableHead className="w-[100px]">Fuel</TableHead>
-                  <TableHead className="w-[140px]">Capacity / Current</TableHead>
+                  <TableHead className="w-[140px]">{t("assets.capacityCurrent")}</TableHead>
                   <TableHead className="w-[90px]">{t("common.status")}</TableHead>
                   {isAdmin && <TableHead className="w-[60px] text-right">{t("common.actions")}</TableHead>}
                 </TableRow>
@@ -673,7 +673,7 @@ function TankFormDialog({ open, onOpenChange, target, sites, lang, onSaved }: {
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">Fuel Type</Label>
+            <Label className="text-xs">{t("assets.fuelType")}</Label>
             <Select value={form.fuelType} onValueChange={(v) => setForm({ ...form, fuelType: v })}>
               <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -801,7 +801,7 @@ function GeneratorsTab({ sites, isAdmin, numLang }: {
           {isAdmin && (
             <Button size="sm" onClick={() => setCreateOpen(true)}>
               <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline">Add Generator</span>
+              <span className="hidden sm:inline">{t("assets.addGenerator")}</span>
             </Button>
           )}
         </div>
@@ -822,7 +822,7 @@ function GeneratorsTab({ sites, isAdmin, numLang }: {
                 <TableRow>
                   <TableHead>Generator</TableHead>
                   <TableHead className="hidden md:table-cell">{t("common.site")}</TableHead>
-                  <TableHead className="hidden lg:table-cell">Make / Model</TableHead>
+                  <TableHead className="hidden lg:table-cell">{t("assets.makeModel")}</TableHead>
                   <TableHead className="w-[100px]">{t("generators.load")}</TableHead>
                   <TableHead className="w-[110px]">{t("generators.runtime")}</TableHead>
                   <TableHead className="w-[90px]">{t("common.status")}</TableHead>
@@ -1024,7 +1024,7 @@ function GeneratorFormDialog({ open, onOpenChange, target, sites, lang, onSaved 
             <Input value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} className="h-9" />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">Fuel Type</Label>
+            <Label className="text-xs">{t("assets.fuelType")}</Label>
             <Select value={form.fuelType} onValueChange={(v) => setForm({ ...form, fuelType: v })}>
               <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -1137,7 +1137,7 @@ function BatteriesTab({ sites, isAdmin, numLang }: {
           {isAdmin && (
             <Button size="sm" onClick={() => setCreateOpen(true)}>
               <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline">Add Battery</span>
+              <span className="hidden sm:inline">{t("assets.addBattery")}</span>
             </Button>
           )}
         </div>
@@ -1505,7 +1505,7 @@ function IotTab({ sites, isAdmin, numLang }: {
           {isAdmin && (
             <Button size="sm" onClick={() => setCreateOpen(true)}>
               <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline">Add Device</span>
+              <span className="hidden sm:inline">{t("assets.addDevice")}</span>
             </Button>
           )}
         </div>
@@ -1687,7 +1687,7 @@ function IotFormDialog({ open, onOpenChange, target, sites, lang, onSaved }: {
             <SiteSelect value={form.siteId} onChange={(v) => setForm({ ...form, siteId: v })} sites={sites} lang={lang} />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">Device Name *</Label>
+            <Label className="text-xs">{t("assets.deviceName")}</Label>
             <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="h-9" />
           </div>
           <div className="space-y-1.5">
@@ -1695,7 +1695,7 @@ function IotFormDialog({ open, onOpenChange, target, sites, lang, onSaved }: {
             <Input value={form.vendor} onChange={(e) => setForm({ ...form, vendor: e.target.value })} className="h-9" />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">Serial No *</Label>
+            <Label className="text-xs">{t("assets.serialNo")}</Label>
             <Input value={form.serialNo} onChange={(e) => setForm({ ...form, serialNo: e.target.value })} className="h-9 font-mono" dir="ltr" />
           </div>
           <div className="space-y-1.5">
@@ -1725,11 +1725,11 @@ function IotFormDialog({ open, onOpenChange, target, sites, lang, onSaved }: {
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">IP Address</Label>
+            <Label className="text-xs">{t("assets.ipAddress")}</Label>
             <Input value={form.ipAddress} onChange={(e) => setForm({ ...form, ipAddress: e.target.value })} className="h-9 font-mono" dir="ltr" />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">Modbus Unit</Label>
+            <Label className="text-xs">{t("assets.modbusUnit")}</Label>
             <Input type="number" value={form.modbusUnit} onChange={(e) => setForm({ ...form, modbusUnit: e.target.value })} className="h-9" />
           </div>
           {target && (
@@ -2204,10 +2204,10 @@ function DispenserFormDialog({ open, onOpenChange, target, sites, lang, onSaved,
             <Input type="number" value={form.maxFlowLpm} onChange={(e) => setForm({ ...form, maxFlowLpm: e.target.value })} className="h-9" />
           </div>
           <div className="col-span-2 border-t pt-2 mt-1">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">ESP Controller</p>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">{t("assets.espController")}</p>
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">ESP Device ID *</Label>
+            <Label className="text-xs">{t("assets.espDeviceId")}</Label>
             <Input value={form.espDeviceId} onChange={(e) => setForm({ ...form, espDeviceId: e.target.value })} className="h-9 font-mono" dir="ltr" placeholder="ESP32-DISP-001" />
           </div>
           <div className="space-y-1.5">

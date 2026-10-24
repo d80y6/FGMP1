@@ -7,6 +7,7 @@ import type { ReactNode } from "react";
 import { ArrowDownRight, ArrowUpRight, Info } from "lucide-react";
 import { AnimatedNumber } from "@/components/fgmp/animated-number";
 import { Sparkline } from "@/components/fgmp/sparkline";
+import { useT } from "@/lib/fgmp/use-language";
 
 interface KpiCardProps {
   label: string;
@@ -76,6 +77,7 @@ const TONE_SPARK_STROKE: Record<string, string> = {
 };
 
 export function KpiCard({ label, value, unit, icon, trend, hint, info, tone = "default", className, animate = false, decimals = 0, sparkline, sparklineLabel }: KpiCardProps) {
+  const t = useT();
   return (
     <Card className={cn(
       "group relative overflow-hidden bg-gradient-to-br from-card to-card/50 p-0 transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5",
@@ -154,7 +156,7 @@ export function KpiCard({ label, value, unit, icon, trend, hint, info, tone = "d
             <span className={cn("font-medium", trend >= 0 ? "text-emerald-500" : "text-rose-500")}>
               {Math.abs(trend)}%
             </span>
-            <span className="text-muted-foreground">vs prev period</span>
+            <span className="text-muted-foreground">{t("kpi.vsPrevPeriod")}</span>
           </div>
         )}
       </div>

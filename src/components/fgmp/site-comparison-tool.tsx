@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import type { SiteState, TankState, GenState, BattState } from "@/lib/fgmp/types";
 import { siteStatusTextClass } from "@/lib/fgmp/status";
 import { rowsToCsv } from "@/lib/fgmp/csv";
+import { useT } from "@/lib/fgmp/use-language";
 
 interface ComparisonRow {
   label: string;
@@ -108,6 +109,7 @@ const METRICS: ComparisonRow[] = [
 ];
 
 export function SiteComparisonTool() {
+  const t = useT();
   const { snapshot, selectSite, setView } = useFgmp(useShallow((s) => ({ snapshot: s.snapshot, selectSite: s.selectSite, setView: s.setView })));
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [pickerValue, setPickerValue] = useState("");
@@ -264,7 +266,7 @@ export function SiteComparisonTool() {
           </Select>
           {selectedIds.length > 0 && (
             <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => setSelectedIds([])}>
-              Clear all
+              {t("comparison.clearAll")}
             </Button>
           )}
           {selectedSites.length >= 2 && (
@@ -276,7 +278,7 @@ export function SiteComparisonTool() {
                 onClick={handleExportCsv}
               >
                 <Download className="h-3 w-3" />
-                Export CSV
+                {t("common.exportCsv")}
               </Button>
               <Button
                 variant="ghost"
@@ -364,7 +366,7 @@ export function SiteComparisonTool() {
                   <td className="sticky left-0 z-10 bg-muted/20 p-2">
                     <div className="flex items-center gap-1.5">
                       <Trophy className="h-3 w-3 text-amber-500" />
-                      <span>Best Count</span>
+                      <span>{t("comparison.bestCount")}</span>
                     </div>
                   </td>
                   {selectedSites.map((_, i) => {
@@ -390,8 +392,8 @@ export function SiteComparisonTool() {
         ) : (
           <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-8 text-center">
             <GitCompare className="mb-2 h-8 w-8 text-muted-foreground/40" />
-            <p className="text-sm text-muted-foreground">Select at least 2 sites to compare</p>
-            <p className="text-[11px] text-muted-foreground/70">Compare fuel levels, generator health, battery status, and more side-by-side</p>
+            <p className="text-sm text-muted-foreground">{t("comparison.selectTwo")}</p>
+            <p className="text-[11px] text-muted-foreground/70">{t("comparison.compareHint")}</p>
           </div>
         )}
 
@@ -402,7 +404,7 @@ export function SiteComparisonTool() {
               <Trophy className="h-5 w-5 text-amber-500" />
               <div className="flex flex-col gap-0.5">
                 <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                  Leading Site
+                  {t("comparison.leadingSite")}
                 </span>
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-semibold">{leaderSite.name}</span>
@@ -419,7 +421,7 @@ export function SiteComparisonTool() {
               onClick={handleViewLeaderInSites}
             >
               <ExternalLink className="h-3 w-3" />
-              View in Sites
+              {t("comparison.viewInSites")}
             </Button>
           </div>
         )}

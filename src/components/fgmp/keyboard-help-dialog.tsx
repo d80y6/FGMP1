@@ -5,6 +5,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Keyboard } from "lucide-react";
 import { KEYBOARD_SHORTCUTS } from "@/lib/fgmp/use-keyboard-shortcuts";
+import { useT } from "@/lib/fgmp/use-language";
 
 interface Props {
   open: boolean;
@@ -12,6 +13,7 @@ interface Props {
 }
 
 export function KeyboardHelpDialog({ open, onOpenChange }: Props) {
+  const t = useT();
   // Alarms-view-specific shortcuts. These are local to the alarms view
   // (registered via a useEffect in alarms-view.tsx) so they live alongside
   // the dialog rather than in the global KEYBOARD_SHORTCUTS array.
@@ -40,10 +42,10 @@ export function KeyboardHelpDialog({ open, onOpenChange }: Props) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Keyboard className="h-5 w-5 text-emerald-500" />
-            Keyboard Shortcuts
+            {t("common.keyboardShortcuts")}
           </DialogTitle>
           <DialogDescription>
-            Use these shortcuts to navigate and control the platform faster. Shortcuts are disabled while typing in inputs.
+            {t("keyboard.desc")}
           </DialogDescription>
         </DialogHeader>
         <ScrollArea className="max-h-[60vh]">
@@ -68,9 +70,9 @@ export function KeyboardHelpDialog({ open, onOpenChange }: Props) {
             <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
               <p className="text-[11px] leading-relaxed text-muted-foreground">
                 <Badge variant="outline" className="mr-1.5 h-4 px-1 text-[9px] border-emerald-500/30 text-emerald-600 dark:text-emerald-400">
-                  TIP
+                  {t("keyboard.tip")}
                 </Badge>
-                Press <kbd className="rounded border bg-muted px-1 font-mono text-[10px]">G</kbd> then a letter key to quickly navigate between views. The <kbd className="rounded border bg-muted px-1 font-mono text-[10px]">G</kbd> prefix waits 800ms for the next key.
+                {t("keyboard.gPrefixTip")}
               </p>
             </div>
           </div>

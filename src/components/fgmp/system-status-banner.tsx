@@ -136,6 +136,13 @@ export function SystemStatusBanner({ kpis }: SystemStatusBannerProps) {
 
   return (
     <Card
+      // The banner is the platform-wide answer to "is anything wrong right
+      // now?", and it changed without saying so: a screen reader user had to
+      // navigate back to it to discover the platform had degraded. `polite`
+      // because it is a state, not an alert — it must not interrupt the
+      // sentence someone is already reading.
+      role="status"
+      aria-live="polite"
       className={cn(
         "rounded-xl border bg-card/50 backdrop-blur p-4",
         config.cardClass,

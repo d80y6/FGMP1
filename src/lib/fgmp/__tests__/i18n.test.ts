@@ -101,10 +101,21 @@ function stripComments(source: string): string {
   return out;
 }
 
-/** Literal `t("key")` calls across the app. */
+/**
+ * Literal translation calls across the app.
+ *
+ * The scan used to match only `t("…")`, which silently skipped the
+ * interpolating helpers — `tFmt("nav.openAlarms", { n })` and
+ * `translateFmt("heatmap.alarmsCount", "ar", { n })` — the very calls most
+ * likely to be hand-written and therefore misspelled. Every helper spelling in
+ * the tree is listed here, and `test/binding names` below keeps a new alias
+ * from quietly falling out of the scan.
+ */
+const TRANSLATORS = ["t", "tFmt", "translateFmt", "translate"] as const;
+
 function literalKeys(): Map<string, string[]> {
   const found = new Map<string, string[]>();
-  const pattern = /\bt\(\s*"([^"]+)"/g;
+  const pattern = new RegExp(`\\b(?:${TRANSLATORS.join("|")})\\(\\s*"([^"]+)"`, "g");
   for (const file of walk(SRC)) {
     const source = stripComments(readFileSync(file, "utf8"));
     for (const match of source.matchAll(pattern)) {
@@ -135,6 +146,23 @@ describe("dictionary lookups", () => {
         .sort()
         .join("\n  ")}`,
     );
+  });
+
+  test("every translate-hook binding has a name the scan recognises", () => {
+    // `const tf = useTF()` compiles, renders, and is invisible to the key scan
+    // above. Widening the regex only helps if the bindings keep the names it
+    // knows, so this test fails on a new alias rather than letting its keys go
+    // unchecked.
+    const bindings = new Set<string>();
+    for (const file of walk(SRC)) {
+      const source = stripComments(readFileSync(file, "utf8"));
+      for (const match of source.matchAll(/\b(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:React\.)?use(?:T|TF)\(\)/g)) {
+        bindings.add(match[1]);
+      }
+    }
+    const unknown = [...bindings].filter((name) => !(TRANSLATORS as readonly string[]).includes(name));
+    assert.deepEqual(unknown, [], `these useT()/useTF() bindings would escape the key scan: ${unknown.join(", ")}`);
+    assert.ok(bindings.size > 0, "expected to find at least one translate hook binding");
   });
 
   test("an unknown key falls back to the key itself", () => {

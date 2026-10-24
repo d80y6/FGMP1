@@ -440,7 +440,7 @@ export function SitesView() {
                       <span className="rounded bg-background px-1.5 py-0.5">IoT: <b className="tabular-nums">{formatNumber(iot, numLang)}</b></span>
                       {total === 0 && (
                         <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-emerald-600 dark:text-emerald-400">
-                          No child assets
+                          {t("sites.noChildAssets")}
                         </span>
                       )}
                     </div>

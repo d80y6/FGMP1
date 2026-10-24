@@ -230,15 +230,11 @@ export function FuelForecastView() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-sm">
-              <TrendingDown className="h-4 w-4 text-rose-500" />
-              7-Day Level Projection — Top Risk Tanks
-            </CardTitle>
+              <TrendingDown className="h-4 w-4 text-rose-500" />{t("forecast.projection7Day")}</CardTitle>
           </CardHeader>
           <CardContent>
             {topRiskTanks.length === 0 ? (
-              <p className="py-12 text-center text-xs text-muted-foreground">
-                No critical or high-risk tanks currently.
-              </p>
+              <p className="py-12 text-center text-xs text-muted-foreground">{t("forecast.noneRisk")}</p>
             ) : (
               <ResponsiveContainer width="100%" height={260}>
                 <LineChart data={chartData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
@@ -268,7 +264,7 @@ export function FuelForecastView() {
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-sm">
               <Activity className="h-4 w-4 text-amber-500" />
-              Tank Risk Distribution
+              {t("forecast.tankRiskDistribution")}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -307,10 +303,10 @@ export function FuelForecastView() {
                   <TableHead className="text-right">Capacity (L)</TableHead>
                   <TableHead className="text-right">%</TableHead>
                   <TableHead className="text-right">Rate (L/h)</TableHead>
-                  <TableHead className="text-right">Hrs → Low</TableHead>
-                  <TableHead className="text-right">Hrs → Critical</TableHead>
-                  <TableHead className="text-right">Hrs → Dry</TableHead>
-                  <TableHead className="min-w-[140px]">Dry-Out Date</TableHead>
+                  <TableHead className="text-right">{t("forecast.hrsToLow")}</TableHead>
+                  <TableHead className="text-right">{t("forecast.hrsToCritical")}</TableHead>
+                  <TableHead className="text-right">{t("forecast.hrsToDry")}</TableHead>
+                  <TableHead className="min-w-[140px]">{t("forecast.dryOutDate")}</TableHead>
                   <TableHead className="text-center">Risk</TableHead>
                   <TableHead className="text-right">Action</TableHead>
                 </TableRow>
@@ -351,7 +347,7 @@ export function FuelForecastView() {
                             className="h-7 text-[11px]"
                             onClick={() => setView("inventory")}
                           >
-                            <PackagePlus className="mr-1 h-3 w-3" /> Create Delivery
+                            <PackagePlus className="mr-1 h-3 w-3" /> {t("forecast.createDelivery")}
                           </Button>
                         )}
                       </TableCell>
@@ -360,9 +356,7 @@ export function FuelForecastView() {
                 })}
                 {rows.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={12} className="py-8 text-center text-xs text-muted-foreground">
-                      No tank data available.
-                    </TableCell>
+                    <TableCell colSpan={12} className="py-8 text-center text-xs text-muted-foreground">{t("forecast.noData")}</TableCell>
                   </TableRow>
                 )}
               </TableBody>

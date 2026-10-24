@@ -33,6 +33,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useApi } from "@/lib/fgmp/use-api";
 import { useFgmp } from "@/lib/fgmp/store";
+import { useT, useTF } from "@/lib/fgmp/use-language";
 
 interface ActiveSupport {
   id: string;
@@ -53,6 +54,8 @@ function minutesLeft(iso: string): number {
 }
 
 export function SupportSessionBanner() {
+  const t = useT();
+  const tFmt = useTF();
   const { data: session } = useSession();
   const role = (session?.user as { role?: string } | undefined)?.role;
   const isSuper = role === "SUPERADMIN";
@@ -97,8 +100,8 @@ export function SupportSessionBanner() {
       }
     >
       <ShieldAlert className="h-4 w-4 shrink-0" />
-      <span className="font-semibold">Support session</span>
-      <span className="opacity-80">acting as</span>
+      <span className="font-semibold">{t("support.session")}</span>
+      <span className="opacity-80">{t("support.actingAs")}</span>
       <Badge variant="outline" className="font-mono text-[10px]">
         {active.tenantName ?? active.tenantId}
       </Badge>
@@ -109,7 +112,7 @@ export function SupportSessionBanner() {
         {active.reason}
         {active.ticketRef ? ` · ${active.ticketRef}` : ""}
       </span>
-      <span className="tabular-nums opacity-80">{mins > 0 ? `${mins} min left` : "expiring"}</span>
+      <span className="tabular-nums opacity-80">{mins > 0 ? tFmt("support.minsLeft", { n: mins }) : t("support.expiring")}</span>
       <Button
         size="sm"
         variant={write ? "destructive" : "outline"}

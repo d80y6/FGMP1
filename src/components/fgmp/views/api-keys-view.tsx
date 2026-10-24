@@ -51,7 +51,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import { fmtDateTime, timeAgo } from "@/lib/fgmp/format";
-import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { useT, useTF, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 import { cn } from "@/lib/utils";
 
@@ -86,11 +86,13 @@ interface CreatedKeyResponse {
   createdAt: string;
 }
 
+// Keys, not text: this table is module scope (no hook) and the dialog is used
+// in Arabic too.
 const ALL_SCOPES = [
-  { code: "read",    label: "Read",    hint: "GET endpoints — list + view resources" },
-  { code: "write",   label: "Write",   hint: "POST/PATCH endpoints — create + update resources" },
-  { code: "control", label: "Control", hint: "Control endpoints — generator start/stop, dispenser authorize, etc." },
-  { code: "admin",   label: "Admin",   hint: "All endpoints including user + tenant management" },
+  { code: "read",    labelKey: "apiKeys.scopeRead",    hintKey: "apiKeys.scopeReadHint" },
+  { code: "write",   labelKey: "apiKeys.scopeWrite",   hintKey: "apiKeys.scopeWriteHint" },
+  { code: "control", labelKey: "apiKeys.scopeControl", hintKey: "apiKeys.scopeControlHint" },
+  { code: "admin",   labelKey: "apiKeys.scopeAdmin",   hintKey: "apiKeys.scopeAdminHint" },
 ] as const;
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -146,6 +148,7 @@ function ScopeBadge({ scope }: { scope: string }) {
  * ──────────────────────────────────────────────────────────────────────── */
 
 export function ApiKeysView() {
+  const tFmt = useTF();
   const t = useT();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
@@ -196,10 +199,8 @@ export function ApiKeysView() {
       <div className="mx-auto max-w-2xl py-10">
         <Alert variant="destructive">
           <ShieldAlert className="h-4 w-4" />
-          <AlertTitle>Access denied</AlertTitle>
-          <AlertDescription>
-            Only platform administrators may manage API keys.
-          </AlertDescription>
+          <AlertTitle>{t("common.accessDenied")}</AlertTitle>
+          <AlertDescription>{t("apiKeys.adminOnly")}</AlertDescription>
         </Alert>
       </div>
     );
@@ -215,8 +216,8 @@ export function ApiKeysView() {
         actions={
           <Button size="sm" onClick={() => setCreateOpen(true)}>
             <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">Create API Key</span>
-            <span className="sm:hidden">Create</span>
+            <span className="hidden sm:inline">{t("apiKeys.create")}</span>
+            <span className="sm:hidden">{t("apiKeys.createShort")}</span>
           </Button>
         }
       />
@@ -241,7 +242,7 @@ export function ApiKeysView() {
             <div className="p-4">
               <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />
-                <AlertTitle>Failed to load API keys</AlertTitle>
+                <AlertTitle>{t("apiKeys.loadFailed")}</AlertTitle>
                 <AlertDescription className="text-xs">{error}</AlertDescription>
               </Alert>
             </div>
@@ -253,15 +254,15 @@ export function ApiKeysView() {
               <Table>
                 <TableHeader className="sticky top-0 bg-card">
                   <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead className="hidden md:table-cell">Key Prefix</TableHead>
-                    <TableHead>Scopes</TableHead>
-                    <TableHead className="hidden lg:table-cell">IP Allowlist</TableHead>
-                    <TableHead className="hidden xl:table-cell">Created By</TableHead>
-                    <TableHead className="hidden md:table-cell">Last Used</TableHead>
-                    <TableHead className="hidden lg:table-cell">Created</TableHead>
-                    <TableHead className="w-[90px]">Status</TableHead>
-                    <TableHead className="w-[60px] text-right">Actions</TableHead>
+                    <TableHead>{t("common.name")}</TableHead>
+                    <TableHead className="hidden md:table-cell">{t("apiKeys.keyPrefix")}</TableHead>
+                    <TableHead>{t("apiKeys.scopes")}</TableHead>
+                    <TableHead className="hidden lg:table-cell">{t("apiKeys.ipAllowlist")}</TableHead>
+                    <TableHead className="hidden xl:table-cell">{t("apiKeys.createdBy")}</TableHead>
+                    <TableHead className="hidden md:table-cell">{t("apiKeys.lastUsed")}</TableHead>
+                    <TableHead className="hidden lg:table-cell">{t("common.created")}</TableHead>
+                    <TableHead className="w-[90px]">{t("common.status")}</TableHead>
+                    <TableHead className="w-[60px] text-right">{t("common.actions")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -292,8 +293,7 @@ export function ApiKeysView() {
                         <TableCell className="hidden lg:table-cell">
                           {ips.length === 0 ? (
                             <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                              <Globe className="h-3 w-3" /> Any IP
-                            </span>
+                              <Globe className="h-3 w-3" />{t("apiKeys.anyIp")}</span>
                           ) : (
                             <div className="flex flex-wrap gap-1 max-w-[160px]">
                               {ips.map((ip, i) => (
@@ -317,7 +317,7 @@ export function ApiKeysView() {
                               <p className="text-[9px]">{fmtDateTime(k.lastUsedAt, numLang).slice(5, 16)}</p>
                             </>
                           ) : (
-                            <span>Never</span>
+                            <span>{t("apiKeys.never")}</span>
                           )}
                         </TableCell>
                         <TableCell className="hidden lg:table-cell text-[10px] text-muted-foreground">
@@ -327,7 +327,7 @@ export function ApiKeysView() {
                         <TableCell className="text-right">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Actions">
+                              <Button variant="ghost" size="icon" className="h-7 w-7" aria-label={t("common.actions")}>
                                 <MoreVertical className="h-3.5 w-3.5" />
                               </Button>
                             </DropdownMenuTrigger>
@@ -349,7 +349,7 @@ export function ApiKeysView() {
                   {(keys ?? []).length === 0 && (
                     <TableRow>
                       <TableCell colSpan={9} className="py-12 text-center text-sm text-muted-foreground">
-                        No API keys yet. Click <span className="font-medium">Create API Key</span> to generate one.
+                        {t("apiKeys.emptyHint")}
                       </TableCell>
                     </TableRow>
                   )}
@@ -384,21 +384,20 @@ export function ApiKeysView() {
       <AlertDialog open={!!revokeTarget} onOpenChange={(o) => !o && setRevokeTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Revoke API key?</AlertDialogTitle>
+            <AlertDialogTitle>{t("apiKeys.revokeTitle")}</AlertDialogTitle>
             <AlertDialogDescription>
-              This immediately disables the key <span className="font-mono">{revokeTarget?.keyPrefix}…</span> ({revokeTarget?.name}).
-              Any client using this key will receive 401 on the next request. This action cannot be undone.
+              {tFmt("apiKeys.revokeDesc", { prefix: `${revokeTarget?.keyPrefix ?? ""}…`, name: revokeTarget?.name ?? "" })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={revoking}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={revoking}>{t("common.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleRevoke}
               disabled={revoking}
               className={cn("bg-rose-600 hover:bg-rose-700 focus-visible:ring-rose-500 text-white")}
             >
               {revoking ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Ban className="mr-1 h-3.5 w-3.5" />}
-              Revoke Key
+              {t("apiKeys.revokeBtn")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -419,6 +418,7 @@ function CreateKeyDialog({
   onCreated: (c: CreatedKeyResponse) => void;
   numLang: Language;
 }) {
+  const t = useT();
   const [name, setName] = useState("");
   const [scopes, setScopes] = useState<Set<string>>(new Set(["read"]));
   const [expiresAt, setExpiresAt] = useState("");
@@ -476,21 +476,19 @@ function CreateKeyDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[480px]">
         <DialogHeader>
-          <DialogTitle>Create API Key</DialogTitle>
-          <DialogDescription>
-            Generate a new programmatic API key. The raw key will be shown once after creation — store it securely.
-          </DialogDescription>
+          <DialogTitle>{t("apiKeys.create")}</DialogTitle>
+          <DialogDescription>{t("apiKeys.createDesc")}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           {/* Name */}
           <div className="space-y-1.5">
-            <Label htmlFor="apikey-name" className="text-xs">Name</Label>
+            <Label htmlFor="apikey-name" className="text-xs">{t("common.name")}</Label>
             <Input
               id="apikey-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. IoT Bridge Ingest"
+              placeholder={t("apiKeys.namePlaceholder")}
               className="h-9"
               maxLength={80}
             />
@@ -501,7 +499,7 @@ function CreateKeyDialog({
 
           {/* Scopes */}
           <div className="space-y-2">
-            <Label className="text-xs">Scopes</Label>
+            <Label className="text-xs">{t("apiKeys.scopes")}</Label>
             <div className="grid grid-cols-2 gap-2">
               {ALL_SCOPES.map((s) => (
                 <label
@@ -519,8 +517,8 @@ function CreateKeyDialog({
                     className="mt-0.5"
                   />
                   <div className="space-y-0.5">
-                    <div className="text-xs font-medium">{s.label}</div>
-                    <div className="text-[10px] leading-tight text-muted-foreground">{s.hint}</div>
+                    <div className="text-xs font-medium">{t(s.labelKey)}</div>
+                    <div className="text-[10px] leading-tight text-muted-foreground">{t(s.hintKey)}</div>
                   </div>
                 </label>
               ))}
@@ -530,7 +528,7 @@ function CreateKeyDialog({
           {/* Expiry + IP allowlist */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label htmlFor="apikey-exp" className="text-xs">Expiry (optional)</Label>
+              <Label htmlFor="apikey-exp" className="text-xs">{t("apiKeys.expiryLabel")}</Label>
               <Input
                 id="apikey-exp"
                 type="date"
@@ -540,21 +538,21 @@ function CreateKeyDialog({
                 dir="ltr"
               />
               <p className="text-[10px] text-muted-foreground">
-                Leave empty for no expiry.
+                {t("apiKeys.expiryHint")}
               </p>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="apikey-ip" className="text-xs">IP Allowlist (optional)</Label>
+              <Label htmlFor="apikey-ip" className="text-xs">{t("apiKeys.ipFieldLabel")}</Label>
               <Input
                 id="apikey-ip"
                 value={ipAllowlist}
                 onChange={(e) => setIpAllowlist(e.target.value)}
-                placeholder="10.0.0.0/8, 192.168.1.5"
+                placeholder={t("apiKeys.ipPlaceholder")}
                 className="h-9"
                 dir="ltr"
               />
               <p className="text-[10px] text-muted-foreground">
-                Comma-separated CIDRs. Empty = any IP.
+                {t("apiKeys.ipHint")}
               </p>
             </div>
           </div>
@@ -583,6 +581,7 @@ function RevealKeyDialog({
   onOpenChange: (o: boolean) => void;
   numLang: Language;
 }) {
+  const t = useT();
   // `copied` resets on each new key reveal via the `key={revealedKey?.id}`
   // prop on this component in the parent — no useEffect needed here.
   const [copied, setCopied] = useState(false);
@@ -604,32 +603,27 @@ function RevealKeyDialog({
       <DialogContent className="sm:max-w-[560px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <KeyRound className="h-4 w-4" />
-            API Key Created
-          </DialogTitle>
-          <DialogDescription>
-            Copy this key now — it will not be shown again.
-          </DialogDescription>
+            <KeyRound className="h-4 w-4" />{t("apiKeys.createdTitle")}</DialogTitle>
+          <DialogDescription>{t("apiKeys.createdCopy")}</DialogDescription>
         </DialogHeader>
 
         {created && (
           <div className="space-y-4">
             <Alert className="border-amber-500/40 bg-amber-500/10">
               <AlertCircle className="h-4 w-4 text-amber-500" />
-              <AlertTitle className="text-amber-700 dark:text-amber-400">Store this securely</AlertTitle>
+              <AlertTitle className="text-amber-700 dark:text-amber-400">{t("apiKeys.storeSecurely")}</AlertTitle>
               <AlertDescription className="text-xs text-amber-700 dark:text-amber-400">
-                The raw key is shown <strong>only once</strong>. If you lose it, you must revoke
-                this key and create a new one. Treat it like a password — never commit it to source control.
+                {t("apiKeys.rawShownOnce")}
               </AlertDescription>
             </Alert>
 
             <div className="space-y-1.5">
-              <Label className="text-xs">Name</Label>
+              <Label className="text-xs">{t("common.name")}</Label>
               <Input value={created.name} readOnly className="h-9" />
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs">Raw API Key</Label>
+              <Label className="text-xs">{t("apiKeys.rawKey")}</Label>
               <div className="flex items-center gap-2">
                 <Input
                   value={created.key}
@@ -653,7 +647,7 @@ function RevealKeyDialog({
         )}
 
         <DialogFooter>
-          <Button onClick={() => onOpenChange(false)}>Done</Button>
+          <Button onClick={() => onOpenChange(false)}>{t("apiKeys.done")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

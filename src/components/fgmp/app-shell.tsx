@@ -514,6 +514,12 @@ export function AppShell() {
           {/* Live status + KPI chips */}
           <div className="ml-2 hidden items-center gap-2 md:flex">
             <div
+              // Connection state is the one status an operator needs while
+              // looking somewhere else on the page: "LIVE" silently becoming
+              // "Reconnecting…" means the numbers on screen are frozen, and
+              // nothing announced that.
+              role="status"
+              aria-live="polite"
               className={cn(
                 "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium",
                 livePaused
