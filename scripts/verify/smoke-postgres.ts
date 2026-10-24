@@ -31,6 +31,7 @@
  */
 
 import { PrismaClient } from "@prisma/client";
+import { createPgAdapter, db } from "@/lib/db";
 import { withTenant, TenantContextError } from "@/lib/fgmp/tenant-context";
 
 /** Tenant-scoped to this script. Never touches the seeded fleet. */
@@ -52,7 +53,7 @@ function systemDb(): PrismaClient {
   }
   if (!ownerClient) {
     ownerClient = new PrismaClient({
-      datasources: { db: { url } },
+      adapter: createPgAdapter(url, { defaultLimit: 1 }),
       log: [
         { level: "warn", emit: "stdout" as const },
         { level: "error", emit: "stdout" as const },
@@ -62,9 +63,7 @@ function systemDb(): PrismaClient {
   return ownerClient;
 }
 
-/** The RLS-enforced app role. Every read below runs on this connection. */
-const db = new PrismaClient();
-
+/** The RLS-enforced app role. Every read below uses the shared DATABASE_URL client. */
 function ok(label: string, detail: string) {
   console.log(`  ok  ${label.padEnd(16)} ${detail}`);
 }

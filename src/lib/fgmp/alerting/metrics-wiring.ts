@@ -11,20 +11,22 @@
  * So each function here derives its metric from the real state of the thing it
  * describes, and each is honest about what it can and cannot observe.
  *
- * ── A METRIC THAT CANNOT BE OBSERVED IS NOT FABRICATED ─────────────────────
- * `dbPoolSaturationRatio` is the case worth reading. This Prisma build exposes
- * no pool statistics — no `$stats`, no `getStats`, verified against the runtime —
- * so there is genuinely no way to ask "how many of my N connections are in use".
+ * ── POOL METRICS COME FROM THE REAL ADAPTER POOL ────────────────────────────
+ * The locked `@prisma/adapter-pg` exposes `underlyingDriver()` on its connected
+ * adapter, returning the actual node-postgres `pg.Pool`. `db.ts` retains that
+ * pool from the ordinary app client; this module samples its public counters
+ * without issuing SQL or creating another connection. The saturation ratio is
+ * checked-out clients divided by that process-local pool's configured maximum.
+ * A separate gauge reports total/idle/in-use/waiting/max counts.
  *
- * The tempting fix is to derive a proxy and publish it as the real metric. That
- * would be worse than leaving it absent: an operator would tune a threshold
- * against a number that does not mean what the rule says it means, and the rule
- * would fire for the wrong reason. It is therefore reported as ABSENT unless it
- * can be observed for real, and the rule that uses it evaluates to `unknown`
- * rather than `ok`. See docs/alerting.md#pool-saturation.
+ * These are process-local, not a database-wide or cross-replica total. If the
+ * adapter no longer exposes usable stats, the gauges stay absent and the alert
+ * remains `unknown` rather than fabricating an estimate. See
+ * docs/DB-CONNECTION-ASSESSMENT.md for the measurement scope and limitations.
  */
 
-import { registry } from "@/lib/observability/metrics";
+import { getAppPgPoolStats } from "@/lib/db";
+import { registry, dbPoolConnections, dbPoolSaturation } from "@/lib/observability/metrics";
 import {
   theftDetections,
   schedulerRunning as schedulerRunningMetric,
@@ -97,30 +99,24 @@ export function publishRateLimitDegraded(degraded: boolean): void {
 }
 
 /**
- * Publish database pool saturation.
+ * Publish a snapshot of the actual app-role pool, or leave the metrics absent
+ * when the adapter pool has not been created / cannot be inspected.
  *
- * HONEST IMPLEMENTATION: reports whether saturation is OBSERVABLE, and does not
- * invent a number when it is not.
- *
- * This Prisma build exposes no pool statistics (`$stats` and `getStats` are both
- * absent — verified against the runtime rather than assumed from documentation).
- * With no in-use count there is no honest ratio to publish, and a proxy would be
- * worse than nothing: an operator tuning a threshold against a number that does
- * not mean what the metric name claims is precisely the "fires for the wrong
- * reason" failure.
- *
- * So the gauge is left UNSET, and `db_pool_saturated` evaluates to `unknown`.
- * That is the correct and intended behaviour — `unknown` says "I cannot see
- * this", which is true, where `ok` would say "this is fine", which is not.
- *
- * If a pool-stats API becomes available, `observePoolSaturation(inUse, limit)`
- * below is the single place that needs to change.
+ * Called from the authenticated metrics route. The snapshot is process-local;
+ * Prometheus must scrape each app instance (or aggregate the series itself) to
+ * observe a multi-instance deployment.
  */
-export function observePoolSaturation(_inUse: number, _limit: number): number {
-  // Deliberately a no-op until the runtime can actually report these numbers.
-  // Recorded as a function so the future wiring has an obvious home and the
-  // absence is visible in the source rather than implied by a missing line.
-  return Number.NaN;
+export function observePoolSaturation(): number | null {
+  const stats = getAppPgPoolStats();
+  if (!stats) return null;
+
+  dbPoolSaturation.set({}, stats.saturationRatio);
+  dbPoolConnections.set({ state: "total" }, stats.totalConnections);
+  dbPoolConnections.set({ state: "idle" }, stats.idleConnections);
+  dbPoolConnections.set({ state: "in_use" }, stats.inUseConnections);
+  dbPoolConnections.set({ state: "waiting" }, stats.waitingClients);
+  dbPoolConnections.set({ state: "max" }, stats.maxConnections);
+  return stats.saturationRatio;
 }
 
 /**

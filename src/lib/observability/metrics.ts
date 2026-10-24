@@ -312,7 +312,11 @@ export const rateLimitDegraded = registry.gauge(
 // ── Database ─────────────────────────────────────────────────────────────────
 export const dbPoolSaturation = registry.gauge(
   "fgmp_db_pool_saturation_ratio",
-  "Fraction of the Prisma connection pool currently in use. Approaching 1 means requests are queueing for a connection.",
+  "Fraction of the app process's Prisma PostgreSQL pool currently checked out. Approaching 1 means requests may queue for a connection.",
+);
+export const dbPoolConnections = registry.gauge(
+  "fgmp_db_pool_connections",
+  "Process-local app-role pg.Pool counts by state: total, idle, in_use, waiting, or max. This is not a database-wide connection count.",
 );
 export const dbQueryErrors = registry.counter(
   "fgmp_db_query_errors_total",

@@ -102,7 +102,8 @@ RUN set -eu; \
       fi; \
     done < /tmp/prisma-cli-deps/packages.txt; \
     rm -rf /tmp/prisma-cli-deps
-# Entrypoint: applies pending migrations, then execs the standalone server.
+# Entrypoint supports local migrate/seed/serve, a one-shot migration-only job,
+# and the web-service skip-migrate + schema-preflight path.
 COPY --from=builder /app/scripts/docker-entrypoint.mjs ./scripts/docker-entrypoint.mjs
 # Schema preflight used when FGMP_SKIP_MIGRATE=1, so a mis-ordered deploy fails
 # at container start instead of on the first request.
@@ -124,11 +125,11 @@ ENV HOME=/tmp
 # Apply migrations (no-op when already current) and then serve. Failures exit
 # non-zero rather than starting the server against an out-of-date schema.
 #
-# SECURITY: in any real deployment these run as a SEPARATE one-shot job against
-# FGMP_MIGRATE_DATABASE_URL (docker-compose's `migrate` service, or CI), and the
-# app is started with FGMP_SKIP_MIGRATE=1 so this container never holds DDL
-# rights. The app connects as fgmp_app, which cannot migrate; handing it an
-# owner credential would make the RLS boundary decorative.
+# SECURITY: in a split deployment, migrations run as a SEPARATE one-shot job
+# against FGMP_MIGRATE_DATABASE_URL (docker-compose, Render's fgmp-migrate job,
+# or CI) with FGMP_MIGRATE_ONLY=1. The web service uses FGMP_SKIP_MIGRATE=1 so
+# it never holds DDL rights. The app connects as fgmp_app, which cannot migrate;
+# handing it an owner credential would make the RLS boundary decorative.
 ENTRYPOINT ["bun", "./scripts/docker-entrypoint.mjs"]
 
 # Liveness, not readiness: the process is up and serving HTTP. Uses the
