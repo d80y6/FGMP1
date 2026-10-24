@@ -218,8 +218,8 @@ describe("NO rule reports ok because it received no data", () => {
 });
 
 // ── 4. The pool-saturation honesty case ────────────────────────────────────
-describe("db_pool_saturated — a metric that cannot be observed is not invented", () => {
-  test("it evaluates to unknown rather than ok when unobservable", () => {
+describe("db_pool_saturated — actual pool readings only", () => {
+  test("it evaluates to unknown rather than ok when no pool snapshot exists", () => {
     const r = evaluateRule(ruleById("db_pool_saturated"), ABSENT);
     assert.equal(r.state, "unknown", "must not claim the pool is fine when it cannot be seen");
   });
@@ -228,15 +228,15 @@ describe("db_pool_saturated — a metric that cannot be observed is not invented
     assertFires(ruleById("db_pool_saturated"), reported(0.95), "reported 0.95");
   });
 
-  test("the metric really is absent from the registry — not merely unread", () => {
-    // If something started publishing this, the rule would need a re-think: it
-    // would become observable and the honest-unknown behaviour above would be
-    // a bug rather than a design choice.
+  test("the metric remains absent until the real app pool is sampled", () => {
+    // These unit tests do not construct the app client. The production metrics
+    // route samples PrismaPg's underlying pg.Pool; without that real pool this
+    // process must not publish a synthetic zero.
     const line = registry
       .render()
       .split("\n")
       .find((l) => l.startsWith("fgmp_db_pool_saturation_ratio "));
-    assert.equal(line, undefined, "this Prisma build exposes no pool stats, so nothing publishes it");
+    assert.equal(line, undefined, "no real pool snapshot was available in this test process");
   });
 });
 

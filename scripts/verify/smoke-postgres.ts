@@ -31,7 +31,7 @@
  */
 
 import { PrismaClient } from "@prisma/client";
-import { createPgAdapter } from "@/lib/db";
+import { createPgAdapter, db } from "@/lib/db";
 import { withTenant, TenantContextError } from "@/lib/fgmp/tenant-context";
 
 /** Tenant-scoped to this script. Never touches the seeded fleet. */
@@ -67,20 +67,6 @@ function systemDb(): PrismaClient {
   }
   return ownerClient;
 }
-
-/**
- * The RLS-enforced app role. Every read below runs on this connection.
- *
- * Same adapter requirement as above: constructed explicitly rather than via the
- * bare default constructor, which has no adapter and fails with P2038.
- */
-const db = new PrismaClient({
-  adapter: createPgAdapter(
-    process.env.DATABASE_URL ??
-      "postgresql://fgmp_app:ciapp@127.0.0.1:5432/fgmp?schema=public",
-    { defaultLimit: 1 },
-  ),
-});
 
 function ok(label: string, detail: string) {
   console.log(`  ok  ${label.padEnd(16)} ${detail}`);

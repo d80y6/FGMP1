@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { registry } from "@/lib/observability/metrics";
+import { observePoolSaturation } from "@/lib/fgmp/alerting/metrics-wiring";
 import { requireRole, ROLES } from "@/lib/fgmp/auth-helpers";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +22,11 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   const auth = await requireRole(req as never, ROLES.ALARM_OPS);
   if ("error" in auth) return auth.error;
+
+  // Read the process-local pg.Pool counters without issuing SQL or borrowing a
+  // second connection. If the app client has not connected yet, the gauges stay
+  // absent and alert evaluation remains unknown rather than implying zero use.
+  observePoolSaturation();
 
   return new NextResponse(registry.render(), {
     status: 200,

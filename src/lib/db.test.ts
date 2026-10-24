@@ -155,6 +155,30 @@ describe("bounded PostgreSQL connection pools", () => {
     assert.equal(config.idleTimeoutMillis, 300_000);
   });
 
+  test("maps pool_timeout to the adapter acquisition wait when it is stricter", () => {
+    const config = configurePgAdapter(
+      "postgresql://fgmp_app:p@db.example.test/fgmp?pool_timeout=2&connect_timeout=6",
+      { env: { NODE_ENV: "test" } },
+    );
+    // pg.Pool has one timeout for both acquisition wait and socket connect.
+    assert.equal(config.connectionTimeoutMillis, 2_000);
+  });
+
+  test("connect_timeout remains the stricter adapter deadline when shorter", () => {
+    const config = configurePgAdapter(
+      "postgresql://fgmp_app:p@db.example.test/fgmp?pool_timeout=8&connect_timeout=3",
+      { env: { NODE_ENV: "test" } },
+    );
+    assert.equal(config.connectionTimeoutMillis, 3_000);
+  });
+
+  test("FGMP_DB_POOL_TIMEOUT also reaches the real pg adapter deadline", () => {
+    const config = configurePgAdapter("postgresql://fgmp_app:p@db.example.test/fgmp", {
+      env: { NODE_ENV: "test", FGMP_DB_POOL_TIMEOUT: "2" },
+    });
+    assert.equal(config.connectionTimeoutMillis, 2_000);
+  });
+
   test("invalid PostgreSQL URLs fail without echoing credentials", () => {
     assert.throws(
       () => configurePgAdapter("postgresql://secret:password with spaces@"),

@@ -20,8 +20,16 @@ services:
       - fromGroup: fgmp1  # Pulls all variables from your existing environment group
       - key: DATABASE_URL
         sync: false
-      # NOTE: no FGMP_MIGRATE_DATABASE_URL here. The app must not hold the
-      # schema-owner credential; migrations run in the `fgmp-migrate` job below.
+      # Service-level empty value overrides any accidentally shared group
+      # value. The web container must not receive the schema-owner credential.
+      - key: FGMP_MIGRATE_DATABASE_URL
+        value: ""
+      - key: FGMP_MIGRATE_ONLY
+        value: "0"
+      # Migrations are a one-shot job; the web entrypoint only preflights the
+      # app-role connection and starts the server.
+      - key: FGMP_SKIP_MIGRATE
+        value: "1"
       # Keep RLS enforcement on. The managed database must expose a
       # non-owner `fgmp_app` role (see docs/DEPLOYMENT.md); disabling this
       # would let an owner-role connection bypass every tenant policy.
@@ -51,13 +59,12 @@ services:
     dockerContext: .
     plan: starter
     envVars:
-      - fromGroup: fgmp1
-      - key: DATABASE_URL
-        sync: false
+      # The migration job receives only its dedicated schema-owner credential;
+      # the entrypoint maps it to DATABASE_URL for Prisma and exits after deploy.
       - key: FGMP_MIGRATE_DATABASE_URL
         sync: false
-    # The image entrypoint is the web server; override it for the one-shot job.
-    dockerCommand: sh -c "bun run db:deploy"
+      - key: FGMP_MIGRATE_ONLY
+        value: "1"
 
   # ── IoT Telemetry Bridge ───────────────────────────────────────────────────
   # NOTE: there is deliberately NO fgmp-realtime service here any more. The
@@ -72,5 +79,15 @@ services:
     plan: free
     envVars:
       - fromGroup: fgmp1
+      # This bridge calls the app API and has no direct database client; strip
+      # any shared database credentials rather than passing unused secrets.
+      - key: DATABASE_URL
+        value: ""
+      - key: FGMP_MIGRATE_DATABASE_URL
+        value: ""
+      - key: FGMP_OPS_DATABASE_URL
+        value: ""
+      - key: FGPS_OPS_DATABASE_URL
+        value: ""
       - key: NEXT_API_BASE
         sync: false
