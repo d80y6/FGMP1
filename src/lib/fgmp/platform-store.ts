@@ -37,6 +37,7 @@
 
 import { db } from "@/lib/db";
 import { withTenant } from "@/lib/fgmp/tenant-context";
+import { getOpsDb } from "@/lib/fgmp/owner-db";
 
 export interface SupportSessionView {
   id: string;
@@ -291,4 +292,53 @@ export function tenantCounts(tenantId: string) {
     ]);
     return { users, sites, suppressions };
   });
+}
+
+/**
+ * Counts for EVERY tenant in three queries instead of three per tenant.
+ *
+ * ── WHY THIS EXISTS (performance, 2026-10) ──────────────────────────────────
+ * `GET /api/fgmp/tenants` looped over the registry calling `tenantCounts()` per
+ * row: one transaction and three `count(*)` scans per tenant. With three tenants
+ * that is 9 statements plus 3 `BEGIN`/`SET LOCAL`/`COMMIT` cycles; the cost grows
+ * linearly with the customer base while the payload stays the same size, so the
+ * platform admin screen gets slower as the platform succeeds.
+ *
+ * Aggregate counts are numbers, not rows: docs/SECURITY.md §3 explicitly allows
+ * cross-tenant NUMBERS on the ops connection as long as they are never joined
+ * into a row set ("Cross-tenant *numbers* … are read on the ops connection and
+ * never joined into a row set"). One `groupBy` per table on that connection
+ * returns a tenantId→count map, which is joined to the registry in MEMORY.
+ *
+ * The tenant-scoped `tenantCounts()` above is deliberately kept: it is the
+ * correct primitive when a single tenant's counts are needed, and it is what the
+ * regression test compares this fan-out against.
+ */
+export async function tenantCountsAll(
+  tenantIds: readonly string[],
+): Promise<Map<string, { users: number; sites: number; suppressions: number }>> {
+  const out = new Map<string, { users: number; sites: number; suppressions: number }>();
+  if (tenantIds.length === 0) return out;
+
+  const client = getOpsDb() ?? db;
+  const [users, sites, suppressions] = await Promise.all([
+    client.user.groupBy({ by: ["tenantId"], _count: { _all: true } }),
+    client.site.groupBy({ by: ["tenantId"], _count: { _all: true } }),
+    client.alarmSuppression.groupBy({ by: ["tenantId"], _count: { _all: true } }),
+  ]);
+
+  for (const id of tenantIds) out.set(id, { users: 0, sites: 0, suppressions: 0 });
+  for (const row of users) {
+    const entry = out.get(row.tenantId);
+    if (entry) entry.users = row._count._all;
+  }
+  for (const row of sites) {
+    const entry = out.get(row.tenantId);
+    if (entry) entry.sites = row._count._all;
+  }
+  for (const row of suppressions) {
+    const entry = out.get(row.tenantId);
+    if (entry) entry.suppressions = row._count._all;
+  }
+  return out;
 }

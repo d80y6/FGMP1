@@ -3745,6 +3745,185 @@ GRANT SELECT, INSERT ON "PlatformAuditLog" TO fgmp_app, fgmp_ops;
 REVOKE DELETE, UPDATE ON "PlatformAuditLog" FROM fgmp_app, fgmp_ops;
 REVOKE DELETE ON "SupportSession" FROM fgmp_app;
 
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 20261024000000_system_setting_tenant_scope
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Tenant-scoped system settings.
+--
+-- ── THE DEFECT THIS FIXES ────────────────────────────────────────────────────
+-- "SystemSetting" was a GLOBAL table: `key` was unique platform-wide and there
+-- was no tenantId. The settings API, however, is tenant-scoped: PATCH
+-- /api/fgmp/settings requires ROLES.ADMIN_ONLY and the handler writes inside
+-- `withTenant(me.tenantId, …)`. With no tenant column there was nothing for that
+-- context to constrain, so the tenant context was decorative.
+--
+-- Measured against a live database (two tenants, both with an ADMIN):
+--
+--   tenant A  PATCH /api/fgmp/settings {"key":"platformName","value":"OWNED-BY-TENANT-A"}
+--   tenant B  GET   /api/fgmp/settings?category=BRANDING
+--             → "platformName": "OWNED-BY-TENANT-A"
+--
+-- One tenant administrator could rewrite every other tenant's alarm thresholds,
+-- escalation timers and branding. That is a multi-tenant isolation failure in
+-- configuration data, not just a cosmetic one: PLATFORM-category keys
+-- (sessionTimeoutMin, maxSitesPerTenant, enableOta) are platform policy.
+--
+-- ── THE MODEL ───────────────────────────────────────────────────────────────
+--   tenantId = <tenant>  → that tenant's override. Uniqueness is (tenantId, key).
+--   tenantId = NULL      → a platform default inherited by every tenant. Rows in
+--                          this state are read-only to the application role;
+--                          they are written by the seed/owner path.
+--
+-- Existing rows are migrated with tenantId = NULL. That is the only safe choice:
+-- a global row cannot be attributed to a tenant, and deleting it would destroy
+-- configuration. Its value therefore becomes the inherited default, which is
+-- exactly what every tenant saw before this migration — no tenant's effective
+-- configuration changes on upgrade.
+--
+-- ── POLICY SHAPE ────────────────────────────────────────────────────────────
+--   SELECT      : own rows + platform defaults (NULL). Platform defaults are
+--                 non-sensitive by definition — every tenant could read them
+--                 before this migration.
+--   INSERT      : WITH CHECK requires a tenant match, so `fgmp_app` cannot mint
+--                 a new platform-wide default (nor write another tenant's row).
+--   UPDATE      : USING restricts which rows may be touched, WITH CHECK stops a
+--                 row being re-pointed at another tenant mid-update.
+--   DELETE      : same USING clause as UPDATE.
+--
+-- The FORCE flag matters for the same reason it does everywhere else in this
+-- schema: without FORCE the table owner skips its own policies.
+
+-- 1. Column + referential integrity.
+ALTER TABLE "SystemSetting" ADD COLUMN "tenantId" TEXT;
+
+ALTER TABLE "SystemSetting"
+  ADD CONSTRAINT "SystemSetting_tenantId_fkey"
+  FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- 2. Uniqueness moves from platform-wide to per-tenant.
+--    Dropping the old unique index is required: with it in place, two tenants
+--    could not hold the same key, which is the whole point of the change.
+DROP INDEX IF EXISTS "SystemSetting_key_key";
+
+CREATE UNIQUE INDEX "SystemSetting_tenantId_key_key" ON "SystemSetting"("tenantId", "key");
+
+-- Lookups are always (tenant, key) or (tenant, category); the NULL-tenant
+-- default rows are matched by key, which the composite index still covers as a
+-- leading-column prefix (`tenantId IS NULL` is matched by the btree).
+CREATE INDEX "SystemSetting_tenantId_category_idx" ON "SystemSetting"("tenantId", "category");
+
+-- 3. Row level security.
+ALTER TABLE "SystemSetting" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "SystemSetting" FORCE  ROW LEVEL SECURITY;
+
+CREATE POLICY system_setting_read ON "SystemSetting"
+  FOR SELECT
+  USING (
+    "tenantId" IS NULL
+    OR "tenantId" = current_setting('app.tenant_id', true)
+  );
+
+CREATE POLICY system_setting_insert ON "SystemSetting"
+  FOR INSERT
+  WITH CHECK (
+    "tenantId" IS NOT NULL
+    AND "tenantId" = current_setting('app.tenant_id', true)
+  );
+
+CREATE POLICY system_setting_update ON "SystemSetting"
+  FOR UPDATE
+  USING (
+    "tenantId" IS NOT NULL
+    AND "tenantId" = current_setting('app.tenant_id', true)
+  )
+  WITH CHECK (
+    "tenantId" IS NOT NULL
+    AND "tenantId" = current_setting('app.tenant_id', true)
+  );
+
+CREATE POLICY system_setting_delete ON "SystemSetting"
+  FOR DELETE
+  USING (
+    "tenantId" IS NOT NULL
+    AND "tenantId" = current_setting('app.tenant_id', true)
+  );
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 20261024000100_user_session_epoch
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Session revocation counter.
+--
+-- ── THE DEFECT THIS FIXES ────────────────────────────────────────────────────
+-- Sessions are JWTs with an 8-hour lifetime and the token carries the user's
+-- role and tenant. Nothing re-checked that against the database after sign-in,
+-- and the only refresh path (`trigger === "update"`) is an explicit client call.
+-- Measured against a live server with a real login cookie:
+--
+--   1. sign in as REGIONAL_MANAGER                  → /api/fgmp/me role REGIONAL_MANAGER
+--   2. UPDATE "User" SET role='READONLY'            → the session still reported
+--      and EXERCISED REGIONAL_MANAGER capabilities
+--   3. UPDATE "User" SET active=false               → GET /api/fgmp/state 200,
+--      GET /api/fgmp/me 200: a deactivated account kept full access until the
+--      token expired.
+--
+-- A password reset had the same problem: the old token stayed valid, so
+-- "reset the password because the account may be compromised" did not actually
+-- terminate the attacker's session.
+--
+-- ── THE FIX ────────────────────────────────────────────────────────────────
+-- `sessionEpoch` is a per-user counter carried in the token (`sv`). Every
+-- authenticated request re-reads {active, role, tenantId, sessionEpoch} from
+-- this row (one primary-key lookup on the auth path):
+--   * `active = false`      → 401 ACCOUNT_DISABLED
+--   * role/tenant changed   → the NEW values are used (no re-login required)
+--   * `sessionEpoch` moved  → 401 SESSION_REVOKED
+--
+-- Existing rows default to 0, and a token minted before this migration has no
+-- `sv` claim and is read as 0, so deploying this migration does not sign anybody
+-- out. The first bump (password change) does.
+ALTER TABLE "User" ADD COLUMN "sessionEpoch" INTEGER NOT NULL DEFAULT 0;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 20261024000200_mfa_challenge_login_proof
+-- ─────────────────────────────────────────────────────────────────────────────
+-- ─────────────────────────────────────────────────────────────────────────────
+-- MFA: a VERIFIED challenge can be exchanged for exactly ONE full session
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Why this column exists
+--
+-- `hasMfaEnabled()` was reading `MfaEnrollment` through the ambient (no tenant
+-- context) Prisma client. `MfaEnrollment` is FORCE-RLS protected, so that read
+-- returned NULL for every user and the login callback never issued a PENDING
+-- session: an account with a confirmed TOTP enrolment signed in with the
+-- password alone. Measured on the running server: `/api/fgmp/me` returned
+-- `role: "ADMIN"`, `mfaPending: undefined` and `/api/fgmp/state` answered 200
+-- for an MFA-enrolled account that had presented no second factor.
+--
+-- The read is now tenant-scoped (`withTenant(tenantId, …)`), which closes the
+-- bypass — and immediately exposes the second half of the problem: NOTHING
+-- could turn a verified challenge into a real session. `POST /api/fgmp/mfa/
+-- challenge` verifies the code and answers `nextStep: "reauthenticate"`, but
+-- re-authenticating with the password alone hits the same gate and produces
+-- another PENDING session. Enforcing the factor without completing it would
+-- lock every enrolled operator out of the platform.
+--
+-- So the credentials callback now accepts an optional `mfaProof` (the challenge
+-- token the operator just verified). It is checked against THIS table and, on
+-- success, stamped with `loginIssuedAt`. The conditional update
+-- (`loginIssuedAt IS NULL`) is what makes the exchange single-use: the same
+-- verified challenge cannot mint a second session, and replaying a stolen token
+-- after it has been spent fails.
+--
+-- Nullable with no default: existing rows simply have no login issued, and the
+-- 120-second freshness window is enforced in code so a long-lived verified row
+-- cannot be used later.
+--
+-- Reversible:
+--   ALTER TABLE "MfaChallenge" DROP COLUMN "loginIssuedAt";
+-- Dropping the column only removes the one-time stamp; every session minted
+-- through it keeps working, and the next login simply issues a new challenge.
+ALTER TABLE "MfaChallenge" ADD COLUMN "loginIssuedAt" TIMESTAMP(3);
+
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Prisma bookkeeping
 --
@@ -3843,6 +4022,15 @@ values ('mig-e15ad839244eae5e5203648afd0a1253', 'e15ad839244eae5e5203648afd0a125
 on conflict (id) do nothing;
 insert into "_prisma_migrations" (id, checksum, finished_at, migration_name, logs, rolled_back_at, started_at, applied_steps_count)
 values ('mig-6ddcf863ed08eef1947ba4bce4c6aac6', '6ddcf863ed08eef1947ba4bce4c6aac6a9b6afe9f45762badbb558d022b7fed3', now(), '20261023000000_platform_support_access', null, null, now(), 1)
+on conflict (id) do nothing;
+insert into "_prisma_migrations" (id, checksum, finished_at, migration_name, logs, rolled_back_at, started_at, applied_steps_count)
+values ('mig-bf9dc15d1751448ac47806c24286b5e8', 'bf9dc15d1751448ac47806c24286b5e8dcedc7347e8fd55a084e1f0d4d360d69', now(), '20261024000000_system_setting_tenant_scope', null, null, now(), 1)
+on conflict (id) do nothing;
+insert into "_prisma_migrations" (id, checksum, finished_at, migration_name, logs, rolled_back_at, started_at, applied_steps_count)
+values ('mig-5a898e38130e65a0842090640b81f392', '5a898e38130e65a0842090640b81f392ebcb886888cad130a349b7b2fb573d02', now(), '20261024000100_user_session_epoch', null, null, now(), 1)
+on conflict (id) do nothing;
+insert into "_prisma_migrations" (id, checksum, finished_at, migration_name, logs, rolled_back_at, started_at, applied_steps_count)
+values ('mig-e97f07af1e226a61f984c8a938bc2c03', 'e97f07af1e226a61f984c8a938bc2c030eea3ecb5934cf9920ae892923baed0d', now(), '20261024000200_mfa_challenge_login_proof', null, null, now(), 1)
 on conflict (id) do nothing;
 
 reset role;

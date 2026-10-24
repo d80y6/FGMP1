@@ -31,6 +31,7 @@
  */
 
 import { PrismaClient } from "@prisma/client";
+import { createPgAdapter } from "@/lib/db";
 import { withTenant, TenantContextError } from "@/lib/fgmp/tenant-context";
 
 /** Tenant-scoped to this script. Never touches the seeded fleet. */
@@ -51,8 +52,13 @@ function systemDb(): PrismaClient {
     );
   }
   if (!ownerClient) {
+    // Adapter-backed, exactly like the application client. Prisma 6 with
+    // `engineType = "client"` REQUIRES a driver adapter; a bare
+    // `new PrismaClient()` throws P2038 ("Missing configured driver adapter")
+    // before it ever reaches the database — which is what made CI's smoke step
+    // fail with an initialisation error instead of running any assertion.
     ownerClient = new PrismaClient({
-      datasources: { db: { url } },
+      adapter: createPgAdapter(url, { defaultLimit: 1 }),
       log: [
         { level: "warn", emit: "stdout" as const },
         { level: "error", emit: "stdout" as const },
@@ -62,8 +68,19 @@ function systemDb(): PrismaClient {
   return ownerClient;
 }
 
-/** The RLS-enforced app role. Every read below runs on this connection. */
-const db = new PrismaClient();
+/**
+ * The RLS-enforced app role. Every read below runs on this connection.
+ *
+ * Same adapter requirement as above: constructed explicitly rather than via the
+ * bare default constructor, which has no adapter and fails with P2038.
+ */
+const db = new PrismaClient({
+  adapter: createPgAdapter(
+    process.env.DATABASE_URL ??
+      "postgresql://fgmp_app:ciapp@127.0.0.1:5432/fgmp?schema=public",
+    { defaultLimit: 1 },
+  ),
+});
 
 function ok(label: string, detail: string) {
   console.log(`  ok  ${label.padEnd(16)} ${detail}`);
@@ -281,4 +298,12 @@ main()
   .finally(async () => {
     await db.$disconnect();
     await ownerClient?.$disconnect();
+    // ── Exit explicitly (CI fix) ──────────────────────────────────────────────
+    // The assertions above print PASS and every client is disconnected, but the
+    // driver-adapter pg POOL keeps its idle sockets (and their idle timers)
+    // open, so the process never reaches a natural exit. In CI that means the
+    // step sits there until the JOB times out, and a green smoke test is then
+    // reported as a 25-minute failure. The verdict is already decided at this
+    // point, so terminate with it.
+    process.exit(process.exitCode ?? 0);
   });

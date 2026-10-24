@@ -47,7 +47,7 @@
  */
 
 import { PrismaClient } from '@prisma/client'
-import { db, rlsEnforced } from '@/lib/db'
+import { db, rlsEnforced, createPgAdapter } from '@/lib/db'
 import {
   withTenant,
   currentTenantId,
@@ -111,6 +111,19 @@ interface TableSpec {
   columns: Record<string, string>
   /** True when the row belongs to a Site (tier B). */
   siteScoped: boolean
+  /**
+   * Set for tables that deliberately expose a PLATFORM-WIDE row class, i.e.
+   * rows whose tenant column is NULL and which every tenant is meant to read
+   * (today: `SystemSetting` platform defaults).
+   *
+   * The "unset context returns 0 rows" assertion is about TENANT-OWNED rows.
+   * For such a table the correct expectation is narrower and must still be
+   * proven: an unscoped read may return the shared rows, but must return ZERO
+   * rows that belong to any tenant. Asserting plain 0 here would either be
+   * false or force the platform defaults to be unreadable, which is the bug the
+   * tenant column was added to fix.
+   */
+  sharedRowWhere?: string
 }
 
 /**
@@ -620,6 +633,24 @@ const TABLES: TableSpec[] = [
     },
   },
   {
+    // Settings became per-tenant in 20261024000000_system_setting_tenant_scope.
+    // Until that migration the table had no tenant column at all and every
+    // tenant read every other tenant's configuration — the finding this fixture
+    // now guards. `category` is a PostgreSQL enum, so the raw INSERT needs the
+    // explicit cast the typed client would otherwise supply.
+    table: 'SystemSetting',
+    label: 'SystemSetting (per-tenant configuration)',
+    tenantColumn: 'tenantId',
+    siteScoped: false,
+    sharedRowWhere: '"tenantId" IS NULL',
+    columns: {
+      id: idFor('set'),
+      key: `'rls-probe-\${SUFFIX}'`,
+      value: `'1'`,
+      category: `'ALARM'::"SystemSettingCategory"`,
+    },
+  },
+  {
     table: 'Notification',
     label: 'Notification (highest disclosure risk)',
     tenantColumn: 'tenantId',
@@ -826,7 +857,15 @@ let owner: PrismaClient | null = null
 
 function ownerDb(): PrismaClient {
   if (!ownerUrl) return db
-  if (!owner) owner = new PrismaClient({ datasources: { db: { url: ownerUrl } } })
+  if (!owner) {
+    // Adapter-backed: Prisma 6 with the `client` engine type REQUIRES a driver
+    // adapter, and a bare `new PrismaClient()` fails with P2038 ("Missing
+    // configured driver adapter") the first time a fixture is written — which
+    // is how this suite reported `fixture-seed` instead of testing isolation.
+    owner = new PrismaClient({
+      adapter: createPgAdapter(ownerUrl, { defaultLimit: 1 }),
+    })
+  }
   return owner
 }
 
@@ -947,7 +986,10 @@ function subst(sql: string, suffix: string = SUFFIX, parents: ParentIds = {}): s
 const HAS_UPDATED_AT = new Set<string>(
   (
     await q<{ relname: string }>(
-      `SELECT c.relname
+      // `relname` is of PostgreSQL type `name`, which the driver adapter
+      // cannot deserialise into a JS string (`Failed to deserialize column of
+      // type 'name'`, surfacing as P2010). Cast it explicitly.
+      `SELECT c.relname::text AS relname
          FROM pg_class c
          JOIN pg_namespace n ON n.oid = c.relnamespace
          JOIN pg_attribute a ON a.attrelid = c.oid
@@ -1536,8 +1578,29 @@ async function assertUnsetContextFailsClosed(spec: TableSpec): Promise<void> {
   try {
     // No SET LOCAL at all — a raw transaction like any other.
     const rows = await db.$transaction((tx) =>
-      tx.$queryRawUnsafe<Array<{ id: string }>>(`SELECT id FROM "${spec.table}"`),
-    ) as Array<{ id: string }>
+      tx.$queryRawUnsafe<Array<{ id: string; tenantId?: string | null }>>(
+        spec.sharedRowWhere
+          ? `SELECT id, "tenantId" FROM "${spec.table}"`
+          : `SELECT id FROM "${spec.table}"`,
+      ),
+    ) as Array<{ id: string; tenantId?: string | null }>
+    if (spec.sharedRowWhere) {
+      // A table with a deliberately shared row class: no TENANT-OWNED row may
+      // be visible without a context.
+      const owned = rows.filter((r) => r.tenantId !== null && r.tenantId !== undefined)
+      if (owned.length === 0) {
+        pass(
+          '5-unset-returns-zero',
+          `unscoped SELECT returned ${rows.length} shared platform row(s) and 0 tenant-owned rows (fails closed)`,
+        )
+      } else {
+        fail(
+          '5-unset-returns-zero',
+          `LEAK: unset context returned ${owned.length} TENANT-OWNED row(s) — must be 0`,
+        )
+      }
+      return
+    }
     if (rows.length === 0) {
       pass('5-unset-returns-zero', 'unscoped SELECT with NO tenant context returned 0 rows (fails closed)')
     } else {
@@ -1738,7 +1801,7 @@ async function main(): Promise<void> {
   for (const t of ['SolarSite', 'SolarArray']) exercisedTables.add(t)
   const protectedTables = (
     await q<{ relname: string }>(
-      `SELECT c.relname FROM pg_class c
+      `SELECT c.relname::text AS relname FROM pg_class c
        JOIN pg_namespace ns ON ns.oid=c.relnamespace
        WHERE ns.nspname='public' AND c.relkind='r' AND c.relforcerowsecurity
        ORDER BY 1`,

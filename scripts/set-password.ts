@@ -108,6 +108,10 @@ async function main() {
           // mean "I reset the password and still cannot log in".
           failedLoginAttempts: 0,
           lockedUntil: null,
+          // Revoke every session issued under the old password. Without this the
+          // whole point of rotating a compromised credential is lost: the
+          // attacker's existing token keeps working for up to maxAge.
+          sessionEpoch: { increment: 1 },
         },
       });
 

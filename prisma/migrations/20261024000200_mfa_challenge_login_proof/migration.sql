@@ -1,0 +1,37 @@
+-- ─────────────────────────────────────────────────────────────────────────────
+-- MFA: a VERIFIED challenge can be exchanged for exactly ONE full session
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Why this column exists
+--
+-- `hasMfaEnabled()` was reading `MfaEnrollment` through the ambient (no tenant
+-- context) Prisma client. `MfaEnrollment` is FORCE-RLS protected, so that read
+-- returned NULL for every user and the login callback never issued a PENDING
+-- session: an account with a confirmed TOTP enrolment signed in with the
+-- password alone. Measured on the running server: `/api/fgmp/me` returned
+-- `role: "ADMIN"`, `mfaPending: undefined` and `/api/fgmp/state` answered 200
+-- for an MFA-enrolled account that had presented no second factor.
+--
+-- The read is now tenant-scoped (`withTenant(tenantId, …)`), which closes the
+-- bypass — and immediately exposes the second half of the problem: NOTHING
+-- could turn a verified challenge into a real session. `POST /api/fgmp/mfa/
+-- challenge` verifies the code and answers `nextStep: "reauthenticate"`, but
+-- re-authenticating with the password alone hits the same gate and produces
+-- another PENDING session. Enforcing the factor without completing it would
+-- lock every enrolled operator out of the platform.
+--
+-- So the credentials callback now accepts an optional `mfaProof` (the challenge
+-- token the operator just verified). It is checked against THIS table and, on
+-- success, stamped with `loginIssuedAt`. The conditional update
+-- (`loginIssuedAt IS NULL`) is what makes the exchange single-use: the same
+-- verified challenge cannot mint a second session, and replaying a stolen token
+-- after it has been spent fails.
+--
+-- Nullable with no default: existing rows simply have no login issued, and the
+-- 120-second freshness window is enforced in code so a long-lived verified row
+-- cannot be used later.
+--
+-- Reversible:
+--   ALTER TABLE "MfaChallenge" DROP COLUMN "loginIssuedAt";
+-- Dropping the column only removes the one-time stamp; every session minted
+-- through it keeps working, and the next login simply issues a new challenge.
+ALTER TABLE "MfaChallenge" ADD COLUMN "loginIssuedAt" TIMESTAMP(3);

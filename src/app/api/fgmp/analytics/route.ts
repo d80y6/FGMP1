@@ -95,16 +95,23 @@ export async function GET(req: NextRequest) {
     // to the fields authorized for the caller's requested surface.
     const viewProjection = searchParams.get("projection") ?? "analytics";
 
-    // ONE configurable fuel price (metrics-fuel.ts). This route used to
-    // hardcode 1.85 USD/L while engine.ts hardcodes 520 YER/L.
-    const price = await resolveFuelPrice();
-    const battLowPct = await resolveBattLowVoltagePct();
-    const timezone = await resolvePlatformTimezone();
-
     // Engine memory can hold multiple tenants; every session, including
     // SUPERADMIN, is filtered to its authenticated tenant. The role alone is
     // not a cross-tenant data grant.
     const tenantId = tenantIdOrThrow(me.tenantId);
+
+    // ONE configurable fuel price (metrics-fuel.ts). This route used to
+    // hardcode 1.85 USD/L while engine.ts hardcodes 520 YER/L.
+    //
+    // These three lookups are TENANT-SCOPED. They used to be called before the
+    // tenant was known, which read every `SystemSetting` row with no RLS context
+    // — measured: a tenant row `fuelPriceYerPerL = 999` was ignored and this
+    // response still said 520. Passing the authenticated tenant is what makes a
+    // tenant's own thresholds and prices apply, and keeps them out of every
+    // other tenant's response.
+    const price = await resolveFuelPrice(tenantId);
+    const battLowPct = await resolveBattLowVoltagePct(tenantId);
+    const timezone = await resolvePlatformTimezone(tenantId);
     const tenantSiteIds = new Set(engine.sites.filter((s) => s.tenantId === tenantId).map((s) => s.id));
     const sites = engine.sites.filter((s) => s.tenantId === tenantId);
     const tanks = engine.tanks.filter((t) => tenantSiteIds.has(t.siteId));

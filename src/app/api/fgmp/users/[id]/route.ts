@@ -236,6 +236,11 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
   if (parsed.data.role !== undefined) data.role = parsed.data.role;
   if (parsed.data.phone !== undefined) data.phone = parsed.data.phone;
   if (parsed.data.active !== undefined) data.active = parsed.data.active;
+  // Deactivation revokes outstanding sessions by moving the epoch. Without this,
+  // re-activating the account would silently bring back every token that was
+  // issued before it was disabled — including one held by whoever caused the
+  // deactivation.
+  if (parsed.data.active === false) data.sessionEpoch = { increment: 1 };
 
   // `update` takes a unique selector so tenantId cannot be part of it. The
   // ownership re-read below happens in the SAME transaction as the write, so a
@@ -348,7 +353,15 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       select: { id: true },
     });
     if (!owned) return null;
-    return tx.user.update({ where: { id: owned.id }, data: { active: body.active }, select: userSelect });
+    return tx.user.update({
+      where: { id: owned.id },
+      data: {
+        active: body.active,
+        // Revoke sessions when an account is disabled (see the PUT note).
+        ...(body.active === false ? { sessionEpoch: { increment: 1 } } : {}),
+      },
+      select: userSelect,
+    });
   });
   if (!updated) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
@@ -428,7 +441,12 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
       select: { id: true },
     });
     if (!owned) return null;
-    return tx.user.update({ where: { id: owned.id }, data: { active: false }, select: userSelect });
+    return tx.user.update({
+      where: { id: owned.id },
+      // Soft-delete = deactivation, so the same session revocation applies.
+      data: { active: false, sessionEpoch: { increment: 1 } },
+      select: userSelect,
+    });
   });
   if (!updated) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });

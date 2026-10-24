@@ -126,7 +126,9 @@ export async function GET(req: NextRequest) {
       return res;
     }
 
-    const timezone = await resolvePlatformTimezone();
+    // Tenant-scoped: a tenant may set its own `timezone`; otherwise the
+    // platform default row applies.
+    const timezone = await resolvePlatformTimezone(tenantIdOrThrow(me.tenantId));
 
     // ── Load persisted FUEL_LEVEL readings from the SensorReading table ──
     // We use the DB (not engine.tanks[].history) because the in-memory history

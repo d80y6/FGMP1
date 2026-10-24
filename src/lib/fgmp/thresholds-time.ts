@@ -78,9 +78,12 @@ const DATE_PARTS: Intl.DateTimeFormatOptions = { year: "numeric", month: "2-digi
  * The `Intl.DateTimeFormat` validation runs once per call; formatter instances
  * themselves are memoised in `formatterCache`, so the cost is negligible.
  */
-export async function resolvePlatformTimezone(): Promise<string> {
+export async function resolvePlatformTimezone(tenantId?: string | null): Promise<string> {
+  // A tenant may set its own `timezone`; otherwise the platform default row
+  // applies. Omitting `tenantId` deliberately means "platform defaults only".
   const fromDb =
-    (await getSystemSetting("timezone")) ?? (await getSystemSetting("platformTimezone"));
+    (await getSystemSetting("timezone", tenantId)) ??
+    (await getSystemSetting("platformTimezone", tenantId));
   const candidates = [fromDb, process.env.FGMP_TIMEZONE, process.env.TZ, DEFAULT_TIMEZONE];
   for (const c of candidates) {
     if (!c) continue;
