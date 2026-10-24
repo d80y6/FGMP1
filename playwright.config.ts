@@ -20,6 +20,11 @@
  * Locally against an already-running server:
  *   PLAYWRIGHT_BASE_URL=http://localhost:3000 npx playwright test
  *
+ * `tsconfig.json` excludes this file and `tests/e2e/` on purpose: the app's
+ * typecheck runs on a machine where Playwright is not installed (it is
+ * installed by the `ui` job only), so including them would fail `tsc` with
+ * "Cannot find module '@playwright/test'". Playwright compiles the spec itself.
+ *
  * The suite has two halves. The PUBLIC half (sign-in surface: rendering,
  * keyboard, responsive, RTL, accessibility) needs nothing but a server. The
  * AUTHENTICATED half needs a seeded database plus demo credentials, so it
