@@ -808,10 +808,14 @@ So the evidence splits in two, and the ledger does not blur it:
 * **Verified here, now** — the public sign-in surface, in Chromium, at 8 viewports, in LTR and RTL,
   with a WCAG 2.2 AA scan, keyboard traversal and dialog focus containment. Plus every static
   invariant below (typecheck, lint, unit suites, i18n dictionary contract).
-* **Verified in CI** — everything behind the session: navigation history, link semantics, the mobile
-  nav dialog, role-dependent navigation and "no unauthorized request is issued". The `ui` job
-  provisions real PostgreSQL, applies the real migrations, seeds, builds the standalone server and
-  runs the same spec with `FGMP_E2E_AUTH=1`.
+* **Verified in CI** — everything behind the session: the sign-in transition itself, navigation
+  history, link semantics, the mobile nav dialog, role-dependent navigation, "no unauthorized
+  request is issued", and the dashboard's WCAG 2.2 AA scan. The `ui` job provisions real
+  PostgreSQL, applies the real migrations, seeds, builds the standalone server and runs the same
+  spec with `FGMP_E2E_AUTH=1`.
+
+**Result of the first green run** (`ui` job, 6m41s): `9 passed`. The four authenticated tests were
+the ones that found D-11, D-12 and D-13 — none of which any amount of reading had produced.
 
 A test that cannot run says so: the authenticated tests **skip**, they do not pass.
 
@@ -833,6 +837,9 @@ workaround, `Low` = polish.
 | D-08 | views | 7 call sites use `window.confirm`/native `confirm` instead of the shared `ConfirmDestructive`. Native confirms block the event loop, cannot be styled or translated, and ignore the app's destructive-action copy. Needs a per-site review before conversion. | Medium | **DISCOVERED** |
 | D-09 | whole app | Only 3 `aria-live` regions. Connection loss, a failed refresh and a role change are visible but not announced. | Medium | **DISCOVERED** |
 | D-10 | whole app | 509 occurrences of 9–10px type. Density is a product decision, not a bug to sweep; it needs per-view judgement against the operator's real screen. | Low | **DISCOVERED** |
+| D-11 | `app-shell.tsx` sign-in | **CRITICAL.** `signIn({redirect:false})` resolves when the cookie is set, but nothing pushed the new session into `<SessionProvider>`, which still held the "nobody" it fetched at mount. The dialog stayed on top of an authenticated session; the server log recorded six successful sign-ins while the browser still showed the form. `LoginDialog` had an `onSuccess` hook that `AppShell` never passed. | Critical | **VERIFIED** (CI: 4 authenticated tests reach the shell) |
+| D-12 | shell / dashboard | Six colour-contrast failures (WCAG 1.4.3, serious) on the rendered dashboard: sidebar group headings at 60% opacity (4), the KPI chip label at 70% (1), the 8px EN/AR badge (white on `emerald-500` = 2.3:1) (1). | High | **VERIFIED** (CI: axe 6 → 0) |
+| D-13 | docs + seed | The README (Part C) told operators to rotate "readonly@fgmp.telecom"; **no seeder creates that account**. The suite proved it by failing to sign in. | Medium | **FIXED** (README lists the five real accounts; test uses `field.engineer@`) |
 
 ### 2. What was measured (public surface, Chromium 153, real server)
 
@@ -906,11 +913,11 @@ application image.
 |---|---|
 | Route inventory | 27 views + `/` + `/login` alias + 171 API handlers; each view has a `view:*` capability and is filtered by `hasCapability` |
 | Public surface | audited in a browser; **0** defects found; 5 tests green |
-| Shell (nav, header, footer) | 4 defects found, all fixed; proven by the CI half of the suite |
-| Authenticated views | **BLOCKED** in-sandbox (no Prisma client); `ui` CI job exists to cover them |
+| Shell (nav, header, footer) | 5 defects found (D-01, D-02, D-03, D-04, D-11), all fixed; proven by the CI half of the suite |
+| Authenticated views | Shell, navigation and the dashboard's a11y are **VERIFIED in CI**. The 27 views' individual layouts/forms/tables are **still unaudited** — the suite covers the shell, not every view. |
 | RTL | login surface verified; shell/views only statically |
 | Performance | **not measured** — a dev server with no database cannot produce a meaningful number, and reporting one would be dishonest |
-| Remaining defects | D-07, D-08, D-09, D-10 |
+| Remaining defects | D-07, D-08, D-09, D-10, plus per-view audits |
 
 ### 6. Environment note (worth knowing, not a product defect)
 
