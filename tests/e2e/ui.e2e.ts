@@ -58,12 +58,18 @@ async function horizontalOverflow(page: Page): Promise<{ doc: number; client: nu
   });
 }
 
-type AxeViolation = { id: string; impact?: string | null; nodes: number };
+type AxeViolation = { id: string; impact?: string | null; nodes: number; targets: string[] };
 type AxeGlobal = {
   run: (
     ctx: Document,
     opts: { runOnly: { type: string; values: string[] } },
-  ) => Promise<{ violations: { id: string; impact?: string | null; nodes: unknown[] }[] }>;
+  ) => Promise<{
+    violations: {
+      id: string;
+      impact?: string | null;
+      nodes: { target?: (string | number)[] }[];
+    }[];
+  }>;
 };
 
 async function axeViolations(page: Page): Promise<AxeViolation[]> {
@@ -73,7 +79,13 @@ async function axeViolations(page: Page): Promise<AxeViolation[]> {
     const r = await axe.run(document, {
       runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"] },
     });
-    return r.violations.map((v) => ({ id: v.id, impact: v.impact, nodes: v.nodes.length }));
+    return r.violations.map((v) => ({
+      id: v.id,
+      impact: v.impact,
+      nodes: v.nodes.length,
+      // The count alone says "something is wrong"; the selectors say where.
+      targets: v.nodes.slice(0, 4).map((n) => (n.target ?? []).join(" ")),
+    }));
   });
 }
 

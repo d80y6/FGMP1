@@ -490,6 +490,12 @@ jobs:
             --set=migrate_password=cimigrate \
             -f scripts/db/pg-init-roles.sql
 
+      # NOTE the credential split: the web container gets the OPS role (BYPASSRLS,
+      # needed for the cross-tenant "email → user" lookup at sign-in) and the
+      # MIGRATE role for the boot-time preflight — but `src/lib/env.ts` refuses to
+      # start in production without one of them, because an app that cannot read
+      # "User" cannot authenticate anybody. It did exactly that when this job was
+      # first run with the flag in place: `FGMP_OPS_DATABASE_URL is not set …`.
       - name: Boot against PostgreSQL and apply migrations
         run: |
           set -o pipefail
@@ -497,6 +503,7 @@ jobs:
           docker run -d --name fgmp-ci -p 3000:3000 \
             --network host \
             -e DATABASE_URL=postgresql://fgmp_app:ciapp@127.0.0.1:5432/fgmp?schema=public \
+            -e FGMP_OPS_DATABASE_URL=postgresql://fgmp_ops:ciops@127.0.0.1:5432/fgmp?schema=public \
             -e FGMP_MIGRATE_DATABASE_URL=postgresql://fgmp_migrate:cimigrate@127.0.0.1:5432/fgmp?schema=public \
             -e NEXTAUTH_SECRET=ci-secret-abcdefghijklmnopqrstuvwxyz0123456789 \
             -e IOT_API_KEY=ci-iot-key-abcdefghijklmnop \
