@@ -103,9 +103,16 @@ let stateRequestInFlight: Promise<void> | null = null;
  *     future narrowing of that capability would still ship the payload to the
  *     browser, which is the bypass the shared policy check exists to prevent.
  *
- *  2. **Identity.** No resolved `me` means no request. Previously a signed-out
- *     tab polled `/api/fgmp/state` every five seconds forever, which is where
- *     the 401 storm in the console came from.
+ *  2. **Identity.** No resolved `me` means no request. This is defence in depth
+ *     rather than a repair: at the time of writing, every caller of `init()` and
+ *     `refresh()` happens to be gated already — the AppShell poll checks
+ *     `status === "authenticated"` before it runs, and `useRealtime` checks the
+ *     same before opening the socket. But the guard lived in the CALLERS, so the
+ *     correctness of the largest request in the client depended on every present
+ *     and future caller remembering it. A store action is reachable from anywhere;
+ *     the check belongs with the fetch. (A deployment built before the poll was
+ *     gated produced a 401 storm from a signed-out tab — that is the failure this
+ *     ordering prevents, not one this commit introduced.)
  *
  *  3. **Arrival order.** The response is committed only if the identity that
  *     asked for it is still the current one. Without this, a slow request from

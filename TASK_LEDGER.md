@@ -226,17 +226,25 @@ the effective identity changes or disappears, and `AppShell` renders no view unt
 holds belongs to the current `me.id`.
 *Proof:* `src/lib/fgmp/__tests__/store-identity.test.ts`.
 
-#### D-2 · The 5-second state poll runs while unauthenticated — **MEDIUM** — FIXED, VERIFIED
+#### D-2 · `store.init()/refresh()` issued the state request with no session check of their own — **MEDIUM** — FIXED, VERIFIED
 *Brief §6.1 — do not initiate the request when permission is absent.*
 
-`app-shell.tsx` started `setInterval(refresh, 5000)` unconditionally, and `store.refresh()` issued
-`fetch("/api/fgmp/state")` with no session at all. A signed-out tab therefore produced **twelve
-refused requests a minute, indefinitely** — the 401 storm in the browser console — and kept doing
-it while the login dialog was on screen.
+**Precisely what was and was not true.** At `424ed2c` the AppShell poll was **already** gated on
+`status === "authenticated"`, and `useRealtime` on the same condition. So no *currently reachable*
+path in this commit fired the request without a session — the 401 storm observed in the browser
+console came from an older deployed build whose `setInterval` had no such check. That is evidence
+for the failure mode, not a claim about this tree.
 
-*Fix:* the poll is gated on `status === "authenticated"`, and `refresh()`/`init()` now refuse to
-issue the request unless `canAccessApi(role, "/api/fgmp/state", "GET")` holds.
-*Proof:* `store-identity.test.ts`.
+The defect here is narrower and still real: the guard lived entirely in the **callers**.
+`store.refresh()` and `store.init()` are public Zustand actions that fetch `/api/fgmp/state` with
+no identity or capability check whatsoever, so correctness depended on every present and future
+caller remembering to gate first — `sites-view` pulls `refresh` straight out of the store, and
+`use-realtime` holds a reference to it, which is exactly how such a guard gets lost.
+
+*Fix:* both actions now refuse to issue the request unless `identityKey(me)` is resolved **and**
+`canAccessApi(role, "/api/fgmp/state", "GET")` holds.
+*Proof:* `store-identity.test.ts` — "no session ⇒ no request at all", "a role that cannot read
+view:dashboard ⇒ no request"; verified by disabling the guard and watching both fail.
 
 #### D-3 · The state fetch bypassed the capability layer — **MEDIUM** — FIXED, VERIFIED
 *Brief §5 — frontend and backend share one authoritative permission definition.*
