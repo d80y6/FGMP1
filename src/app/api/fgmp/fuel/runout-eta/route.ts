@@ -160,7 +160,9 @@ export async function GET(req: NextRequest) {
       applyRateLimitHeaders(res.headers, rl);
       return res;
     }
-    const timezone = await resolvePlatformTimezone();
+    // Tenant-scoped: a tenant may set its own `timezone`; otherwise the
+    // platform default row applies.
+    const timezone = await resolvePlatformTimezone(tenantIdOrThrow(me.tenantId));
 
     // Runout estimates are customer operational data. Platform operators are
     // scoped to the platform tenant unless an audited support surface is used.

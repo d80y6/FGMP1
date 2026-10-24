@@ -37,8 +37,8 @@
 
 import type { PrismaClient } from "@prisma/client";
 import { headers } from "next/headers";
-import { db } from "@/lib/db";
 import { getOpsDb } from "@/lib/fgmp/owner-db";
+import { withTenant } from "@/lib/fgmp/tenant-context";
 
 export interface AuditParams {
   userId?: string;
@@ -127,9 +127,24 @@ export async function audit(params: AuditParams): Promise<void> {
   };
 
   try {
-    // Preferred path: the ambient client, which is tenant-scoped when the caller
-    // established a context. Correct and least-privileged when it works.
-    await db.auditLog.create({ data });
+    // ── Why this opens its own tenant context (security fix, 2026-10) ──────
+    // It used to write on the AMBIENT client and rely on the caller having a
+    // transaction open. Callers almost never do at the point they call
+    // `audit()` — the business transaction has already committed — so under
+    // FORCE RLS every ordinary audit row was rejected with
+    //
+    //     42501 new row violates row-level security policy for table "AuditLog"
+    //
+    // and was then written through the OWNER connection by the fallback below.
+    // That is two defects in one: the audit trail was silently exempt from
+    // tenant isolation (a compromised app role could not have written it, but
+    // the ops credential did write it for every tenant), and every audited
+    // action produced a scary error in the log plus a privileged write.
+    //
+    // Opening the tenant context here makes the row land in the tenant it
+    // describes, on the least-privileged connection. The fallback stays for the
+    // pathological cases (unknown tenant id, database unavailable).
+    await withTenant(data.tenantId, (tx) => tx.auditLog.create({ data }));
     return;
   } catch (primaryErr) {
     // Do NOT throw. The business mutation has already happened; failing the

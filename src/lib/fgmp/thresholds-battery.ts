@@ -50,24 +50,42 @@ export const DEFAULT_BATT_LOW_VOLTAGE_PCT = 88;
 const MIN_PCT = 1;
 const MAX_PCT = 200;
 
-let cachedPct: Promise<number> | null = null;
+/**
+ * Resolved percent per tenant (`""` = platform defaults).
+ *
+ * A single process-wide value was correct only while settings were global. Now
+ * that `SystemSetting` rows carry a tenant, one tenant's threshold must not
+ * become every tenant's threshold: this number decides when a battery raises
+ * BATT_LOW_VOLTAGE, so sharing it would both hide one tenant's alarms and raise
+ * spurious ones for another.
+ */
+const PCT_CACHE_KEY = Symbol.for("fgmp.batt-threshold-cache.v1");
+const pctGlobal = globalThis as unknown as Record<symbol, Map<string, Promise<number>> | undefined>;
+const cachedPct: Map<string, Promise<number>> = (pctGlobal[PCT_CACHE_KEY] ??= new Map());
 
-/** Resolve the configured low-voltage percent-of-nominal. */
-export function resolveBattLowVoltagePct(): Promise<number> {
-  if (cachedPct) return cachedPct;
-  cachedPct = (async () => {
+/**
+ * Resolve the configured low-voltage percent-of-nominal for a tenant.
+ * `null` = platform defaults only (platform-wide jobs).
+ */
+export function resolveBattLowVoltagePct(tenantId?: string | null): Promise<number> {
+  const key = tenantId ?? "";
+  const hit = cachedPct.get(key);
+  if (hit) return hit;
+  const pending = (async () => {
     const fromEnv = Number(process.env.FGMP_BATT_LOW_VOLTAGE_PCT);
     if (Number.isFinite(fromEnv) && fromEnv >= MIN_PCT && fromEnv <= MAX_PCT) return fromEnv;
-    const fromDb = await getSystemSettingNumber("battLowVoltagePct");
+    const fromDb = await getSystemSettingNumber("battLowVoltagePct", tenantId);
     if (fromDb !== undefined && fromDb >= MIN_PCT && fromDb <= MAX_PCT) return fromDb;
     return DEFAULT_BATT_LOW_VOLTAGE_PCT;
   })();
-  return cachedPct;
+  cachedPct.set(key, pending);
+  return pending;
 }
 
-/** Test hook: forget the resolved percent. */
-export function resetBattThresholdCache(): void {
-  cachedPct = null;
+/** Test hook: forget the resolved percent (all tenants, or one). */
+export function resetBattThresholdCache(tenantId?: string | null): void {
+  if (tenantId === undefined) cachedPct.clear();
+  else cachedPct.delete(tenantId ?? "");
 }
 
 /**

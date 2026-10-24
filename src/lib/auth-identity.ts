@@ -50,18 +50,36 @@ import type { PrismaClient, Role } from "@prisma/client";
  * silent privilege escalation.
  */
 import { getOpsDb } from "@/lib/fgmp/owner-db";
+import { db as ambientDb } from "@/lib/db";
 
+/**
+ * The client used for identity lookups.
+ *
+ * ── WHY THE FALLBACK IS A STATIC IMPORT (security fix, 2026-10) ─────────────
+ * This used to be `require("@/lib/db").db` inside the function. Under the
+ * bundler `require` of the `@/` alias does not resolve at runtime, so the
+ * expression evaluated to `undefined` and the very next `.user.findUnique`
+ * threw
+ *
+ *     Cannot read properties of undefined (reading 'user')
+ *
+ * which NextAuth surfaced as a login redirect to
+ * `/api/auth/error?error=Cannot%20read%20properties%20of%20undefined…`. With no
+ * ops credential configured — the documented posture for the web container, and
+ * the state `render.yaml` actually deploys — NOBODY could sign in, and the
+ * failure looked like a credential problem. Reproduced on a live server: the
+ * same login succeeded as soon as FGMP_OPS_DATABASE_URL was added, with no code
+ * change.
+ *
+ * The fallback now resolves statically. Without an ops credential the lookup
+ * runs on the RLS-enforced app role, which returns NO row for an unscoped read:
+ * login then fails closed (invalid credentials) instead of crashing, and the
+ * boot-time warning in src/lib/env.ts tells the operator why. That is the
+ * intended behaviour — under FORCE RLS an identity lookup genuinely cannot be
+ * done on the app role, so the missing credential must be visible, not fatal.
+ */
 function client(): PrismaClient {
-  const ops = getOpsDb();
-  if (!ops) {
-    // No owner URL configured. Return the ambient client rather than throwing:
-    // in a correctly-provisioned deployment this path is unreachable, and where
-    // it IS reachable the RLS failure is loud and safe (no rows), not silent
-    // and dangerous.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    return require("@/lib/db").db as PrismaClient;
-  }
-  return ops;
+  return getOpsDb() ?? ambientDb;
 }
 
 /** The user shape the auth path needs. Deliberately minimal. */
@@ -75,6 +93,7 @@ export interface AuthUser {
   active: boolean;
   failedLoginAttempts: number;
   lockedUntil: Date | null;
+  sessionEpoch: number;
 }
 
 /**
@@ -97,6 +116,7 @@ export async function findUserByEmail(email: string): Promise<AuthUser | null> {
       active: true,
       failedLoginAttempts: true,
       lockedUntil: true,
+      sessionEpoch: true,
     },
   });
   return user;
@@ -110,19 +130,62 @@ export async function findUserByEmail(email: string): Promise<AuthUser | null> {
  */
 export async function findUserIdentity(
   id: string,
-): Promise<{ role: Role; tenantId: string } | null> {
+): Promise<{ role: Role; tenantId: string; active: boolean; sessionEpoch: number } | null> {
   const user = await client().user.findFirst({
     where: { id },
-    select: { role: true, tenantId: true },
+    select: { role: true, tenantId: true, active: true, sessionEpoch: true },
   });
   return user;
 }
+
+/**
+ * The authoritative state of the account behind a session token.
+ *
+ * Called on EVERY authenticated request (`requireAuth`), which is the point: a
+ * JWT is a claim about the past, and authorization decisions must be about the
+ * present. The cost is one primary-key lookup on the identity connection.
+ */
+export async function getSessionState(id: string): Promise<{
+  id: string;
+  role: Role;
+  tenantId: string;
+  active: boolean;
+  sessionEpoch: number;
+} | null> {
+  try {
+    return await client().user.findFirst({
+      where: { id },
+      select: { id: true, role: true, tenantId: true, active: true, sessionEpoch: true },
+    });
+  } catch {
+    // A database failure must not become an authorization bypass. Returning
+    // null makes the caller refuse the request (401), which is the fail-closed
+    // direction; the alternative (trusting the token) is fail-open.
+    return null;
+  }
+}
+
+/**
+ * Longest a request may rely on a session-state snapshot.
+ *
+ * The lookup is not cached at all: a revoked session must stop working on the
+ * NEXT request, and a cache would create a window in which a deactivated
+ * account still works. This constant documents that decision for reviewers, and
+ * the value is deliberately not configurable.
+ */
+export const SESSION_STATE_CACHE_MS = 0;
 
 /** Fields login is allowed to write. Nothing else is updatable through here. */
 export interface AuthWritableFields {
   failedLoginAttempts?: number;
   lockedUntil?: Date | null;
   lastLoginAt?: Date | null;
+  /**
+   * Session revocation counter. Bumped by password changes and MFA resets so
+   * every token issued under the old credential stops working; never set from
+   * request input.
+   */
+  sessionEpoch?: number;
 }
 
 /**
@@ -137,6 +200,31 @@ export async function updateAuthUser(
   data: AuthWritableFields,
 ): Promise<void> {
   await client().user.update({ where: { id }, data });
+}
+
+/**
+ * Invalidate every outstanding session for `id`.
+ *
+ * Increments the counter carried in each token; the next request from every
+ * existing session fails the comparison in `requireAuth` and is refused with
+ * 401 SESSION_REVOKED. Used on password change/reset and on MFA reset/disable —
+ * the events after which an old token must not remain useful.
+ *
+ * Returns the new epoch, or null when the row could not be updated (the caller
+ * then reports the credential change as failed rather than reporting success
+ * while old sessions keep working).
+ */
+export async function revokeUserSessions(id: string): Promise<number | null> {
+  try {
+    const updated = await client().user.update({
+      where: { id },
+      data: { sessionEpoch: { increment: 1 } },
+      select: { sessionEpoch: true },
+    });
+    return updated.sessionEpoch;
+  } catch {
+    return null;
+  }
 }
 
 /** Close the auth connection on shutdown so the process can exit cleanly. */

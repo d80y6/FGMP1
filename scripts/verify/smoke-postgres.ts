@@ -52,6 +52,11 @@ function systemDb(): PrismaClient {
     );
   }
   if (!ownerClient) {
+    // Adapter-backed, exactly like the application client. Prisma 6 with
+    // `engineType = "client"` REQUIRES a driver adapter; a bare
+    // `new PrismaClient()` throws P2038 ("Missing configured driver adapter")
+    // before it ever reaches the database — which is what made CI's smoke step
+    // fail with an initialisation error instead of running any assertion.
     ownerClient = new PrismaClient({
       adapter: createPgAdapter(url, { defaultLimit: 1 }),
       log: [
@@ -63,7 +68,6 @@ function systemDb(): PrismaClient {
   return ownerClient;
 }
 
-/** The RLS-enforced app role. Every read below uses the shared DATABASE_URL client. */
 function ok(label: string, detail: string) {
   console.log(`  ok  ${label.padEnd(16)} ${detail}`);
 }
@@ -280,4 +284,12 @@ main()
   .finally(async () => {
     await db.$disconnect();
     await ownerClient?.$disconnect();
+    // ── Exit explicitly (CI fix) ──────────────────────────────────────────────
+    // The assertions above print PASS and every client is disconnected, but the
+    // driver-adapter pg POOL keeps its idle sockets (and their idle timers)
+    // open, so the process never reaches a natural exit. In CI that means the
+    // step sits there until the JOB times out, and a green smoke test is then
+    // reported as a 25-minute failure. The verdict is already decided at this
+    // point, so terminate with it.
+    process.exit(process.exitCode ?? 0);
   });

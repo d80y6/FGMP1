@@ -137,31 +137,56 @@ function positiveEnv(name: string): number | undefined {
   return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
-let cached: Promise<FuelPrice> | null = null;
+/**
+ * One resolved price PER TENANT. Keyed by tenant id (`""` = platform defaults).
+ *
+ * It used to be a single module-level promise shared by the whole process, which
+ * was only safe while `SystemSetting` was a platform-global table. Settings are
+ * per-tenant now, so a shared value would charge one tenant's fuel price (and
+ * therefore its `fuelCost` and `stolenValueUsd`) to every other tenant for the
+ * lifetime of the process — this cache had no TTL at all.
+ */
+const FUEL_CACHE_KEY = Symbol.for("fgmp.fuel-price-cache.v1");
+const fuelCacheGlobal = globalThis as unknown as Record<symbol, Map<string, Promise<FuelPrice>> | undefined>;
+const cached: Map<string, Promise<FuelPrice>> = (fuelCacheGlobal[FUEL_CACHE_KEY] ??= new Map());
+/**
+ * TTL for this cache. It used to be FOREVER (a single promise per process), so
+ * a corrected price never reached the running server. 60 s matches the settings
+ * cache; an explicit PATCH also clears it (`resetFuelPriceCache`).
+ */
+const FUEL_CACHE_TTL_MS = 60_000;
+const fuelCacheAt = new Map<string, number>();
 
 /**
- * Resolve the single fuel price used by every cost view in analytics.
+ * Resolve the single fuel price used by every cost view in analytics, FOR ONE
+ * TENANT.
+ *
+ * Pass the authenticated tenant. `null` means "platform defaults only" and is
+ * for platform-wide jobs; a request-scoped caller that passes null would ignore
+ * its own tenant's override.
  *
  * The YER price always resolves. The USD price resolves ONLY when a rate is
  * actually configured — there is no fallback rate, by design; see
  * DEFAULT_FX_YER_PER_USD.
  */
-export function resolveFuelPrice(): Promise<FuelPrice> {
-  if (cached) return cached;
-  cached = (async () => {
+export function resolveFuelPrice(tenantId?: string | null): Promise<FuelPrice> {
+  const key = tenantId ?? "";
+  const hit = cached.get(key);
+  if (hit && Date.now() - (fuelCacheAt.get(key) ?? 0) < FUEL_CACHE_TTL_MS) return hit;
+  const pending: Promise<FuelPrice> = (async () => {
     const yerEnv = positiveEnv("FGMP_FUEL_PRICE_YER_PER_L");
-    const yerDb = await getSystemSettingNumber("fuelPriceYerPerL");
+    const yerDb = await getSystemSettingNumber("fuelPriceYerPerL", tenantId);
     const yerPerLitre = yerEnv ?? (yerDb !== undefined && yerDb > 0 ? yerDb : DEFAULT_FUEL_PRICE_YER_PER_L);
 
     const fxEnv = positiveEnv("FGMP_FX_YER_PER_USD");
-    const fxDb = await getSystemSettingNumber("fxYerPerUsd");
+    const fxDb = await getSystemSettingNumber("fxYerPerUsd", tenantId);
     // No default: an unconfigured rate leaves the conversion unperformed.
     const fxYerPerUsd = fxEnv ?? (fxDb !== undefined && fxDb > 0 ? fxDb : DEFAULT_FX_YER_PER_USD);
 
     // Recorded alongside the rate when the operator supplies one, so a figure
     // can be traced to the rate that produced it.
     const fxAsOfEnv = process.env.FGMP_FX_AS_OF?.trim();
-    const fxAsOfDb = await getSystemSetting("fxAsOf");
+    const fxAsOfDb = await getSystemSetting("fxAsOf", tenantId);
     const fxAsOf = fxAsOfEnv || fxAsOfDb || undefined;
 
     return {
@@ -183,12 +208,20 @@ export function resolveFuelPrice(): Promise<FuelPrice> {
       ...(fxAsOf ? { fxAsOf } : {}),
     };
   })();
-  return cached;
+  cached.set(key, pending);
+  fuelCacheAt.set(key, Date.now());
+  return pending;
 }
 
-/** Test hook. */
-export function resetFuelPriceCache(): void {
-  cached = null;
+/** Test hook. With no argument every tenant's cache is dropped. */
+export function resetFuelPriceCache(tenantId?: string | null): void {
+  if (tenantId === undefined) {
+    cached.clear();
+    fuelCacheAt.clear();
+    return;
+  }
+  cached.delete(tenantId ?? "");
+  fuelCacheAt.delete(tenantId ?? "");
 }
 
 // ── Capacity-weighted fuel percentage ─────────────────────────────────────

@@ -1,0 +1,31 @@
+-- Session revocation counter.
+--
+-- ── THE DEFECT THIS FIXES ────────────────────────────────────────────────────
+-- Sessions are JWTs with an 8-hour lifetime and the token carries the user's
+-- role and tenant. Nothing re-checked that against the database after sign-in,
+-- and the only refresh path (`trigger === "update"`) is an explicit client call.
+-- Measured against a live server with a real login cookie:
+--
+--   1. sign in as REGIONAL_MANAGER                  → /api/fgmp/me role REGIONAL_MANAGER
+--   2. UPDATE "User" SET role='READONLY'            → the session still reported
+--      and EXERCISED REGIONAL_MANAGER capabilities
+--   3. UPDATE "User" SET active=false               → GET /api/fgmp/state 200,
+--      GET /api/fgmp/me 200: a deactivated account kept full access until the
+--      token expired.
+--
+-- A password reset had the same problem: the old token stayed valid, so
+-- "reset the password because the account may be compromised" did not actually
+-- terminate the attacker's session.
+--
+-- ── THE FIX ────────────────────────────────────────────────────────────────
+-- `sessionEpoch` is a per-user counter carried in the token (`sv`). Every
+-- authenticated request re-reads {active, role, tenantId, sessionEpoch} from
+-- this row (one primary-key lookup on the auth path):
+--   * `active = false`      → 401 ACCOUNT_DISABLED
+--   * role/tenant changed   → the NEW values are used (no re-login required)
+--   * `sessionEpoch` moved  → 401 SESSION_REVOKED
+--
+-- Existing rows default to 0, and a token minted before this migration has no
+-- `sv` claim and is read as 0, so deploying this migration does not sign anybody
+-- out. The first bump (password change) does.
+ALTER TABLE "User" ADD COLUMN "sessionEpoch" INTEGER NOT NULL DEFAULT 0;
