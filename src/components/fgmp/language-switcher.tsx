@@ -66,9 +66,11 @@ export function LanguageSwitcher() {
             <span
               className={cn(
                 "absolute -bottom-1 -right-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-0.5 text-[8px] font-bold tabular-nums",
+                // 700, not 500: the badge is 8px, so it needs 4.5:1 against
+                // white text — emerald-500 measured 2.3:1 in the axe run.
                 lang === "ar"
-                  ? "bg-emerald-500 text-white"
-                  : "bg-sky-500 text-white",
+                  ? "bg-emerald-700 text-white"
+                  : "bg-sky-700 text-white",
               )}
             >
               {activeOption.short}

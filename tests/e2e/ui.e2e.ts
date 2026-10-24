@@ -29,6 +29,7 @@ const AXE =
 
 const AUTH = process.env.FGMP_E2E_AUTH === "1";
 const SUPERADMIN = { email: "superadmin@fgmp.telecom", password: "Super@2026" };
+const ADMIN = { email: "admin@fgmp.telecom", password: "Admin@2026" };
 const READONLY = { email: "readonly@fgmp.telecom", password: "Admin@2026" };
 
 const VIEWPORTS = [
@@ -115,9 +116,13 @@ async function signIn(page: Page, who: { email: string; password: string }): Pro
   await dialog.getByLabel(/email/i).fill(who.email);
   await dialog.getByLabel(/password/i).fill(who.password);
   await dialog.getByRole("button", { name: /sign in|تسجيل الدخول/i }).click();
-  const nav = page.getByRole("navigation", { name: /primary navigation|التنقل الرئيسي/i });
+  // The header is visible at every width; the sidebar is `hidden lg:block`, so
+  // waiting on the nav landmark made every 375px test fail on a correct layout.
+  // Sign-out is in the header for every authenticated session.
   try {
-    await expect(nav).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole("button", { name: /sign out|تسجيل الخروج/i })).toBeVisible({
+      timeout: 30_000,
+    });
   } catch {
     throw new Error(`sign-in did not reach the shell. page state: ${await dumpState(page)}`);
   }
@@ -250,7 +255,10 @@ test.describe("authenticated · shell and navigation", () => {
 
   test("dashboard has no WCAG 2.2 AA violations", async ({ page }) => {
     await page.goto("/");
-    await signIn(page, SUPERADMIN);
+    // ADMIN, not SUPERADMIN: the super-admin belongs to the platform tenant,
+    // whose dashboard is legitimately empty. Measuring contrast on a screen with
+    // no data would be measuring the empty state and calling it the dashboard.
+    await signIn(page, ADMIN);
     const violations = await axeViolations(page);
     expect(violations, JSON.stringify(violations)).toEqual([]);
   });

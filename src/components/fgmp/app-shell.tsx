@@ -855,7 +855,7 @@ function KpiChip({ label, value, tone }: { label: string; value: React.ReactNode
   };
   return (
     <div className={cn("flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs", tones[tone])}>
-      <span className="text-[10px] uppercase tracking-wide opacity-70">{label}</span>
+      <span className="text-[10px] uppercase tracking-wide">{label}</span>
       <span className="font-bold tabular-nums">{value}</span>
     </div>
   );
