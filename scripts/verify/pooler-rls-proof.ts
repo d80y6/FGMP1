@@ -113,6 +113,9 @@ async function main(): Promise<void> {
   console.log(`\nTarget: ${parsed.hostname}:${parsed.port || 5432}${parsed.pathname}`)
   console.log(`Role:   ${decodeURIComponent(parsed.username || '(none)')}`)
   const isPooler = /pooler|pgbouncer/i.test(url)
+  // Heuristic and labelled as one: the marker is in the hostname for Supabase
+  // and Neon. A URL without it may still reach a pooler, which is why the
+  // verdict below tells the operator to record the host.
   console.log(`Mode:   ${isPooler ? 'pooler endpoint (what the decision needs)' : 'direct endpoint (control run)'}\n`)
 
   const client = await pool.connect()
@@ -138,6 +141,12 @@ async function main(): Promise<void> {
       const after = await readGuc(c)
       await c.query('COMMIT')
 
+      // PostgreSQL keeps a placeholder for a custom GUC once it has been SET, so
+      // after COMMIT the value typically reverts to '' rather than NULL. Both
+      // are safe — neither carries the tenant — and asserting "must be NULL"
+      // is a bug in the instrument, not a finding about the pooler. The control
+      // run in CI failed on exactly that, which is what the control is for.
+      const cleared = after === null || after === ''
       if (inside === 'tenant-a-uuid') {
         pass('set-local-visible-in-its-transaction', `read back ${inside}`)
       } else {
@@ -148,12 +157,16 @@ async function main(): Promise<void> {
         )
       }
 
-      if (after === null) {
-        pass('set-local-reset-by-commit', 'next transaction sees NULL, so context cannot leak forward')
+      if (cleared) {
+        pass(
+          'set-local-reset-by-commit',
+          `next transaction sees ${after === null ? 'NULL' : "''"} — the tenant is gone, ` +
+            'so context cannot leak forward on a reused backend',
+        )
       } else {
         fail(
           'set-local-reset-by-commit',
-          `app.tenant_id survived COMMIT as ${after}. ` +
+          `app.tenant_id survived COMMIT as "${after}". ` +
             'That is a cross-tenant leak on a shared backend: the next request inherits this tenant.',
         )
       }

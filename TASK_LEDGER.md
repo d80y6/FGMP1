@@ -1101,6 +1101,31 @@ syntax.
 sweep, which renders all 30 views with a seeded database and is the only instrument that can see contrast
 ratios and focus order. Round 4 dispositions are therefore *fixed, pending sweep* — not *done*.
 
+### 6c-bis. The sweep result on #18's merge commit — 15 → 4
+
+Run `40216192291` rendered all 30 surfaces after round 4. It reported **4 problems**, down from 15, and the
+eleven that disappeared are exactly the classes round 4 attacked:
+
+| Rule (round 3 count) | After round 4 |
+|---|---|
+| `button-name` ×3 (unnamed preference switches) | **gone** |
+| `aria-progressbar-name` ×1 | **gone** |
+| `nested-interactive` ×4 (geography) | **gone** |
+| `svg-img-alt` ×52 (analytics scatter) | **gone** |
+| `scrollable-region-focusable` ×2 (fuel-forecast) | **gone** |
+| `color-contrast` ×30 (preferences, maintenance, sites, alarms, analytics, generators) | **1 left** |
+| `aria-hidden-focus` ×2 (dashboard, fuel) | **2 left** |
+| `scrollable-region-focusable` ×1 (tenant-isolation) | **1 left** |
+
+So round 4 is **VERIFIED**, and the four survivors are D-24 — each with a distinct cause that round 4's
+guard could not have caught: a focusable node inside a Recharts subtree whose position moves with the data,
+one Gantt bar at 4.4:1 (amber-700, below the 4.5 threshold by a hair), and two tables in `tenant-isolation`
+that bypassed the `Table` component entirely.
+
+This is the value of running the instrument rather than trusting the guard: three of the four were things a
+static scan cannot see, and one of them (`tenant-isolation`) was created by the same refactor that fixed the
+other tables.
+
 ### 6d. Round 5 — the 27 views, audited individually
 
 Rounds 2–4 swept. A sweep renders every view and asks axe whether a *rule* is broken; it cannot see
