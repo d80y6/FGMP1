@@ -5,6 +5,7 @@ import { useShallow } from "zustand/react/shallow";
 import { Cpu, Wifi, Search, RefreshCw, Download, Radio, HardDriveDownload } from "lucide-react";
 import { useFgmp } from "@/lib/fgmp/store";
 import { useApi, apiPatch } from "@/lib/fgmp/use-api";
+import { TruncationNote } from "@/components/fgmp/truncation-note";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { StatusBadge } from "@/components/fgmp/status-badge";
@@ -175,6 +176,7 @@ export function IotView() {
               </TableBody>
             </Table>
           </div>
+          <TruncationNote shown={100} total={filtered.length} />
         </CardContent>
       </Card>
 

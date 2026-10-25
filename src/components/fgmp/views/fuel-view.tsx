@@ -6,6 +6,7 @@ import { Area, AreaChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContaine
 import { useFgmp } from "@/lib/fgmp/store";
 import { useApi } from "@/lib/fgmp/use-api";
 import { useChartColors } from "@/lib/fgmp/use-chart-colors";
+import { TruncationNote } from "@/components/fgmp/truncation-note";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { BarGauge, Gauge } from "@/components/fgmp/gauge";
@@ -258,7 +259,11 @@ export function FuelView() {
                 </div>
               </div>
             ))}
+            {tanks.length === 0 && (
+              <p className="py-6 text-center text-xs text-muted-foreground">{t("common.noneYet")}</p>
+            )}
           </div>
+          <TruncationNote shown={60} total={tanks.length} />
         </CardContent>
       </Card>
     </div>

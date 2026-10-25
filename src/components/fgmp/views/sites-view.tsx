@@ -6,6 +6,7 @@ import { Building2, Search, MapPin, Filter, Star, Plus, Pencil, Trash2, MoreHori
 import { useFgmp } from "@/lib/fgmp/store";
 import { useFavorites, useFavoritesHydration, useIsFavorite } from "@/lib/fgmp/use-favorites";
 import { apiDelete } from "@/lib/fgmp/use-api";
+import { TruncationNote } from "@/components/fgmp/truncation-note";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { NationalMap } from "@/components/fgmp/national-map";
 import { StatusBadge } from "@/components/fgmp/status-badge";
@@ -387,6 +388,7 @@ export function SitesView() {
               })}
             </TableBody>
           </Table>
+          <TruncationNote shown={100} total={filtered.length} />
         </CardContent>
       </Card>
 

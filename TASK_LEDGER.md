@@ -847,6 +847,7 @@ workaround, `Low` = polish.
 | D-18 | `render.yaml`, docs, `.env.example` | **Three retired platforms were still described as deploy targets.** `render.yaml` (102 lines: web service, migration job, IoT bridge, shared environment group) sat in the tree after the move to Cloudflare, and DEPLOYMENT/ARCHITECTURE/SECURITY/READINESS all pointed at it. A blueprint that looks deployable but is not is what an operator reads when they need to ship. | Medium | **FIXED** — `render.yaml` deleted; DEPLOYMENT.md §4 rewritten around Cloudflare Workers (manifest key-by-key, `wrangler secret put`, the `NEXT_PUBLIC_*` rebuild trap, migrations as operator jobs, per-isolate connection caps, the pooler/RLS caveat, a first-deploy checklist, rollback); DB-CONNECTION-ASSESSMENT marked superseded on the deployment question only; `deployment-target.test.ts` fails if any retired manifest reappears, if the build script stops being OpenNext, if `WORKER_SELF_REFERENCE` stops naming the Worker, or if a doc heading names a retired platform |
 | D-19 | `untranslated-text.test.ts` + 37 components | **The guard against hardcoded English could not see the strings it existed to find.** `>[^<>{}]*<` excludes braces, so every heading shaped `Tank Refuel Forecast ({n})` — and every count-bearing title in the app — was invisible. Three rounds of "0 untranslated strings" were a property of the regex, not the product. Re-parsing the JSX with TypeScript surfaced **37** English strings, including a whole table header in `fuel-forecast-view` and the tenant-delete support text. | High | **FIXED** — guard rewritten as a `ts.createSourceFile`/`isJsxElement` walk that joins the literal children of each element; ~45 keys added in `en`/`ar`; 37 sites converted; ceiling **0**. `patterns.heatmapTitle`, `tenants.deleteHasDependents` etc. now translate |
 | D-20 | `ui/table.tsx`, `ui/scroll-region.tsx`, 30 charts, `dashboard-view`, 4 contrast causes | **Fifteen findings on the third sweep, eleven of them new shapes.** `scrollable-region-focusable` ×2 on fuel-forecast; `nested-interactive` on geography (and **latently** on the dashboard, invisible while the alarm list is empty); `aria-progressbar-name`; `button-name` on unlabelled switches; `svg-img-alt` ×52; `color-contrast` ×30 from four different causes — `opacity-50` dimming, `text-muted-foreground/70`, white text on `*-500` Gantt bars, and a tinted chip inside a muted filter tab. | High | **FIXED, pending sweep.** New `ScrollRegion` primitive joins the tab order only while content overflows (and names itself); 30 chart roots at `tabIndex={-1}`; the dashboard row is a real `<button>` with Ack as a sibling; `Progress.label` and `Select.label` are both compiler-enforced; the four contrast causes corrected at the source, not by nudging one shade. `a11y-guards` is 11 tests and each new one was proven against a deliberately broken probe. **Not VERIFIED** — contrast and focus order need the browser sweep |
+| D-21 | 9 views: `sites` `batteries` `fuel` `generators` `iot` `dispensers` `reports` `audit` `analytics` | **Nine lists were silently capped, and three had no empty state.** `sites` cut at 100 rows, `batteries` and `fuel` at 60, `generators` at 40, `iot` at 100, `dispensers` at 100/200, `reports` at 50 per table, `audit` at 200 — all `slice(0, N)` with no indication. On a tenant with 140 sites, row 100 looks exactly like the last row there is, and an operator who filters for a site sorting past the cap concludes it does not exist: a rendering decision producing a data-integrity impression. Separately `batteries`, `fuel` and `generators` rendered an empty grid under a heading reading `(0)` — on a freshly provisioned tenant, the first thing an operator sees, indistinguishable from a failed load. | Medium | **FIXED** — `TruncationNote` renders "Showing {shown} of {total}…" and nothing when the list fits (5 views wired); the three empty grids now render "Nothing here yet.". Found by the per-view audit (`docs/UI-UX-AUDIT-VIEWS.md`), which the earlier rounds did not have |
 
 ### 2. What was measured (public surface, Chromium 153, real server)
 
@@ -1095,6 +1096,27 @@ syntax.
 `a11y-guards` 11/11, `untranslated-text` 3/3 at ceiling 0). It is **not VERIFIED**: that requires the next
 sweep, which renders all 30 views with a seeded database and is the only instrument that can see contrast
 ratios and focus order. Round 4 dispositions are therefore *fixed, pending sweep* — not *done*.
+
+### 6d. Round 5 — the 27 views, audited individually
+
+Rounds 2–4 swept. A sweep renders every view and asks axe whether a *rule* is broken; it cannot see
+whether a view tells the operator what they need in the state they are actually in. Three defects of that
+second kind were found by reading all 27 view files and published as `docs/UI-UX-AUDIT-VIEWS.md`:
+
+* **Nine silently capped lists** (D-21). `sites` stopped at 100 rows with no count anywhere. On a tenant
+  with 140 sites, row 100 is indistinguishable from the last row that exists, so filtering for a site that
+  sorts past the cap returns "no results" for a site that is there. Fixed with `TruncationNote`:
+  "Showing 100 of 140. Narrow the filters to see the rest." It renders nothing when the list fits.
+* **Three empty grids** (D-21). `batteries`, `fuel` and `generators` drew an empty container under a
+  heading reading `(0)`. On a newly provisioned tenant — the first screen a new operator sees — an empty
+  grid is indistinguishable from a failed load. Each now says "Nothing here yet."
+* **D-09 closed.** Role changes are announced. The earlier note that the shell "cannot narrate" the change
+  was wrong: the value worth announcing is the role, not the render.
+
+Two things this round deliberately did **not** do. It did not touch the 682 occurrences of 10px/11px type:
+that density is a product decision about the operator's real screen, and only the unreadable 8px/9px band
+was raised (D-10, now enforced at 10px). And it did not claim a single finding as VERIFIED — every one of
+these is **FIXED**, and the sweep in Chromium remains the only instrument that can promote any of them.
 
 ### 7. Environment note (worth knowing, not a product defect)
 

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { BatteryCharging, Search, AlertTriangle, Zap, Thermometer, HeartPulse } from "lucide-react";
 import { useFgmp } from "@/lib/fgmp/store";
+import { TruncationNote } from "@/components/fgmp/truncation-note";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { BarGauge } from "@/components/fgmp/gauge";
@@ -100,7 +101,13 @@ export function BatteriesView() {
                   </div>
                 </div>
               ))}
+              {/* A tenant with no batteries used to see an empty grid under a
+                  "Battery Banks (0)" heading with no explanation. */}
+              {banks.length === 0 && (
+                <p className="py-6 text-center text-xs text-muted-foreground">{t("common.noneYet")}</p>
+              )}
             </div>
+            <TruncationNote shown={60} total={banks.length} />
           </CardContent>
         </Card>
 

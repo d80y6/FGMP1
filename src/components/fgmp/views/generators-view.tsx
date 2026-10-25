@@ -7,6 +7,7 @@ import { Zap, Power, AlertOctagon, RotateCcw, Search, Thermometer, Clock, Fuel a
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, YAxis } from "recharts";
 import { useFgmp } from "@/lib/fgmp/store";
 import { useApi } from "@/lib/fgmp/use-api";
+import { TruncationNote } from "@/components/fgmp/truncation-note";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { StatusBadge } from "@/components/fgmp/status-badge";
@@ -114,7 +115,11 @@ export function GeneratorsView() {
                   </div>
                 </div>
               ))}
+              {gens.length === 0 && (
+                <p className="py-6 text-center text-xs text-muted-foreground">{t("common.noneYet")}</p>
+              )}
             </div>
+            <TruncationNote shown={40} total={gens.length} />
           </CardContent>
         </Card>
 
