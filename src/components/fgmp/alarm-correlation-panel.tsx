@@ -7,7 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Network, AlertTriangle, Clock, MapPin, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { timeAgo } from "@/lib/fgmp/format";
-import { useArabicNumerals, formatNumber, useT } from "@/lib/fgmp/use-language";
+import { useArabicNumerals, formatNumber, useT, useTF } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 import { alarmTypeLabel } from "@/lib/fgmp/labels";
 
@@ -48,6 +48,7 @@ interface Props {
  */
 export function AlarmCorrelationPanel({ alarms, onSelectSite }: Props) {
   const t = useT();
+  const tFmt = useTF();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
   const groups = useMemo(() => {
@@ -117,10 +118,10 @@ export function AlarmCorrelationPanel({ alarms, onSelectSite }: Props) {
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-sm">
           <Network className="h-4 w-4 text-violet-500" />
-          Alarm Correlation Analysis
+          {t("correlation.title")}
           {totalSites > 0 && (
             <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
-              {totalSites} sites · {totalAlarms} alarms
+              {tFmt("correlation.siteAlarmSummary", { sites: formatNumber(totalSites, numLang), alarms: formatNumber(totalAlarms, numLang) })}
             </Badge>
           )}
         </CardTitle>
@@ -172,7 +173,7 @@ export function AlarmCorrelationPanel({ alarms, onSelectSite }: Props) {
               <div className="flex flex-col items-center justify-center py-8 text-center">
                 <Network className="mb-2 h-8 w-8 text-muted-foreground/40" />
                 <p className="text-sm text-muted-foreground">{t("correlation.empty")}</p>
-                <p className="text-[11px] text-muted-foreground/70">{t("correlation.emptyHint")}</p>
+                <p className="text-[11px] text-muted-foreground">{t("correlation.emptyHint")}</p>
               </div>
             ) : (
               groups.map((g, idx) => {

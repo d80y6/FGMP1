@@ -763,7 +763,7 @@ export function DispensersView() {
                   <EmptyState icon={TrendingUp} title={t("dispenser.noChartData")} />
                 ) : (
                   <ResponsiveContainer width="100%" height={260}>
-                    <BarChart data={topDispensers} layout="vertical" margin={{ top: 5, right: 20, left: 20, bottom: 0 }}>
+                    <BarChart tabIndex={-1} data={topDispensers} layout="vertical" margin={{ top: 5, right: 20, left: 20, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} horizontal={false} />
                       <XAxis type="number" tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} />
                       <YAxis type="category" dataKey="label" tick={{ fontSize: 9 }} stroke="currentColor" strokeOpacity={0.3} width={100} />
@@ -786,7 +786,7 @@ export function DispensersView() {
                   <EmptyState icon={Gauge} title={t("dispenser.noChartData")} />
                 ) : (
                   <ResponsiveContainer width="100%" height={260}>
-                    <AreaChart data={volumeTrend} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+                    <AreaChart tabIndex={-1} data={volumeTrend} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
                       <defs>
                         <linearGradient id="a-vol" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="0%" stopColor={cc.emerald} stopOpacity={0.4} />
@@ -814,7 +814,7 @@ export function DispensersView() {
                 <EmptyState icon={Wallet} title={t("dispenser.noChartData")} />
               ) : (
                 <ResponsiveContainer width="100%" height={280}>
-                  <BarChart data={revenueBySite} margin={{ top: 5, right: 20, left: 0, bottom: 0 }}>
+                  <BarChart tabIndex={-1} data={revenueBySite} margin={{ top: 5, right: 20, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} vertical={false} />
                     <XAxis dataKey="name" tick={{ fontSize: 9 }} stroke="currentColor" strokeOpacity={0.3} interval={0} angle={-15} textAnchor="end" height={60} />
                     <YAxis tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} />

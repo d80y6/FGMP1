@@ -845,6 +845,8 @@ workaround, `Low` = polish.
 | D-13 | docs + seed | The README (Part C) told operators to rotate "readonly@fgmp.telecom"; **no seeder creates that account**. The suite proved it by failing to sign in. | Medium | **FIXED** (README lists the five real accounts; test uses `field.engineer@`) |
 | D-17 | 30 rendered views | **The first browser sweep of every view returned 19 findings, all accessibility.** `button-name` (critical) on 8 views — up to **102 nodes** on `iot` alone, because a Radix Select trigger is `<button role="combobox">` and a combobox is named by `aria-label`, never by the value it displays (69 triggers, all unnamed); `aria-valid-attr-value` (critical) on 3 views — `<TabsTrigger>` with no `<TabsContent>` of the same value, so `aria-controls` pointed at nothing; `color-contrast` (serious) on 5 views / 56 nodes — `text-*-600` at **2.9:1** against the **default dark** card; `aria-prohibited-attr` on the dashboard (an `aria-label` on a non-focusable `<div>`, so its tooltip was unreachable by keyboard); `svg-img-alt` on 2 views (Recharts hard-codes `role="img"` on every pie sector with no name); `scrollable-region-focusable` on `edge-firmware` (a max-height box with nothing focusable inside). | High | **FIXED** — `Select` now requires `label` and forwards it to the trigger (69 sites, enforced by `tsc`); 3 filter controls became a `FilterTabs` segmented control (`role="radiogroup"`); 228 `text-*-600` → `text-*-700 dark:text-*-400`; the sparkline is a `<button>`; 4 doughnuts wrapped in `DecorativeChart` because their legends are already text; 12 scroll boxes made focusable and named. `a11y-guards.test.ts` fails on each shape at the file and line that introduces it |
 | D-18 | `render.yaml`, docs, `.env.example` | **Three retired platforms were still described as deploy targets.** `render.yaml` (102 lines: web service, migration job, IoT bridge, shared environment group) sat in the tree after the move to Cloudflare, and DEPLOYMENT/ARCHITECTURE/SECURITY/READINESS all pointed at it. A blueprint that looks deployable but is not is what an operator reads when they need to ship. | Medium | **FIXED** — `render.yaml` deleted; DEPLOYMENT.md §4 rewritten around Cloudflare Workers (manifest key-by-key, `wrangler secret put`, the `NEXT_PUBLIC_*` rebuild trap, migrations as operator jobs, per-isolate connection caps, the pooler/RLS caveat, a first-deploy checklist, rollback); DB-CONNECTION-ASSESSMENT marked superseded on the deployment question only; `deployment-target.test.ts` fails if any retired manifest reappears, if the build script stops being OpenNext, if `WORKER_SELF_REFERENCE` stops naming the Worker, or if a doc heading names a retired platform |
+| D-19 | `untranslated-text.test.ts` + 37 components | **The guard against hardcoded English could not see the strings it existed to find.** `>[^<>{}]*<` excludes braces, so every heading shaped `Tank Refuel Forecast ({n})` — and every count-bearing title in the app — was invisible. Three rounds of "0 untranslated strings" were a property of the regex, not the product. Re-parsing the JSX with TypeScript surfaced **37** English strings, including a whole table header in `fuel-forecast-view` and the tenant-delete support text. | High | **FIXED** — guard rewritten as a `ts.createSourceFile`/`isJsxElement` walk that joins the literal children of each element; ~45 keys added in `en`/`ar`; 37 sites converted; ceiling **0**. `patterns.heatmapTitle`, `tenants.deleteHasDependents` etc. now translate |
+| D-20 | `ui/table.tsx`, `ui/scroll-region.tsx`, 30 charts, `dashboard-view`, 4 contrast causes | **Fifteen findings on the third sweep, eleven of them new shapes.** `scrollable-region-focusable` ×2 on fuel-forecast; `nested-interactive` on geography (and **latently** on the dashboard, invisible while the alarm list is empty); `aria-progressbar-name`; `button-name` on unlabelled switches; `svg-img-alt` ×52; `color-contrast` ×30 from four different causes — `opacity-50` dimming, `text-muted-foreground/70`, white text on `*-500` Gantt bars, and a tinted chip inside a muted filter tab. | High | **FIXED, pending sweep.** New `ScrollRegion` primitive joins the tab order only while content overflows (and names itself); 30 chart roots at `tabIndex={-1}`; the dashboard row is a real `<button>` with Ack as a sibling; `Progress.label` and `Select.label` are both compiler-enforced; the four contrast causes corrected at the source, not by nudging one shade. `a11y-guards` is 11 tests and each new one was proven against a deliberately broken probe. **Not VERIFIED** — contrast and focus order need the browser sweep |
 
 ### 2. What was measured (public surface, Chromium 153, real server)
 
@@ -1040,6 +1042,59 @@ platform that no longer receives a push. A guard test now fails if a retired man
 `a11y-guards.test.ts`; they are **not yet VERIFIED** in the browser — that requires the next CI run of the
 sweep, which is the only place all 30 views can be rendered. Nothing in this round is marked VERIFIED on
 the strength of a static test.
+
+### 6c. Round 4 — the sweep says 15, and a guard that could not see what it was guarding
+
+**Where the number stood.** CI `40209855462` (commit `04b9f2e`) ran the axe sweep over all 30 views and
+reported **15 problems**: 34 → 19 → 15 across three rounds. Eleven of the fifteen were new *kinds* of
+defect that only appear once the obvious ones are gone, which is the normal shape of this work.
+
+**The finding that mattered most was in the test, not the product.** The guard that was supposed to stop
+hardcoded English (`untranslated-text.test.ts`) had reported **0** for three rounds. It was a regex over
+text nodes — `>[^<>{}]*<` — and that character class excludes a brace. The ordinary shape of a heading is
+`Tank Refuel Forecast ({n})`, prose glued to an expression, so the guard could not see the very strings it
+existed to find, including a whole table header in `fuel-forecast-view` and every count-bearing title in the
+app. Replacing it with a TypeScript **JSX parse** (`ts.createSourceFile` + `ts.isJsxElement`, joining the
+literal children of each element) surfaced **37 English strings**. All 37 are now `t()`/`tFmt()` and the
+ceiling is 0. The lesson is recorded in the test's own header: a guard whose subject is syntax must read
+syntax.
+
+**What else changed.**
+
+* **A scroll container that only joins the tab order when it scrolls** (`ui/scroll-region.tsx`).
+  `scrollable-region-focusable` fired twice on fuel-forecast: the capped table body and the table's own
+  overflow wrapper. `tabIndex={0}` on every wrapper is the wrong fix — a table that fits becomes an empty
+  tab stop announced as a nameless group, and this app has hundreds of tables. The new primitive measures
+  overflow (container, first child, and DOM mutation) and sets `tabIndex`/`role="region"`/`aria-label` only
+  while content actually overflows.
+* **No chart root in the tab order.** Recharts puts `tabindex="0"` on its `<svg>`; without
+  `accessibilityLayer` (used nowhere in this app) that stop does nothing. 30 chart roots now carry
+  `tabIndex={-1}` and are announced, once, by their wrapper — named if the graphic carries information
+  that is not printed as text, `aria-hidden` if it does not.
+* **`nested-interactive` on the dashboard.** A `role="button"` alarm row wrapped an Ack `<Button>`; the
+  row's `stopPropagation` hid the problem from the pointer, not from a screen reader. The row is now
+  layout only: a real `<button>` for the main area, Ack as its sibling. This one was **latent** — the
+  sweep never saw it, because that list is empty on an empty database.
+* **Contrast, four distinct causes.** (a) Whole cards dimmed with `opacity-50` to mean "disabled" — the
+  labels inside are not the disabled control, so WCAG's inactive-component exemption does not apply and
+  the text measured ~2.4:1; the state is now carried by a dashed border and the existing "Disabled" text.
+  (b) `text-muted-foreground/70`, which is ~2.7:1 in light and ~4.0:1 in dark, replaced by the full token
+  in seven components. (c) Gantt bars: white 9px text on `*-500` (amber 2.1:1); bars moved to `*-700`
+  (5.5:1). (d) Count chips tinted `bg-foreground/10` inside a muted filter tab, 3.8:1; the chip now sets
+  its own `text-foreground`.
+* **Guards: 6 → 11 tests, and every one is proven.** New cases: every `<Switch>` is named (aria-label, or
+  an id an `htmlFor` points at, or `FormControl`), every `<Progress>` is named and the `label` prop stays
+  required, no control inside a `role="button"`, no chart root in the tab order. A guard that has only
+  ever passed has not been tested, so each was checked against a deliberately broken probe component:
+  all four failed on it and passed once it was removed. Writing them also found a bug in the guard
+  itself — `src.indexOf(">")` truncates a JSX tag at the arrow in `onChange={() => …}`, hiding every
+  prop after it, which is exactly how an `aria-label` "went missing".
+
+**Verification status.** Everything above is **FIXED** and locally proven (`tsc` 516 = baseline,
+`eslint` 0 errors, 900 pass / 13 skip / 16 fail where the 16 are the pre-existing `Decimal` failures,
+`a11y-guards` 11/11, `untranslated-text` 3/3 at ceiling 0). It is **not VERIFIED**: that requires the next
+sweep, which renders all 30 views with a seeded database and is the only instrument that can see contrast
+ratios and focus order. Round 4 dispositions are therefore *fixed, pending sweep* — not *done*.
 
 ### 7. Environment note (worth knowing, not a product defect)
 

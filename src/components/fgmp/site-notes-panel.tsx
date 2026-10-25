@@ -180,7 +180,7 @@ export function SiteNotesPanel({
             placeholder={`${t("notes.placeholder")} ${siteName}…`}
             className={cn(
               "min-h-[72px] resize-y text-sm leading-relaxed",
-              "placeholder:text-muted-foreground/70",
+              "placeholder:text-muted-foreground",
               "transition-[color,box-shadow] duration-150",
               "focus-visible:ring-2 focus-visible:ring-emerald-500/30",
               "focus-visible:border-emerald-500/50",

@@ -513,6 +513,7 @@ export function SystemHealthView() {
               </div>
               <Progress
                 value={heapPct}
+                label={t("systemHealth.heapUsage")}
                 className={cn(
                   "h-2",
                   heapPct > 85

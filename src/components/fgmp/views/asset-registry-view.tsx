@@ -42,7 +42,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "sonner";
-import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { useT, useTF, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 import { ResourceError } from "@/components/fgmp/resource-error";
 
@@ -714,7 +714,7 @@ function TankFormDialog({ open, onOpenChange, target, sites, lang, onSaved }: {
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">Low Threshold (L)</Label>
+            <Label className="text-xs">{t("assets.lowThresholdL")}</Label>
             <Input
               type="number" value={form.lowThreshold}
               onChange={(e) => setForm({ ...form, lowThreshold: e.target.value })}
@@ -722,7 +722,7 @@ function TankFormDialog({ open, onOpenChange, target, sites, lang, onSaved }: {
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">Critical Threshold (L)</Label>
+            <Label className="text-xs">{t("assets.criticalThresholdL")}</Label>
             <Input
               type="number" value={form.criticalThreshold}
               onChange={(e) => setForm({ ...form, criticalThreshold: e.target.value })}
@@ -1013,7 +1013,7 @@ function GeneratorFormDialog({ open, onOpenChange, target, sites, lang, onSaved 
             <Input value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} className="h-9" />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">Rated Power (kW) *</Label>
+            <Label className="text-xs">{t("assets.ratedPowerKw")}</Label>
             <Input type="number" value={form.ratedPowerKw} onChange={(e) => setForm({ ...form, ratedPowerKw: e.target.value })} className="h-9" />
           </div>
           <div className="space-y-1.5">
@@ -1090,6 +1090,7 @@ function BatteriesTab({ sites, isAdmin, numLang }: {
   sites: SiteOpt[]; isAdmin: boolean; numLang: Language;
 }) {
   const t = useT();
+  const tFmt = useTF();
   const { data: batteries, loading, error, refetch } = useApi<BatteryRow[]>("/api/fgmp/batteries", { interval: 10000 });
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -1175,7 +1176,7 @@ function BatteriesTab({ sites, isAdmin, numLang }: {
                       <TableCell>
                         <p className="text-xs font-medium">{b.label}</p>
                         <p className="text-[10px] text-muted-foreground tabular-nums">
-                          {formatNumber(Math.round(b.capacityAh), numLang)} Ah · {formatNumber(b.nominalVoltage, numLang)}V
+                          {tFmt("assets.batterySpec", { cap: formatNumber(Math.round(b.capacityAh), numLang), v: formatNumber(b.nominalVoltage, numLang) })}
                         </p>
                       </TableCell>
                       <TableCell className="hidden md:table-cell text-xs">{b.site?.name ?? "—"}</TableCell>
@@ -1387,7 +1388,7 @@ function BatteryFormDialog({ open, onOpenChange, target, sites, lang, onSaved }:
             <Input type="number" value={form.capacityAh} onChange={(e) => setForm({ ...form, capacityAh: e.target.value })} className="h-9" />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">Nominal Voltage (V) *</Label>
+            <Label className="text-xs">{t("batteries.nominalVoltageV")}</Label>
             <Input type="number" value={form.nominalVoltage} onChange={(e) => setForm({ ...form, nominalVoltage: e.target.value })} className="h-9" />
           </div>
           {target && (
@@ -2201,7 +2202,7 @@ function DispenserFormDialog({ open, onOpenChange, target, sites, lang, onSaved,
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">Max Flow (L/m)</Label>
+            <Label className="text-xs">{t("dispenser.maxFlowLpm")}</Label>
             <Input type="number" value={form.maxFlowLpm} onChange={(e) => setForm({ ...form, maxFlowLpm: e.target.value })} className="h-9" />
           </div>
           <div className="col-span-2 border-t pt-2 mt-1">

@@ -13,7 +13,7 @@ import { toast } from "sonner";
 import type { SiteState, TankState, GenState, BattState } from "@/lib/fgmp/types";
 import { siteStatusTextClass } from "@/lib/fgmp/status";
 import { rowsToCsv } from "@/lib/fgmp/csv";
-import { useT } from "@/lib/fgmp/use-language";
+import { useT, useTF } from "@/lib/fgmp/use-language";
 
 interface ComparisonRow {
   label: string;
@@ -110,6 +110,7 @@ const METRICS: ComparisonRow[] = [
 
 export function SiteComparisonTool() {
   const t = useT();
+  const tFmt = useTF();
   const { snapshot, selectSite, setView } = useFgmp(useShallow((s) => ({ snapshot: s.snapshot, selectSite: s.selectSite, setView: s.setView })));
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [pickerValue, setPickerValue] = useState("");
@@ -241,10 +242,10 @@ export function SiteComparisonTool() {
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-sm">
           <GitCompare className="h-4 w-4 text-violet-500" />
-          Site Comparison Tool
+          {t("comparison.title")}
           {selectedSites.length > 0 && (
             <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
-              {selectedSites.length}/4 sites
+              {tFmt("comparison.selectedOfMax", { n: selectedSites.length })}
             </Badge>
           )}
         </CardTitle>
@@ -393,7 +394,7 @@ export function SiteComparisonTool() {
           <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-8 text-center">
             <GitCompare className="mb-2 h-8 w-8 text-muted-foreground/40" />
             <p className="text-sm text-muted-foreground">{t("comparison.selectTwo")}</p>
-            <p className="text-[11px] text-muted-foreground/70">{t("comparison.compareHint")}</p>
+            <p className="text-[11px] text-muted-foreground">{t("comparison.compareHint")}</p>
           </div>
         )}
 

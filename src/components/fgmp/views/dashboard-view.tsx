@@ -37,7 +37,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { timeAgo } from "@/lib/fgmp/format";
 import { csvFilename, type CsvColumn } from "@/lib/fgmp/csv-export";
-import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { useT, useTF, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 import type { AnalyticsPayload } from "@/lib/fgmp/types";
 import type { AlarmRow } from "@/lib/fgmp/types";
@@ -59,6 +59,7 @@ export function DashboardView() {
 
   const addRecent = useFavorites((s) => s.addRecent);
   const t = useT();
+  const tFmt = useTF();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
   const k = snapshot?.kpis;
@@ -273,50 +274,56 @@ export function DashboardView() {
           ) : (
             <div className="divide-y">
               {topCriticalAlarms.map((a) => (
+                // A row is two actions — open the alarm, acknowledge it — so it
+                // cannot be one role="button" wrapping a real <button>: that is
+                // nested-interactive, and a screen reader announces a button
+                // inside a button. The row is layout only; the main area is a
+                // real <button> and Ack is its sibling.
                 <div
                   key={a.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setView("alarms")}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setView("alarms"); } }}
                   className={cn(
                     // Slide-in animation + smooth hover transitions.
-                    "group relative flex cursor-pointer items-center gap-3 px-4 py-2.5 text-left transition-all duration-200 hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none animate-slide-in-up motion-reduce:animate-none",
+                    "group relative flex items-center gap-2 pr-3 transition-all duration-200 animate-slide-in-up motion-reduce:animate-none",
                     // Severity-tinted background (subtle).
                     a.severity === "L3" && "bg-rose-500/[0.03] hover:bg-rose-500/[0.07]",
                     a.severity === "L2" && "bg-amber-500/[0.02] hover:bg-amber-500/[0.06]",
                     a.severity === "L1" && "hover:bg-slate-500/[0.05]",
                   )}
                 >
-                  {/* Left-border accent coloured by severity (L3=rose, L2=amber, L1=slate).
-                      Absolute-positioned so it spans the row height. */}
-                  <span
-                    aria-hidden="true"
-                    className={cn(
-                      "absolute inset-y-0 left-0 w-[3px] transition-opacity duration-200 group-hover:opacity-100",
-                      a.severity === "L3" && "bg-rose-500 opacity-70",
-                      a.severity === "L2" && "bg-amber-500 opacity-70",
-                      a.severity === "L1" && "bg-slate-400 opacity-60",
-                    )}
-                  />
-                  <StatusBadge value={a.severity} className="h-5 shrink-0 px-1.5 text-[10px]" />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{translate(`alarm.${a.type}`, numLang) !== `alarm.${a.type}` ? translate(`alarm.${a.type}`, numLang) : (a.type ?? "").replace(/_/g, " ")}</p>
-                    <p className="truncate text-[11px] text-muted-foreground">{a.message}</p>
-                  </div>
-                  <div className="hidden w-40 shrink-0 text-right text-[11px] sm:block">
-                    <p className="truncate font-medium text-foreground">{a.site?.name ?? "—"}</p>
-                    {/* Time-ago badge with subtle background. */}
-                    <span className="mt-0.5 inline-flex items-center rounded-full bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                      {a.site?.code ?? ""} · {timeAgo(a.createdAt, numLang)}
-                    </span>
-                  </div>
+                  <button
+                      type="button"
+                      onClick={() => setView("alarms")}
+                      className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
+                    >
+                    {/* Left-border accent coloured by severity (L3=rose, L2=amber, L1=slate).
+                        Absolute-positioned so it spans the row height. */}
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        "absolute inset-y-0 left-0 w-[3px] transition-opacity duration-200 group-hover:opacity-100",
+                        a.severity === "L3" && "bg-rose-500 opacity-70",
+                        a.severity === "L2" && "bg-amber-500 opacity-70",
+                        a.severity === "L1" && "bg-slate-400 opacity-60",
+                      )}
+                    />
+                    <StatusBadge value={a.severity} className="h-5 shrink-0 px-1.5 text-[10px]" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{translate(`alarm.${a.type}`, numLang) !== `alarm.${a.type}` ? translate(`alarm.${a.type}`, numLang) : (a.type ?? "").replace(/_/g, " ")}</p>
+                      <p className="truncate text-[11px] text-muted-foreground">{a.message}</p>
+                    </div>
+                    <div className="hidden w-40 shrink-0 text-right text-[11px] sm:block">
+                      <p className="truncate font-medium text-foreground">{a.site?.name ?? "—"}</p>
+                      {/* Time-ago badge with subtle background. */}
+                      <span className="mt-0.5 inline-flex items-center rounded-full bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                        {a.site?.code ?? ""} · {timeAgo(a.createdAt, numLang)}
+                      </span>
+                    </div>
+                  </button>
                   <Button
                     size="sm"
                     variant="outline"
                     className="h-7 shrink-0 px-2 text-[11px] transition-transform active:scale-95"
-                    onClick={(e) => {
-                      e.stopPropagation();
+                    onClick={() => {
                       void ackAlarm(a.id);
                       // #18 — Ack also opens the site detail sheet so operators
                       // can triage the underlying asset immediately, and tracks
@@ -418,7 +425,7 @@ export function DashboardView() {
           <CardContent>
             <DecorativeChart>
               <ResponsiveContainer width="100%" height={180}>
-                <PieChart>
+                <PieChart tabIndex={-1}>
                   <Pie data={fleetStatus} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={3}>
                     {fleetStatus.map((e, i) => <Cell key={i} fill={e.fill} />)}
                   </Pie>
@@ -438,7 +445,7 @@ export function DashboardView() {
           <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-sm"><Droplet className="h-4 w-4 text-sky-500" /> {t("dash.fuelDist")}</CardTitle></CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={180}>
-              <BarChart data={fuelDist} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+              <BarChart tabIndex={-1} data={fuelDist} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} vertical={false} />
                 <XAxis dataKey="range" tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} />
                 <YAxis tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} allowDecimals={false} />
@@ -469,7 +476,7 @@ export function DashboardView() {
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={180}>
-              <AreaChart data={consumption} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+              <AreaChart tabIndex={-1} data={consumption} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                 <defs>
                   <linearGradient id="cons-grad" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor={cc.emerald} stopOpacity={0.4} />
@@ -512,7 +519,7 @@ export function DashboardView() {
                     </div>
                   </div>
                   <div className="w-16 text-right text-[11px] tabular-nums text-muted-foreground">{formatNumber(r.sites, numLang)} {t("dash.sites")}</div>
-                  <div className="w-16 text-right text-[11px] tabular-nums text-sky-500">{formatNumber(Math.round(r.fuel / 1000), numLang)}k L</div>
+                  <div className="w-16 text-right text-[11px] tabular-nums text-sky-500">{tFmt("dash.fuelK", { n: formatNumber(Math.round(r.fuel / 1000), numLang) })}</div>
                   <div className="w-14 text-right text-[11px] tabular-nums text-amber-500">{formatNumber(r.alarms, numLang)} {t("dash.alm")}</div>
                   <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
                 </button>

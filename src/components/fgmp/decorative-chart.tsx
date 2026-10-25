@@ -21,6 +21,29 @@ import type { ReactNode } from "react";
  * noise. Charts that do NOT have a text equivalent must not use this wrapper:
  * give the `<svg>` an `aria-label` and a `<title>` instead.
  */
-export function DecorativeChart({ children }: { children: ReactNode }) {
-  return <div aria-hidden="true">{children}</div>;
+export function DecorativeChart({
+  children,
+  label,
+}: {
+  children: ReactNode;
+  /** Required when the chart carries information that is NOT printed as text
+   *  elsewhere. The graphic is then announced once, by name, instead of as a
+   *  stream of unnamed sectors or points. */
+  label?: string;
+}) {
+  // Two attributes make this airtight, and both are needed:
+  //
+  //   aria-hidden       silences the hard-coded role="img" on every sector and
+  //                     point (the thing axe reports as svg-img-alt);
+  //   tabIndex={-1}     on the CHART itself (passed by the call site), because
+  //                     Recharts puts tabindex="0" on its root <svg> by default
+  //                     — and a tab stop inside aria-hidden is a different
+  //                     violation (aria-hidden-focus). The axe check looks at
+  //                     the TAB ORDER, so -1 is enough.
+  if (!label) return <div aria-hidden="true">{children}</div>;
+  return (
+    <div role="img" aria-label={label}>
+      <div aria-hidden="true">{children}</div>
+    </div>
+  );
 }

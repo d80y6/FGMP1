@@ -98,7 +98,7 @@ export function KpiCard({ label, value, unit, icon, trend, hint, info, tone = "d
                     <button
                       type="button"
                       aria-label={label}
-                      className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+                      className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
                     >
                       <Info className="h-3 w-3" />
                     </button>

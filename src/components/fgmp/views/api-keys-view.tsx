@@ -234,7 +234,7 @@ export function ApiKeysView() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
           <CardTitle className="text-sm">
-            API Keys ({formatNumber(stats.total, numLang)})
+            {tFmt("apiKeys.titleCount", { n: formatNumber(stats.total, numLang) })}
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
@@ -493,7 +493,7 @@ function CreateKeyDialog({
               maxLength={80}
             />
             <p className="text-[10px] text-muted-foreground">
-              A descriptive label for this key (max 80 chars).
+              {t("apiKeys.nameHint")}
             </p>
           </div>
 
@@ -562,7 +562,7 @@ function CreateKeyDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>Cancel</Button>
           <Button onClick={handleSubmit} disabled={submitting || !name.trim()}>
             {submitting ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <KeyRound className="mr-1 h-3.5 w-3.5" />}
-            Generate Key
+            {t("apiKeys.generate")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -638,9 +638,9 @@ function RevealKeyDialog({
                 </Button>
               </div>
               <p className="text-[10px] text-muted-foreground">
-                Prefix: <code className="font-mono">{created.keyPrefix}</code> ·
-                Scopes: {created.scopes.split(",").map((s) => <span key={s} className="ml-1 font-mono">{s}</span>)}
-                {created.expiresAt && ` · Expires: ${formatNumber(new Date(created.expiresAt).toLocaleDateString("en-GB"), numLang)}`}
+                {t("apiKeys.prefix")}: <code className="font-mono">{created.keyPrefix}</code> ·
+                {t("apiKeys.scopes")}: {created.scopes.split(",").map((s) => <span key={s} className="ml-1 font-mono">{s}</span>)}
+                {created.expiresAt && ` · ${t("apiKeys.expires")}: ${formatNumber(new Date(created.expiresAt).toLocaleDateString("en-GB"), numLang)}`}
               </p>
             </div>
           </div>

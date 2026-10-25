@@ -13,7 +13,7 @@ import { useFgmp } from "@/lib/fgmp/store";
 import { hasCapability } from "@/lib/fgmp/rbac-core";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
-import { useT } from "@/lib/fgmp/use-language";
+import { useT, useTF } from "@/lib/fgmp/use-language";
 import { useNow } from "@/lib/fgmp/use-now";
 
 interface Notification {
@@ -52,6 +52,7 @@ function extractSeverity(subject: string): string | null {
 
 export function NotificationCenter() {
   const t = useT();
+  const tFmt = useTF();
   const role = useFgmp((s) => s.me?.role ?? null);
   const canDismissNotifications = role !== null && hasCapability(role, "notification:manage");
   const [open, setOpen] = useState(false);
@@ -199,7 +200,7 @@ export function NotificationCenter() {
         {notifications && notifications.length > 0 && (
           <div className="border-t px-4 py-2">
             <p className="text-center text-[10px] text-muted-foreground">
-              {notifications.length} total · {unreadCount} unread
+              {tFmt("notifications.summary", { total: notifications.length, unread: unreadCount })}
             </p>
           </div>
         )}

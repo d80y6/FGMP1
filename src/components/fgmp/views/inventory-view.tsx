@@ -154,7 +154,7 @@ export function InventoryView() {
             <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-sm"><TrendingUp className="h-4 w-4 text-emerald-500" /> {t("inventory.consumptionForecast")}</CardTitle></CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={180}>
-                <BarChart data={forecast} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+                <BarChart tabIndex={-1} data={forecast} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} vertical={false} />
                   <XAxis dataKey="day" tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} />
                   <YAxis tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} />

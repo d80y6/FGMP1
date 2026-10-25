@@ -550,6 +550,7 @@ function DeleteTenantDialog({
   onDeleted: () => void;
 }) {
   const t = useT();
+  const tFmt = useTF();
   const [deleting, setDeleting] = useState(false);
 
   const hasDependents = !!target && (target._count.users > 0 || target._count.sites > 0);
@@ -582,15 +583,12 @@ function DeleteTenantDialog({
             {t("tenants.deleteTitle")}
           </AlertDialogTitle>
           <AlertDialogDescription>
-            You are about to permanently delete{" "}
-            <span className="font-medium text-foreground">{target?.name}</span>{" "}
-            (<span className="font-mono text-[10px]" dir="ltr">{target?.code}</span>).
+            {tFmt("tenants.deleteBody", { name: target?.name ?? "", code: target?.code ?? "" })}
             {hasDependents ? (
               <>
                 <br /><br />
                 <span className="text-rose-700 dark:text-rose-400 font-medium">
-                  This tenant still has {target?._count.users ?? 0} users and{" "}
-                  {target?._count.sites ?? 0} sites. Remove or reassign them first.
+                  {tFmt("tenants.deleteHasDependents", { users: target?._count.users ?? 0, sites: target?._count.sites ?? 0 })}
                 </span>
               </>
             ) : (

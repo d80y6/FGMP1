@@ -457,7 +457,7 @@ export function RegionDetailSheet({ region, onOpenChange }: RegionDetailSheetPro
                       {t("region.fuelDistribution")}
                     </SectionTitle>
                     <ResponsiveContainer width="100%" height={160}>
-                      <BarChart data={data.fuelBuckets} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+                      <BarChart tabIndex={-1} data={data.fuelBuckets} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} vertical={false} />
                         <XAxis dataKey="range" tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} />
                         <YAxis tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} allowDecimals={false} />
@@ -488,7 +488,7 @@ export function RegionDetailSheet({ region, onOpenChange }: RegionDetailSheetPro
                     ) : (
                       <DecorativeChart>
                         <ResponsiveContainer width="100%" height={160}>
-                          <PieChart>
+                          <PieChart tabIndex={-1}>
                             <Pie
                               data={data.alarmPie}
                               dataKey="value"

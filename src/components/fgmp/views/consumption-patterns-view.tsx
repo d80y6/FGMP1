@@ -239,7 +239,7 @@ export function ConsumptionPatternsView() {
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-sm">
             <Flame className="h-4 w-4 text-rose-500" />
-            Consumption Heatmap (L/h avg, last 24h window)
+            {t("patterns.heatmapTitle")}
           </CardTitle>
         </CardHeader>
         <CardContent className="p-3">
@@ -314,7 +314,7 @@ export function ConsumptionPatternsView() {
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={hourChartData} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+              <BarChart tabIndex={-1} data={hourChartData} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} vertical={false} />
                 <XAxis dataKey="hour" tick={{ fontSize: 8 }} stroke="currentColor" strokeOpacity={0.3} interval={2} />
                 <YAxis tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} />
@@ -343,7 +343,7 @@ export function ConsumptionPatternsView() {
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={dayChartData} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+              <BarChart tabIndex={-1} data={dayChartData} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} vertical={false} />
                 <XAxis dataKey="day" tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} />
                 <YAxis tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} />
@@ -374,9 +374,9 @@ export function ConsumptionPatternsView() {
             <TableHeader>
               <TableRow>
                 <TableHead>Site</TableHead>
-                <TableHead className="text-right">Mean (L/h)</TableHead>
-                <TableHead className="text-right">Std Dev (L/h)</TableHead>
-                <TableHead className="text-right">Variance</TableHead>
+                <TableHead className="text-right">{t("patterns.mean")}</TableHead>
+                <TableHead className="text-right">{t("patterns.stdDev")}</TableHead>
+                <TableHead className="text-right">{t("patterns.variance")}</TableHead>
                 <TableHead className="text-right">Samples</TableHead>
                 <TableHead>Pattern</TableHead>
               </TableRow>

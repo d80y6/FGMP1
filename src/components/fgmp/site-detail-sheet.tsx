@@ -29,7 +29,7 @@ import { timeAgo, fmtLitres, fmtDateTime } from "@/lib/fgmp/format";
 import { cn } from "@/lib/utils";
 import type { GenCommand } from "@/lib/fgmp/types";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { useT, useTF, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 import type { SiteDetailPayload } from "@/lib/fgmp/types";
 import { alarmTypeLabel } from "@/lib/fgmp/labels";
@@ -39,6 +39,7 @@ import { toast } from "sonner";
 
 export function SiteDetailSheet({ siteId, open, onOpenChange }: { siteId: string | null; open: boolean; onOpenChange: (v: boolean) => void }) {
   const t = useT();
+  const tFmt = useTF();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
   const { data, loading, refetch } = useApi<SiteDetailPayload>(siteId ? `/api/fgmp/sites/${siteId}` : null, { interval: 6000, deps: [siteId] });
@@ -129,7 +130,7 @@ export function SiteDetailSheet({ siteId, open, onOpenChange }: { siteId: string
                               </div>
                               <div className="mt-2"><BarGauge value={pct} showLabel /></div>
                               <div className="mt-1.5 flex items-center justify-between text-[10px] text-muted-foreground">
-                                <span>{t("detail.low")}: {Math.round(tk.low)}L · {t("detail.criticalLevel")}: {Math.round(tk.critical)}L</span>
+                                <span>{tFmt("detail.lowLevelLitres", { n: formatNumber(Math.round(tk.low), numLang) })} · {tFmt("detail.criticalLevelLitres", { n: formatNumber(Math.round(tk.critical), numLang) })}</span>
                                 <Sparkline data={tk.history?.map((h) => h.l).slice(-48) ?? []} width={80} height={20} color="#0ea5e9" />
                               </div>
                             </CardContent>
@@ -745,7 +746,7 @@ function SiteTrendsTab({ data }: { data: SiteDetailPayload | null }) {
       <div className="flex flex-col items-center justify-center py-12 text-center">
         <TrendingUp className="mb-2 h-8 w-8 text-muted-foreground/40" />
         <p className="text-sm text-muted-foreground">{t("detail.noTrendData")}</p>
-        <p className="text-[11px] text-muted-foreground/70">{t("detail.trendWillPopulate")}</p>
+        <p className="text-[11px] text-muted-foreground">{t("detail.trendWillPopulate")}</p>
       </div>
     );
   }
@@ -760,7 +761,7 @@ function SiteTrendsTab({ data }: { data: SiteDetailPayload | null }) {
             {t("detail.fuelTrend4h")}
           </p>
           <ResponsiveContainer width="100%" height={120}>
-            <AreaChart data={fuelTrend} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
+            <AreaChart tabIndex={-1} data={fuelTrend} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
               <defs>
                 <linearGradient id="trend-fuel" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="#0ea5e9" stopOpacity={0.4} />
@@ -785,7 +786,7 @@ function SiteTrendsTab({ data }: { data: SiteDetailPayload | null }) {
             {t("detail.genLoadTrend4h")}
           </p>
           <ResponsiveContainer width="100%" height={120}>
-            <LineChart data={genLoadTrend} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
+            <LineChart tabIndex={-1} data={genLoadTrend} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} vertical={false} />
               <XAxis dataKey="t" tick={{ fontSize: 8 }} stroke="currentColor" strokeOpacity={0.3} interval={6} />
               <YAxis yAxisId="l" tick={{ fontSize: 9 }} stroke="currentColor" strokeOpacity={0.3} />
@@ -806,7 +807,7 @@ function SiteTrendsTab({ data }: { data: SiteDetailPayload | null }) {
             {t("detail.battTrend4h")}
           </p>
           <ResponsiveContainer width="100%" height={120}>
-            <LineChart data={battTrend} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
+            <LineChart tabIndex={-1} data={battTrend} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} vertical={false} />
               <XAxis dataKey="t" tick={{ fontSize: 8 }} stroke="currentColor" strokeOpacity={0.3} interval={6} />
               <YAxis yAxisId="l" tick={{ fontSize: 9 }} stroke="currentColor" strokeOpacity={0.3} />
@@ -827,7 +828,7 @@ function SiteTrendsTab({ data }: { data: SiteDetailPayload | null }) {
             {t("detail.alarmTimeline24h")}
           </p>
           <ResponsiveContainer width="100%" height={120}>
-            <BarChart data={alarmTimeline} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
+            <BarChart tabIndex={-1} data={alarmTimeline} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} vertical={false} />
               <XAxis dataKey="hour" tick={{ fontSize: 8 }} stroke="currentColor" strokeOpacity={0.3} interval={3} />
               <YAxis tick={{ fontSize: 9 }} stroke="currentColor" strokeOpacity={0.3} allowDecimals={false} />

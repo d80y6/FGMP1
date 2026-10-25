@@ -38,9 +38,9 @@ interface MaintenanceGanttProps {
 
 // Status -> bar color tokens (DONE gets 50% opacity per spec)
 const STATUS_META: Record<string, { bg: string; text: string; label: string }> = {
-  OPEN: { bg: "bg-sky-500", text: "text-sky-500", label: "Open" },
-  SCHEDULED: { bg: "bg-amber-500", text: "text-amber-500", label: "Scheduled" },
-  IN_PROGRESS: { bg: "bg-violet-500", text: "text-violet-500", label: "In Progress" },
+  OPEN: { bg: "bg-sky-700", text: "text-sky-500", label: "Open" },
+  SCHEDULED: { bg: "bg-amber-700", text: "text-amber-500", label: "Scheduled" },
+  IN_PROGRESS: { bg: "bg-violet-700", text: "text-violet-500", label: "In Progress" },
   DONE: { bg: "bg-emerald-500/50", text: "text-emerald-500", label: "Done" },
 };
 
@@ -210,7 +210,7 @@ export function MaintenanceGantt({ tickets, defaultRange = 30, onTicketClick }: 
           </div>
           {unscheduled.length > 0 && (
             <Badge variant="outline" className="text-[10px]">
-              {unscheduled.length} unscheduled ticket{unscheduled.length === 1 ? "" : "s"} not shown
+              {tFmt("gantt.unscheduledHidden", { n: unscheduled.length })}
             </Badge>
           )}
         </div>
@@ -418,7 +418,7 @@ export function MaintenanceGantt({ tickets, defaultRange = 30, onTicketClick }: 
                   style={{ width: LABEL_WIDTH }}
                 >
                   <span className="text-[10px] text-muted-foreground">
-                    +{hiddenSitesCount} more site{hiddenSitesCount === 1 ? "" : "s"}
+                    {tFmt("gantt.moreSites", { n: hiddenSitesCount })}
                   </span>
                 </div>
                 <div style={{ width: timelineWidth }} />

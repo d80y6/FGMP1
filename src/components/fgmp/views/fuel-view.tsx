@@ -124,7 +124,7 @@ export function FuelView() {
             ) : (
               <DecorativeChart>
                 <ResponsiveContainer width="100%" height={200}>
-                  <PieChart>
+                  <PieChart tabIndex={-1}>
                     <Pie
                       data={fillBands}
                       dataKey="value"
@@ -161,7 +161,7 @@ export function FuelView() {
           <CardHeader className="pb-2"><CardTitle className="text-sm">{t("fuel.nationalConsumption")}</CardTitle></CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={200}>
-              <AreaChart data={analytics?.consumptionTrend ?? []} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+              <AreaChart tabIndex={-1} data={analytics?.consumptionTrend ?? []} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
                 <defs>
                   <linearGradient id="fuel-cons" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor={cc.sky} stopOpacity={0.4} />

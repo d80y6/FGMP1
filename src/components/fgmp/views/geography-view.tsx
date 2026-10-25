@@ -581,29 +581,36 @@ function ListItem({
   // inherited from the view that renders it.
   const t = useT();
   return (
+    // The row used to BE a button (role="button" + tabIndex + synthetic
+    // Enter/Space), with the Edit and Delete buttons nested inside it. A button
+    // inside a button is not one control with extra affordances: it is invalid
+    // and axe reports nested-interactive (serious) once per row — a screen
+    // reader announces a button that contains buttons, and Enter on a focused
+    // Delete fires both handlers. Now the row is a plain container, the name is
+    // a real <button>, and the actions are its siblings.
     <div
-      role="button"
-      tabIndex={0}
-      onClick={onClick}
-      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } }}
       className={cn(
-        "group flex items-center justify-between rounded-md border px-2.5 py-2 text-sm transition-all cursor-pointer",
+        "group flex items-center justify-between rounded-md border transition-all",
         "hover:border-emerald-500/40 hover:bg-emerald-500/5",
         active ? "border-emerald-500/60 bg-emerald-500/10" : "border-transparent",
       )}
     >
-      <div className="min-w-0 flex-1">
-        <div className="truncate font-medium">{title}</div>
-        <div className="text-[10px] text-muted-foreground">{meta}</div>
-      </div>
+      <button
+        type="button"
+        onClick={onClick}
+        className="min-w-0 flex-1 cursor-pointer rounded-sm px-2.5 py-2 text-start focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      >
+        <span className="block truncate text-sm font-medium">{title}</span>
+        <span className="block text-[10px] text-muted-foreground">{meta}</span>
+      </button>
       {(canEdit || canDelete) && (
-        <div className="flex items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+        <div className="flex items-center gap-0.5 pr-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
           {canEdit && onEdit && (
             <Button
               size="icon"
               variant="ghost"
               className="h-6 w-6"
-              onClick={(e) => { e.stopPropagation(); onEdit(); }}
+              onClick={onEdit}
               aria-label={t("common.edit")}
             >
               <Pencil className="h-3 w-3" />
@@ -614,7 +621,7 @@ function ListItem({
               size="icon"
               variant="ghost"
               className="h-6 w-6 text-rose-500 hover:text-rose-700 dark:hover:text-rose-400 hover:bg-rose-500/10"
-              onClick={(e) => { e.stopPropagation(); onDelete(); }}
+              onClick={onDelete}
               aria-label={t("common.delete")}
             >
               <Trash2 className="h-3 w-3" />

@@ -11,13 +11,22 @@
  *
  * WHAT IT COUNTS
  * --------------
- * JSX text nodes (the text between `>` and `<`) that read as English prose:
- * two or more word-shaped tokens, no code punctuation. It deliberately ignores
- * single tokens — most are brand names, units or codes ("FGMP", "Modbus",
- * "Espressif") that are correctly untranslated.
+ * JSX text that reads as English prose: two or more word-shaped tokens, no
+ * code punctuation. It deliberately ignores single tokens — most are brand
+ * names, units or codes ("FGMP", "Modbus", "Espressif") that are correctly
+ * untranslated.
  *
- * The ceiling below is a RATCHET: it may only go down. Fixing strings without
- * lowering it leaves room for regrowth, so lower it in the same commit.
+ * The file is parsed, not pattern-matched. A regex over text can only see a
+ * node whose content has no braces, and the normal shape of a heading is
+ * `Tank Refuel Forecast ({n})` — prose glued to an expression. That shape is
+ * invisible to `>[^<>{}]*<`, which is how 37 English strings survived a passing
+ * guard. Here the JSX children are read directly: the literal text of every
+ * child that is not an expression is collected and joined, so the prose on
+ * either side of `{n}` is examined together.
+ *
+ * The ceilings below are a RATCHET: they may only go down. Fixing strings
+ * without lowering them leaves room for regrowth, so lower them in the same
+ * commit.
  *
  * Run: bun test src/lib/fgmp/__tests__/untranslated-text.test.ts
  */
@@ -26,6 +35,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
+import ts from "typescript";
 
 const SRC = join(process.cwd(), "src", "components");
 
@@ -67,18 +77,44 @@ interface Hit { file: string; line: number; text: string }
 function englishTextNodes(): Hit[] {
   const hits: Hit[] = [];
   for (const file of files(SRC)) {
-    const source = strip(readFileSync(file, "utf8"));
-    for (const match of source.matchAll(/>([^<>{}]*[A-Za-z][^<>{}]*)</g)) {
-      const text = match[1].replace(/\s+/g, " ").trim();
-      if (text.length < 3 || text.length > 200) continue;
-      // Anything that still carries code characters is an expression, not text.
-      if (/[;()=|"`\\!?]/.test(text)) continue;
-      if (ALLOWED.has(text)) continue;
-      const words = text.split(" ").filter((w) => /^[A-Za-z][A-Za-z'’-]*[.,:…]?$/.test(w));
-      if (words.length < 2) continue;
-      const line = source.slice(0, match.index).split("\n").length;
-      hits.push({ file: relative(process.cwd(), file), line, text });
-    }
+    const source = readFileSync(file, "utf8");
+    const sf = ts.createSourceFile(file, source, ts.ScriptTarget.ESNext, true, ts.ScriptKind.TSX);
+    const lineOf = (pos: number) => sf.getLineAndCharacterOfPosition(pos).line + 1;
+
+    const visit = (node: ts.Node) => {
+      if (ts.isJsxElement(node)) {
+        // The element's TEXT is the concatenation of its JsxText children, with
+        // each `{…}` expression standing in for the value it renders.
+        //
+        // This used to be a regex over the raw file (`>[^<>{}]*<`). Two blind
+        // spots, both found in the fuel-forecast view: a node mixing prose with
+        // an expression — `Tank Refuel Forecast ({formatNumber(n)})` — contains
+        // a brace and was skipped entirely, and loosening the filter to reach it
+        // then matched across TypeScript generics (`Record<string, …>`) and
+        // reported function signatures as untranslated prose. A JSX parse has
+        // neither problem: prose and expressions are different node types.
+        const text = node.children
+          .map((child) => (ts.isJsxText(child) ? child.text : " "))
+          .join("")
+          .replace(/\s+/g, " ")
+          .trim();
+        const firstText = node.children.find((c) => ts.isJsxText(c) && c.text.trim().length > 0);
+        if (text.length >= 3 && text.length <= 200 && firstText) {
+          if (!/[;=|"`\\!?]/.test(text) && !ALLOWED.has(text)) {
+            const words = text.split(" ").filter((w) => /^[A-Za-z][A-Za-z'’-]*[.,:…]?$/.test(w));
+            if (words.length >= 2) {
+              hits.push({
+                file: relative(process.cwd(), file),
+                line: lineOf(firstText.getStart(sf)),
+                text,
+              });
+            }
+          }
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sf);
   }
   return hits;
 }

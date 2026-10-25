@@ -135,7 +135,7 @@ export function ReportsView() {
               <CardHeader className="pb-2"><CardTitle className="text-sm">{t("reports.alarmsBySeverity")}</CardTitle></CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={200}>
-                  <BarChart data={sevData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+                  <BarChart tabIndex={-1} data={sevData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} vertical={false} />
                     <XAxis dataKey="name" tick={{ fontSize: 11 }} stroke="currentColor" strokeOpacity={0.3} />
                     <YAxis tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} allowDecimals={false} />

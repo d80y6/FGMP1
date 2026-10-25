@@ -140,10 +140,12 @@ function ScopeSpan({ value }: { value: RuleScope }) {
 
 /** Format the trigger condition with color-coded parts. */
 function TriggerCondition({ rule }: { rule: CorrelationRule }) {
+  // Module-scope component: the hook has to be called here, not inherited.
+  const t = useT();
   return (
     <code className="block rounded bg-muted/60 px-2 py-1.5 font-mono text-[11px] leading-relaxed">
       <span className="font-semibold text-amber-700 dark:text-amber-400">{rule.threshold}+</span>{" "}
-      <AlarmTypeSpan value={rule.alarmType} /> in <ScopeSpan value={rule.scope} /> within{" "}
+      <AlarmTypeSpan value={rule.alarmType} /> {t("rules.summaryIn")} <ScopeSpan value={rule.scope} /> {t("rules.summaryWithin")}{" "}
       <span className="font-semibold text-amber-700 dark:text-amber-400">{rule.windowMinutes}min</span>{" "}
       → <SeveritySpan value={rule.escalateTo} />
     </code>
@@ -332,7 +334,7 @@ function ActiveRulesTab({
       <div className="flex flex-col items-center justify-center py-12 text-center">
         <ShieldAlert className="mb-3 h-10 w-10 text-muted-foreground/40" />
         <p className="text-sm font-medium text-muted-foreground">{t("rules.noRulesConfigured")}</p>
-        <p className="mt-1 text-xs text-muted-foreground/70">
+        <p className="mt-1 text-xs text-muted-foreground">
           {t("rules.switchToEditor")}
         </p>
       </div>
@@ -560,7 +562,7 @@ function EditorTab({ rules }: { rules: CorrelationRule[] }) {
         <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-10 text-center">
           <ShieldAlert className="mb-2 h-8 w-8 text-muted-foreground/40" />
           <p className="text-sm text-muted-foreground">{t("rules.noRulesConfigured")}</p>
-          <p className="mt-1 text-[11px] text-muted-foreground/70">
+          <p className="mt-1 text-[11px] text-muted-foreground">
             {t("rules.clickAddOrCreate")}
           </p>
         </div>

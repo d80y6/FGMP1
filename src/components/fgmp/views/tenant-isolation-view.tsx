@@ -201,8 +201,10 @@ export function TenantIsolationView() {
                         : "Sampled Helper Check Incomplete"}
                   </div>
                   <div className="text-sm text-muted-foreground">
-                    {current.summary.passed} passed · {current.summary.failed} failed · {current.summary.unmeasured} unmeasured ·
-                    {" "}{current.tenantCount} tenants · ran in {current.durationMs}ms
+                    {tFmt("isolation.summaryLine", {
+                      passed: current.summary.passed, failed: current.summary.failed,
+                      unmeasured: current.summary.unmeasured, tenants: current.tenantCount, ms: current.durationMs,
+                    })}
                     <div className="mt-1 text-xs">{current.summary.verdictBasis}</div>
                   </div>
                 </div>
@@ -281,7 +283,11 @@ export function TenantIsolationView() {
                   <div className="border-b bg-muted/30 px-4 py-2 text-sm font-medium">
                     {group.sourceTenant} → {group.targetTenant}
                     <span className="ml-2 text-xs text-muted-foreground">
-                      ({group.tests.filter((x) => x.recordFound && x.pass).length} passed · {group.tests.filter((x) => x.recordFound && !x.pass).length} failed · {group.tests.filter((x) => !x.recordFound).length} unmeasured)
+                      {tFmt("isolation.groupSummary", {
+                        passed: group.tests.filter((x) => x.recordFound && x.pass).length,
+                        failed: group.tests.filter((x) => x.recordFound && !x.pass).length,
+                        unmeasured: group.tests.filter((x) => !x.recordFound).length,
+                      })}
                     </span>
                   </div>
                   <div className="divide-y">
@@ -309,7 +315,7 @@ export function TenantIsolationView() {
                                 Cross-tenant: {test.crossTenantDenied ? "Denied ✓" : "Allowed ✗"}
                               </span>
                               <span className="text-muted-foreground" title={t("isolation.ownershipTooltip")}>
-                                Platform helper: {test.platformHelperPermits ? "Permits" : "Denies"}
+                                {t("isolation.platformHelper")}: {test.platformHelperPermits ? t("isolation.permits") : t("isolation.denies")}
                               </span>
                             </>
                           )}
@@ -378,8 +384,7 @@ export function TenantIsolationView() {
           </Card>
 
           <div className="text-xs text-muted-foreground">
-            Report generated at {new Date(current.finishedAt).toLocaleString()} ·
-            refreshes pull a fresh report from the server.
+            {tFmt("isolation.generatedAt", { when: new Date(current.finishedAt).toLocaleString() })}
           </div>
         </>
       )}

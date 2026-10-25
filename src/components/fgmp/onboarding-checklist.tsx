@@ -321,6 +321,7 @@ export function OnboardingChecklist() {
         <div className="mt-2 flex items-center gap-3">
           <Progress
             value={progressPct}
+            label={t("onboarding.progressLabel")}
             // Override the indicator color to emerald (default `bg-primary`
             // is slate/neutral in this theme). The shadcn Progress wrapper
             // doesn't expose an indicatorClassName prop, so we target the

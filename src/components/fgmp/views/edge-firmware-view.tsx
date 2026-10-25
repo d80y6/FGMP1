@@ -40,7 +40,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { timeAgo } from "@/lib/fgmp/format";
-import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { useT, useTF, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import { useChartColors } from "@/lib/fgmp/use-chart-colors";
 import type { Language } from "@/lib/fgmp/i18n";
 
@@ -282,6 +282,7 @@ function GatewaysTab({ gateways, loading, numLang }: {
   numLang: Language;
 }) {
   const t = useT();
+  const tFmt = useTF();
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
 
@@ -307,7 +308,7 @@ function GatewaysTab({ gateways, loading, numLang }: {
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-3">
         <CardTitle className="text-sm">
-          ESP Gateways ({formatNumber(filtered.length, numLang)})
+          {tFmt("firmware.gatewaysCount", { n: formatNumber(filtered.length, numLang) })}
         </CardTitle>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
@@ -474,7 +475,7 @@ function FirmwareTab({ gateways, loading, onRefresh }: {
           ) : (
             <div className="h-64 w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={dist} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
+                <BarChart tabIndex={-1} data={dist} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={cc.grid} />
                   <XAxis
                     dataKey="fw"
@@ -591,8 +592,8 @@ function FirmwareTab({ gateways, loading, onRefresh }: {
               Device: <b className="font-mono text-foreground">{otaTarget?.espId}</b>
             </p>
             <p className="text-xs text-muted-foreground">
-              Current: <span className="font-mono">{otaTarget?.firmware}</span>
-              {" → "}Target: <span className="font-mono">{otaFw}</span>
+              {t("firmware.currentFirmware")}: <span className="font-mono">{otaTarget?.firmware}</span>
+              {" → "}{t("firmware.targetLabel")}: <span className="font-mono">{otaFw}</span>
             </p>
             <Label className="text-xs">{t("iot.targetFirmware")}</Label>
             <Input value={otaFw} onChange={(e) => setOtaFw(e.target.value)} className="font-mono" dir="ltr" />
@@ -797,6 +798,7 @@ function Rs485Tab({ gateways, loading, numLang }: {
                         <div className="space-y-1">
                           <Progress
                             value={b.signalQuality}
+                            label={t("firmware.signalQuality")}
                             className={
                               "h-1.5 " +
                               (b.signalQuality > 70

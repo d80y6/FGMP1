@@ -98,7 +98,7 @@ export function AnalyticsView() {
           <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-sm"><TrendingUp className="h-4 w-4 text-emerald-500" /> {t("analytics.consumptionRuntime")}</CardTitle></CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={240}>
-              <AreaChart data={consumption} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+              <AreaChart tabIndex={-1} data={consumption} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                 <defs>
                   <linearGradient id="a-cons" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={cc.emerald} stopOpacity={0.4} /><stop offset="100%" stopColor={cc.emerald} stopOpacity={0} /></linearGradient>
                 </defs>
@@ -118,7 +118,7 @@ export function AnalyticsView() {
           <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-sm"><Brain className="h-4 w-4 text-amber-500" /> {t("analytics.forecast7dTitle")}</CardTitle></CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={forecast} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+              <BarChart tabIndex={-1} data={forecast} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} vertical={false} />
                 <XAxis dataKey="day" tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} />
                 <YAxis tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} />
@@ -137,7 +137,7 @@ export function AnalyticsView() {
           <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-sm"><GaugeIcon className="h-4 w-4 text-sky-500" /> {t("analytics.topConsumers")}</CardTitle></CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={topConsumers} layout="vertical" margin={{ top: 5, right: 20, left: 20, bottom: 0 }}>
+              <BarChart tabIndex={-1} data={topConsumers} layout="vertical" margin={{ top: 5, right: 20, left: 20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} horizontal={false} />
                 <XAxis type="number" tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} />
                 <YAxis type="category" dataKey="site" tick={{ fontSize: 9 }} stroke="currentColor" strokeOpacity={0.3} width={120} />
@@ -153,8 +153,12 @@ export function AnalyticsView() {
         <Card>
           <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-sm"><AlertTriangle className="h-4 w-4 text-rose-500" /> {t("analytics.anomalyDetection")}</CardTitle></CardHeader>
           <CardContent>
+            {/* Scatter points are role="img" with no name, one per point (52 on
+                this tenant data). The series has no text equivalent, so unlike
+                the doughnuts the graphic is NAMED rather than dropped. */}
+            <DecorativeChart label={t("analytics.anomalyChartLabel")}>
             <ResponsiveContainer width="100%" height={260}>
-              <ScatterChart margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <ScatterChart tabIndex={-1} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} />
                 <XAxis type="number" dataKey="x" name="kWh" tick={{ fontSize: 9 }} stroke="currentColor" strokeOpacity={0.3} label={{ value: "kWh", position: "insideBottom", offset: -2, fontSize: 9 }} />
                 <YAxis type="number" dataKey="y" name="Litres" tick={{ fontSize: 9 }} stroke="currentColor" strokeOpacity={0.3} />
@@ -163,6 +167,7 @@ export function AnalyticsView() {
                 <Scatter data={scatterData} fill={cc.sky} />
               </ScatterChart>
             </ResponsiveContainer>
+            </DecorativeChart>
             <p className="px-2 text-[10px] text-muted-foreground">{t("analytics.anomalyNote")}</p>
           </CardContent>
         </Card>
@@ -190,7 +195,7 @@ export function AnalyticsView() {
           <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-sm"><MapIcon className="h-4 w-4 text-emerald-500" /> {t("analytics.regionPerformance")}</CardTitle></CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={regions} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+              <BarChart tabIndex={-1} data={regions} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} vertical={false} />
                 <XAxis dataKey="region" tick={{ fontSize: 9 }} stroke="currentColor" strokeOpacity={0.3} interval={0} angle={-12} textAnchor="end" height={50} />
                 <YAxis tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} />
@@ -221,7 +226,9 @@ export function AnalyticsView() {
           {a.fuelCost.currencyAvailable === false ? (
             <p className="text-xs text-muted-foreground border-l-2 border-amber-500/60 pl-2">
               {t("analytics.noFxRateConfigured")}{" "}
-              <span className="opacity-70">
+              {/* No opacity: 70% of muted-foreground on the card measures
+                  ~2.7:1. The parenthetical is already secondary by wording. */}
+              <span>
                 ({(a.fuelCost.theftLitres ?? 0).toLocaleString(numLang)} L detected)
               </span>
             </p>
@@ -275,7 +282,7 @@ export function AnalyticsView() {
                   <NoCurrencyNotice />
                 ) : (
                 <ResponsiveContainer width="100%" height={240}>
-                  <BarChart
+                  <BarChart tabIndex={-1}
                     data={a.fuelCost.costByRegion}
                     layout="vertical"
                     margin={{ top: 5, right: 20, left: 20, bottom: 0 }}
@@ -325,7 +332,7 @@ export function AnalyticsView() {
                     <>
                       <DecorativeChart>
                         <ResponsiveContainer width="100%" height={200}>
-                          <PieChart>
+                          <PieChart tabIndex={-1}>
                             <Pie
                               data={data}
                               dataKey="value"

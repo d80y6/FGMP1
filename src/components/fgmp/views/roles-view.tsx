@@ -208,7 +208,7 @@ export function RolesView() {
           </span>
           <span className="inline-flex items-center gap-1.5">
             <Asterisk className="h-3 w-3 text-amber-500" />
-            WILDCARD — grants all capabilities (ADMIN)
+            {t("roles.wildcardHint")}
           </span>
           <span className="inline-flex items-center gap-1.5">
             <span className="text-muted-foreground/30">—</span>

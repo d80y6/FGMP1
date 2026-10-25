@@ -12,6 +12,7 @@ import {
 } from "recharts";
 import { useFgmp } from "@/lib/fgmp/store";
 import { useChartColors } from "@/lib/fgmp/use-chart-colors";
+import { ScrollRegion } from "@/components/ui/scroll-region";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import {
@@ -23,7 +24,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { fmtLitres, fmtDateTime } from "@/lib/fgmp/format";
-import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { useT, useTF, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import { useNow } from "@/lib/fgmp/use-now";
 import type { Language } from "@/lib/fgmp/i18n";
 import type { TankState } from "@/lib/fgmp/types";
@@ -95,6 +96,7 @@ function fmtHours(h: number, numLang: Language): string {
 export function FuelForecastView() {
   const { snapshot, setView } = useFgmp(useShallow((s) => ({ snapshot: s.snapshot, setView: s.setView })));
   const t = useT();
+  const tFmt = useTF();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
   const cc = useChartColors();
@@ -237,7 +239,7 @@ export function FuelForecastView() {
               <p className="py-12 text-center text-xs text-muted-foreground">{t("forecast.noneRisk")}</p>
             ) : (
               <ResponsiveContainer width="100%" height={260}>
-                <LineChart data={chartData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+                <LineChart tabIndex={-1} data={chartData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} vertical={false} />
                   <XAxis dataKey="day" tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} />
                   <YAxis tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} />
@@ -269,7 +271,7 @@ export function FuelForecastView() {
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={riskDist} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+              <BarChart tabIndex={-1} data={riskDist} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} vertical={false} />
                 <XAxis dataKey="name" tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} />
                 <YAxis tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} allowDecimals={false} />
@@ -289,12 +291,15 @@ export function FuelForecastView() {
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">
-            Tank Refuel Forecast ({formatNumber(rows.length, numLang)})
+            {tFmt("forecast.titleCount", { n: formatNumber(rows.length, numLang) })}
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="max-h-[560px] overflow-y-auto">
-            <Table>
+          <ScrollRegion
+            label={t("forecast.tableRegion")}
+            className="max-h-[560px] overflow-y-auto"
+          >
+            <Table containerLabel={t("forecast.tableRegion")}>
               <TableHeader className="sticky top-0 z-10 bg-card">
                 <TableRow>
                   <TableHead className="min-w-[140px]">Site</TableHead>
@@ -361,7 +366,7 @@ export function FuelForecastView() {
                 )}
               </TableBody>
             </Table>
-          </div>
+          </ScrollRegion>
         </CardContent>
       </Card>
     </div>

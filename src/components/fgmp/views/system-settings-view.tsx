@@ -351,7 +351,7 @@ function SettingsSection({ category, numLang }: { category: Category; numLang: L
               disabled={!isDirty || saving || loading}
             >
               {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-              Save Changes
+              {t("systemSettings.saveChanges")}
             </Button>
           </div>
         </div>

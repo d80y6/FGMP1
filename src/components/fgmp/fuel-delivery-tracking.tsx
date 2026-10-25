@@ -248,7 +248,7 @@ export function FuelDeliveryTracking() {
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-sm">
           <Truck className="h-4 w-4 text-sky-500" />
-          Fuel Delivery Tracking
+          {t("deliveries.title")}
           {loading && deliveries === null ? (
             <span className="ml-1 text-[10px] font-normal text-muted-foreground">loading…</span>
           ) : (
@@ -390,7 +390,7 @@ export function FuelDeliveryTracking() {
                       </div>
                       {isShort && (
                         <span className="shrink-0 text-rose-700 dark:text-rose-400 text-[10px] font-medium">
-                          Short by {fmtLitres(shortBy)}
+                          {tFmt("deliveries.shortBy", { n: fmtLitres(shortBy) })}
                         </span>
                       )}
                     </div>

@@ -33,7 +33,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useFgmp } from "@/lib/fgmp/store";
 import type { GenState } from "@/lib/fgmp/types";
-import { useT } from "@/lib/fgmp/use-language";
+import { useT, useTF } from "@/lib/fgmp/use-language";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Types & constants
@@ -273,6 +273,7 @@ function UrgencyChip({
 
 function ProgressBar({ row }: { row: MaintRow }) {
   const t = useT();
+  const tFmt = useTF();
   if (!row.configured) {
     return (
       <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
@@ -306,7 +307,7 @@ function ProgressBar({ row }: { row: MaintRow }) {
       </div>
       <div className="flex items-center justify-between text-[10px] text-muted-foreground">
         <span className="font-mono tabular-nums">
-          {fmtHrs(row.runtimeHours)}h / {fmtHrs(row.nextMaintenanceHrs)}h
+          {tFmt("common.hoursOf", { a: fmtHrs(row.runtimeHours), b: fmtHrs(row.nextMaintenanceHrs) })}
         </span>
         <span
           className={cn(
@@ -593,25 +594,25 @@ export function MaintenancePredictionPanel() {
         <FilterTabs value={filter} onValueChange={(v) => setFilter(v as FilterKind)} label={t("prediction.filterLabel")}>
           <FilterTab value="all">
               {t("prediction.all")}
-              <span className="ml-1 rounded-full bg-foreground/10 px-1.5 text-[10px] tabular-nums">
+              <span className="ml-1 rounded-full bg-foreground/10 px-1.5 text-[10px] tabular-nums text-foreground">
                 {total}
               </span>
             </FilterTab>
             <FilterTab value="urgent">
               {t("prediction.urgent")}
-              <span className="ml-1 rounded-full bg-foreground/10 px-1.5 text-[10px] tabular-nums">
+              <span className="ml-1 rounded-full bg-foreground/10 px-1.5 text-[10px] tabular-nums text-foreground">
                 {totalUrgent}
               </span>
             </FilterTab>
             <FilterTab value="overdue">
               {t("prediction.overdueTab")}
-              <span className="ml-1 rounded-full bg-foreground/10 px-1.5 text-[10px] tabular-nums">
+              <span className="ml-1 rounded-full bg-foreground/10 px-1.5 text-[10px] tabular-nums text-foreground">
                 {counts.OVERDUE}
               </span>
             </FilterTab>
             <FilterTab value="ok">
               {t("prediction.okLabel")}
-              <span className="ml-1 rounded-full bg-foreground/10 px-1.5 text-[10px] tabular-nums">
+              <span className="ml-1 rounded-full bg-foreground/10 px-1.5 text-[10px] tabular-nums text-foreground">
                 {counts.OK}
               </span>
             </FilterTab>
