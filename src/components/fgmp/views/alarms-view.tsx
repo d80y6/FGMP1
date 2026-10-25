@@ -22,6 +22,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { FilterTabs, FilterTab } from "@/components/fgmp/filter-tabs";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { timeAgo, fmtDateTime } from "@/lib/fgmp/format";
@@ -438,14 +439,14 @@ export function AlarmsView() {
                 }
                 className={cn(
                   triggeredRuleCount > 0 &&
-                    "border-rose-500/40 bg-rose-500/5 text-rose-600 hover:bg-rose-500/10 hover:text-rose-700 dark:text-rose-400",
+                    "border-rose-500/40 bg-rose-500/5 text-rose-700 dark:text-rose-400 hover:bg-rose-500/10 hover:text-rose-700 dark:text-rose-400",
                 )}
               >
                 <ShieldAlert className="mr-1.5 h-4 w-4" /> {t("alarms.rules")}
                 {triggeredRuleCount > 0 && (
                   <Badge
                     variant="secondary"
-                    className="ml-1.5 h-4 bg-rose-500/20 px-1 text-[9px] font-bold text-rose-600 dark:text-rose-400"
+                    className="ml-1.5 h-4 bg-rose-500/20 px-1 text-[9px] font-bold text-rose-700 dark:text-rose-400"
                   >
                     {formatNumber(triggeredRuleCount, numLang)}
                   </Badge>
@@ -544,7 +545,7 @@ export function AlarmsView() {
                 <button
                   type="button"
                   onClick={() => setHeatmapFilter(null)}
-                  className="inline-flex items-center gap-2 rounded-md border border-sky-500/30 bg-sky-500/10 px-3 py-1.5 text-xs text-sky-600"
+                  className="inline-flex items-center gap-2 rounded-md border border-sky-500/30 bg-sky-500/10 px-3 py-1.5 text-xs text-sky-700 dark:text-sky-400"
                 >
                   <span>
                     {t("alarms.heatmapFilter")}: {heatmapFilter.severity} · {formatNumber(heatmapFilterLabel, numLang)} ({formatNumber(filteredAlarms.length, numLang)})
@@ -556,14 +557,12 @@ export function AlarmsView() {
               )}
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Tabs value={status} onValueChange={setStatus}>
-                <TabsList className="h-8">
-                  <TabsTrigger value="OPEN,ACKNOWLEDGED,ESCALATED" className="text-xs">{t("common.active")}</TabsTrigger>
-                  <TabsTrigger value="RESOLVED" className="text-xs">{t("common.resolved")}</TabsTrigger>
-                  <TabsTrigger value="OPEN,ACKNOWLEDGED,ESCALATED,RESOLVED" className="text-xs">{t("common.all")}</TabsTrigger>
-                </TabsList>
-              </Tabs>
-              <Select value={severity} onValueChange={setSeverity}>
+              <FilterTabs value={status} onValueChange={setStatus} label={t("alarms.statusFilter")}>
+                <FilterTab value="OPEN,ACKNOWLEDGED,ESCALATED">{t("common.active")}</FilterTab>
+                <FilterTab value="RESOLVED">{t("common.resolved")}</FilterTab>
+                <FilterTab value="OPEN,ACKNOWLEDGED,ESCALATED,RESOLVED">{t("common.all")}</FilterTab>
+              </FilterTabs>
+              <Select label={t("alarms.severity")} value={severity} onValueChange={setSeverity}>
                 <SelectTrigger className="h-8 w-[110px] text-xs"><SelectValue placeholder={t("alarms.severity")} /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">{t("alarms.allSeverity")}</SelectItem>
@@ -572,7 +571,7 @@ export function AlarmsView() {
                   <SelectItem value="L3">L3</SelectItem>
                 </SelectContent>
               </Select>
-              <Select value={type} onValueChange={setType}>
+              <Select label={t("alarms.type")} value={type} onValueChange={setType}>
                 <SelectTrigger className="h-8 w-[160px] text-xs"><SelectValue placeholder={t("alarms.type")} /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">{t("alarms.allTypes")}</SelectItem>
@@ -593,7 +592,7 @@ export function AlarmsView() {
                   <Button
                     size="sm"
                     variant="outline"
-                    className="h-7 border-sky-500/40 bg-sky-500/10 text-sky-600 hover:bg-sky-500/20 hover:text-sky-700"
+                    className="h-7 border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-400 hover:bg-sky-500/20 hover:text-sky-700"
                     onClick={bulkAck}
                   >
                     <CheckCheck className="mr-1.5 h-3.5 w-3.5" />{t("alarms.bulkAck")}
@@ -602,7 +601,7 @@ export function AlarmsView() {
                   <Button
                     size="sm"
                     variant="outline"
-                    className="h-7 border-emerald-500/40 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 hover:text-emerald-700"
+                    className="h-7 border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/20 hover:text-emerald-700"
                     onClick={bulkResolve}
                   >
                     <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />{t("alarms.bulkResolve")}
@@ -680,7 +679,7 @@ export function AlarmsView() {
                               <Button size="sm" variant="outline" className="h-6 px-2 text-[10px] active:scale-[0.98] transition-transform" disabled={isSaving} onClick={() => ack(a.id)}>{t("alarms.ack")}</Button>
                             )}
                             {a.status !== "RESOLVED" && (
-                              <Button size="sm" variant="outline" className="h-6 px-2 text-[10px] text-emerald-600 hover:bg-emerald-500/10 active:scale-[0.98] transition-transform" disabled={isSaving} onClick={() => resolve(a.id)}>
+                              <Button size="sm" variant="outline" className="h-6 px-2 text-[10px] text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 active:scale-[0.98] transition-transform" disabled={isSaving} onClick={() => resolve(a.id)}>
                                 <CheckCircle2 className="mr-1 h-3 w-3" />{t("alarms.resolve")}
                               </Button>
                             )}

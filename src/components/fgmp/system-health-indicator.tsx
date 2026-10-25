@@ -170,9 +170,9 @@ export function SystemHealthIndicator({ onClick }: SystemHealthIndicatorProps) {
             "text-muted-foreground transition-colors hover:bg-muted/50",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
             // Status-tinted text for at-a-glance readability.
-            status === "healthy" && "text-emerald-600 dark:text-emerald-400",
-            status === "degraded" && "text-amber-600 dark:text-amber-400",
-            status === "critical" && "text-rose-600 dark:text-rose-400",
+            status === "healthy" && "text-emerald-700 dark:text-emerald-400",
+            status === "degraded" && "text-amber-700 dark:text-amber-400",
+            status === "critical" && "text-rose-700 dark:text-rose-400",
           )}
         >
           {showActivityFallback ? (

@@ -19,7 +19,7 @@ import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { FilterTabs, FilterTab } from "@/components/fgmp/filter-tabs";
 import {
   Tooltip,
   TooltipContent,
@@ -33,7 +33,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useFgmp } from "@/lib/fgmp/store";
 import type { GenState } from "@/lib/fgmp/types";
-import { useT } from "@/lib/fgmp/use-language";
+import { useT, useTF } from "@/lib/fgmp/use-language";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Types & constants
@@ -96,10 +96,10 @@ const URGENCY_META: Record<
   OVERDUE: {
     labelKey: "prediction.overdue",
     badge:
-      "bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30 animate-urgency-pulse",
+      "bg-rose-500/15 text-rose-700 dark:text-rose-400 border-rose-500/30 animate-urgency-pulse",
     border: "border-l-rose-500",
     barFill: "bg-gradient-to-r from-rose-600 to-rose-400",
-    chip: "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30",
+    chip: "bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/30",
     icon: AlertOctagon,
     pulse: true,
     tooltipKey: "prediction.overdueTip",
@@ -107,29 +107,29 @@ const URGENCY_META: Record<
   DUE_NOW: {
     labelKey: "prediction.dueNow",
     badge:
-      "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30",
+      "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30",
     border: "border-l-amber-500",
     barFill: "bg-gradient-to-r from-amber-600 to-amber-400",
-    chip: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30",
+    chip: "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30",
     icon: AlertTriangle,
     tooltipKey: "prediction.dueNowTip",
   },
   DUE_SOON: {
     labelKey: "prediction.dueSoon",
-    badge: "bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/30",
+    badge: "bg-sky-500/15 text-sky-700 dark:text-sky-400 border-sky-500/30",
     border: "border-l-sky-500",
     barFill: "bg-gradient-to-r from-sky-600 to-sky-400",
-    chip: "bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/30",
+    chip: "bg-sky-500/10 text-sky-700 dark:text-sky-400 border-sky-500/30",
     icon: Clock,
     tooltipKey: "prediction.dueSoonTip",
   },
   OK: {
     labelKey: "prediction.ok",
     badge:
-      "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30",
+      "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30",
     border: "border-l-emerald-500",
     barFill: "bg-gradient-to-r from-emerald-600 to-emerald-400",
-    chip: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30",
+    chip: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30",
     icon: CheckCircle2,
     tooltipKey: "prediction.okTip",
   },
@@ -273,6 +273,7 @@ function UrgencyChip({
 
 function ProgressBar({ row }: { row: MaintRow }) {
   const t = useT();
+  const tFmt = useTF();
   if (!row.configured) {
     return (
       <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
@@ -306,13 +307,13 @@ function ProgressBar({ row }: { row: MaintRow }) {
       </div>
       <div className="flex items-center justify-between text-[10px] text-muted-foreground">
         <span className="font-mono tabular-nums">
-          {fmtHrs(row.runtimeHours)}h / {fmtHrs(row.nextMaintenanceHrs)}h
+          {tFmt("common.hoursOf", { a: fmtHrs(row.runtimeHours), b: fmtHrs(row.nextMaintenanceHrs) })}
         </span>
         <span
           className={cn(
             "font-mono tabular-nums",
-            row.progressPct > 100 && "text-rose-600 dark:text-rose-400 font-semibold",
-            row.progressPct >= 80 && row.progressPct <= 100 && "text-amber-600 dark:text-amber-400",
+            row.progressPct > 100 && "text-rose-700 dark:text-rose-400 font-semibold",
+            row.progressPct >= 80 && row.progressPct <= 100 && "text-amber-700 dark:text-amber-400",
           )}
         >
           {Math.round(row.progressPct)}%
@@ -475,10 +476,10 @@ function StatTile({
   tone?: "rose" | "amber" | "sky" | "emerald" | "muted";
 }) {
   const TONE_TEXT: Record<string, string> = {
-    rose: "text-rose-600 dark:text-rose-400",
-    amber: "text-amber-600 dark:text-amber-400",
-    sky: "text-sky-600 dark:text-sky-400",
-    emerald: "text-emerald-600 dark:text-emerald-400",
+    rose: "text-rose-700 dark:text-rose-400",
+    amber: "text-amber-700 dark:text-amber-400",
+    sky: "text-sky-700 dark:text-sky-400",
+    emerald: "text-emerald-700 dark:text-emerald-400",
     muted: "text-foreground",
   };
   return (
@@ -494,7 +495,7 @@ function StatTile({
   );
 }
 
-type FilterTab = "all" | "urgent" | "overdue" | "ok";
+type FilterKind = "all" | "urgent" | "overdue" | "ok";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Main panel
@@ -511,7 +512,7 @@ type FilterTab = "all" | "urgent" | "overdue" | "ok";
 export function MaintenancePredictionPanel() {
   const t = useT();
   const snapshot = useFgmp((s) => s.snapshot);
-  const [filter, setFilter] = useState<FilterTab>("all");
+  const [filter, setFilter] = useState<FilterKind>("all");
 
   const rows = useMemo<MaintRow[]>(() => {
     if (!snapshot) return [];
@@ -569,7 +570,7 @@ export function MaintenancePredictionPanel() {
       {/* Header */}
       <div className="relative flex flex-col gap-3 px-4 pb-3 pt-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex items-start gap-3">
-          <div className="mt-0.5 rounded-xl bg-amber-500/10 p-2.5 text-amber-600 ring-1 ring-inset ring-amber-500/20 dark:text-amber-400">
+          <div className="mt-0.5 rounded-xl bg-amber-500/10 p-2.5 text-amber-700 dark:text-amber-400 ring-1 ring-inset ring-amber-500/20 dark:text-amber-400">
             <Wrench className="h-5 w-5" />
           </div>
           <div>
@@ -590,41 +591,39 @@ export function MaintenancePredictionPanel() {
 
       {/* Filter tabs */}
       <div className="flex items-center justify-between gap-2 border-y border-border/40 bg-muted/20 px-4 py-2">
-        <Tabs value={filter} onValueChange={(v) => setFilter(v as FilterTab)}>
-          <TabsList className="h-8">
-            <TabsTrigger value="all" className="text-xs">
+        <FilterTabs value={filter} onValueChange={(v) => setFilter(v as FilterKind)} label={t("prediction.filterLabel")}>
+          <FilterTab value="all">
               {t("prediction.all")}
-              <span className="ml-1 rounded-full bg-foreground/10 px-1.5 text-[10px] tabular-nums">
+              <span className="ml-1 rounded-full bg-foreground/10 px-1.5 text-[10px] tabular-nums text-foreground">
                 {total}
               </span>
-            </TabsTrigger>
-            <TabsTrigger value="urgent" className="text-xs">
+            </FilterTab>
+            <FilterTab value="urgent">
               {t("prediction.urgent")}
-              <span className="ml-1 rounded-full bg-foreground/10 px-1.5 text-[10px] tabular-nums">
+              <span className="ml-1 rounded-full bg-foreground/10 px-1.5 text-[10px] tabular-nums text-foreground">
                 {totalUrgent}
               </span>
-            </TabsTrigger>
-            <TabsTrigger value="overdue" className="text-xs">
+            </FilterTab>
+            <FilterTab value="overdue">
               {t("prediction.overdueTab")}
-              <span className="ml-1 rounded-full bg-foreground/10 px-1.5 text-[10px] tabular-nums">
+              <span className="ml-1 rounded-full bg-foreground/10 px-1.5 text-[10px] tabular-nums text-foreground">
                 {counts.OVERDUE}
               </span>
-            </TabsTrigger>
-            <TabsTrigger value="ok" className="text-xs">
+            </FilterTab>
+            <FilterTab value="ok">
               {t("prediction.okLabel")}
-              <span className="ml-1 rounded-full bg-foreground/10 px-1.5 text-[10px] tabular-nums">
+              <span className="ml-1 rounded-full bg-foreground/10 px-1.5 text-[10px] tabular-nums text-foreground">
                 {counts.OK}
               </span>
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+            </FilterTab>
+        </FilterTabs>
         <span className="hidden text-[10px] text-muted-foreground sm:inline">
           {t("prediction.sortedBy")}
         </span>
       </div>
 
       {/* Generator list */}
-      <div className="maintenance-prediction-scroll max-h-[400px] overflow-y-auto px-3 py-3">
+      <div className="maintenance-prediction-scroll max-h-[400px] overflow-y-auto px-3 py-3" tabIndex={0} role="region" aria-label={t("a11y.scrollPredictions")}>
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
             <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10">

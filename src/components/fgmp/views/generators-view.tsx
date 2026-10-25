@@ -21,12 +21,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { timeAgo } from "@/lib/fgmp/format";
 import type { GenCommand } from "@/lib/fgmp/types";
-import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { useT, useTF, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 
 export function GeneratorsView() {
   const { snapshot, tick } = useFgmp(useShallow((s) => ({ snapshot: s.snapshot, tick: s.tick })));
   const t = useT();
+  const tFmt = useTF();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
   const [q, setQ] = useState("");
@@ -107,7 +108,7 @@ export function GeneratorsView() {
                     <Button size="sm" variant="outline" className="h-6 flex-1 text-[10px]" onClick={() => doControl(g, "RESET")}>
                       <RotateCcw className="mr-1 h-3 w-3 text-sky-500" />{t("generators.reset")}
                     </Button>
-                    <Button size="sm" variant="outline" className="h-6 flex-1 text-[10px] border-rose-500/40 text-rose-600 hover:bg-rose-500/10" onClick={() => doControl(g, "EMERGENCY_STOP")}>
+                    <Button size="sm" variant="outline" className="h-6 flex-1 text-[10px] border-rose-500/40 text-rose-700 dark:text-rose-400 hover:bg-rose-500/10" onClick={() => doControl(g, "EMERGENCY_STOP")}>
                       <AlertOctagon className="mr-1 h-3 w-3" />{t("generators.eStop")}
                     </Button>
                   </div>
@@ -147,7 +148,7 @@ export function GeneratorsView() {
                     </TabsList>
                     <TabsContent value="temp" className="mt-2">
                       <ResponsiveContainer width="100%" height={120}>
-                        <AreaChart data={detail.history?.slice(-48) ?? []} margin={{ top: 2, right: 2, left: -28, bottom: 0 }}>
+                        <AreaChart tabIndex={-1} data={detail.history?.slice(-48) ?? []} margin={{ top: 2, right: 2, left: -28, bottom: 0 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} vertical={false} />
                           <YAxis tick={{ fontSize: 9 }} stroke="currentColor" strokeOpacity={0.3} domain={[20, 110]} />
                           <Tooltip contentStyle={{ fontSize: 11 }} />
@@ -157,7 +158,7 @@ export function GeneratorsView() {
                     </TabsContent>
                     <TabsContent value="load" className="mt-2">
                       <ResponsiveContainer width="100%" height={120}>
-                        <AreaChart data={detail.history?.slice(-48) ?? []} margin={{ top: 2, right: 2, left: -28, bottom: 0 }}>
+                        <AreaChart tabIndex={-1} data={detail.history?.slice(-48) ?? []} margin={{ top: 2, right: 2, left: -28, bottom: 0 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} vertical={false} />
                           <YAxis tick={{ fontSize: 9 }} stroke="currentColor" strokeOpacity={0.3} />
                           <Tooltip contentStyle={{ fontSize: 11 }} />
@@ -185,7 +186,7 @@ export function GeneratorsView() {
                 <FuelIcon className="h-3.5 w-3.5 text-amber-500" />
                 <span className="font-medium">{g.label}</span>
                 <span className="text-muted-foreground">{g.site}</span>
-                <Badge variant="outline" className="h-4 px-1 text-[8px]">{formatNumber(Math.round(g.runtimeHours), numLang)}h / {formatNumber(Math.round(g.nextMaintenanceHrs), numLang)}h</Badge>
+                <Badge variant="outline" className="h-4 px-1 text-[8px]">{tFmt("common.hoursOf", { a: formatNumber(Math.round(g.runtimeHours), numLang), b: formatNumber(Math.round(g.nextMaintenanceHrs), numLang) })}</Badge>
               </div>
             ))}
             {dueMaint.length === 0 && <p className="py-2 text-xs text-muted-foreground">{t("generators.noMaintenanceDue")}</p>}

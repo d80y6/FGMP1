@@ -23,6 +23,7 @@ import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 import type { EventItem } from "@/lib/fgmp/types";
 import type { AnalyticsPayload } from "@/lib/fgmp/types";
+import { DecorativeChart } from "@/components/fgmp/decorative-chart";
 
 export function FuelView() {
   const snapshot = useFgmp((s) => s.snapshot);
@@ -121,27 +122,29 @@ export function FuelView() {
             {fillBands.length === 0 ? (
               <EmptyState icon={Droplet} title={t("fuel.noTanks")} />
             ) : (
-              <ResponsiveContainer width="100%" height={200}>
-                <PieChart>
-                  <Pie
-                    data={fillBands}
-                    dataKey="value"
-                    nameKey="name"
-                    innerRadius={55}
-                    outerRadius={80}
-                    paddingAngle={2}
-                    strokeWidth={0}
-                  >
-                    {fillBands.map((b) => (
-                      <Cell key={b.key} fill={b.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={{ fontSize: 12 }}
-                    formatter={(v: number, name: string) => [formatNumber(v, numLang), name]}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
+              <DecorativeChart>
+                <ResponsiveContainer width="100%" height={200}>
+                  <PieChart tabIndex={-1}>
+                    <Pie
+                      data={fillBands}
+                      dataKey="value"
+                      nameKey="name"
+                      innerRadius={55}
+                      outerRadius={80}
+                      paddingAngle={2}
+                      strokeWidth={0}
+                    >
+                      {fillBands.map((b) => (
+                        <Cell key={b.key} fill={b.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{ fontSize: 12 }}
+                      formatter={(v: number, name: string) => [formatNumber(v, numLang), name]}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </DecorativeChart>
             )}
             <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 pt-1">
               {fillBands.map((b) => (
@@ -158,7 +161,7 @@ export function FuelView() {
           <CardHeader className="pb-2"><CardTitle className="text-sm">{t("fuel.nationalConsumption")}</CardTitle></CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={200}>
-              <AreaChart data={analytics?.consumptionTrend ?? []} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+              <AreaChart tabIndex={-1} data={analytics?.consumptionTrend ?? []} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
                 <defs>
                   <linearGradient id="fuel-cons" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor={cc.sky} stopOpacity={0.4} />
@@ -226,7 +229,7 @@ export function FuelView() {
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("fuel.searchTanks")} className="h-9 w-[200px] pl-8" />
             </div>
-            <Select value={sort} onValueChange={setSort}>
+            <Select label={t("fuel.sortBy")} value={sort} onValueChange={setSort}>
               <SelectTrigger className="h-9 w-[150px]"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="pct-asc">{t("fuel.sortLowHigh")}</SelectItem>
@@ -271,7 +274,7 @@ function ScrollList({ events, empty, tone }: { events: EventItem[]; empty: strin
       {events.length === 0 && <p className="py-6 text-center text-xs text-muted-foreground">{empty}</p>}
       {events.map((e, i) => (
         <div key={i} className="flex items-start gap-2 rounded border p-2 text-[11px]">
-          <Badge variant="outline" className={`h-4 shrink-0 px-1 text-[8px] ${tone === "rose" ? "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"}`}>
+          <Badge variant="outline" className={`h-4 shrink-0 px-1 text-[8px] ${tone === "rose" ? "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"}`}>
             {tone === "rose" ? t("fuel.theft") : t("fuel.refill")}
           </Badge>
           <div className="min-w-0 flex-1">

@@ -7,7 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Network, AlertTriangle, Clock, MapPin, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { timeAgo } from "@/lib/fgmp/format";
-import { useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { useArabicNumerals, formatNumber, useT, useTF } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 import { alarmTypeLabel } from "@/lib/fgmp/labels";
 
@@ -47,6 +47,8 @@ interface Props {
  * Shows sites with multiple alarms, dominant alarm types, and time clustering.
  */
 export function AlarmCorrelationPanel({ alarms, onSelectSite }: Props) {
+  const t = useT();
+  const tFmt = useTF();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
   const groups = useMemo(() => {
@@ -116,10 +118,10 @@ export function AlarmCorrelationPanel({ alarms, onSelectSite }: Props) {
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-sm">
           <Network className="h-4 w-4 text-violet-500" />
-          Alarm Correlation Analysis
+          {t("correlation.title")}
           {totalSites > 0 && (
             <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
-              {totalSites} sites · {totalAlarms} alarms
+              {tFmt("correlation.siteAlarmSummary", { sites: formatNumber(totalSites, numLang), alarms: formatNumber(totalAlarms, numLang) })}
             </Badge>
           )}
         </CardTitle>
@@ -128,21 +130,21 @@ export function AlarmCorrelationPanel({ alarms, onSelectSite }: Props) {
         {/* Summary stats */}
         <div className="grid grid-cols-3 gap-2">
           <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 p-2 text-center">
-            <p className="text-[9px] uppercase tracking-wide text-muted-foreground">Hotspots</p>
+            <p className="text-[9px] uppercase tracking-wide text-muted-foreground">{t("correlation.hotspots")}</p>
             <p className="text-lg font-bold text-rose-500 tabular-nums">{hotspots}</p>
-            <p className="text-[8px] text-muted-foreground">sites with 3+ alarms</p>
+            <p className="text-[8px] text-muted-foreground">{t("correlation.sitesWithAlarms")}</p>
           </div>
           <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-2 text-center">
-            <p className="text-[9px] uppercase tracking-wide text-muted-foreground">Avg per Site</p>
+            <p className="text-[9px] uppercase tracking-wide text-muted-foreground">{t("correlation.avgPerSite")}</p>
             <p className="text-lg font-bold text-amber-500 tabular-nums">
               {totalSites > 0 ? (totalAlarms / totalSites).toFixed(1) : "0"}
             </p>
-            <p className="text-[8px] text-muted-foreground">alarms/site</p>
+            <p className="text-[8px] text-muted-foreground">{t("correlation.alarmsPerSite")}</p>
           </div>
           <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-2 text-center">
-            <p className="text-[9px] uppercase tracking-wide text-muted-foreground">Correlations</p>
+            <p className="text-[9px] uppercase tracking-wide text-muted-foreground">{t("correlation.correlations")}</p>
             <p className="text-lg font-bold text-violet-500 tabular-nums">{correlatedTypes.length}</p>
-            <p className="text-[8px] text-muted-foreground">type pairs</p>
+            <p className="text-[8px] text-muted-foreground">{t("correlation.typePairs")}</p>
           </div>
         </div>
 
@@ -151,13 +153,13 @@ export function AlarmCorrelationPanel({ alarms, onSelectSite }: Props) {
           <div className="rounded-lg border p-2.5">
             <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
               <TrendingUp className="h-3 w-3" />
-              Frequently Co-occurring Alarm Types
+              {t("correlation.coOccurring")}
             </p>
             <div className="flex flex-wrap gap-1.5">
               {correlatedTypes.map(([pair, count]) => (
                 <Badge key={pair} variant="outline" className="gap-1 text-[9px]">
                   <span className="font-mono">{alarmTypeLabel(pair, numLang)}</span>
-                  <span className="rounded bg-violet-500/15 px-1 text-violet-600 dark:text-violet-400">×{formatNumber(count, numLang)}</span>
+                  <span className="rounded bg-violet-500/15 px-1 text-violet-700 dark:text-violet-400">×{formatNumber(count, numLang)}</span>
                 </Badge>
               ))}
             </div>
@@ -170,8 +172,8 @@ export function AlarmCorrelationPanel({ alarms, onSelectSite }: Props) {
             {groups.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-8 text-center">
                 <Network className="mb-2 h-8 w-8 text-muted-foreground/40" />
-                <p className="text-sm text-muted-foreground">No alarm correlations to display</p>
-                <p className="text-[11px] text-muted-foreground/70">Active alarms will be grouped by site here</p>
+                <p className="text-sm text-muted-foreground">{t("correlation.empty")}</p>
+                <p className="text-[11px] text-muted-foreground">{t("correlation.emptyHint")}</p>
               </div>
             ) : (
               groups.map((g, idx) => {
@@ -192,9 +194,9 @@ export function AlarmCorrelationPanel({ alarms, onSelectSite }: Props) {
                     {/* Rank */}
                     <div className={cn(
                       "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold",
-                      idx === 0 ? "bg-rose-500/20 text-rose-600 dark:text-rose-400"
-                        : idx === 1 ? "bg-amber-500/20 text-amber-600 dark:text-amber-400"
-                        : idx === 2 ? "bg-orange-500/20 text-orange-600 dark:text-orange-400"
+                      idx === 0 ? "bg-rose-500/20 text-rose-700 dark:text-rose-400"
+                        : idx === 1 ? "bg-amber-500/20 text-amber-700 dark:text-amber-400"
+                        : idx === 2 ? "bg-orange-500/20 text-orange-700 dark:text-orange-400"
                         : "bg-muted text-muted-foreground"
                     )}>
                       {idx + 1}

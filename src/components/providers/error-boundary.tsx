@@ -202,7 +202,7 @@ Time: ${new Date().toISOString()}
           {error?.message ? (
             <pre
               className="max-h-32 overflow-auto rounded-md bg-muted p-3 text-xs text-muted-foreground"
-              aria-label="Error message"
+              aria-label={t("common.errorMessage")}
             >
               {error.message}
             </pre>

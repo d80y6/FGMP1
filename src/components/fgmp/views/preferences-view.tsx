@@ -100,9 +100,9 @@ const SEVERITIES = [
 ];
 
 const TONE_BADGE: Record<"amber" | "orange" | "rose", string> = {
-  amber: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30",
-  orange: "bg-orange-500/15 text-orange-600 dark:text-orange-400 border-orange-500/30",
-  rose: "bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30",
+  amber: "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30",
+  orange: "bg-orange-500/15 text-orange-700 dark:text-orange-400 border-orange-500/30",
+  rose: "bg-rose-500/15 text-rose-700 dark:text-rose-400 border-rose-500/30",
 };
 
 const TONE_DOT: Record<"amber" | "orange" | "rose", string> = {
@@ -477,7 +477,10 @@ export function PreferencesView() {
             </div>
           </div>
         </CardHeader>
-        <CardContent className={cn("space-y-4", !quietHoursEnabled && "opacity-50")}>
+        {/* The two Selects inside are genuinely `disabled` when quiet hours
+            are off — that is the accessible state. Dimming their labels on top
+            of it only made them unreadable. */}
+        <CardContent className="space-y-4">
           {/* Start / End selectors */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
@@ -489,7 +492,7 @@ export function PreferencesView() {
                 control={control}
                 name="quietHoursStart"
                 render={({ field }) => (
-                  <Select
+                  <Select label={t("preferences.quietFrom")}
                     value={field.value !== null ? String(field.value) : undefined}
                     onValueChange={(v) => field.onChange(Number(v))}
                     disabled={!quietHoursEnabled}
@@ -517,7 +520,7 @@ export function PreferencesView() {
                 control={control}
                 name="quietHoursEnd"
                 render={({ field }) => (
-                  <Select
+                  <Select label={t("preferences.quietTo")}
                     value={field.value !== null ? String(field.value) : undefined}
                     onValueChange={(v) => field.onChange(Number(v))}
                     disabled={!quietHoursEnabled}
@@ -584,7 +587,7 @@ export function PreferencesView() {
             )}
           </div>
           {isDirty && (
-            <span className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400" dir={dir === "rtl" ? "rtl" : undefined}>
+            <span className="flex items-center gap-1 text-[10px] text-amber-700 dark:text-amber-400" dir={dir === "rtl" ? "rtl" : undefined}>
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500" />
               {t("preferences.save")}
             </span>
@@ -676,7 +679,12 @@ function ChannelCard({
   const dir = useDir();
   const selected = parseSeverities(severities);
   return (
-    <Card className={cn("flex flex-col", !enabled && "opacity-50")}>
+    // NOT opacity-50: dimming a whole card halves the contrast of every label
+    // in it, and axe reports them (the labels are not the disabled control, so
+    // WCAG's inactive-component exemption does not cover them). A dashed border
+    // plus the "Disabled" label beside the switch carry the same state at full
+    // contrast.
+    <Card className={cn("flex flex-col", !enabled && "border-dashed")}>
       <CardHeader>
         <div className="flex flex-row items-start justify-between gap-3">
           <div className="flex items-start gap-3">
@@ -694,7 +702,15 @@ function ChannelCard({
             <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
               {enabled ? t("preferences.enabled") : t("preferences.disabled")}
             </span>
-            <Switch checked={enabled} onCheckedChange={onToggle} />
+            {/* A switch is a checkbox with no text of its own: the visible
+                title lives in a sibling CardTitle and is not associated with
+                it, so without this the control is announced as "switch, on"
+                with no indication of WHICH channel it enables. */}
+            <Switch
+              checked={enabled}
+              onCheckedChange={onToggle}
+              aria-label={`${title} — ${t("preferences.channelEnabled")}`}
+            />
           </div>
         </div>
       </CardHeader>

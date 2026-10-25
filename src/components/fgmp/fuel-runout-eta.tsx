@@ -97,9 +97,9 @@ function formatDuration(etaHours: number | null, lang: Language, t: (k: string) 
 
 /** Fill-% badge color: rose at critical, amber at low, emerald otherwise. */
 function pctBadgeClass(pct: number): string {
-  if (pct <= 12) return "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400";
-  if (pct <= 25) return "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400";
-  return "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400";
+  if (pct <= 12) return "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400";
+  if (pct <= 25) return "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400";
+  return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400";
 }
 
 export function FuelRunoutEta() {
@@ -127,7 +127,7 @@ export function FuelRunoutEta() {
               <button
                 type="button"
                 aria-label={t("dash.runoutEtaTitle")}
-                className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+                className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
               >
                 <Info className="h-3 w-3" />
               </button>
@@ -190,7 +190,7 @@ export function FuelRunoutEta() {
                     URGENCY_DOT[tk.urgency],
                     tk.urgency === "critical" && "animate-pulse-soft",
                   )}
-                  aria-label={t(URGENCY_LABEL_KEY[tk.urgency])}
+                  aria-hidden="true"
                 />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{tk.siteName}</p>
@@ -204,8 +204,8 @@ export function FuelRunoutEta() {
                   <span
                     className={cn(
                       "text-sm font-semibold tabular-nums",
-                      tk.urgency === "critical" && "text-rose-600 dark:text-rose-400",
-                      tk.urgency === "urgent" && "text-amber-600 dark:text-amber-400",
+                      tk.urgency === "critical" && "text-rose-700 dark:text-rose-400",
+                      tk.urgency === "urgent" && "text-amber-700 dark:text-amber-400",
                       tk.urgency === "soon" && "text-foreground",
                     )}
                   >

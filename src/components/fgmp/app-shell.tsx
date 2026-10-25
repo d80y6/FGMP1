@@ -5,10 +5,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   LayoutDashboard, Building2, Droplet, Zap, BatteryCharging, Siren,
   Truck, TrendingUp, FileText, Cpu, Wrench, ScrollText, Fuel, Users,
-  Pause, Play, Activity, ChevronRight, ShieldCheck, Radio, Command, Search, Keyboard,
+  Pause, Play, Activity, ShieldCheck, Radio, Command, Search, Keyboard,
   Loader2, LogOut, ShieldOff, Bell,
   HardDrive, GitBranch, BarChart3, Map, KeyRound,
-  Settings, Layers,
+  Settings, Layers, Menu,
 } from "lucide-react";
 import { useSession, signOut } from "next-auth/react";
 import { toast } from "sonner";
@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useTheme } from "next-themes";
 import { useState } from "react";
 import { hasCapability, ROLE_PERMISSIONS } from "@/lib/fgmp/rbac-core";
@@ -86,7 +86,7 @@ import { LanguageSwitcher } from "@/components/fgmp/language-switcher";
 import { SupportSessionBanner } from "@/components/fgmp/support-session-banner";
 import { useKeyboardShortcuts } from "@/lib/fgmp/use-keyboard-shortcuts";
 import { useRealtime } from "@/lib/fgmp/use-realtime";
-import { useT, useLanguageHydration, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { useT, useTF, useLanguageHydration, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 
 // Nav items use i18n keys; the `label` is a fallback (English) for SSR before hydration.
@@ -328,27 +328,44 @@ export function AppShell() {
 
   // URL parameters, keyboard shortcuts and child components are all untrusted
   // navigation inputs. Never mount a view unless the effective role has its
-  // view capability; normalize denied URLs to the dashboard.
+  // view capability.
+  //
+  // A denied URL is NOT silently rewritten to the dashboard. It stays in the
+  // address bar and the content area explains the refusal, because (a) an
+  // operator who was sent a link deserves to know a permission denied, not
+  // that the app "went somewhere else", and (b) the URL a colleague with the
+  // right role needs is the one that was typed. Security is unchanged either
+  // way: the view component is never mounted, and the API endpoints behind it
+  // enforce the same matrix server-side.
+  //
+  // Derived during render instead of stored: a denial is a function of
+  // (session, effective role, URL), and keeping a copy in state meant the
+  // effect had to write state on every navigation — the exact pattern that
+  // desynchronises a URL from what is on screen.
+  const requestedView = searchParams.get("view") as ViewKey | null;
+  const deniedView: ViewKey | null =
+    me && requestedView && VIEW_COMPONENTS[requestedView] && !hasCapability(role, `view:${requestedView}`)
+      ? requestedView
+      : null;
+
   useEffect(() => {
     if (!me) return; // Wait for the session-derived effective role.
     const requested = searchParams.get("view") as ViewKey | null;
     if (!requested || !VIEW_COMPONENTS[requested]) return;
-    const allowed = hasCapability(role, `view:${requested}`);
-    const destination = allowed ? requested : "dashboard";
-    if (destination !== view) setView(destination);
-    if (!allowed) {
-      const params = new URLSearchParams(searchParams.toString());
-      params.set("view", "dashboard");
-      router.replace(`/?${params.toString()}`, { scroll: false });
-    }
-  }, [me, role, searchParams, view, setView, router]);
+    if (!hasCapability(role, `view:${requested}`)) return; // rendered as a refusal, never mounted
+    if (requested !== view) setView(requested);
+  }, [me, role, searchParams, view, setView]);
 
   const navigate = (v: ViewKey) => {
     if (!hasCapability(role, `view:${v}`)) return;
     setView(v);
     const params = new URLSearchParams(searchParams.toString());
     params.set("view", v);
-    router.replace(`/?${params.toString()}`, { scroll: false });
+    // `push`, not `replace`: with `replace` the fifteen-hop trip through the
+    // sidebar left no history at all, so Back left the application instead of
+    // returning to the previous view. Denied URLs are still normalised with
+    // `replace` in the effect above — that is a correction, not a navigation.
+    router.push(`/?${params.toString()}`, { scroll: false });
     setMobileNavOpen(false);
   };
 
@@ -410,7 +427,23 @@ export function AppShell() {
             <p className="text-sm text-muted-foreground" dir={dir === "rtl" ? "rtl" : undefined}>{t("auth.requiresAuth")}</p>
           </div>
         </div>
-        <LoginDialog open />
+        <LoginDialog
+          open
+          onSuccess={() => {
+            // signIn({ redirect: false }) resolves as soon as the server has set
+            // the cookie, but the <SessionProvider> around this tree keeps the
+            // session it fetched at mount — which was "nobody". Nothing pushed
+            // into it, so the dialog stayed on screen over a session that
+            // existed. Observed in CI: six successful sign-ins in the server log
+            // while the browser still showed the form.
+            //
+            // A full reload makes the server the authority on who is signed in,
+            // and drops every piece of in-memory state belonging to the previous
+            // identity (store snapshot, cached view, command history) — which is
+            // the behaviour account switching needs anyway.
+            window.location.reload();
+          }}
+        />
       </div>
     );
   }
@@ -451,11 +484,25 @@ export function AppShell() {
           {/* Mobile nav trigger */}
           <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="lg:hidden" aria-label="Open navigation">
-                <ChevronRight className="h-5 w-5" />
+              {/* A hamburger, not a chevron. `ChevronRight` on a left drawer reads as
+                  "expand"/"next step" and, under RTL, points at the wrong edge
+                  entirely — the one control a phone user needs to find the other
+                  27 views was the least recognisable icon in the header. */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="lg:hidden"
+                aria-label={t("common.openNavigation")}
+                title={t("common.openNavigation")}
+              >
+                <Menu className="h-5 w-5" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="w-72 p-0">
+            <SheetContent side={dir === "rtl" ? "right" : "left"} className="w-72 p-0">
+              {/* Radix dialogs have no accessible name without a title; the sheet
+                  is a dialog, so the mobile navigation was announced as just
+                  "dialog". Visually hidden, not omitted. */}
+              <SheetTitle className="sr-only">{t("nav.primary")}</SheetTitle>
               <SidebarContent grouped={grouped} view={view} navigate={navigate} me={me} />
             </SheetContent>
           </Sheet>
@@ -469,7 +516,7 @@ export function AppShell() {
               <div className="flex items-center gap-2">
                 <span className="text-sm font-bold tracking-tight">{t("brand.name")}</span>
                 {role === "SUPERADMIN" && (
-                  <Badge className="bg-amber-500/15 text-amber-600 text-[9px]">SUPER</Badge>
+                  <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-400 text-[9px]">SUPER</Badge>
                 )}
                 <Badge variant="secondary" className="hidden h-4 px-1 text-[9px] font-medium md:inline-flex">v2.4</Badge>
               </div>
@@ -480,13 +527,19 @@ export function AppShell() {
           {/* Live status + KPI chips */}
           <div className="ml-2 hidden items-center gap-2 md:flex">
             <div
+              // Connection state is the one status an operator needs while
+              // looking somewhere else on the page: "LIVE" silently becoming
+              // "Reconnecting…" means the numbers on screen are frozen, and
+              // nothing announced that.
+              role="status"
+              aria-live="polite"
               className={cn(
                 "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium",
                 livePaused
-                  ? "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                  ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400"
                   : rtConnected
-                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                    : "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                    : "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400",
               )}
               title={
                 livePaused
@@ -565,7 +618,7 @@ export function AppShell() {
           <LanguageSwitcher />
 
           {/* Keyboard shortcuts help */}
-          <Button variant="outline" size="icon" onClick={() => setHelpOpen(true)} aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">
+          <Button variant="outline" size="icon" onClick={() => setHelpOpen(true)} aria-label={t("common.keyboardShortcuts")} title={`${t("common.keyboardShortcuts")} (?)`}>
             <Keyboard className="h-4 w-4" />
           </Button>
 
@@ -586,7 +639,7 @@ export function AppShell() {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-9 gap-1.5 border-amber-500/40 bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-400"
+                  className="h-9 gap-1.5 border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:bg-amber-500/20 dark:text-amber-400"
                   onClick={() => {
                     returnToPermanentRole().catch(() => {
                       toast.error(t("auth.invalidCredentials"));
@@ -599,7 +652,7 @@ export function AppShell() {
                   {t("auth.returnToAdmin")}
                 </Button>
               )}
-              <Select
+              <Select label={t("users.role")}
                 value={role}
                 disabled={role !== "ADMIN" && role !== "SUPERADMIN" && !me.previewRole}
                 onValueChange={(v) => {
@@ -655,7 +708,11 @@ export function AppShell() {
         <main id="main-content" className="flex min-w-0 flex-1 flex-col" tabIndex={-1}>
           <div className="flex-1 px-3 py-4 sm:px-5 sm:py-6">
             <div className="mx-auto max-w-[1600px]">
-              <ViewHost Component={ViewComponent} hasSnapshot={hasSnapshot} />
+              {deniedView ? (
+                <AccessDeniedPanel view={deniedView} role={role} onBack={() => navigate("dashboard")} />
+              ) : (
+                <ViewHost Component={ViewComponent} hasSnapshot={hasSnapshot} />
+              )}
             </div>
           </div>
 
@@ -702,6 +759,46 @@ export function AppShell() {
   );
 }
 
+/**
+ * The content shown when the URL asks for a view the effective role may not
+ * open. Deliberately NOT an empty page or a silent redirect: it names the
+ * screen that was refused, states the role that lacks it, and offers the one
+ * navigation that is always allowed. The role name shown is the *effective*
+ * role, so a Super Admin previewing a lesser role sees the preview's ceiling —
+ * the same number the server uses.
+ */
+function AccessDeniedPanel({ view, role, onBack }: { view: ViewKey; role: string; onBack: () => void }) {
+  const t = useT();
+  const tFmt = useTF();
+  const dir = useDir();
+  const labelKey = NAV.find((n) => n.key === view)?.tKey ?? `nav.${view}`;
+  const viewLabel = t(labelKey);
+  const roleKey = `role.${role.toLowerCase()}`;
+  const roleLabel = t(roleKey) === roleKey ? role.replace(/_/g, " ") : t(roleKey);
+  return (
+    <div
+      role="alert"
+      aria-labelledby="access-denied-title"
+      className="mx-auto mt-6 flex max-w-lg flex-col items-center gap-3 rounded-xl border border-rose-500/30 bg-rose-500/5 px-6 py-10 text-center"
+      dir={dir === "rtl" ? "rtl" : undefined}
+    >
+      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-500/10" aria-hidden="true">
+        <ShieldOff className="h-6 w-6 text-rose-700 dark:text-rose-400" />
+      </span>
+      <h1 id="access-denied-title" className="text-lg font-semibold text-foreground">
+        {t("access.deniedTitle")}
+      </h1>
+      <p className="text-sm text-muted-foreground">
+        {tFmt("access.deniedBody", { view: viewLabel, role: roleLabel })}
+      </p>
+      <p className="font-mono text-xs text-muted-foreground" dir="ltr">{`view:${view}`}</p>
+      <Button variant="outline" onClick={onBack} className="mt-1 gap-2">
+        {t("access.deniedBack")}
+      </Button>
+    </div>
+  );
+}
+
 function SidebarContent({ grouped, view, navigate, me }: {
   grouped: Record<string, typeof NAV>;
   view: ViewKey;
@@ -712,10 +809,10 @@ function SidebarContent({ grouped, view, navigate, me }: {
   const dir = useDir();
   return (
     <div className="flex h-full flex-col">
-      <nav className="flex-1 overflow-y-auto px-2 py-3">
+      <nav aria-label={t("nav.primary")} className="flex-1 overflow-y-auto px-2 py-3">
         {Object.entries(grouped).map(([group, items]) => (
           <div key={group} className="mb-3">
-            <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60" dir={dir === "rtl" ? "rtl" : undefined}>
+            <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground" dir={dir === "rtl" ? "rtl" : undefined}>
               {t(items[0].groupTKey)}
             </p>
             {items.map((item) => {
@@ -725,9 +822,17 @@ function SidebarContent({ grouped, view, navigate, me }: {
               const desc = t(descKey);
               const hasDesc = desc && desc !== descKey;
               return (
-                <button
+                <a
                   key={item.key}
-                  onClick={() => navigate(item.key)}
+                  href={`/?view=${item.key}`}
+                  onClick={(e) => {
+                    // A real link, not a button: cmd/ctrl-click, middle-click and
+                    // "open in new tab" now work, and the element announces itself
+                    // as navigation rather than as a button.
+                    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                    e.preventDefault();
+                    navigate(item.key);
+                  }}
                   className={cn(
                     "group relative mb-0.5 flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-all duration-150",
                     active
@@ -737,8 +842,7 @@ function SidebarContent({ grouped, view, navigate, me }: {
                     "hover:translate-x-0",
                   )}
                   dir={dir === "rtl" ? "rtl" : undefined}
-                  title={hasDesc ? desc : undefined}
-                  aria-label={hasDesc ? `${t(item.tKey)} — ${desc}` : t(item.tKey)}
+                  title={hasDesc ? `${t(item.tKey)} — ${desc}` : undefined}
                   aria-current={active ? "page" : undefined}
                 >
                   {/* Active item: subtle left-border accent (3px) in the primary color.
@@ -752,7 +856,7 @@ function SidebarContent({ grouped, view, navigate, me }: {
                   <Icon className={cn("h-4 w-4 shrink-0 transition-transform duration-150 group-hover:translate-x-0.5 rtl:group-hover:-translate-x-0.5", active && "text-primary")} />
                   <span className="truncate">{t(item.tKey)}</span>
                   {item.key === "alarms" && <AlarmCountBadge />}
-                </button>
+                </a>
               );
             })}
           </div>
@@ -788,29 +892,33 @@ function AlarmCountBadge() {
   // Derived scalar selector: re-renders only when the count itself changes,
   // rather than on every unrelated store write.
   const n = useFgmp((s) => s.snapshot?.kpis.openAlarms ?? 0);
+  const tFmt = useTF();
   if (n === 0) return null;
   // Refreshed badge style: rounded-full, min-width to center single/double
   // digits, subtle rose drop-shadow so the alarm count pops at a glance.
   return (
     <span
-      className="ml-auto inline-flex min-w-[20px] items-center justify-center rounded-full bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-rose-600 shadow-sm shadow-rose-500/20 dark:text-rose-400"
-      aria-label={`${n} open alarms`}
+      className="ml-auto inline-flex min-w-[20px] items-center justify-center rounded-full bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-rose-700 dark:text-rose-400 shadow-sm shadow-rose-500/20 dark:text-rose-400"
     >
-      {n}
+      <span aria-hidden="true">{n}</span>
+      {/* The visible digit alone would be read as "3" inside the nav link.
+          The link's name is its text content, so the count needs a spoken
+          form — localized, and hidden from the visual layout. */}
+      <span className="sr-only">{tFmt("nav.openAlarms", { n })}</span>
     </span>
   );
 }
 
 function KpiChip({ label, value, tone }: { label: string; value: React.ReactNode; tone: "good" | "danger" | "info" | "warn" }) {
   const tones = {
-    good: "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-    danger: "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400",
-    info: "border-sky-500/30 bg-sky-500/10 text-sky-600 dark:text-sky-400",
-    warn: "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+    good: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+    danger: "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400",
+    info: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-400",
+    warn: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400",
   };
   return (
     <div className={cn("flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs", tones[tone])}>
-      <span className="text-[10px] uppercase tracking-wide opacity-70">{label}</span>
+      <span className="text-[10px] uppercase tracking-wide">{label}</span>
       <span className="font-bold tabular-nums">{value}</span>
     </div>
   );

@@ -6,10 +6,38 @@ import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
+/**
+ * The trigger of a Radix Select is a <button role="combobox">. A combobox takes
+ * its accessible name from `aria-label`/`aria-labelledby`, NOT from its
+ * contents — so the visible value ("All regions", "DEGRADED") is not a name,
+ * and axe reports `button-name` (critical) on every unnamed trigger even when
+ * the trigger shows text. A `<Label>` sitting above it in the DOM does not help
+ * either: it is not associated with anything.
+ *
+ * `label` is therefore required on Select and forwarded to the trigger, which
+ * is the only DOM node that can carry it. Making it required (rather than
+ * optional-and-easily-forgotten) means `tsc` fails on a new Select that would
+ * otherwise ship an unnamed control — and `select-label.test.ts` fails on any
+ * `<SelectTrigger>` written outside this wrapper.
+ */
+const SelectLabelContext = React.createContext<string | undefined>(undefined)
+
 function Select({
+  label,
+  children,
   ...props
-}: React.ComponentProps<typeof SelectPrimitive.Root>) {
-  return <SelectPrimitive.Root data-slot="select" {...props} />
+}: React.ComponentProps<typeof SelectPrimitive.Root> & {
+  /** Accessible name for the trigger. Pass the same string the visible field
+   *  label uses, so voice control ("click Status") matches what is on screen. */
+  label: string
+}) {
+  return (
+    <SelectLabelContext.Provider value={label}>
+      <SelectPrimitive.Root data-slot="select" {...props}>
+        {children}
+      </SelectPrimitive.Root>
+    </SelectLabelContext.Provider>
+  )
 }
 
 function SelectGroup({
@@ -28,12 +56,15 @@ function SelectTrigger({
   className,
   size = "default",
   children,
+  "aria-label": ariaLabel,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Trigger> & {
   size?: "sm" | "default"
 }) {
+  const fromSelect = React.useContext(SelectLabelContext)
   return (
     <SelectPrimitive.Trigger
+      aria-label={ariaLabel ?? fromSelect}
       data-slot="select-trigger"
       data-size={size}
       className={cn(

@@ -265,6 +265,207 @@ jobs:
           python3 scripts/ci/publish-logs.py "rls: migration + isolation logs"
           /tmp/migrate.log /tmp/seed.log /tmp/smoke.log /tmp/dbtests.log /tmp/rls.log
 
+  # ── The HOSTED provisioning path ────────────────────────────────────────
+  # `scripts/supabase/{01..04}.sql` are what a customer runs against Supabase,
+  # Neon or RDS when they have no route to Prisma's engine. Nothing ran them in
+  # CI: the `rls` job provisions the docker path (pg-init-roles.sql + migrate
+  # deploy) as a superuser, which is a different set of statements with different
+  # privileges. So 01-roles.sql shipped a statement that needs a superuser, and a
+  # real deployment died at line 117 with `permission denied to change default
+  # privileges` — followed by `permission denied to set role "fgmp_migrate"` in
+  # 02 and the same in 04.
+  #
+  # This job reproduces the hosted shape and asserts the whole chain, including
+  # that the role it all runs as is NOT a superuser — otherwise every statement
+  # below would pass for the wrong reason. See scripts/verify/supabase-provisioning.ts.
+  provisioning:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [verify]
+
+    services:
+      postgres:
+        # Plain PostgreSQL, not TimescaleDB: the schema's Timescale block is
+        # commented out and the hosted path must work on stock PG.
+        image: postgres:17
+        env:
+          POSTGRES_USER: ci_admin
+          POSTGRES_PASSWORD: ci_admin
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci_admin -d postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # A superuser ONLY to create the non-superuser provisioner and a database
+      # owned by it. After that the scripts run as `fgmp_provisioner`.
+      FGMP_PG_ADMIN_URL: postgresql://ci_admin:ci_admin@127.0.0.1:5432/postgres
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+
+      - name: Confirm the client is available
+        run: psql --version
+
+      - name: Hosted provisioning contract (non-superuser, 01 → 04)
+        run: |
+          set -o pipefail
+          bun run test:provisioning 2>&1 | tee /tmp/provisioning.log
+
+      - name: Publish failure diagnostics
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >
+          python3 scripts/ci/publish-logs.py "provisioning: supabase scripts"
+          /tmp/provisioning.log
+
+  # ── Real browser, real database, real session ───────────────────────────
+  # `tests/e2e/ui.spec.ts` has two halves. The public half (sign-in surface:
+  # keyboard, RTL, eight viewports, axe) runs anywhere. The authenticated half
+  # cannot be faked into meaning anything: navigation history, the mobile nav
+  # dialog, and "READONLY receives no admin navigation" only exist once a real
+  # session exists over a seeded database. This job provides that.
+  #
+  # Playwright is installed into `.pw/`, NOT into package.json: it is tooling
+  # for this one job, and ~40 MB of browser automation should not be pulled by
+  # every `bun install` or baked into the application image.
+  ui:
+    runs-on: ubuntu-latest
+    # Raised from 30: this job now also renders all 27 views twice over (ADMIN
+    # and the four screens whose rendering differs for SUPERADMIN), which is 30
+    # page loads with axe on each. The build and browser install are unchanged.
+    timeout-minutes: 45
+    needs: [verify]
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: fgmp_migrate
+          POSTGRES_PASSWORD: cimigrate
+          POSTGRES_DB: fgmp
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fgmp_migrate -d fgmp"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://fgmp_app:ciapp@127.0.0.1:5432/fgmp?schema=public
+      FGMP_OPS_DATABASE_URL: postgresql://fgmp_ops:ciops@127.0.0.1:5432/fgmp?schema=public
+      FGMP_MIGRATE_DATABASE_URL: postgresql://fgmp_migrate:cimigrate@127.0.0.1:5432/fgmp?schema=public
+      FGMP_REQUIRE_RLS: "1"
+      NEXTAUTH_SECRET: ci-e2e-secret-ci-e2e-secret-ci-e2e
+      NEXTAUTH_URL: http://127.0.0.1:3000
+      # The seeded accounts ship with published passwords, and `next start` runs
+      # with NODE_ENV=production — where those passwords are refused by design.
+      # This flag exists for exactly this: a non-production test deployment.
+      FGMP_ALLOW_DEMO_CREDENTIALS: "1"
+      PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
+      FGMP_E2E_AUTH: "1"
+      PW_HOME: ${{ github.workspace }}/.pw
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: bun run db:generate
+        env:
+          DATABASE_URL: postgresql://fgmp_migrate:cimigrate@127.0.0.1:5432/fgmp?schema=public
+
+      # Same role file the deployment uses — not a CI-specific copy.
+      - name: Provision database roles
+        run: |
+          PGPASSWORD=cimigrate psql -h 127.0.0.1 -U fgmp_migrate -d fgmp -v ON_ERROR_STOP=1 \
+            --set=app_password=ciapp \
+            --set=ops_password=ciops \
+            --set=migrate_password=cimigrate \
+            -f scripts/db/pg-init-roles.sql
+
+      - name: Apply migrations
+        env:
+          DATABASE_URL: postgresql://fgmp_migrate:cimigrate@127.0.0.1:5432/fgmp?schema=public
+        run: bunx prisma migrate deploy
+
+      - name: Seed
+        run: bun run db:seed
+
+      - name: Build the standalone server
+        run: |
+          set -o pipefail
+          bun run build:standalone 2>&1 | tee /tmp/build.log
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+
+      - name: Install Playwright and a browser (into .pw/, not package.json)
+        run: |
+          mkdir -p "$PW_HOME"
+          printf '{"name":"fgmp-e2e-tools","private":true}\n' > "$PW_HOME/package.json"
+          npm --prefix "$PW_HOME" install --no-audit --no-fund @playwright/test@1.64.1 axe-core@4.10.2
+          "$PW_HOME/node_modules/.bin/playwright" install --with-deps chromium
+
+      - name: Start the server
+        run: |
+          node .next/standalone/server.js > /tmp/server.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:3000/api/health/live > /dev/null 2>&1; then
+              echo "server up after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "server did not become ready"; tail -50 /tmp/server.log; exit 1
+
+      # `github` as well as `list`: the list reporter's output lives in the job
+      # log, which the Actions log archive serves from a host this project's
+      # sandbox cannot reach, so a red run there is a red run with no readable
+      # cause. The github reporter turns each failure into an annotation on the
+      # check run, and annotations are on api.github.com.
+      - name: Browser suite (public + authenticated)
+        run: |
+          set -o pipefail
+          NODE_PATH="$PW_HOME/node_modules" \
+          AXE_PATH="$PW_HOME/node_modules/axe-core/axe.min.js" \
+          node "$PW_HOME/node_modules/@playwright/test/cli.js" test --reporter=list,github 2>&1 | tee /tmp/ui.log
+
+      # The per-view sweep writes a table of what every screen did (axe, HTTP,
+      # overflow, tiny-text count). It is published whether the run passed or
+      # failed: on a pass it is the evidence, on a failure it is the diagnosis,
+      # and reading it from the job log alone means re-running to see it again.
+      - name: Upload the per-view sweep report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: views-report
+          path: test-results/views-report.md
+          if-no-files-found: warn
+
+      - name: Publish failure diagnostics
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >
+          python3 scripts/ci/publish-logs.py "ui: browser suite"
+          /tmp/build.log /tmp/server.log /tmp/ui.log
+
+
   docker:
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -309,6 +510,12 @@ jobs:
             --set=migrate_password=cimigrate \
             -f scripts/db/pg-init-roles.sql
 
+      # NOTE the credential split: the web container gets the OPS role (BYPASSRLS,
+      # needed for the cross-tenant "email → user" lookup at sign-in) and the
+      # MIGRATE role for the boot-time preflight — but `src/lib/env.ts` refuses to
+      # start in production without one of them, because an app that cannot read
+      # "User" cannot authenticate anybody. It did exactly that when this job was
+      # first run with the flag in place: `FGMP_OPS_DATABASE_URL is not set …`.
       - name: Boot against PostgreSQL and apply migrations
         run: |
           set -o pipefail
@@ -316,6 +523,7 @@ jobs:
           docker run -d --name fgmp-ci -p 3000:3000 \
             --network host \
             -e DATABASE_URL=postgresql://fgmp_app:ciapp@127.0.0.1:5432/fgmp?schema=public \
+            -e FGMP_OPS_DATABASE_URL=postgresql://fgmp_ops:ciops@127.0.0.1:5432/fgmp?schema=public \
             -e FGMP_MIGRATE_DATABASE_URL=postgresql://fgmp_migrate:cimigrate@127.0.0.1:5432/fgmp?schema=public \
             -e NEXTAUTH_SECRET=ci-secret-abcdefghijklmnopqrstuvwxyz0123456789 \
             -e IOT_API_KEY=ci-iot-key-abcdefghijklmnop \

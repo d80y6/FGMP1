@@ -3,10 +3,22 @@
 import * as React from "react"
 
 import { cn } from "@/lib/utils"
+import { ScrollRegion } from "@/components/ui/scroll-region"
 
-function Table({ className, ...props }: React.ComponentProps<"table">) {
+/**
+ * `containerLabel` names the scroll container for assistive tech. When the
+ * table is wider than its column the wrapper becomes a keyboard-reachable
+ * region — see `ScrollRegion` for why that is conditional — and this is the
+ * name it is announced with. Pass the heading of the table's own card.
+ */
+function Table({
+  className,
+  containerLabel,
+  ...props
+}: React.ComponentProps<"table"> & { containerLabel?: string }) {
   return (
-    <div
+    <ScrollRegion
+      label={containerLabel}
       data-slot="table-container"
       className="relative w-full overflow-x-auto"
     >
@@ -15,7 +27,7 @@ function Table({ className, ...props }: React.ComponentProps<"table">) {
         className={cn("w-full caption-bottom text-sm", className)}
         {...props}
       />
-    </div>
+    </ScrollRegion>
   )
 }
 

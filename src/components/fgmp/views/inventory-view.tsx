@@ -138,7 +138,7 @@ export function InventoryView() {
                       <TableCell><StatusBadge value={d.status} className="h-5 text-[9px]" /></TableCell>
                       <TableCell className="text-right">
                         {d.status === "SCHEDULED" && <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => dispatch(d.id)}>{t("inventory.dispatch")}</Button>}
-                        {d.status === "DELIVERED" && <Button size="sm" variant="outline" className="h-6 px-2 text-[10px] text-emerald-600 hover:bg-emerald-500/10" onClick={() => setVerify({ id: d.id, vol: d.volumeOrderedLitres })}>{t("inventory.verify")}</Button>}
+                        {d.status === "DELIVERED" && <Button size="sm" variant="outline" className="h-6 px-2 text-[10px] text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10" onClick={() => setVerify({ id: d.id, vol: d.volumeOrderedLitres })}>{t("inventory.verify")}</Button>}
                         {(d.status === "VERIFIED" || d.status === "IN_TRANSIT") && <span className="text-[10px] text-muted-foreground">—</span>}
                       </TableCell>
                     </TableRow>
@@ -154,7 +154,7 @@ export function InventoryView() {
             <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-sm"><TrendingUp className="h-4 w-4 text-emerald-500" /> {t("inventory.consumptionForecast")}</CardTitle></CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={180}>
-                <BarChart data={forecast} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+                <BarChart tabIndex={-1} data={forecast} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} vertical={false} />
                   <XAxis dataKey="day" tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} />
                   <YAxis tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} />
@@ -170,7 +170,7 @@ export function InventoryView() {
           <Card>
             <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-sm"><FileCheck className="h-4 w-4 text-amber-500" /> {t("inventory.reconciliation")}</CardTitle></CardHeader>
             <CardContent className="p-3">
-              <div className="max-h-[200px] space-y-1.5 overflow-y-auto">
+              <div className="max-h-[200px] space-y-1.5 overflow-y-auto" tabIndex={0} role="region" aria-label={t("a11y.scrollReconciliation")}>
                 {reconciliation.slice(0, 12).map((r) => (
                   <div key={r.id} className="flex items-center justify-between rounded border p-2 text-[11px]">
                     <div className="min-w-0">
@@ -264,14 +264,14 @@ function CreateDeliveryDialog({ open, onOpenChange, onCreated, tanks, sites }: {
         <div className="grid grid-cols-2 gap-3">
           <div className="col-span-2">
             <Label className="text-xs">{t("inventory.site")}</Label>
-            <Select value={siteId} onValueChange={(v) => { setSiteId(v); setTankId(""); }}>
+            <Select label={t("inventory.site")} value={siteId} onValueChange={(v) => { setSiteId(v); setTankId(""); }}>
               <SelectTrigger><SelectValue placeholder={t("inventory.selectSite")} /></SelectTrigger>
               <SelectContent className="max-h-60">{sites.map((s) => <SelectItem key={s.id} value={s.id}>{s.code} · {s.name}</SelectItem>)}</SelectContent>
             </Select>
           </div>
           <div className="col-span-2">
             <Label className="text-xs">{t("inventory.tank")}</Label>
-            <Select value={tankId} onValueChange={setTankId}>
+            <Select label={t("inventory.tank")} value={tankId} onValueChange={setTankId}>
               <SelectTrigger><SelectValue placeholder={t("inventory.selectTank")} /></SelectTrigger>
               <SelectContent>{siteTanks.map((t) => <SelectItem key={t.id} value={t.id}>{t.label} · {formatNumber(Math.round(t.capacity), numLang)}L</SelectItem>)}</SelectContent>
             </Select>
@@ -286,7 +286,7 @@ function CreateDeliveryDialog({ open, onOpenChange, onCreated, tanks, sites }: {
           </div>
           <div>
             <Label className="text-xs">{t("inventory.supplier")}</Label>
-            <Select value={supplier} onValueChange={setSupplier}>
+            <Select label={t("inventory.supplier")} value={supplier} onValueChange={setSupplier}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="Yemen Oil Co.">{supplierLabel("Yemen Oil Co.", numLang)}</SelectItem>

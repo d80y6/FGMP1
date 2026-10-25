@@ -13,7 +13,7 @@ import { useFgmp } from "@/lib/fgmp/store";
 import { hasCapability } from "@/lib/fgmp/rbac-core";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
-import { useT } from "@/lib/fgmp/use-language";
+import { useT, useTF } from "@/lib/fgmp/use-language";
 import { useNow } from "@/lib/fgmp/use-now";
 
 interface Notification {
@@ -52,6 +52,7 @@ function extractSeverity(subject: string): string | null {
 
 export function NotificationCenter() {
   const t = useT();
+  const tFmt = useTF();
   const role = useFgmp((s) => s.me?.role ?? null);
   const canDismissNotifications = role !== null && hasCapability(role, "notification:manage");
   const [open, setOpen] = useState(false);
@@ -113,7 +114,8 @@ export function NotificationCenter() {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="icon" className="relative" aria-label="Notifications">
+        <Button variant="outline" size="icon" className="relative" aria-label={t("common.notifications")}
+          title={t("common.notifications")}>
           <Bell className={cn("h-4 w-4 transition-colors", unreadCount > 0 && "text-amber-500")} />
           {unreadCount > 0 && (
             <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-bold text-white animate-in zoom-in-50 duration-200">
@@ -137,7 +139,7 @@ export function NotificationCenter() {
             {unreadCount > 0 && (
               <Button variant="ghost" size="sm" className="h-7 px-2 text-[10px]" onClick={markAllRead}>
                 <CheckCheck className="mr-1 h-3 w-3" />
-                Mark all read
+                {t("notifications.markAllRead")}
               </Button>
             )}
             {canDismissNotifications && (
@@ -198,7 +200,7 @@ export function NotificationCenter() {
         {notifications && notifications.length > 0 && (
           <div className="border-t px-4 py-2">
             <p className="text-center text-[10px] text-muted-foreground">
-              {notifications.length} total · {unreadCount} unread
+              {tFmt("notifications.summary", { total: notifications.length, unread: unreadCount })}
             </p>
           </div>
         )}

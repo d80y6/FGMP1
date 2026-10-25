@@ -12,6 +12,7 @@ import {
 } from "recharts";
 import { useFgmp } from "@/lib/fgmp/store";
 import { useChartColors } from "@/lib/fgmp/use-chart-colors";
+import { ScrollRegion } from "@/components/ui/scroll-region";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import {
@@ -23,7 +24,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { fmtLitres, fmtDateTime } from "@/lib/fgmp/format";
-import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { useT, useTF, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import { useNow } from "@/lib/fgmp/use-now";
 import type { Language } from "@/lib/fgmp/i18n";
 import type { TankState } from "@/lib/fgmp/types";
@@ -48,9 +49,9 @@ interface ForecastRow {
 
 const RISK_COLORS: Record<RiskLevel, { bg: string; text: string; border: string }> = {
   CRITICAL: { bg: "bg-rose-500/15", text: "text-rose-700 dark:text-rose-300", border: "border-rose-500/40" },
-  HIGH: { bg: "bg-rose-500/10", text: "text-rose-600 dark:text-rose-400", border: "border-rose-500/30" },
-  MEDIUM: { bg: "bg-amber-500/10", text: "text-amber-600 dark:text-amber-400", border: "border-amber-500/30" },
-  LOW: { bg: "bg-emerald-500/10", text: "text-emerald-600 dark:text-emerald-400", border: "border-emerald-500/30" },
+  HIGH: { bg: "bg-rose-500/10", text: "text-rose-700 dark:text-rose-400", border: "border-rose-500/30" },
+  MEDIUM: { bg: "bg-amber-500/10", text: "text-amber-700 dark:text-amber-400", border: "border-amber-500/30" },
+  LOW: { bg: "bg-emerald-500/10", text: "text-emerald-700 dark:text-emerald-400", border: "border-emerald-500/30" },
 };
 
 const RISK_ORDER: Record<RiskLevel, number> = {
@@ -95,6 +96,7 @@ function fmtHours(h: number, numLang: Language): string {
 export function FuelForecastView() {
   const { snapshot, setView } = useFgmp(useShallow((s) => ({ snapshot: s.snapshot, setView: s.setView })));
   const t = useT();
+  const tFmt = useTF();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
   const cc = useChartColors();
@@ -193,35 +195,35 @@ export function FuelForecastView() {
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-4">
         <KpiCard
-          label="Critical Risk"
+          label={t("forecast.criticalRisk")}
           value={formatNumber(critical.length, numLang)}
           icon={<AlertOctagon className="h-4 w-4" />}
           tone="danger"
           hint="< 24h to critical"
         />
         <KpiCard
-          label="High Risk"
+          label={t("forecast.highRisk")}
           value={formatNumber(high.length, numLang)}
           icon={<AlertTriangle className="h-4 w-4" />}
           tone="warn"
           hint="< 72h to critical"
         />
         <KpiCard
-          label="Refuel Needed 72h"
+          label={t("forecast.refuel72h")}
           value={formatNumber(refuelNeeded72h.length, numLang)}
           icon={<PackagePlus className="h-4 w-4" />}
           tone={refuelNeeded72h.length ? "warn" : "good"}
-          hint="Tanks needing action"
+          hint={t("forecast.tanksNeedingAction")}
         />
         <KpiCard
-          label="Avg Dry-Out"
+          label={t("forecast.avgDryOut")}
           value={isFinite(avgDryOutDays) && avgDryOutDays > 0
             ? formatNumber(avgDryOutDays.toFixed(1), numLang)
             : "—"}
           unit={isFinite(avgDryOutDays) && avgDryOutDays > 0 ? "d" : undefined}
           icon={<Clock className="h-4 w-4" />}
           tone="info"
-          hint="Across consuming tanks"
+          hint={t("forecast.acrossTanks")}
         />
       </div>
 
@@ -230,18 +232,14 @@ export function FuelForecastView() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-sm">
-              <TrendingDown className="h-4 w-4 text-rose-500" />
-              7-Day Level Projection — Top Risk Tanks
-            </CardTitle>
+              <TrendingDown className="h-4 w-4 text-rose-500" />{t("forecast.projection7Day")}</CardTitle>
           </CardHeader>
           <CardContent>
             {topRiskTanks.length === 0 ? (
-              <p className="py-12 text-center text-xs text-muted-foreground">
-                No critical or high-risk tanks currently.
-              </p>
+              <p className="py-12 text-center text-xs text-muted-foreground">{t("forecast.noneRisk")}</p>
             ) : (
               <ResponsiveContainer width="100%" height={260}>
-                <LineChart data={chartData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+                <LineChart tabIndex={-1} data={chartData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} vertical={false} />
                   <XAxis dataKey="day" tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} />
                   <YAxis tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} />
@@ -268,12 +266,12 @@ export function FuelForecastView() {
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-sm">
               <Activity className="h-4 w-4 text-amber-500" />
-              Tank Risk Distribution
+              {t("forecast.tankRiskDistribution")}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={riskDist} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+              <BarChart tabIndex={-1} data={riskDist} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} vertical={false} />
                 <XAxis dataKey="name" tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} />
                 <YAxis tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} allowDecimals={false} />
@@ -293,12 +291,15 @@ export function FuelForecastView() {
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">
-            Tank Refuel Forecast ({formatNumber(rows.length, numLang)})
+            {tFmt("forecast.titleCount", { n: formatNumber(rows.length, numLang) })}
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="max-h-[560px] overflow-y-auto">
-            <Table>
+          <ScrollRegion
+            label={t("forecast.tableRegion")}
+            className="max-h-[560px] overflow-y-auto"
+          >
+            <Table containerLabel={t("forecast.tableRegion")}>
               <TableHeader className="sticky top-0 z-10 bg-card">
                 <TableRow>
                   <TableHead className="min-w-[140px]">Site</TableHead>
@@ -307,10 +308,10 @@ export function FuelForecastView() {
                   <TableHead className="text-right">Capacity (L)</TableHead>
                   <TableHead className="text-right">%</TableHead>
                   <TableHead className="text-right">Rate (L/h)</TableHead>
-                  <TableHead className="text-right">Hrs → Low</TableHead>
-                  <TableHead className="text-right">Hrs → Critical</TableHead>
-                  <TableHead className="text-right">Hrs → Dry</TableHead>
-                  <TableHead className="min-w-[140px]">Dry-Out Date</TableHead>
+                  <TableHead className="text-right">{t("forecast.hrsToLow")}</TableHead>
+                  <TableHead className="text-right">{t("forecast.hrsToCritical")}</TableHead>
+                  <TableHead className="text-right">{t("forecast.hrsToDry")}</TableHead>
+                  <TableHead className="min-w-[140px]">{t("forecast.dryOutDate")}</TableHead>
                   <TableHead className="text-center">Risk</TableHead>
                   <TableHead className="text-right">Action</TableHead>
                 </TableRow>
@@ -325,7 +326,7 @@ export function FuelForecastView() {
                       <TableCell className="text-right text-xs tabular-nums">{fmtLitres(r.current, numLang)}</TableCell>
                       <TableCell className="text-right text-xs tabular-nums text-muted-foreground">{fmtLitres(r.capacity, numLang)}</TableCell>
                       <TableCell className="text-right text-xs tabular-nums">
-                        <span className={r.pct <= 12 ? "text-rose-600 dark:text-rose-400" : r.pct <= 25 ? "text-amber-600 dark:text-amber-400" : ""}>
+                        <span className={r.pct <= 12 ? "text-rose-700 dark:text-rose-400" : r.pct <= 25 ? "text-amber-700 dark:text-amber-400" : ""}>
                           {formatNumber(r.pct.toFixed(1), numLang)}%
                         </span>
                       </TableCell>
@@ -351,7 +352,7 @@ export function FuelForecastView() {
                             className="h-7 text-[11px]"
                             onClick={() => setView("inventory")}
                           >
-                            <PackagePlus className="mr-1 h-3 w-3" /> Create Delivery
+                            <PackagePlus className="mr-1 h-3 w-3" /> {t("forecast.createDelivery")}
                           </Button>
                         )}
                       </TableCell>
@@ -360,14 +361,12 @@ export function FuelForecastView() {
                 })}
                 {rows.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={12} className="py-8 text-center text-xs text-muted-foreground">
-                      No tank data available.
-                    </TableCell>
+                    <TableCell colSpan={12} className="py-8 text-center text-xs text-muted-foreground">{t("forecast.noData")}</TableCell>
                   </TableRow>
                 )}
               </TableBody>
             </Table>
-          </div>
+          </ScrollRegion>
         </CardContent>
       </Card>
     </div>

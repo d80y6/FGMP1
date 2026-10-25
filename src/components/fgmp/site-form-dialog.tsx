@@ -236,7 +236,7 @@ function SiteForm({
         {/* Region */}
         <div className="space-y-1.5">
           <Label>{t("sites.region")}</Label>
-          <Select value={regionId} onValueChange={(v) => { setRegionId(v); setGovernorateId(""); setDistrictId(""); }}>
+          <Select label={t("sites.region")} value={regionId} onValueChange={(v) => { setRegionId(v); setGovernorateId(""); setDistrictId(""); }}>
             <SelectTrigger><SelectValue placeholder={t("sites.selectRegion")} /></SelectTrigger>
             <SelectContent>
               {regions.map((r) => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
@@ -247,7 +247,7 @@ function SiteForm({
         {/* Governorate */}
         <div className="space-y-1.5">
           <Label>{t("sites.governorate")}</Label>
-          <Select
+          <Select label={t("sites.governorate")}
             value={governorateId}
             onValueChange={(v) => { setGovernorateId(v); setDistrictId(""); }}
             disabled={!regionId}
@@ -262,7 +262,7 @@ function SiteForm({
         {/* District */}
         <div className="space-y-1.5 sm:col-span-2">
           <Label>{t("sites.district")}</Label>
-          <Select value={districtId} onValueChange={setDistrictId} disabled={!governorateId}>
+          <Select label={t("sites.district")} value={districtId} onValueChange={setDistrictId} disabled={!governorateId}>
             <SelectTrigger><SelectValue placeholder={t("sites.selectDistrict")} /></SelectTrigger>
             <SelectContent>
               {districts.map((d) => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
@@ -315,7 +315,7 @@ function SiteForm({
         {/* Criticality */}
         <div className="space-y-1.5">
           <Label>{t("sites.criticality")}</Label>
-          <Select value={criticality} onValueChange={setCriticality}>
+          <Select label={t("sites.criticality")} value={criticality} onValueChange={setCriticality}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="CRITICAL">{t("sites.criticalityCritical")}</SelectItem>
@@ -343,7 +343,7 @@ function SiteForm({
         {/* Power source */}
         <div className="space-y-1.5">
           <Label>{t("sites.powerSource")}</Label>
-          <Select value={powerSource} onValueChange={setPowerSource}>
+          <Select label={t("sites.powerSource")} value={powerSource} onValueChange={setPowerSource}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="GRID">{t("sites.powerGrid")}</SelectItem>
@@ -356,7 +356,7 @@ function SiteForm({
         {/* Status */}
         <div className="space-y-1.5">
           <Label>{t("sites.status")}</Label>
-          <Select value={status} onValueChange={setStatus}>
+          <Select label={t("sites.status")} value={status} onValueChange={setStatus}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="ONLINE">{t("sites.statusOnline")}</SelectItem>

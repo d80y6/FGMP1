@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { useT, useArabicNumerals, formatNumber, useTF } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 import { roleLabel } from "@/lib/fgmp/labels";
 import { ROLE_PERMISSIONS, ALL_ROLES } from "@/lib/fgmp/rbac-core";
@@ -100,24 +100,24 @@ export function RolesView() {
       {/* KPI strip */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <KpiCard
-          label="All Roles"
+          label={t("users.allRoles")}
           value={formatNumber(ALL_ROLES.length, numLang)}
           icon={<ShieldCheck className="h-4 w-4" />}
         />
         <KpiCard
-          label="Capabilities"
+          label={t("roles.capabilities")}
           value={formatNumber(allCaps.length, numLang)}
           icon={<KeyRound className="h-4 w-4" />}
           tone="good"
         />
         <KpiCard
-          label="Your Role"
+          label={t("roles.yourRole")}
           value={roleLabel(myRole, numLang)}
           icon={<UserCircle2 className="h-4 w-4" />}
           tone="warn"
         />
         <KpiCard
-          label="Your Capabilities"
+          label={t("roles.yourCapabilities")}
           value={formatNumber(myCapsCount, numLang)}
           icon={<Lock className="h-4 w-4" />}
           tone="info"
@@ -127,7 +127,7 @@ export function RolesView() {
       {/* Matrix table */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm">Capability Matrix</CardTitle>
+          <CardTitle className="text-sm">{t("roles.capabilityMatrix")}</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <ScrollArea className="max-h-[480px]">
@@ -158,12 +158,12 @@ export function RolesView() {
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium">{roleLabel(r, numLang)}</span>
                           {isMine && (
-                            <Badge variant="outline" className="h-4 px-1 text-[9px] border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                            <Badge variant="outline" className="h-4 px-1 text-[9px] border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
                               YOU
                             </Badge>
                           )}
                           {isWildcard && (
-                            <Badge variant="outline" className="h-4 px-1 text-[9px] border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                            <Badge variant="outline" className="h-4 px-1 text-[9px] border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400">
                               <Asterisk className="h-2.5 w-2.5 mr-0.5" />WILDCARD
                             </Badge>
                           )}
@@ -204,15 +204,15 @@ export function RolesView() {
         <CardContent className="flex flex-wrap items-center gap-4 p-3 text-[11px] text-muted-foreground">
           <span className="inline-flex items-center gap-1.5">
             <Check className="h-3.5 w-3.5 text-emerald-500" />
-            Role grants this capability group
+            {t("roles.groupGranted")}
           </span>
           <span className="inline-flex items-center gap-1.5">
             <Asterisk className="h-3 w-3 text-amber-500" />
-            WILDCARD — grants all capabilities (ADMIN)
+            {t("roles.wildcardHint")}
           </span>
           <span className="inline-flex items-center gap-1.5">
             <span className="text-muted-foreground/30">—</span>
-            Not granted
+            {t("roles.notGranted")}
           </span>
           <span className="ml-auto">
             Click a row to inspect that role&apos;s full capability list below.
@@ -231,6 +231,8 @@ function RoleDetailPanel({
   role, lang, isMine,
 }: { role: Role; lang: Language; isMine: boolean }) {
   const meta = ROLE_PERMISSIONS[role];
+  const t = useT();
+  const tFmt = useTF();
   const groups = useMemo(() => groupCapabilities(role), [role]);
   const isWildcard = meta.capabilities.includes("*");
 
@@ -242,12 +244,10 @@ function RoleDetailPanel({
             <ShieldCheck className="h-4 w-4 text-emerald-500" />
             {roleLabel(role, lang)}
             {isMine && (
-              <Badge variant="outline" className="text-[10px] border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                YOUR ROLE
-              </Badge>
+              <Badge variant="outline" className="text-[10px] border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">{t("roles.yourRole")}</Badge>
             )}
             {isWildcard && (
-              <Badge variant="outline" className="text-[10px] border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400">
+              <Badge variant="outline" className="text-[10px] border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400">
                 <Asterisk className="h-2.5 w-2.5 mr-0.5" />WILDCARD
               </Badge>
             )}
@@ -263,11 +263,9 @@ function RoleDetailPanel({
           <Alert tone="amber">
             <Asterisk className="h-4 w-4" />
             <div>
-              <p className="font-medium text-sm">Full wildcard access</p>
+              <p className="font-medium text-sm">{t("roles.wildcardAccess")}</p>
               <p className="text-[11px] text-muted-foreground mt-0.5">
-                This role is granted the <code className="font-mono">{"*"}</code> wildcard,
-                which matches every capability checked via <code className="font-mono">hasCapability()</code>.
-                It supersedes any specific capability grant.
+                {tFmt("roles.wildcardNote", { star: "*", fn: "hasCapability()" })}
               </p>
             </div>
           </Alert>
@@ -278,7 +276,7 @@ function RoleDetailPanel({
             <div className="flex items-center gap-2">
               <Badge
                 variant="outline"
-                className="text-[10px] font-mono uppercase tracking-wide border-emerald-500/30 bg-emerald-500/5 text-emerald-600 dark:text-emerald-400"
+                className="text-[10px] font-mono uppercase tracking-wide border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400"
               >
                 {g.prefix}:
               </Badge>

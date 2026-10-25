@@ -11,12 +11,13 @@ import { Sparkline } from "@/components/fgmp/sparkline";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { useT, useTF, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 
 export function BatteriesView() {
   const snapshot = useFgmp((s) => s.snapshot);
   const t = useT();
+  const tFmt = useTF();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
   const [q, setQ] = useState("");
@@ -80,7 +81,7 @@ export function BatteriesView() {
                   <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
                     <div className="rounded bg-muted/40 px-2 py-1">
                       <p className="text-[9px] text-muted-foreground">{t("batteries.voltage")}</p>
-                      <p className={cn("font-semibold tabular-nums", b.vPct < 88 && "text-amber-500")}>{formatNumber(b.voltage, numLang)}V / {formatNumber(b.nominalVoltage, numLang)}V</p>
+                      <p className={cn("font-semibold tabular-nums", b.vPct < 88 && "text-amber-500")}>{tFmt("batteries.voltageOf", { v: formatNumber(b.voltage, numLang), nominal: formatNumber(b.nominalVoltage, numLang) })}</p>
                     </div>
                     <div className="rounded bg-muted/40 px-2 py-1">
                       <p className="text-[9px] text-muted-foreground">{t("batteries.current")}</p>

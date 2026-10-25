@@ -403,7 +403,7 @@ export function SuppressionsView() {
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="h-7 w-7 text-muted-foreground hover:text-rose-600"
+                                  className="h-7 w-7 text-muted-foreground hover:text-rose-700 dark:hover:text-rose-400"
                                   onClick={() => askDelete(s.id)}
                                   aria-label={t("common.delete")}
                                 >
@@ -486,21 +486,21 @@ function ActiveCard({ row, lang, onExtend, onCancel, onDelete, canDelete }: Acti
     good: {
       border: "border-emerald-500/30",
       bg: "bg-emerald-500/5",
-      chip: "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+      chip: "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
       ring: "ring-emerald-500/30",
       label: t("suppressions.active"),
     },
     warn: {
       border: "border-amber-500/30",
       bg: "bg-amber-500/5",
-      chip: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+      chip: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400",
       ring: "ring-amber-500/30",
       label: t("suppressions.active"),
     },
     danger: {
       border: "border-rose-500/30",
       bg: "bg-rose-500/5",
-      chip: "border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400",
+      chip: "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-400",
       ring: "ring-rose-500/30",
       label: t("suppressions.expired"),
     },
@@ -583,7 +583,7 @@ function ActiveCard({ row, lang, onExtend, onCancel, onDelete, canDelete }: Acti
         <Button
           size="sm"
           variant="outline"
-          className="h-7 px-2 text-[11px] text-rose-600 hover:bg-rose-500/10"
+          className="h-7 px-2 text-[11px] text-rose-700 dark:text-rose-400 hover:bg-rose-500/10"
           onClick={onCancel}
         >
           <X className="mr-1 h-3 w-3" />
@@ -593,7 +593,7 @@ function ActiveCard({ row, lang, onExtend, onCancel, onDelete, canDelete }: Acti
           <Button
             size="sm"
             variant="ghost"
-            className="ml-auto h-7 w-7 p-0 text-muted-foreground hover:text-rose-600"
+            className="ml-auto h-7 w-7 p-0 text-muted-foreground hover:text-rose-700 dark:hover:text-rose-400"
             onClick={onDelete}
             aria-label={t("common.delete")}
           >
@@ -704,7 +704,7 @@ function CreateSuppressionDialog({ open, onOpenChange, onCreated, sites, lang, t
                 <FormItem>
                   <FormLabel className="text-xs">{t("suppressions.site")}</FormLabel>
                   <FormControl>
-                    <Select value={field.value ?? ALL_SITES_VALUE} onValueChange={field.onChange}>
+                    <Select label={t("suppressions.site")} value={field.value ?? ALL_SITES_VALUE} onValueChange={field.onChange}>
                       <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value={ALL_SITES_VALUE}>
@@ -733,7 +733,7 @@ function CreateSuppressionDialog({ open, onOpenChange, onCreated, sites, lang, t
                 <FormItem>
                   <FormLabel className="text-xs">{t("suppressions.alarmType")}</FormLabel>
                   <FormControl>
-                    <Select value={field.value ?? ALL_TYPES_VALUE} onValueChange={field.onChange}>
+                    <Select label={t("suppressions.alarmType")} value={field.value ?? ALL_TYPES_VALUE} onValueChange={field.onChange}>
                       <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value={ALL_TYPES_VALUE}>{t("suppressions.allTypes")}</SelectItem>

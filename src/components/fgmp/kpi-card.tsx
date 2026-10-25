@@ -7,6 +7,7 @@ import type { ReactNode } from "react";
 import { ArrowDownRight, ArrowUpRight, Info } from "lucide-react";
 import { AnimatedNumber } from "@/components/fgmp/animated-number";
 import { Sparkline } from "@/components/fgmp/sparkline";
+import { useT } from "@/lib/fgmp/use-language";
 
 interface KpiCardProps {
   label: string;
@@ -59,10 +60,10 @@ const TONE_ACCENT: Record<string, string> = {
 
 const TONE_VALUE: Record<string, string> = {
   default: "",
-  danger: "text-rose-600 dark:text-rose-400",
-  warn: "text-amber-600 dark:text-amber-400",
-  good: "text-emerald-600 dark:text-emerald-400",
-  info: "text-sky-600 dark:text-sky-400",
+  danger: "text-rose-700 dark:text-rose-400",
+  warn: "text-amber-700 dark:text-amber-400",
+  good: "text-emerald-700 dark:text-emerald-400",
+  info: "text-sky-700 dark:text-sky-400",
 };
 
 // Sparkline stroke colors per tone — keep in sync with TONE_VALUE so the
@@ -76,6 +77,7 @@ const TONE_SPARK_STROKE: Record<string, string> = {
 };
 
 export function KpiCard({ label, value, unit, icon, trend, hint, info, tone = "default", className, animate = false, decimals = 0, sparkline, sparklineLabel }: KpiCardProps) {
+  const t = useT();
   return (
     <Card className={cn(
       "group relative overflow-hidden bg-gradient-to-br from-card to-card/50 p-0 transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5",
@@ -96,7 +98,7 @@ export function KpiCard({ label, value, unit, icon, trend, hint, info, tone = "d
                     <button
                       type="button"
                       aria-label={label}
-                      className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+                      className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
                     >
                       <Info className="h-3 w-3" />
                     </button>
@@ -121,16 +123,25 @@ export function KpiCard({ label, value, unit, icon, trend, hint, info, tone = "d
             {sparkline && sparkline.length > 0 && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <div className="mt-2 h-6 w-full cursor-help" aria-label={sparklineLabel}>
+                  {/* A real control, not a <div> with an aria-label: axe flags
+                      aria-label on a generic element (aria-prohibited-attr) and a
+                      non-focusable hover target is unreachable by keyboard. The
+                      button is focusable, so the tooltip opens on focus too. */}
+                  <button
+                    type="button"
+                    aria-label={sparklineLabel}
+                    className="mt-2 h-6 w-full cursor-help rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  >
                     <Sparkline
                       data={sparkline}
                       width={120}
                       height={20}
                       color={TONE_SPARK_STROKE[tone]}
                       fill
+                      decorative
                       className="w-full"
                     />
-                  </div>
+                  </button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom" className="text-[11px] font-normal">
                   {sparklineLabel}
@@ -154,7 +165,7 @@ export function KpiCard({ label, value, unit, icon, trend, hint, info, tone = "d
             <span className={cn("font-medium", trend >= 0 ? "text-emerald-500" : "text-rose-500")}>
               {Math.abs(trend)}%
             </span>
-            <span className="text-muted-foreground">vs prev period</span>
+            <span className="text-muted-foreground">{t("kpi.vsPrevPeriod")}</span>
           </div>
         )}
       </div>

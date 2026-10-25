@@ -116,7 +116,7 @@ export function QuickAccessPopover() {
               {t("nav.pinnedSites")}
             </span>
             {pinnedCount > 0 && (
-              <span className="ml-auto rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-amber-600 dark:text-amber-400">
+              <span className="ml-auto rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-amber-700 dark:text-amber-400">
                 {formatNumber(pinnedCount, numLang)}
               </span>
             )}

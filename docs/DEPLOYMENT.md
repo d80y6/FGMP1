@@ -1,9 +1,28 @@
 # Deployment
 
-How to run FGMP with Docker Compose or Render, how migrations and seeding are
-split from the app, and how to back up and restore. Commands below target the
-checked-in configuration; the Render environment and a live Docker deployment
-are not available in this connection assessment.
+FGMP deploys to **Cloudflare Workers** through OpenNext (`wrangler.jsonc`,
+`open-next.config.ts`, `npm run build`). Everything else in this document —
+Docker Compose, the migration/seed/backup jobs — exists either for local work or
+as the **operator path**: one-shot jobs that touch the database directly, because
+a Worker has no filesystem, no `pg_dump` and no way to run DDL.
+
+The application is hosted in exactly one place. Netlify, Vercel and Render were
+retired; their configuration has been deleted rather than left to rot, because a
+stale `render.yaml` is a deploy target that looks supported and is not. If you
+find yourself looking for one of those files, stop: the answer is Cloudflare.
+
+| What | Where | Why |
+|---|---|---|
+| Web app + API | Cloudflare Worker `fgmp1` | `npm run deploy` |
+| Static assets | Worker `ASSETS` binding | `.open-next/assets` |
+| Database | Hosted PostgreSQL (Supabase pooler) | reached over TCP by the Worker |
+| Migrations / seed | Operator machine or CI | Workers cannot run DDL |
+| Backups | Operator machine (Compose profile) | needs `pg_dump` |
+| Realtime | Apinator (hosted) | browsers connect directly |
+
+A live Worker was not reachable from the environment that wrote this document, so
+the Cloudflare statements below describe the **checked-in configuration**, not an
+observed production run. §4 says exactly what to confirm on the first deploy.
 
 ## 1. The deployment model: three one-shot jobs, one long-running app
 
@@ -127,19 +146,18 @@ misconfigured `DATABASE_URL` silently disabling tenant isolation.
 ### Hosted PostgreSQL connection budget
 
 Prisma otherwise creates a pool sized from the host's reported CPU count for
-every `PrismaClient`. That is a poor default for Netlify Functions: each warm
-function instance can keep its own pool open, and this app also has narrowly
-scoped ops/auth clients. For example, if a hosted database were capped at 15 concurrent
-connections, a few simultaneous function instances and several `new
-PrismaClient()` call sites could consume the whole allowance before the dashboard
-loads. **The 15-connection figure is illustrative, not a verified provider limit
-for this deployment.** Confirm the actual provider, endpoint/pooler mode, and
-connection allowance before sizing concurrency.
+every `PrismaClient`. That is a poor default for Workers: each isolate can keep
+its own pool open, and this app also has narrowly scoped ops/auth clients. For
+example, if a hosted database were capped at 15 concurrent connections, a few
+simultaneous isolates and several `new PrismaClient()` call sites could consume
+the whole allowance before the dashboard loads. **The 15-connection figure is
+illustrative, not a verified provider limit for this deployment.** Confirm the
+actual endpoint/pooler mode and connection allowance before sizing concurrency.
 
 The app now adds bounded Prisma URL parameters unless explicitly supplied:
 
-- Netlify / AWS Lambda / Vercel: app `connection_limit=1`; shared privileged
-  client `connection_limit=1`.
+- Edge/serverless runtimes (Cloudflare Workers): app `connection_limit=1`;
+  shared privileged client `connection_limit=1`.
 - Long-lived app server: app limit 3; shared privileged ops client limit 1.
 - `FGMP_DB_CONNECTION_LIMIT` and `FGMP_DB_POOL_TIMEOUT` override defaults; URL
   values always take precedence. The pg adapter exposes one
@@ -163,41 +181,114 @@ transaction-local RLS context before switching the connection mode.
 ignored when `NODE_ENV=production`, and `assertSimulationAllowed()` is the single
 gate. A deployment without field devices should look empty, not realistic.
 
-## 4. Render
+## 4. Cloudflare Workers — the production target
 
-`render.yaml` defines the web service and the IoT bridge. There is deliberately
-no realtime service: realtime is hosted by Apinator and browsers connect to it
-directly.
+The Worker runs the Next.js app and the API routes. The database is reached over
+TCP from the Worker; there is no server process to keep alive, so the old
+"long-running app" table applies only to Compose.
 
-1. Push the repository and create a Blueprint from `render.yaml`.
-2. Set the `sync: false` variables in the dashboard.
-3. Run the migration job once before the first deploy, and after every deploy
-   that adds a migration.
+### Build and deploy
 
-The blueprint declares a **job** service for this. It receives the separate
-`FGMP_MIGRATE_DATABASE_URL` and `FGMP_MIGRATE_ONLY=1`; the image entrypoint
-maps that URL to `DATABASE_URL` for Prisma and exits after migrations, without
-seeding or starting the web server. The web service sets `FGMP_SKIP_MIGRATE=1`
-and a service-level empty `FGMP_MIGRATE_DATABASE_URL` override so it runs only
-the app-role schema preflight and cannot inherit that credential from the
-shared `fgmp1` environment group. The API-only IoT bridge similarly clears
-`DATABASE_URL`, `FGMP_MIGRATE_DATABASE_URL`, `FGMP_OPS_DATABASE_URL`, and the
-legacy `FGPS_OPS_DATABASE_URL` rather than receiving unused database secrets.
+```bash
+bun install --frozen-lockfile
+bun run build        # opennextjs-cloudflare build → .open-next/worker.js + assets
+bun run deploy       # opennextjs-cloudflare deploy (build + wrangler deploy)
+```
 
-The live Render environment is not available in this assessment. Before relying
-on the manifest, verify the effective service variables and run the one-shot job
-in staging; confirm the app process sees no migration URL and the job exits
-without launching the web server. Do not route ordinary application queries
-through the migration URL.
+`bun run build` is `opennextjs-cloudflare build` — the same command Cloudflare
+Workers Builds runs. It generates Prisma Client, runs the Next.js build, and
+emits the Worker bundle. The Docker path uses `bun run build:standalone`
+instead; nothing else needs to change for either.
 
-If you prefer a Render Shell, `bun run db:deploy` works there only when that
-process is explicitly given the migration URL as `DATABASE_URL`. Keep the URL
-out of the web service and never fall back to it when app access fails.
+`wrangler.jsonc` is the manifest and is deliberately explicit:
 
-`healthCheckPath` is `/api/health/ready` — unauthenticated, and it fails until
-the database is reachable and the migrations are applied. Do **not** point it at
-`/api/fgmp/health`: that route is ADMIN-only by design (process and database
-internals) and would 401, marking a healthy service down.
+| Key | Value | Why it is set |
+|---|---|---|
+| `name` | `fgmp1` | the Worker name; `WORKER_SELF_REFERENCE` must match it |
+| `main` | `.open-next/worker.js` | OpenNext output |
+| `compatibility_flags` | `nodejs_compat` | Prisma's `pg` adapter needs Node built-ins |
+| `assets.binding` | `ASSETS` | serves `.open-next/assets` |
+| `services` | `WORKER_SELF_REFERENCE` → `fgmp1` | self-referencing service binding |
+| `keep_vars` | `true` | runtime variables live in the dashboard, not in Wrangler |
+
+Secrets are **encrypted Worker secrets**, never `vars` and never committed:
+
+```bash
+bunx wrangler secret put DATABASE_URL       # fgmp_app role, RLS enforced
+bunx wrangler secret put NEXTAUTH_SECRET
+bunx wrangler secret put NEXTAUTH_URL
+bunx wrangler secret put APINATOR_APP_ID   # and the other APINATOR_* values
+```
+
+`NEXT_PUBLIC_*` values are inlined at **build** time. Changing
+`NEXT_PUBLIC_APINATOR_APP_KEY` or `NEXT_PUBLIC_APINATOR_CLUSTER` requires a
+rebuild — setting them at runtime produces a bundle with an empty key and
+realtime silently disabled.
+
+### Migrations and seeding are not Worker work
+
+The Worker must never receive the schema-owner credential and never runs DDL. Run
+the two one-shot jobs from an operator machine that can reach the database:
+
+```bash
+# as the owner role
+DATABASE_URL="$FGMP_MIGRATE_DATABASE_URL" bunx prisma migrate deploy
+
+# idempotent demo topology / first tenant, also as owner
+FGMP_MIGRATE_DATABASE_URL="$FGMP_MIGRATE_DATABASE_URL" bun run db:seed
+
+# first administrator (idempotent; never deletes a user)
+ADMIN_EMAIL=ops@example.ye ADMIN_PASSWORD='…' bun run seed:admin
+```
+
+`migrate deploy` applies exactly the committed migrations in order and is a no-op
+when they are current. Do **not** use `prisma db push`: it reconciles the live
+schema without recording anything, so environments drift from the migration
+history and two deployments then disagree for reasons nobody can reconstruct.
+
+Apply migrations **before** deploying the Worker. Two Worker versions that expect
+different schemas against one database is the failure this ordering prevents.
+
+### Connections: the Worker is a connection consumer
+
+Prisma uses the `@prisma/adapter-pg` driver (`engineType = "client"`), because
+the native Rust query engine cannot load in `workerd`. The adapter caps each pool
+at one connection and Worker connections are retired after one checkout, which
+keeps stale sockets from accumulating between requests. That is a **per-instance**
+cap, not a global one: the deployment's aggregate Worker concurrency is what the
+database actually sees.
+
+The configured endpoint must accept TCP/TLS from Cloudflare. The project's
+hosted PostgreSQL is reached through the provider's pooler; if the endpoint is
+not directly reachable, put Cloudflare **Hyperdrive** in front of it — but only
+after confirming that the pooler supports the transaction-local RLS context
+(`SET LOCAL` on the tenant settings) the app relies on. A pooler that resets
+session state between statements breaks tenant isolation in a way that looks like
+missing data.
+
+### First-deploy checklist (what to confirm, not assume)
+
+1. `bunx wrangler deploy` succeeds and the Worker answers `/api/health/ready`
+   (unauthenticated; it fails until the database is reachable and migrations are
+   applied). Do **not** point a health check at `/api/fgmp/health` — that route is
+   ADMIN-only by design and would 401, marking a healthy Worker down.
+2. Sign-in works end to end. The email→user lookup is the one read that cannot be
+   tenant-scoped, so it needs `FGMP_OPS_DATABASE_URL`; without it every login is
+   a 401 that looks like a wrong password. The server refuses to start in
+   production without it rather than serving an app nobody can sign in to.
+3. `FGMP_REQUIRE_RLS=1` is set and the startup preflight accepts `DATABASE_URL`
+   as `fgmp_app`. If it does not, the Worker exits instead of serving unscoped
+   queries.
+4. Realtime connects (browser → Apinator) and pauses when "Pause live" is used.
+5. Logs: `observability` is configured (`issues` on, request logs off to stay
+   inside the free tier). Turn `logs.enabled` on temporarily while debugging, and
+   never log a connection string, cookie or token.
+
+### Rollback
+
+`bunx wrangler rollback` returns to the previous Worker version. Migrations are
+forward-only, so a rollback that needs a down-migration is a manual SQL exercise,
+planned before the deploy.
 
 ## 5. Backups
 
@@ -262,43 +353,11 @@ gets slow.
 
 ## 6. Upgrades and rollbacks
 
-* **Application rollback** is a redeploy of the previous image. Migrations are
-  forward-only; a rollback that would need a down-migration is a manual SQL
-  exercise, planned before the deploy.
+* **Application rollback** on Cloudflare is `bunx wrangler rollback` (previous
+  Worker version); on Compose it is a redeploy of the previous image. Migrations
+  are forward-only either way — a rollback that would need a down-migration is a
+  manual SQL exercise, planned before the deploy.
 * **Never** run two app versions that expect different schemas against one
   database. Apply migrations first, then roll the app.
 * The IoT bridge (`mini-services/iot-bridge`) is stateless; restart it freely.
   It retries ingest on the next interval.
-
-## 7. Cloudflare Workers (OpenNext) — optional, not runtime-verified
-
-The repository has a Cloudflare build path, but this assessment did not establish
-that production runs on Workers. The locked Next.js/OpenNext versions do not
-currently establish a supported combination, and `wrangler.jsonc` has no
-Hyperdrive binding. Do not treat the instructions below as evidence of a working
-or active Cloudflare deployment; verify the platform and compatibility before
-using them.
-
-The Cloudflare build uses the tracked `wrangler.jsonc` and `open-next.config.ts`;
-this avoids Wrangler's automatic migration deriving a self-reference service
-name from the package name. The Worker name and `WORKER_SELF_REFERENCE` service
-must both remain `fgmp1`.
-
-For Cloudflare Workers Builds, use build command `bun run build` and deploy
-command `npx wrangler deploy`. The build generates Prisma Client, runs the
-Next.js build, and emits the OpenNext Worker bundle. The Docker/Render path uses
-`bun run build:standalone` directly.
-
-`wrangler.jsonc` sets `keep_vars: true` because runtime variables are managed in
-the Cloudflare dashboard. Store credentials as encrypted Worker Secrets, not
-plain-text `vars`; never commit `.dev.vars` or copy production secrets into build
-logs. If credentials have appeared in deployment logs, rotate them immediately.
-
-Prisma uses the JavaScript `@prisma/adapter-pg` driver (`engineType = "client"`)
-instead of the native Rust query engine, which Cloudflare Workers cannot load.
-The adapter caps each pool at one connection; Worker connections are retired
-after one checkout. This preserves the tenant transaction/RLS setup while
-avoiding stale pooled sockets between requests. Keep `nodejs_compat` enabled.
-The configured PostgreSQL endpoint must accept TCP/TLS from Cloudflare; use a
-Cloudflare Hyperdrive binding or the database provider's Worker-compatible
-adapter if the endpoint is not directly reachable over PostgreSQL TCP.

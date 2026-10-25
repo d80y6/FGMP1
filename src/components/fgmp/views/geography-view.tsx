@@ -8,7 +8,7 @@ import {
   ShieldAlert, Building2, Layers,
 } from "lucide-react";
 import { useFgmp } from "@/lib/fgmp/store";
-import { useApi, apiPost, apiPatch } from "@/lib/fgmp/use-api";
+import { useApi, apiPost, apiPatch, apiDelete } from "@/lib/fgmp/use-api";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { StatusBadge } from "@/components/fgmp/status-badge";
@@ -29,7 +29,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { useT, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { useT, useTF, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 import { cn } from "@/lib/utils";
 
@@ -67,6 +67,8 @@ interface DeleteTarget {
   kind: EntityKind;
   id: string;
   name: string;
+  /** How many sites hang off this entity. The delete guard reads THIS. */
+  siteCount: number;
   countLabel: string;
 }
 
@@ -150,10 +152,8 @@ export function GeographyView() {
       <div className="mx-auto max-w-2xl py-10">
         <Alert variant="destructive">
           <ShieldAlert className="h-4 w-4" />
-          <AlertTitle>Access denied</AlertTitle>
-          <AlertDescription>
-            Only administrators can manage the geographic hierarchy. Contact your platform administrator if you need access.
-          </AlertDescription>
+          <AlertTitle>{t("common.accessDenied")}</AlertTitle>
+          <AlertDescription>{t("geography.adminOnly")}</AlertDescription>
         </Alert>
       </div>
     );
@@ -170,17 +170,17 @@ export function GeographyView() {
 
       {/* KPI strip */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KpiCard label="Regions" value={formatNumber(stats.regions, numLang)} icon={<Globe2 className="h-4 w-4" />} />
-        <KpiCard label="Governorates" value={formatNumber(stats.governorates, numLang)} icon={<Map className="h-4 w-4" />} tone="good" />
-        <KpiCard label="Districts" value={formatNumber(stats.districts, numLang)} icon={<MapPin className="h-4 w-4" />} tone="warn" />
-        <KpiCard label="Sites" value={formatNumber(stats.sites, numLang)} icon={<Building2 className="h-4 w-4" />} tone="info" />
+        <KpiCard label={t("geography.regionsTitle")} value={formatNumber(stats.regions, numLang)} icon={<Globe2 className="h-4 w-4" />} />
+        <KpiCard label={t("geography.governoratesTitle")} value={formatNumber(stats.governorates, numLang)} icon={<Map className="h-4 w-4" />} tone="good" />
+        <KpiCard label={t("geography.districtsTitle")} value={formatNumber(stats.districts, numLang)} icon={<MapPin className="h-4 w-4" />} tone="warn" />
+        <KpiCard label={t("kpi.sites")} value={formatNumber(stats.sites, numLang)} icon={<Building2 className="h-4 w-4" />} tone="info" />
       </div>
 
       {/* Drill-down — 3 columns on md+ */}
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         {/* Column 1 — Regions */}
         <ColumnShell
-          title="Regions"
+          title={t("geography.regionsTitle")}
           count={stats.regions}
           icon={<Globe2 className="h-4 w-4" />}
           onAdd={isAdmin ? () => setRegionCreateOpen(true) : undefined}
@@ -202,6 +202,7 @@ export function GeographyView() {
                   kind: "region",
                   id: r.id,
                   name: r.name,
+                  siteCount: r._count.sites,
                   countLabel: `${r._count.governorates} governorates · ${r._count.sites} sites`,
                 })
               }
@@ -209,13 +210,13 @@ export function GeographyView() {
             />
           ))}
           {(regions ?? []).length === 0 && !loading && (
-            <EmptyColumn text="No regions yet. Click + to create one." />
+            <EmptyColumn text={t("geography.noRegions")} />
           )}
         </ColumnShell>
 
         {/* Column 2 — Governorates */}
         <ColumnShell
-          title="Governorates"
+          title={t("geography.governoratesTitle")}
           count={selectedRegion?.governorates.length ?? 0}
           icon={<Map className="h-4 w-4" />}
           onAdd={isAdmin && selectedRegion ? () => setGovCreateOpen(true) : undefined}
@@ -225,7 +226,7 @@ export function GeographyView() {
         >
           {selectedRegion ? (
             selectedRegion.governorates.length === 0 ? (
-              <EmptyColumn text="No governorates in this region yet." />
+              <EmptyColumn text={t("geography.noGovernorates")} />
             ) : (
               selectedRegion.governorates.map((g) => (
                 <ListItem
@@ -242,6 +243,7 @@ export function GeographyView() {
                       kind: "governorate",
                       id: g.id,
                       name: g.name,
+                      siteCount: g._count.sites,
                       countLabel: `${g.districts.length} districts · ${g._count.sites} sites`,
                     })
                   }
@@ -250,13 +252,13 @@ export function GeographyView() {
               ))
             )
           ) : (
-            <EmptyColumn text="Select a region to see its governorates." />
+            <EmptyColumn text={t("geography.selectRegion")} />
           )}
         </ColumnShell>
 
         {/* Column 3 — Districts */}
         <ColumnShell
-          title="Districts"
+          title={t("geography.districtsTitle")}
           count={selectedGov?.districts.length ?? 0}
           icon={<MapPin className="h-4 w-4" />}
           onAdd={isAdmin && selectedGov ? () => setDistrictCreateOpen(true) : undefined}
@@ -266,7 +268,7 @@ export function GeographyView() {
         >
           {selectedGov ? (
             selectedGov.districts.length === 0 ? (
-              <EmptyColumn text="No districts in this governorate yet." />
+              <EmptyColumn text={t("geography.noDistricts")} />
             ) : (
               selectedGov.districts.map((d) => (
                 <ListItem
@@ -283,6 +285,7 @@ export function GeographyView() {
                       kind: "district",
                       id: d.id,
                       name: d.name,
+                      siteCount: d._count.sites,
                       countLabel: `${d._count.sites} sites`,
                     })
                   }
@@ -291,7 +294,7 @@ export function GeographyView() {
               ))
             )
           ) : (
-            <EmptyColumn text="Select a governorate to see its districts." />
+            <EmptyColumn text={t("geography.selectGovernorate")} />
           )}
         </ColumnShell>
       </div>
@@ -315,9 +318,7 @@ export function GeographyView() {
         <CardContent className="p-0">
           {selectedDistrict ? (
             districtSites.length === 0 ? (
-              <div className="py-10 text-center text-sm text-muted-foreground">
-                No sites in this district yet.
-              </div>
+              <div className="py-10 text-center text-sm text-muted-foreground">{t("geography.noSitesDistrict")}</div>
             ) : (
               <ScrollArea className="max-h-[420px]">
                 <Table>
@@ -356,9 +357,7 @@ export function GeographyView() {
               </ScrollArea>
             )
           ) : (
-            <div className="py-10 text-center text-sm text-muted-foreground">
-              Select a district above to see its sites.
-            </div>
+            <div className="py-10 text-center text-sm text-muted-foreground">{t("geography.selectDistrict")}</div>
           )}
         </CardContent>
       </Card>
@@ -367,10 +366,10 @@ export function GeographyView() {
       <NameDialog
         open={regionCreateOpen}
         onOpenChange={setRegionCreateOpen}
-        title="Add Region"
-        description="Create a new region under your tenant."
+        title={t("geography.addRegion")}
+        description={t("geography.addRegionDesc")}
         initialName=""
-        submitLabel="Create Region"
+        submitLabel={t("geography.createRegion")}
         onSubmit={async (name) => {
           const res = await apiPost("/api/fgmp/geography/regions", { name });
           if (res.ok) {
@@ -386,7 +385,7 @@ export function GeographyView() {
       <NameDialog
         open={!!regionEditTarget}
         onOpenChange={(o) => !o && setRegionEditTarget(null)}
-        title="Edit Region"
+        title={t("geography.editRegion")}
         description={regionEditTarget?.name ?? ""}
         initialName={regionEditTarget?.name ?? ""}
         submitLabel={t("common.save")}
@@ -408,10 +407,10 @@ export function GeographyView() {
       <NameDialog
         open={govCreateOpen}
         onOpenChange={setGovCreateOpen}
-        title="Add Governorate"
+        title={t("geography.addGovernorate")}
         description={`Under region: ${selectedRegion?.name ?? ""}`}
         initialName=""
-        submitLabel="Create Governorate"
+        submitLabel={t("geography.createGovernorate")}
         onSubmit={async (name) => {
           if (!selectedRegion) return false;
           const res = await apiPost("/api/fgmp/geography/governorates", {
@@ -431,7 +430,7 @@ export function GeographyView() {
       <NameDialog
         open={!!govEditTarget}
         onOpenChange={(o) => !o && setGovEditTarget(null)}
-        title="Edit Governorate"
+        title={t("geography.editGovernorate")}
         description={govEditTarget?.name ?? ""}
         initialName={govEditTarget?.name ?? ""}
         submitLabel={t("common.save")}
@@ -453,10 +452,10 @@ export function GeographyView() {
       <NameDialog
         open={districtCreateOpen}
         onOpenChange={setDistrictCreateOpen}
-        title="Add District"
+        title={t("geography.addDistrict")}
         description={`Under governorate: ${selectedGov?.name ?? ""}`}
         initialName=""
-        submitLabel="Create District"
+        submitLabel={t("geography.createDistrict")}
         onSubmit={async (name) => {
           if (!selectedGov) return false;
           const res = await apiPost("/api/fgmp/geography/districts", {
@@ -476,7 +475,7 @@ export function GeographyView() {
       <NameDialog
         open={!!districtEditTarget}
         onOpenChange={(o) => !o && setDistrictEditTarget(null)}
-        title="Edit District"
+        title={t("geography.editDistrict")}
         description={districtEditTarget?.name ?? ""}
         initialName={districtEditTarget?.name ?? ""}
         submitLabel={t("common.save")}
@@ -578,31 +577,41 @@ function ListItem({
   dir: "rtl" | "ltr";
 }) {
   void dir;
+  // Module-scope component: the translate hook has to be called here, not
+  // inherited from the view that renders it.
+  const t = useT();
   return (
+    // The row used to BE a button (role="button" + tabIndex + synthetic
+    // Enter/Space), with the Edit and Delete buttons nested inside it. A button
+    // inside a button is not one control with extra affordances: it is invalid
+    // and axe reports nested-interactive (serious) once per row — a screen
+    // reader announces a button that contains buttons, and Enter on a focused
+    // Delete fires both handlers. Now the row is a plain container, the name is
+    // a real <button>, and the actions are its siblings.
     <div
-      role="button"
-      tabIndex={0}
-      onClick={onClick}
-      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } }}
       className={cn(
-        "group flex items-center justify-between rounded-md border px-2.5 py-2 text-sm transition-all cursor-pointer",
+        "group flex items-center justify-between rounded-md border transition-all",
         "hover:border-emerald-500/40 hover:bg-emerald-500/5",
         active ? "border-emerald-500/60 bg-emerald-500/10" : "border-transparent",
       )}
     >
-      <div className="min-w-0 flex-1">
-        <div className="truncate font-medium">{title}</div>
-        <div className="text-[10px] text-muted-foreground">{meta}</div>
-      </div>
+      <button
+        type="button"
+        onClick={onClick}
+        className="min-w-0 flex-1 cursor-pointer rounded-sm px-2.5 py-2 text-start focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      >
+        <span className="block truncate text-sm font-medium">{title}</span>
+        <span className="block text-[10px] text-muted-foreground">{meta}</span>
+      </button>
       {(canEdit || canDelete) && (
-        <div className="flex items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+        <div className="flex items-center gap-0.5 pr-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
           {canEdit && onEdit && (
             <Button
               size="icon"
               variant="ghost"
               className="h-6 w-6"
-              onClick={(e) => { e.stopPropagation(); onEdit(); }}
-              aria-label="Edit"
+              onClick={onEdit}
+              aria-label={t("common.edit")}
             >
               <Pencil className="h-3 w-3" />
             </Button>
@@ -611,9 +620,9 @@ function ListItem({
             <Button
               size="icon"
               variant="ghost"
-              className="h-6 w-6 text-rose-500 hover:text-rose-600 hover:bg-rose-500/10"
-              onClick={(e) => { e.stopPropagation(); onDelete(); }}
-              aria-label="Delete"
+              className="h-6 w-6 text-rose-500 hover:text-rose-700 dark:hover:text-rose-400 hover:bg-rose-500/10"
+              onClick={onDelete}
+              aria-label={t("common.delete")}
             >
               <Trash2 className="h-3 w-3" />
             </Button>
@@ -646,6 +655,7 @@ function NameDialog({
   submitLabel: string;
   onSubmit: (name: string) => Promise<boolean>;
 }) {
+  const t = useT();
   const [submitting, setSubmitting] = useState(false);
   const [name, setName] = useState(initialName);
 
@@ -655,7 +665,7 @@ function NameDialog({
 
   const handleSubmit = async () => {
     if (!name.trim()) {
-      toast.error("Name is required");
+      toast.error(t("common.nameRequired"));
       return;
     }
     setSubmitting(true);
@@ -679,7 +689,7 @@ function NameDialog({
             value={name}
             onChange={(e) => setName(e.target.value)}
             className="h-9"
-            placeholder="Name"
+            placeholder={t("common.name")}
             autoFocus
             onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void handleSubmit(); } }}
           />
@@ -704,6 +714,8 @@ function DeleteEntityDialog({
   onOpenChange: (o: boolean) => void;
   onDeleted: () => void;
 }) {
+  const t = useT();
+  const tFmt = useTF();
   const [deleting, setDeleting] = useState(false);
 
   const endpoint = target
@@ -718,20 +730,26 @@ function DeleteEntityDialog({
     if (!target) return;
     setDeleting(true);
     try {
-      const res = await fetch(endpoint, { method: "DELETE", credentials: "include" });
+      // `apiDelete`, not a raw fetch: it parses the JSON body and returns the
+      // server's reason, which the old code re-implemented by hand.
+      const res = await apiDelete(endpoint);
       if (res.ok) {
-        toast.success(`${target.kind.charAt(0).toUpperCase() + target.kind.slice(1)} deleted`);
+        toast.success(tFmt("geography.deletedToast", { kind: t(`geo.${target.kind}`) }));
         onDeleted();
       } else {
-        const json = await res.json().catch(() => ({}));
-        toast.error((json as { error?: string }).error ?? "Delete failed");
+        toast.error(t("geography.deleteFailed"), { description: res.error });
       }
     } finally {
       setDeleting(false);
     }
   };
 
-  const hasSites = target?.countLabel.includes("sites") && !target.countLabel.includes("0 sites");
+  // D-16. This used to read `countLabel.includes("sites") && !countLabel.includes("0 sites")`.
+  // "10 sites" contains "0 sites", so a governorate with 10 sites was treated as
+  // EMPTY: the warning was hidden and the delete button — disabled only when
+  // `hasSites` — was enabled, cascade-deleting all ten. It also broke the moment
+  // the label was translated. A count is a number; compare it as one.
+  const hasSites = (target?.siteCount ?? 0) > 0;
 
   return (
     <AlertDialog open={!!target} onOpenChange={onOpenChange}>
@@ -739,38 +757,37 @@ function DeleteEntityDialog({
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
             <Trash2 className="h-4 w-4 text-rose-500" />
-            Delete {target?.kind}
+            {target ? tFmt("geography.deleteTitle", { kind: t(`geo.${target.kind}`) }) : ""}
           </AlertDialogTitle>
           <AlertDialogDescription>
-            You are about to permanently delete{" "}
-            <span className="font-medium text-foreground">{target?.name}</span>.
+            {tFmt("geography.deleteBody", { name: target?.name ?? "" })}
             <br />
             <span className="text-[11px]">{target?.countLabel}</span>
             {hasSites ? (
               <>
                 <br /><br />
-                <span className="text-rose-600 dark:text-rose-400 font-medium">
-                  This {target?.kind} still has sites. Remove or reassign them first.
+                <span className="text-rose-700 dark:text-rose-400 font-medium">
+                  {target ? tFmt("geography.stillHasSites", { kind: t(`geo.${target.kind}`), n: target.siteCount }) : ""}
                 </span>
               </>
             ) : (
               <>
                 <br />
-                {target?.kind === "region" && "All governorates and districts under this region will be cascade-deleted."}
-                {target?.kind === "governorate" && "All districts under this governorate will be cascade-deleted."}
-                {target?.kind === "district" && "This action cannot be undone."}
+                {target?.kind === "region" && t("geography.cascadeRegion")}
+                {target?.kind === "governorate" && t("geography.cascadeGovernorate")}
+                {target?.kind === "district" && t("tenants.cannotUndo")}
               </>
             )}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+          <AlertDialogCancel disabled={deleting}>{t("common.cancel")}</AlertDialogCancel>
           <AlertDialogAction
             onClick={(e) => { e.preventDefault(); void onConfirm(); }}
             disabled={deleting || hasSites}
             className="bg-rose-500 hover:bg-rose-600 text-white"
           >
-            {deleting ? "…" : "Delete"}
+            {deleting ? "…" : t("common.delete")}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

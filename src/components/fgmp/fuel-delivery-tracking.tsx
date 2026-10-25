@@ -23,6 +23,7 @@ import { useApi } from "@/lib/fgmp/use-api";
 import { useFgmp } from "@/lib/fgmp/store";
 import { useNow } from "@/lib/fgmp/use-now";
 import { timeAgo, fmtLitres } from "@/lib/fgmp/format";
+import { useT, useTF } from "@/lib/fgmp/use-language";
 
 /**
  * Fuel Delivery Tracking
@@ -75,11 +76,14 @@ function toUiStatus(raw: string): UiStatus {
   return "DELIVERED"; // DELIVERED + anything else
 }
 
-const STATUS_META: Record<UiStatus, { label: string; tone: string; icon: typeof Truck }> = {
-  SCHEDULED: { label: "Scheduled", tone: "sky", icon: Clock },
-  DISPATCHED: { label: "Dispatched", tone: "amber", icon: Truck },
-  DELIVERED: { label: "Delivered", tone: "emerald", icon: CheckCircle2 },
-  VERIFIED: { label: "Verified", tone: "violet", icon: Package },
+// Labels are dictionary KEYS, not text: this table lives at module scope where
+// the translate hook cannot be called, and the panel is rendered in Arabic as
+// often as in English.
+const STATUS_META: Record<UiStatus, { labelKey: string; tone: string; icon: typeof Truck }> = {
+  SCHEDULED: { labelKey: "deliveries.statusScheduled", tone: "sky", icon: Clock },
+  DISPATCHED: { labelKey: "deliveries.statusDispatched", tone: "amber", icon: Truck },
+  DELIVERED: { labelKey: "deliveries.statusDelivered", tone: "emerald", icon: CheckCircle2 },
+  VERIFIED: { labelKey: "deliveries.statusVerified", tone: "violet", icon: Package },
 };
 
 const TONE_TILE: Record<string, string> = {
@@ -91,10 +95,10 @@ const TONE_TILE: Record<string, string> = {
 };
 
 const TONE_BADGE: Record<string, string> = {
-  sky: "bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/30",
-  amber: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30",
-  emerald: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30",
-  violet: "bg-violet-500/15 text-violet-600 dark:text-violet-400 border-violet-500/30",
+  sky: "bg-sky-500/15 text-sky-700 dark:text-sky-400 border-sky-500/30",
+  amber: "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30",
+  emerald: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30",
+  violet: "bg-violet-500/15 text-violet-700 dark:text-violet-400 border-violet-500/30",
 };
 
 const TONE_DOT: Record<string, string> = {
@@ -139,6 +143,8 @@ function parseDate(ts: string | null | undefined): Date | null {
 }
 
 export function FuelDeliveryTracking() {
+  const t = useT();
+  const tFmt = useTF();
   const { data: deliveries, loading } = useApi<Delivery[]>("/api/fgmp/deliveries", { interval: 10000 });
   const snapshot = useFgmp((s) => s.snapshot);
   const [completionsOpen, setCompletionsOpen] = useState(true);
@@ -242,12 +248,12 @@ export function FuelDeliveryTracking() {
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-sm">
           <Truck className="h-4 w-4 text-sky-500" />
-          Fuel Delivery Tracking
+          {t("deliveries.title")}
           {loading && deliveries === null ? (
             <span className="ml-1 text-[10px] font-normal text-muted-foreground">loading…</span>
           ) : (
             <span className="ml-1 text-[10px] font-normal text-muted-foreground">
-              {pipeline.total.count} total · live (10s)
+              {tFmt("deliveries.totalLive", { n: pipeline.total.count })}
             </span>
           )}
         </CardTitle>
@@ -270,7 +276,7 @@ export function FuelDeliveryTracking() {
               >
                 <div className="flex items-center gap-1.5">
                   <Icon className="h-3 w-3 opacity-80" />
-                  <span className="text-[10px] font-semibold uppercase tracking-wide">{meta.label}</span>
+                  <span className="text-[10px] font-semibold uppercase tracking-wide">{t(meta.labelKey)}</span>
                 </div>
                 <div className="mt-1 flex items-baseline gap-1.5">
                   <span className="text-lg font-bold tabular-nums leading-none">{b.count}</span>
@@ -296,15 +302,15 @@ export function FuelDeliveryTracking() {
         <div>
           <div className="mb-2 flex items-center justify-between">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Active Deliveries
+              {t("deliveries.active")}
             </h3>
-            <Badge variant="outline" className="h-5 px-2 text-[10px]">{active.length} in transit</Badge>
+            <Badge variant="outline" className="h-5 px-2 text-[10px]">{tFmt("deliveries.inTransit", { n: active.length })}</Badge>
           </div>
           {active.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed bg-muted/20 py-10 text-center">
               <Truck className="h-7 w-7 text-muted-foreground/60" />
-              <p className="text-xs font-medium text-muted-foreground">No active deliveries</p>
-              <p className="text-[10px] text-muted-foreground/80">All scheduled fuel is either delivered or awaiting dispatch.</p>
+              <p className="text-xs font-medium text-muted-foreground">{t("deliveries.noneActive")}</p>
+              <p className="text-[10px] text-muted-foreground/80">{t("deliveries.noneActiveHint")}</p>
             </div>
           ) : (
             <div className="space-y-2">
@@ -324,15 +330,15 @@ export function FuelDeliveryTracking() {
           >
             <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {completionsOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-              Recent Completions
+              {t("deliveries.recentCompletions")}
             </h3>
-            <Badge variant="outline" className="h-5 px-2 text-[10px]">{completions.length} recent</Badge>
+            <Badge variant="outline" className="h-5 px-2 text-[10px]">{tFmt("deliveries.recentCount", { n: completions.length })}</Badge>
           </button>
           {completionsOpen && (
             completions.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed bg-muted/20 py-8 text-center">
                 <CheckCircle2 className="h-6 w-6 text-muted-foreground/60" />
-                <p className="text-xs text-muted-foreground">No completed deliveries yet</p>
+                <p className="text-xs text-muted-foreground">{t("deliveries.noneCompleted")}</p>
               </div>
             ) : (
               <div className="space-y-1.5">
@@ -358,7 +364,7 @@ export function FuelDeliveryTracking() {
                             "rounded-full border px-2 py-0.5 text-[10px] font-semibold",
                             TONE_BADGE[STATUS_META[d.uiStatus].tone]
                           )}>
-                            {STATUS_META[d.uiStatus].label}
+                            {t(STATUS_META[d.uiStatus].labelKey)}
                           </span>
                         </div>
                         <div className="mt-0.5 flex items-center gap-2 text-[10px] text-muted-foreground">
@@ -383,8 +389,8 @@ export function FuelDeliveryTracking() {
                         </div>
                       </div>
                       {isShort && (
-                        <span className="shrink-0 text-rose-600 text-[10px] font-medium">
-                          Short by {fmtLitres(shortBy)}
+                        <span className="shrink-0 text-rose-700 dark:text-rose-400 text-[10px] font-medium">
+                          {tFmt("deliveries.shortBy", { n: fmtLitres(shortBy) })}
                         </span>
                       )}
                     </div>
@@ -399,9 +405,7 @@ export function FuelDeliveryTracking() {
         <div>
           <div className="mb-2 flex items-center justify-between">
             <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              <Calendar className="h-3.5 w-3.5" />
-              Last 7 Days Delivery Volume
-            </h3>
+              <Calendar className="h-3.5 w-3.5" />{t("deliveries.last7Days")}</h3>
             <Badge variant="outline" className="h-5 px-2 text-[10px]">
               {fmtLitres(daily.reduce((a, d) => a + d.litres, 0))} total
             </Badge>
@@ -444,6 +448,8 @@ export function FuelDeliveryTracking() {
 
 /** Active delivery card with progress + ETA. */
 function ActiveDeliveryCard({ d }: { d: Delivery & { uiStatus: UiStatus; region: string } }) {
+  const t = useT();
+  const tFmt = useTF();
   const now = useNow();
   const scheduledAt = parseDate(d.scheduledAt);
   const dispatchedAt = parseDate(d.dispatchedAt);
@@ -456,9 +462,9 @@ function ActiveDeliveryCard({ d }: { d: Delivery & { uiStatus: UiStatus; region:
   if (eta) {
     const diffMin = Math.round((eta.getTime() - now) / 60000);
     if (diffMin >= 0) {
-      etaLabel = `ETA: ${fmtTime(eta)} (in ${fmtMins(diffMin)})`;
+      etaLabel = tFmt("deliveries.etaIn", { time: fmtTime(eta), mins: fmtMins(diffMin) });
     } else {
-      etaLabel = `Overdue by ${fmtMins(-diffMin)}`;
+      etaLabel = tFmt("deliveries.etaOverdue", { mins: fmtMins(-diffMin) });
       etaOverdue = true;
     }
   }
@@ -467,16 +473,16 @@ function ActiveDeliveryCard({ d }: { d: Delivery & { uiStatus: UiStatus; region:
   let progressLabel = "";
   if (isDispatched && dispatchedAt) {
     const elapsedMin = Math.max(0, Math.round((now - dispatchedAt.getTime()) / 60000));
-    progressLabel = `In transit · ${fmtMins(elapsedMin)} elapsed`;
+    progressLabel = tFmt("deliveries.inTransitElapsed", { mins: fmtMins(elapsedMin) });
   } else if (scheduledAt) {
     const diffMin = Math.round((scheduledAt.getTime() - now) / 60000);
     if (diffMin >= 0) {
-      progressLabel = `Awaiting dispatch · in ${fmtMins(diffMin)}`;
+      progressLabel = tFmt("deliveries.awaitingIn", { mins: fmtMins(diffMin) });
     } else {
-      progressLabel = `Awaiting dispatch · ${fmtMins(-diffMin)} overdue`;
+      progressLabel = tFmt("deliveries.awaitingOverdue", { mins: fmtMins(-diffMin) });
     }
   } else {
-    progressLabel = "Awaiting dispatch";
+    progressLabel = t("deliveries.awaitingDispatch");
   }
 
   // Progress % (mock): SCHEDULED=10%, DISPATCHED=40% (or scaled by elapsed vs ETA)
@@ -498,12 +504,12 @@ function ActiveDeliveryCard({ d }: { d: Delivery & { uiStatus: UiStatus; region:
                 {d.vehiclePlate}
               </span>
             ) : (
-              <span className="text-[11px] text-muted-foreground">No plate</span>
+              <span className="text-[11px] text-muted-foreground">{t("deliveries.noPlate")}</span>
             )}
           </div>
           <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
             <User className="h-2.5 w-2.5" />
-            <span className="truncate">{d.driverName ?? "Unassigned"}</span>
+            <span className="truncate">{d.driverName ?? t("deliveries.unassigned")}</span>
           </div>
         </div>
 
@@ -552,14 +558,14 @@ function ActiveDeliveryCard({ d }: { d: Delivery & { uiStatus: UiStatus; region:
             "rounded-full border px-2 py-0.5 text-[10px] font-semibold",
             TONE_BADGE[meta.tone]
           )}>
-            {meta.label}
+            {t(meta.labelKey)}
           </span>
           {etaLabel && (
             <span className={cn(
               "rounded-md border px-2 py-0.5 text-[11px] inline-flex items-center gap-1",
               etaOverdue
-                ? "bg-rose-500/10 border-rose-500/30 text-rose-600 dark:text-rose-400"
-                : "bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400"
+                ? "bg-rose-500/10 border-rose-500/30 text-rose-700 dark:text-rose-400"
+                : "bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-400"
             )}>
               {etaOverdue ? <AlertTriangle className="h-2.5 w-2.5" /> : <Clock className="h-2.5 w-2.5" />}
               {etaLabel}

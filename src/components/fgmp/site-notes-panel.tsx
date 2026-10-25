@@ -180,7 +180,7 @@ export function SiteNotesPanel({
             placeholder={`${t("notes.placeholder")} ${siteName}…`}
             className={cn(
               "min-h-[72px] resize-y text-sm leading-relaxed",
-              "placeholder:text-muted-foreground/70",
+              "placeholder:text-muted-foreground",
               "transition-[color,box-shadow] duration-150",
               "focus-visible:ring-2 focus-visible:ring-emerald-500/30",
               "focus-visible:border-emerald-500/50",
@@ -282,7 +282,7 @@ export function SiteNotesPanel({
                     {timeAgo(note.updatedAt)}
                   </span>
                   {note.pinned && (
-                    <span className="ml-auto rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">
+                    <span className="ml-auto rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-400">
                       {t("notes.pinned")}
                     </span>
                   )}
@@ -302,7 +302,7 @@ export function SiteNotesPanel({
                           type="button"
                           variant="ghost"
                           size="sm"
-                          className="h-7 px-2 text-[11px] text-muted-foreground hover:text-amber-600"
+                          className="h-7 px-2 text-[11px] text-muted-foreground hover:text-amber-700 dark:hover:text-amber-400"
                           onClick={() => handleTogglePin(note.id, note.pinned)}
                         >
                           {note.pinned ? (
@@ -328,7 +328,7 @@ export function SiteNotesPanel({
                           type="button"
                           variant="ghost"
                           size="sm"
-                          className="h-7 px-2 text-[11px] text-muted-foreground hover:text-sky-600"
+                          className="h-7 px-2 text-[11px] text-muted-foreground hover:text-sky-700 dark:hover:text-sky-400"
                           onClick={() => handleEdit(note.id, note.text)}
                           disabled={editingId === note.id}
                         >
@@ -344,7 +344,7 @@ export function SiteNotesPanel({
                           type="button"
                           variant="ghost"
                           size="sm"
-                          className="h-7 px-2 text-[11px] text-muted-foreground hover:bg-rose-500/10 hover:text-rose-600"
+                          className="h-7 px-2 text-[11px] text-muted-foreground hover:bg-rose-500/10 hover:text-rose-700 dark:hover:text-rose-400"
                           onClick={() => handleDelete(note.id)}
                         >
                           <Trash2 className="mr-1 h-3 w-3" />

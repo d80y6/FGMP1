@@ -448,7 +448,7 @@ export function SystemHealthView() {
               {/* Live pulsing indicator */}
               <div className="flex items-center gap-2">
                 {data?.realtime.connected ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-400">
                     <span className="relative flex h-2 w-2">
                       <span className="absolute inline-flex h-2 w-2 animate-ping rounded-full bg-emerald-500/60" />
                       <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
@@ -456,7 +456,7 @@ export function SystemHealthView() {
                     {t("systemHealth.connected")}
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-xs font-medium text-rose-600 dark:text-rose-400">
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-xs font-medium text-rose-700 dark:text-rose-400">
                     <span className="relative flex h-2 w-2">
                       <span className="relative inline-flex h-2 w-2 rounded-full bg-rose-500" />
                     </span>
@@ -513,6 +513,7 @@ export function SystemHealthView() {
               </div>
               <Progress
                 value={heapPct}
+                label={t("systemHealth.heapUsage")}
                 className={cn(
                   "h-2",
                   heapPct > 85
@@ -779,10 +780,10 @@ function DbMeta({
 function StatusBadge({ status, numLang }: { status: number; numLang: Language }) {
   const tone =
     status >= 500
-      ? "border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400"
+      ? "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-400"
       : status >= 400
-        ? "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400"
-        : "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400";
+        ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+        : "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400";
   return (
     <Badge variant="outline" className={cn("text-[10px] font-mono tabular-nums", tone)}>
       {formatNumber(status, numLang)}

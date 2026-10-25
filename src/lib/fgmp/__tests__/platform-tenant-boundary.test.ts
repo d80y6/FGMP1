@@ -8,6 +8,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { readFileSync, readdirSync } from "node:fs";
+import { DICTIONARY } from "@/lib/fgmp/i18n";
 
 const source = (path: string) => readFileSync(path, "utf8");
 
@@ -148,7 +149,13 @@ describe("global state and service credentials", () => {
     const view = source("src/components/fgmp/views/tenant-isolation-view.tsx");
     expect(api).toContain("unmeasured");
     expect(api).toContain("recordFound");
-    expect(view).toContain("Not measured — no sample row");
+    // The label moved into the dictionary when the view was translated. Assert
+    // the KEY is wired into the view (not the literal), and that the key still
+    // carries the operator-facing wording in both languages — the point of the
+    // guard is that an unmeasured sample is never silently shown as measured.
+    expect(view).toContain('t("isolation.notMeasured")');
+    expect(DICTIONARY["isolation.notMeasured"]?.en).toBe("Not measured — no sample row");
+    expect(DICTIONARY["isolation.notMeasured"]?.ar).toBeTruthy();
     expect(view).toContain("Sampled Helper Check Incomplete");
   });
 });

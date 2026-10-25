@@ -35,7 +35,7 @@ import {
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { toast } from "sonner";
 import { fmtDateTime } from "@/lib/fgmp/format";
-import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { useT, useTF, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -134,17 +134,17 @@ export function TenantsView() {
         actions={
           <Button onClick={() => setCreateOpen(true)} size="sm">
             <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">Add Tenant</span>
+            <span className="hidden sm:inline">{t("tenants.add")}</span>
           </Button>
         }
       />
 
       {/* KPI strip */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KpiCard label="Total Tenants" value={formatNumber(stats.total, numLang)} icon={<Building2 className="h-4 w-4" />} />
-        <KpiCard label="Active" value={formatNumber(stats.active, numLang)} icon={<Building2 className="h-4 w-4" />} tone="good" />
-        <KpiCard label="Users" value={formatNumber(stats.users, numLang)} icon={<Users className="h-4 w-4" />} tone="info" />
-        <KpiCard label="Sites" value={formatNumber(stats.sites, numLang)} icon={<MapPin className="h-4 w-4" />} tone="warn" />
+        <KpiCard label={t("tenants.total")} value={formatNumber(stats.total, numLang)} icon={<Building2 className="h-4 w-4" />} />
+        <KpiCard label={t("common.active")} value={formatNumber(stats.active, numLang)} icon={<Building2 className="h-4 w-4" />} tone="good" />
+        <KpiCard label={t("systemHealth.users")} value={formatNumber(stats.users, numLang)} icon={<Users className="h-4 w-4" />} tone="info" />
+        <KpiCard label={t("kpi.sites")} value={formatNumber(stats.sites, numLang)} icon={<MapPin className="h-4 w-4" />} tone="warn" />
       </div>
 
       {/* Filter + table card */}
@@ -159,7 +159,7 @@ export function TenantsView() {
               <Input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="Search tenants…"
+                placeholder={t("tenants.searchPlaceholder")}
                 className="h-9 w-[200px] pl-8"
               />
             </div>
@@ -194,7 +194,7 @@ export function TenantsView() {
                           <span className="flex items-center gap-1.5 text-sm font-medium">
                             {tnt.name}
                             {tnt.code === "PLATFORM" && (
-                              <Badge className="h-4 px-1 text-[9px] bg-amber-500/15 text-amber-600 dark:text-amber-400 hover:bg-amber-500/15">
+                              <Badge className="h-4 px-1 text-[9px] bg-amber-500/15 text-amber-700 dark:text-amber-400 hover:bg-amber-500/15">
                                 {t("tenants.platformTenant")}
                               </Badge>
                             )}
@@ -228,7 +228,7 @@ export function TenantsView() {
                       <TableCell className="text-right">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="More actions">
+                            <Button variant="ghost" size="icon" className="h-7 w-7" aria-label={t("common.moreActions")}>
                               <MoreVertical className="h-3.5 w-3.5" />
                             </Button>
                           </DropdownMenuTrigger>
@@ -243,11 +243,11 @@ export function TenantsView() {
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => setSupportTarget(tnt)}>
                               <ShieldAlert className="mr-2 h-3.5 w-3.5" />
-                              Support access
+                              {t("tenants.supportAccess")}
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
-                              className="text-rose-600 focus:text-rose-700"
+                              className="text-rose-700 dark:text-rose-400 focus:text-rose-700"
                               onClick={() => setDeleteTarget(tnt)}
                             >
                               <Trash2 className="mr-2 h-3.5 w-3.5" />
@@ -345,6 +345,7 @@ function TenantTableSkeleton() {
 function CountrySelect({
   value, onChange, countries,
 }: { value: string; onChange: (v: string) => void; countries: string[] }) {
+  const t = useT();
   // Native select to keep the bundle tiny and avoid the shadcn Select
   // portal overhead for a tiny filter list. Styled to match the Input row.
   return (
@@ -352,9 +353,9 @@ function CountrySelect({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       className="h-9 rounded-md border border-input bg-background px-3 text-xs ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      aria-label="Filter by country"
+      aria-label={t("common.filterByCountry")}
     >
-      <option value="all">All countries</option>
+      <option value="all">{t("tenants.allCountries")}</option>
       {countries.map((c) => (
         <option key={c} value={c}>{c}</option>
       ))}
@@ -370,15 +371,16 @@ function TenantFormFields({
   lang: Language;
 }) {
   void lang;
+  const t = useT();
   return (
     <div className="space-y-3">
       <div className="space-y-1.5">
-        <Label className="text-xs">Name</Label>
+        <Label className="text-xs">{t("common.name")}</Label>
         <Input
           value={form.name}
           onChange={(e) => update("name", e.target.value)}
           className="h-9"
-          placeholder="National Telecom Operator"
+          placeholder={t("tenants.namePlaceholder")}
           autoFocus
         />
       </div>
@@ -391,9 +393,7 @@ function TenantFormFields({
           dir="ltr"
           placeholder="NATIONAL-TELCO"
         />
-        <p className="text-[11px] text-muted-foreground">
-          Uppercase letters, digits, and dashes. Must be unique.
-        </p>
+        <p className="text-[11px] text-muted-foreground">{t("tenants.slugHint")}</p>
       </div>
       <div className="space-y-1.5">
         <Label className="text-xs">Country</Label>
@@ -401,7 +401,7 @@ function TenantFormFields({
           value={form.country}
           onChange={(e) => update("country", e.target.value)}
           className="h-9"
-          placeholder="Yemen"
+          placeholder={t("tenants.countryPlaceholder")}
         />
       </div>
     </div>
@@ -456,10 +456,8 @@ function CreateTenantDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[420px]">
         <DialogHeader>
-          <DialogTitle>Add Tenant</DialogTitle>
-          <DialogDescription>
-            Create a new tenant organization. Tenants own their users, sites, and data isolation boundary.
-          </DialogDescription>
+          <DialogTitle>{t("tenants.add")}</DialogTitle>
+          <DialogDescription>{t("tenants.createDesc")}</DialogDescription>
         </DialogHeader>
         <TenantFormFields form={form} update={update} lang={lang} />
         <DialogFooter className="pt-2">
@@ -525,7 +523,7 @@ function EditTenantDialog({
     <Dialog open={!!target} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[420px]">
         <DialogHeader>
-          <DialogTitle>Edit Tenant</DialogTitle>
+          <DialogTitle>{t("tenants.edit")}</DialogTitle>
           <DialogDescription>
             <span className="font-mono text-[10px]" dir="ltr">{target?.code}</span>
           </DialogDescription>
@@ -552,6 +550,7 @@ function DeleteTenantDialog({
   onDeleted: () => void;
 }) {
   const t = useT();
+  const tFmt = useTF();
   const [deleting, setDeleting] = useState(false);
 
   const hasDependents = !!target && (target._count.users > 0 || target._count.sites > 0);
@@ -581,24 +580,20 @@ function DeleteTenantDialog({
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
             <Trash2 className="h-4 w-4 text-rose-500" />
-            Delete Tenant
+            {t("tenants.deleteTitle")}
           </AlertDialogTitle>
           <AlertDialogDescription>
-            You are about to permanently delete{" "}
-            <span className="font-medium text-foreground">{target?.name}</span>{" "}
-            (<span className="font-mono text-[10px]" dir="ltr">{target?.code}</span>).
+            {tFmt("tenants.deleteBody", { name: target?.name ?? "", code: target?.code ?? "" })}
             {hasDependents ? (
               <>
                 <br /><br />
-                <span className="text-rose-600 dark:text-rose-400 font-medium">
-                  This tenant still has {target?._count.users ?? 0} users and{" "}
-                  {target?._count.sites ?? 0} sites. Remove or reassign them first.
+                <span className="text-rose-700 dark:text-rose-400 font-medium">
+                  {tFmt("tenants.deleteHasDependents", { users: target?._count.users ?? 0, sites: target?._count.sites ?? 0 })}
                 </span>
               </>
             ) : (
               <>
-                <br />This action cannot be undone.
-              </>
+                <br />{t("tenants.cannotUndo")}</>
             )}
           </AlertDialogDescription>
         </AlertDialogHeader>
@@ -808,6 +803,8 @@ function SupportAccessDialog({
   target: TenantRow | null;
   onOpenChange: (open: boolean) => void;
 }) {
+  const t = useT();
+  const tFmt = useTF();
   const [reason, setReason] = useState("");
   const [ticketRef, setTicketRef] = useState("");
   const [write, setWrite] = useState(false);
@@ -851,35 +848,35 @@ function SupportAccessDialog({
       <DialogContent className="sm:max-w-[460px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <ShieldAlert className="h-4 w-4 text-amber-600" />
-            Support access
+            <ShieldAlert className="h-4 w-4 text-amber-700 dark:text-amber-400" />
+            {t("tenants.supportAccess")}
           </DialogTitle>
           <DialogDescription>
             {target
-              ? `Open a time-boxed support session for ${target.name}. One tenant, one session at a time. The reason below is recorded in the tenant's own audit log.`
+              ? tFmt("tenants.supportDesc", { name: target.name })
               : ""}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">
           <div className="space-y-1.5">
-            <Label htmlFor="support-reason" className="text-xs">Reason (visible to the tenant)</Label>
+            <Label htmlFor="support-reason" className="text-xs">{t("tenants.supportReason")}</Label>
             <Textarea
               id="support-reason"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="Customer reports missing deliveries since this morning"
+              placeholder={t("tenants.supportReasonPlaceholder")}
               rows={3}
               maxLength={500}
             />
             <p className="text-[11px] text-muted-foreground">
-              {tooShort ? "At least 10 characters." : `${reason.trim().length}/500`}
+              {tooShort ? t("tenants.tooShort") : `${reason.trim().length}/500`}
             </p>
           </div>
 
           <div className="space-y-1.5">
             <Label htmlFor="support-ticket" className="text-xs">
-              Ticket / case reference {write ? "(required for write access)" : "(optional)"}
+              {t("tenants.ticketRef")} {write ? t("tenants.requiredForWrite") : t("tenants.optional")}
             </Label>
             <Input
               id="support-ticket"
@@ -898,10 +895,9 @@ function SupportAccessDialog({
               onChange={(e) => setWrite(e.target.checked)}
             />
             <span>
-              <span className="font-medium">Request write access</span>
+              <span className="font-medium">{t("tenants.requestWriteAccess")}</span>
               <span className="block text-muted-foreground">
-                30 minutes instead of 60, and a ticket reference is required. The only write
-                available is appending a note to this tenant&apos;s audit log.
+                {t("tenants.writeAccessNote")}
               </span>
             </span>
           </label>
@@ -909,7 +905,7 @@ function SupportAccessDialog({
 
         <DialogFooter className="pt-2">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button onClick={submit} disabled={disabled}>
             {submitting ? "Opening…" : "Open support session"}

@@ -189,7 +189,7 @@ export function CommandHistoryPanel({ commands }: Props) {
     <Card className="rounded-xl border bg-card/50 backdrop-blur">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
         <div className="flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sky-500/10 text-sky-600 ring-1 ring-inset ring-sky-500/20">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sky-500/10 text-sky-700 dark:text-sky-400 ring-1 ring-inset ring-sky-500/20">
             <Terminal className="h-4 w-4" />
           </div>
           <div>
@@ -234,7 +234,7 @@ export function CommandHistoryPanel({ commands }: Props) {
             </div>
 
             {/* Timeline list */}
-            <div className="max-h-[320px] space-y-1.5 overflow-y-auto pr-1">
+            <div className="max-h-[320px] space-y-1.5 overflow-y-auto pr-1" tabIndex={0} role="region" aria-label={t("a11y.scrollCommandHistory")}>
               {visible.length === 0 ? (
                 <p className="py-6 text-center text-xs text-muted-foreground">{t("cmdHistory.noMatch")}</p>
               ) : (
@@ -272,7 +272,7 @@ export function CommandHistoryPanel({ commands }: Props) {
                             {genLabel && <span className="text-[10px] text-muted-foreground">· {genLabel}</span>}
                             {siteName && <span className="truncate text-[10px] text-muted-foreground">· {siteName}</span>}
                             {isFailed && (
-                              <span className="inline-flex items-center gap-0.5 text-[9px] font-medium text-rose-600 dark:text-rose-400">
+                              <span className="inline-flex items-center gap-0.5 text-[9px] font-medium text-rose-700 dark:text-rose-400">
                                 <AlertTriangle className="h-2.5 w-2.5" /> {t("cmdHistory.failed")}
                               </span>
                             )}
@@ -365,7 +365,7 @@ function StatTile({
       <div
         className={cn(
           "mt-0.5 text-base font-bold tabular-nums",
-          tone === "danger" && "text-rose-600 dark:text-rose-400",
+          tone === "danger" && "text-rose-700 dark:text-rose-400",
           pulse && "animate-pulse-soft",
         )}
       >
@@ -395,7 +395,7 @@ function FilterChip({
       className={cn(
         "h-6 rounded-full border px-2.5 py-1 text-[11px] font-medium tabular-nums",
         active
-          ? "border-sky-500/40 bg-sky-500/15 text-sky-600 hover:bg-sky-500/20 hover:text-sky-700"
+          ? "border-sky-500/40 bg-sky-500/15 text-sky-700 dark:text-sky-400 hover:bg-sky-500/20 hover:text-sky-700"
           : "border-border bg-transparent text-muted-foreground hover:bg-muted/40 hover:text-foreground",
       )}
     >

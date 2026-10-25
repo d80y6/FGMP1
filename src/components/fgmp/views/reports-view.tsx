@@ -77,7 +77,7 @@ export function ReportsView() {
         description={t("desc.reports")}
         icon={<FileText className="h-5 w-5" />}
         actions={
-          <Select value={period} onValueChange={setPeriod}>
+          <Select label={t("reports.period")} value={period} onValueChange={setPeriod}>
             <SelectTrigger className="w-[150px]"><Calendar className="mr-1.5 h-4 w-4" /><SelectValue /></SelectTrigger>
             <SelectContent>{PERIODS.map((p) => <SelectItem key={p.value} value={p.value}>{t(p.labelKey)}</SelectItem>)}</SelectContent>
           </Select>
@@ -96,7 +96,7 @@ export function ReportsView() {
                 <p className="text-xs text-muted-foreground">{fmtDateTime(s.from, numLang)} → {fmtDateTime(s.to, numLang)}</p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <Select value={exportFormat} onValueChange={(v) => setExportFormat(v as "csv" | "xlsx" | "pdf")}>
+                <Select label={t("reports.exportFormat")} value={exportFormat} onValueChange={(v) => setExportFormat(v as "csv" | "xlsx" | "pdf")}>
                   <SelectTrigger className="h-8 w-[110px] text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="csv">CSV</SelectItem>
@@ -135,7 +135,7 @@ export function ReportsView() {
               <CardHeader className="pb-2"><CardTitle className="text-sm">{t("reports.alarmsBySeverity")}</CardTitle></CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={200}>
-                  <BarChart data={sevData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+                  <BarChart tabIndex={-1} data={sevData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} vertical={false} />
                     <XAxis dataKey="name" tick={{ fontSize: 11 }} stroke="currentColor" strokeOpacity={0.3} />
                     <YAxis tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} allowDecimals={false} />

@@ -42,7 +42,8 @@ route handler ─ requireAuth/requireRole ─ withTenant(tenantId) ─ Prisma �
   apply to every query the app issues, including a query written without a
   tenant filter.
 * `FGMP_REQUIRE_RLS=1` (default) makes the app refuse to start when the database
-  role can bypass RLS. `render.yaml` and `.env.example` both set it.
+  role can bypass RLS. `wrangler.jsonc`/the Worker secrets and `.env.example`
+  both set it.
 * Migrations are committed SQL under `prisma/migrations/`; `migrate deploy` is
   the only supported application path. Schema changes never run from the app
   container (see [DEPLOYMENT.md](DEPLOYMENT.md)).

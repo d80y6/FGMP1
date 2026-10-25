@@ -143,6 +143,34 @@ export function collectEnvIssues(
     }
   }
 
+  // ── The identity lookup credential ────────────────────────────────────────
+  // `findUserByEmail` is the one genuinely cross-tenant read in the system: the
+  // tenant is unknown until the user is found. It CANNOT run on fgmp_app, because
+  // `"User"` is FORCE ROW LEVEL SECURITY and an unscoped SELECT matches zero
+  // rows — for every account, including valid ones. So it needs an owner/ops
+  // credential (FGMP_OPS_DATABASE_URL, falling back to FGMP_MIGRATE_DATABASE_URL
+  // in src/lib/fgmp/owner-db.ts).
+  //
+  // With neither set, src/lib/auth-identity.ts falls back to the app client and
+  // every login returns "invalid credentials" — a 401 with no server error, no
+  // stack trace and no hint in the response, which reads to the operator as a
+  // wrong password. src/lib/auth-identity.ts has pointed at a boot-time warning
+  // here since the 2026-10 fix; there was none. This is it.
+  //
+  // It is an ERROR in production, not a warning: an app that rejects every
+  // credential cannot serve anyone, and a startup failure names the cause instead
+  // of leaving it to be discovered one support ticket at a time. Outside
+  // production it is a warning, because a developer may legitimately be running
+  // against a database whose owner is DATABASE_URL.
+  if (!get("FGMP_OPS_DATABASE_URL") && !get("FGMP_MIGRATE_DATABASE_URL")) {
+    const problem =
+      "is not set (and neither is FGMP_MIGRATE_DATABASE_URL). Login " +
+      "cannot read \"User\" through the RLS-enforced app role, so every sign-in " +
+      "returns 401 regardless of password. Set it to an owner/ops connection.";
+    if (isProd) err("FGMP_OPS_DATABASE_URL", problem);
+    else warn("FGMP_OPS_DATABASE_URL", problem);
+  }
+
   // ── Device ingest ─────────────────────────────────────────────────────────
   // Ingest credentials are tenant-scoped ApiKey records with write/admin
   // scope. A process-global shared secret would permit cross-tenant writes.

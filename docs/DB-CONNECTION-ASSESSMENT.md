@@ -3,6 +3,15 @@
 **Assessment date:** 2026-10-24 (Asia/Aden) · **Branch:** `arena/ea5864e5-fgmp1` · **Starting commit:** `c19c2cff77051285a0c7815dfc7101866b1e5e76`
 **Status:** Repository and isolated-database assessment complete; live provider verification and staged rollout remain blocked.
 
+> **Superseded on the deployment question (2026-10-25).** The application is now
+> deployed on **Cloudflare Workers only**. Netlify, Vercel and Render were
+> retired and `render.yaml` was deleted, so every sentence below that treats
+> Render as the declared target, or the Cloudflare path as optional and
+> unverified, describes a platform that no longer exists. The *database*
+> findings — role separation, the pool cap, RLS enforcement as `fgmp_app`, the
+> acquisition deadline — are platform-independent and stand as written.
+> [DEPLOYMENT.md](DEPLOYMENT.md) §4 is authoritative for the current target.
+
 ## Executive findings
 
 1. **No material performance improvement was measured.** With the same isolated PostgreSQL workload and a three-connection app-pool cap, throughput was effectively flat at concurrency 6 and 18. Latency at those levels reflects queued work. This change set does **not** justify raising or lowering the pool cap.

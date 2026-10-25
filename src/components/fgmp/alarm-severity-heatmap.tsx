@@ -69,7 +69,7 @@ const SEV_META: Record<Severity, SevMeta> = {
     short: "L1",
     fullKey: "heatmap.notice",
     dot: "bg-sky-500",
-    text: "text-sky-600",
+    text: "text-sky-700 dark:text-sky-400",
     ring: "ring-sky-500/60",
     solidRing: "ring-sky-500",
     tints: [
@@ -84,7 +84,7 @@ const SEV_META: Record<Severity, SevMeta> = {
     short: "L2",
     fullKey: "heatmap.warning",
     dot: "bg-amber-500",
-    text: "text-amber-600",
+    text: "text-amber-700 dark:text-amber-400",
     ring: "ring-amber-500/60",
     solidRing: "ring-amber-500",
     tints: [
@@ -99,7 +99,7 @@ const SEV_META: Record<Severity, SevMeta> = {
     short: "L3",
     fullKey: "heatmap.critical",
     dot: "bg-rose-500",
-    text: "text-rose-600",
+    text: "text-rose-700 dark:text-rose-400",
     ring: "ring-rose-500/60",
     solidRing: "ring-rose-500",
     tints: [
@@ -279,7 +279,7 @@ export function AlarmSeverityHeatmap({
               label={t("heatmap.quiet")}
               value={stats.longestQuiet > 0 ? `${formatNumber(stats.longestQuiet, lang)}h` : "—"}
             />
-            <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-600">
+            <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-700 dark:text-amber-400">
               <Flame className="mr-1 inline h-3 w-3 align-text-bottom" />
               <span className="font-semibold">{t("heatmap.peak")}:</span>{" "}
               <span className="tabular-nums">{peakLabel}</span>
@@ -293,7 +293,7 @@ export function AlarmSeverityHeatmap({
                 onClick={() => onCellClick(null)}
                 className={cn(
                   "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors",
-                  "border-sky-500/30 bg-sky-500/10 text-sky-600 hover:bg-sky-500/20",
+                  "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-400 hover:bg-sky-500/20",
                 )}
               >
                 <span>
@@ -348,7 +348,7 @@ export function AlarmSeverityHeatmap({
                       className="relative flex min-w-[24px] max-w-[32px] flex-1 items-start justify-center"
                     >
                       {i === 23 ? (
-                        <span className="rounded-sm bg-emerald-500/15 px-1 text-[8px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                        <span className="rounded-sm bg-emerald-500/15 px-1 text-[8px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
                           {t("heatmap.now")}
                         </span>
                       ) : LABEL_COLS.has(i) ? (

@@ -11,7 +11,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import { useLanguage } from "@/lib/fgmp/use-language";
+import { useLanguage, useT } from "@/lib/fgmp/use-language";
 import { cn } from "@/lib/utils";
 
 const OPTIONS = [
@@ -35,6 +35,7 @@ function getServerSnapshot(): boolean {
 }
 
 export function LanguageSwitcher() {
+  const t = useT();
   const mounted = useSyncExternalStore(subscribeNoop, getClientSnapshot, getServerSnapshot);
   const { lang, setLang } = useLanguage();
   // Local "open" state so we can animate the chevron + render the dropdown
@@ -55,8 +56,8 @@ export function LanguageSwitcher() {
           variant="outline"
           size="icon"
           className="relative"
-          aria-label="Switch language"
-          title="Switch language"
+          aria-label={t("common.switchLanguage")}
+          title={t("common.switchLanguage")}
           data-testid="language-switcher"
         >
           {/* Icon:Languages on left + tiny "AR"/"EN" badge bottom-right */}
@@ -65,9 +66,11 @@ export function LanguageSwitcher() {
             <span
               className={cn(
                 "absolute -bottom-1 -right-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-0.5 text-[8px] font-bold tabular-nums",
+                // 700, not 500: the badge is 8px, so it needs 4.5:1 against
+                // white text — emerald-500 measured 2.3:1 in the axe run.
                 lang === "ar"
-                  ? "bg-emerald-500 text-white"
-                  : "bg-sky-500 text-white",
+                  ? "bg-emerald-700 text-white"
+                  : "bg-sky-700 text-white",
               )}
             >
               {activeOption.short}
@@ -99,8 +102,8 @@ export function LanguageSwitcher() {
                 className={cn(
                   "flex h-5 w-5 shrink-0 items-center justify-center rounded text-[9px] font-bold",
                   opt.value === "ar"
-                    ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
-                    : "bg-sky-500/15 text-sky-600 dark:text-sky-400",
+                    ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
+                    : "bg-sky-500/15 text-sky-700 dark:text-sky-400",
                 )}
               >
                 {opt.short}

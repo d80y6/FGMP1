@@ -174,14 +174,14 @@ export function SitesView() {
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("sites.searchPlaceholder")} className="pl-8" />
         </div>
-        <Select value={region} onValueChange={setRegion}>
+        <Select label={t("sites.region")} value={region} onValueChange={setRegion}>
           <SelectTrigger className="w-[180px]"><Filter className="mr-1.5 h-3.5 w-3.5" /><SelectValue placeholder={t("sites.regionPlaceholder")} /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">{t("sites.filterByRegion")}</SelectItem>
             {snapshot?.regions.map((r) => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Select value={status} onValueChange={setStatus}>
+        <Select label={t("sites.status")} value={status} onValueChange={setStatus}>
           <SelectTrigger className="w-[140px]"><SelectValue placeholder={t("sites.statusPlaceholder")} /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">{t("sites.filterByStatus")}</SelectItem>
@@ -439,8 +439,8 @@ export function SitesView() {
                       <span className="rounded bg-background px-1.5 py-0.5">{t("sites.batteriesCount")}: <b className="tabular-nums">{formatNumber(batts, numLang)}</b></span>
                       <span className="rounded bg-background px-1.5 py-0.5">IoT: <b className="tabular-nums">{formatNumber(iot, numLang)}</b></span>
                       {total === 0 && (
-                        <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-emerald-600 dark:text-emerald-400">
-                          No child assets
+                        <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-emerald-700 dark:text-emerald-400">
+                          {t("sites.noChildAssets")}
                         </span>
                       )}
                     </div>

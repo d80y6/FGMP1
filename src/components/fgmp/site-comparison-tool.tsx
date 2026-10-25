@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import type { SiteState, TankState, GenState, BattState } from "@/lib/fgmp/types";
 import { siteStatusTextClass } from "@/lib/fgmp/status";
 import { rowsToCsv } from "@/lib/fgmp/csv";
+import { useT, useTF } from "@/lib/fgmp/use-language";
 
 interface ComparisonRow {
   label: string;
@@ -108,6 +109,8 @@ const METRICS: ComparisonRow[] = [
 ];
 
 export function SiteComparisonTool() {
+  const t = useT();
+  const tFmt = useTF();
   const { snapshot, selectSite, setView } = useFgmp(useShallow((s) => ({ snapshot: s.snapshot, selectSite: s.selectSite, setView: s.setView })));
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [pickerValue, setPickerValue] = useState("");
@@ -239,10 +242,10 @@ export function SiteComparisonTool() {
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-sm">
           <GitCompare className="h-4 w-4 text-violet-500" />
-          Site Comparison Tool
+          {t("comparison.title")}
           {selectedSites.length > 0 && (
             <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
-              {selectedSites.length}/4 sites
+              {tFmt("comparison.selectedOfMax", { n: selectedSites.length })}
             </Badge>
           )}
         </CardTitle>
@@ -250,7 +253,7 @@ export function SiteComparisonTool() {
       <CardContent className="space-y-3">
         {/* Site selector */}
         <div className="flex flex-wrap items-center gap-2">
-          <Select value={pickerValue} onValueChange={addSite}>
+          <Select label={t("comparison.selectTwo")} value={pickerValue} onValueChange={addSite}>
             <SelectTrigger className="h-8 w-[260px] text-xs" disabled={selectedIds.length >= 4}>
               <SelectValue placeholder={selectedIds.length >= 4 ? "Max 4 sites selected" : "Add a site to compare…"} />
             </SelectTrigger>
@@ -264,7 +267,7 @@ export function SiteComparisonTool() {
           </Select>
           {selectedIds.length > 0 && (
             <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => setSelectedIds([])}>
-              Clear all
+              {t("comparison.clearAll")}
             </Button>
           )}
           {selectedSites.length >= 2 && (
@@ -276,7 +279,7 @@ export function SiteComparisonTool() {
                 onClick={handleExportCsv}
               >
                 <Download className="h-3 w-3" />
-                Export CSV
+                {t("common.exportCsv")}
               </Button>
               <Button
                 variant="ghost"
@@ -345,10 +348,10 @@ export function SiteComparisonTool() {
                           <td key={i} className="p-2 text-center">
                             <div className={cn(
                               "inline-flex items-center gap-1 rounded px-1.5 py-0.5",
-                              isBest && "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                              isBest && "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
                             )}>
                               {isBest && <Trophy className="h-3 w-3" />}
-                              <span className={cn("font-bold tabular-nums", isBest && "text-emerald-600 dark:text-emerald-400")}>
+                              <span className={cn("font-bold tabular-nums", isBest && "text-emerald-700 dark:text-emerald-400")}>
                                 {metric.format(v)}
                               </span>
                               {metric.unit && <span className="text-[9px] text-muted-foreground">{metric.unit}</span>}
@@ -364,7 +367,7 @@ export function SiteComparisonTool() {
                   <td className="sticky left-0 z-10 bg-muted/20 p-2">
                     <div className="flex items-center gap-1.5">
                       <Trophy className="h-3 w-3 text-amber-500" />
-                      <span>Best Count</span>
+                      <span>{t("comparison.bestCount")}</span>
                     </div>
                   </td>
                   {selectedSites.map((_, i) => {
@@ -374,7 +377,7 @@ export function SiteComparisonTool() {
                       <td key={i} className="p-2 text-center">
                         <span className={cn(
                           "inline-flex items-center gap-1 rounded px-2 py-1 text-sm font-bold tabular-nums",
-                          isLeader ? "bg-amber-500/15 text-amber-600 dark:text-amber-400" : "text-muted-foreground"
+                          isLeader ? "bg-amber-500/15 text-amber-700 dark:text-amber-400" : "text-muted-foreground"
                         )}>
                           {isLeader && <TrendingUp className="h-3 w-3" />}
                           {wins}
@@ -390,8 +393,8 @@ export function SiteComparisonTool() {
         ) : (
           <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-8 text-center">
             <GitCompare className="mb-2 h-8 w-8 text-muted-foreground/40" />
-            <p className="text-sm text-muted-foreground">Select at least 2 sites to compare</p>
-            <p className="text-[11px] text-muted-foreground/70">Compare fuel levels, generator health, battery status, and more side-by-side</p>
+            <p className="text-sm text-muted-foreground">{t("comparison.selectTwo")}</p>
+            <p className="text-[11px] text-muted-foreground">{t("comparison.compareHint")}</p>
           </div>
         )}
 
@@ -402,11 +405,11 @@ export function SiteComparisonTool() {
               <Trophy className="h-5 w-5 text-amber-500" />
               <div className="flex flex-col gap-0.5">
                 <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                  Leading Site
+                  {t("comparison.leadingSite")}
                 </span>
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-semibold">{leaderSite.name}</span>
-                  <span className="inline-flex items-center gap-1 bg-amber-500/15 text-amber-600 rounded-full px-2 py-0.5 text-[11px] font-bold">
+                  <span className="inline-flex items-center gap-1 bg-amber-500/15 text-amber-700 dark:text-amber-400 rounded-full px-2 py-0.5 text-[11px] font-bold">
                     {maxWins} {maxWins === 1 ? "win" : "wins"}
                   </span>
                 </div>
@@ -419,7 +422,7 @@ export function SiteComparisonTool() {
               onClick={handleViewLeaderInSites}
             >
               <ExternalLink className="h-3 w-3" />
-              View in Sites
+              {t("comparison.viewInSites")}
             </Button>
           </div>
         )}

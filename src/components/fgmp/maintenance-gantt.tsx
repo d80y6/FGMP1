@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { fmtDateTime } from "@/lib/fgmp/format";
 import { useNow } from "@/lib/fgmp/use-now";
+import { useT, useTF } from "@/lib/fgmp/use-language";
 
 interface MaintenanceTicket {
   id: string;
@@ -37,9 +38,9 @@ interface MaintenanceGanttProps {
 
 // Status -> bar color tokens (DONE gets 50% opacity per spec)
 const STATUS_META: Record<string, { bg: string; text: string; label: string }> = {
-  OPEN: { bg: "bg-sky-500", text: "text-sky-500", label: "Open" },
-  SCHEDULED: { bg: "bg-amber-500", text: "text-amber-500", label: "Scheduled" },
-  IN_PROGRESS: { bg: "bg-violet-500", text: "text-violet-500", label: "In Progress" },
+  OPEN: { bg: "bg-sky-700", text: "text-sky-500", label: "Open" },
+  SCHEDULED: { bg: "bg-amber-700", text: "text-amber-500", label: "Scheduled" },
+  IN_PROGRESS: { bg: "bg-violet-700", text: "text-violet-500", label: "In Progress" },
   DONE: { bg: "bg-emerald-500/50", text: "text-emerald-500", label: "Done" },
 };
 
@@ -89,6 +90,8 @@ interface HoverState {
  * 30d (default) or 90d (long-horizon).
  */
 export function MaintenanceGantt({ tickets, defaultRange = 30, onTicketClick }: MaintenanceGanttProps) {
+  const t = useT();
+  const tFmt = useTF();
   const [hovered, setHovered] = useState<HoverState | null>(null);
   const [range, setRange] = useState<RangeOption>(defaultRange);
 
@@ -200,14 +203,14 @@ export function MaintenanceGantt({ tickets, defaultRange = 30, onTicketClick }: 
             <CalendarClock className="h-7 w-7 text-muted-foreground" />
           </div>
           <div>
-            <p className="text-sm font-medium">No scheduled maintenance</p>
+            <p className="text-sm font-medium">{t("maintenance.noScheduled")}</p>
             <p className="text-xs text-muted-foreground">
-              Tickets with a scheduled date will appear here on the {range}-day timeline.
+              {tFmt("maintenance.emptyHint", { n: range })}
             </p>
           </div>
           {unscheduled.length > 0 && (
             <Badge variant="outline" className="text-[10px]">
-              {unscheduled.length} unscheduled ticket{unscheduled.length === 1 ? "" : "s"} not shown
+              {tFmt("gantt.unscheduledHidden", { n: unscheduled.length })}
             </Badge>
           )}
         </div>
@@ -324,7 +327,7 @@ export function MaintenanceGantt({ tickets, defaultRange = 30, onTicketClick }: 
               >
                 <Badge
                   variant="outline"
-                  className="h-4 px-1 text-[8px] border-rose-500/50 bg-rose-500/15 text-rose-600 dark:text-rose-400"
+                  className="h-4 px-1 text-[8px] border-rose-500/50 bg-rose-500/15 text-rose-700 dark:text-rose-400"
                 >
                   TODAY
                 </Badge>
@@ -415,7 +418,7 @@ export function MaintenanceGantt({ tickets, defaultRange = 30, onTicketClick }: 
                   style={{ width: LABEL_WIDTH }}
                 >
                   <span className="text-[10px] text-muted-foreground">
-                    +{hiddenSitesCount} more site{hiddenSitesCount === 1 ? "" : "s"}
+                    {tFmt("gantt.moreSites", { n: hiddenSitesCount })}
                   </span>
                 </div>
                 <div style={{ width: timelineWidth }} />
@@ -501,6 +504,10 @@ function HeaderToolbar({
   totalCount: number;
   counts: Record<string, number>;
 }) {
+  // This helper renders outside the view component, so `t` was not in scope
+  // when the toolbar label was translated.
+  const t = useT();
+  const tFmt = useTF();
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-1">
       {STATUS_ORDER.map((s) => {
@@ -517,12 +524,12 @@ function HeaderToolbar({
       })}
       <div className="ml-auto flex items-center gap-3">
         <span className="text-[10px] text-muted-foreground">
-          Showing {visibleCount} of {totalCount} tickets
+          {tFmt("maintenance.showingCount", { visible: visibleCount, total: totalCount })}
         </span>
         <div
           className="inline-flex h-7 items-center rounded-md border bg-muted/40 p-0.5"
           role="tablist"
-          aria-label="Timeline range"
+          aria-label={t("common.timelineRange")}
         >
           {RANGE_OPTIONS.map((r) => {
             const active = range === r;
@@ -547,7 +554,7 @@ function HeaderToolbar({
         </div>
         <div className="flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-sm ring-2 ring-rose-500/60 animate-pulse" />
-          <span className="text-[11px] text-muted-foreground">Past due</span>
+          <span className="text-[11px] text-muted-foreground">{t("maintenance.pastDue")}</span>
         </div>
       </div>
     </div>

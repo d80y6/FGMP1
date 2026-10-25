@@ -197,7 +197,7 @@ export function ConsumptionPatternsView() {
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-4">
         <KpiCard
-          label="Peak Hour"
+          label={t("heatmap.peakHour")}
           value={peakHourIdx >= 0
             ? `${formatNumber(String(peakHourIdx).padStart(2, "0"), numLang)}:00`
             : "—"}
@@ -208,7 +208,7 @@ export function ConsumptionPatternsView() {
             : "No data"}
         />
         <KpiCard
-          label="Peak Day"
+          label={t("consumption.peakDay")}
           value={peakDayIdx >= 0 ? DAYS[peakDayIdx] : "—"}
           icon={<Calendar className="h-4 w-4" />}
           tone="warn"
@@ -217,7 +217,7 @@ export function ConsumptionPatternsView() {
             : "No data"}
         />
         <KpiCard
-          label="Night Consumption"
+          label={t("consumption.night")}
           value={formatNumber(nightAvg.toFixed(1), numLang)}
           unit="L/h"
           icon={<Moon className="h-4 w-4" />}
@@ -225,7 +225,7 @@ export function ConsumptionPatternsView() {
           hint="22:00 – 06:00"
         />
         <KpiCard
-          label="Daytime Consumption"
+          label={t("consumption.daytime")}
           value={formatNumber(dayAvg.toFixed(1), numLang)}
           unit="L/h"
           icon={<Sun className="h-4 w-4" />}
@@ -239,7 +239,7 @@ export function ConsumptionPatternsView() {
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-sm">
             <Flame className="h-4 w-4 text-rose-500" />
-            Consumption Heatmap (L/h avg, last 24h window)
+            {t("patterns.heatmapTitle")}
           </CardTitle>
         </CardHeader>
         <CardContent className="p-3">
@@ -309,12 +309,12 @@ export function ConsumptionPatternsView() {
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-sm">
               <Clock className="h-4 w-4 text-amber-500" />
-              Average Consumption by Hour
+              {t("consumption.avgByHour")}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={hourChartData} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+              <BarChart tabIndex={-1} data={hourChartData} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} vertical={false} />
                 <XAxis dataKey="hour" tick={{ fontSize: 8 }} stroke="currentColor" strokeOpacity={0.3} interval={2} />
                 <YAxis tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} />
@@ -338,12 +338,12 @@ export function ConsumptionPatternsView() {
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-sm">
               <Calendar className="h-4 w-4 text-emerald-500" />
-              Average Consumption by Day of Week
+              {t("consumption.avgByDayOfWeek")}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={dayChartData} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+              <BarChart tabIndex={-1} data={dayChartData} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="currentColor" strokeOpacity={0.08} vertical={false} />
                 <XAxis dataKey="day" tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} />
                 <YAxis tick={{ fontSize: 10 }} stroke="currentColor" strokeOpacity={0.3} />
@@ -367,18 +367,16 @@ export function ConsumptionPatternsView() {
       {/* Top 5 sites by variance */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm">
-            Top 5 Sites by Consumption Variance
-          </CardTitle>
+          <CardTitle className="text-sm">{t("consumption.top5Variance")}</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Site</TableHead>
-                <TableHead className="text-right">Mean (L/h)</TableHead>
-                <TableHead className="text-right">Std Dev (L/h)</TableHead>
-                <TableHead className="text-right">Variance</TableHead>
+                <TableHead className="text-right">{t("patterns.mean")}</TableHead>
+                <TableHead className="text-right">{t("patterns.stdDev")}</TableHead>
+                <TableHead className="text-right">{t("patterns.variance")}</TableHead>
                 <TableHead className="text-right">Samples</TableHead>
                 <TableHead>Pattern</TableHead>
               </TableRow>
@@ -399,10 +397,10 @@ export function ConsumptionPatternsView() {
                         variant="outline"
                         className={
                           cv > 0.6
-                            ? "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400 text-[10px]"
+                            ? "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400 text-[10px]"
                             : cv > 0.3
-                            ? "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px]"
-                            : "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px]"
+                            ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[10px]"
+                            : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-[10px]"
                         }
                       >
                         {cv > 0.6 ? "Volatile" : cv > 0.3 ? "Variable" : "Stable"}
@@ -413,9 +411,7 @@ export function ConsumptionPatternsView() {
               })}
               {siteStats.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-8 text-center text-xs text-muted-foreground">
-                    No consumption data available in current tank history.
-                  </TableCell>
+                  <TableCell colSpan={6} className="py-8 text-center text-xs text-muted-foreground">{t("consumption.noData")}</TableCell>
                 </TableRow>
               )}
             </TableBody>

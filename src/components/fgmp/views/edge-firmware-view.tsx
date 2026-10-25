@@ -40,7 +40,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { timeAgo } from "@/lib/fgmp/format";
-import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { useT, useTF, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import { useChartColors } from "@/lib/fgmp/use-chart-colors";
 import type { Language } from "@/lib/fgmp/i18n";
 
@@ -194,30 +194,30 @@ export function EdgeFirmwareView() {
       {/* KPI strip */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
         <KpiCard
-          label="Total ESP Devices"
+          label={t("firmware.totalEsp")}
           value={formatNumber(totalEsps, numLang)}
           icon={<CircuitBoard className="h-4 w-4" />}
         />
         <KpiCard
-          label="Online"
+          label={t("common.online")}
           value={formatNumber(onlineEsps, numLang)}
           icon={<Wifi className="h-4 w-4" />}
           tone="good"
         />
         <KpiCard
-          label="Offline / Fault"
+          label={t("firmware.offlineFault")}
           value={formatNumber(offlineEsps, numLang)}
           icon={<AlertTriangle className="h-4 w-4" />}
           tone={offlineEsps > 0 ? "danger" : "good"}
         />
         <KpiCard
-          label="OTA In Progress"
+          label={t("firmware.otaInProgress")}
           value={formatNumber(otaInProgress, numLang)}
           icon={<HardDriveDownload className="h-4 w-4" />}
           tone={otaInProgress > 0 ? "warn" : "default"}
         />
         <KpiCard
-          label="RS485 Conflicts"
+          label={t("firmware.rs485Conflicts")}
           value={formatNumber(rs485Conflicts, numLang)}
           icon={<Radio className="h-4 w-4" />}
           tone={rs485Conflicts > 0 ? "danger" : "good"}
@@ -231,17 +231,13 @@ export function EdgeFirmwareView() {
             Gateways
           </TabsTrigger>
           <TabsTrigger value="firmware" className="text-xs">
-            <HardDriveDownload className="mr-1.5 h-3.5 w-3.5" />
-            ESP Firmware
-          </TabsTrigger>
+            <HardDriveDownload className="mr-1.5 h-3.5 w-3.5" />{t("firmware.espFirmware")}</TabsTrigger>
           <TabsTrigger value="rs485" className="text-xs">
             <Radio className="mr-1.5 h-3.5 w-3.5" />
             RS485 Diagnostics
           </TabsTrigger>
           <TabsTrigger value="reboot" className="text-xs">
-            <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
-            ESP Reboot
-          </TabsTrigger>
+            <RefreshCw className="mr-1.5 h-3.5 w-3.5" />{t("firmware.espReboot")}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="gateways" className="mt-4">
@@ -286,6 +282,7 @@ function GatewaysTab({ gateways, loading, numLang }: {
   numLang: Language;
 }) {
   const t = useT();
+  const tFmt = useTF();
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
 
@@ -311,18 +308,18 @@ function GatewaysTab({ gateways, loading, numLang }: {
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-3">
         <CardTitle className="text-sm">
-          ESP Gateways ({formatNumber(filtered.length, numLang)})
+          {tFmt("firmware.gatewaysCount", { n: formatNumber(filtered.length, numLang) })}
         </CardTitle>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               value={q} onChange={(e) => setQ(e.target.value)}
-              placeholder="Search ESP ID, site…"
+              placeholder={t("firmware.searchPlaceholder")}
               className="h-9 w-[220px] pl-8"
             />
           </div>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <Select label={t("common.status")} value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="h-9 w-[140px] text-xs"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">{t("common.all")}</SelectItem>
@@ -339,9 +336,9 @@ function GatewaysTab({ gateways, loading, numLang }: {
         {loading && gateways.length === 0 ? (
           <RegistrySkeleton cols={7} />
         ) : filtered.length === 0 ? (
-          <EmptyState icon={Router} title="No ESP gateways found" description="No ESP devices match the current filters." />
+          <EmptyState icon={Router} title={t("firmware.noGateways")} description={t("firmware.noGatewaysDesc")} />
         ) : (
-          <div className="max-h-[600px] overflow-y-auto">
+          <div className="max-h-[600px] overflow-y-auto" tabIndex={0} role="region" aria-label={t("firmware.gatewayList")}>
             <Table>
               <TableHeader className="sticky top-0 bg-card">
                 <TableRow>
@@ -350,8 +347,8 @@ function GatewaysTab({ gateways, loading, numLang }: {
                   <TableHead className="w-[80px]">Source</TableHead>
                   <TableHead className="hidden lg:table-cell w-[100px]">{t("iot.firmware")}</TableHead>
                   <TableHead className="w-[130px]">RS485</TableHead>
-                  <TableHead className="w-[90px]">WiFi RSSI</TableHead>
-                  <TableHead className="hidden md:table-cell w-[120px]">Last Comm</TableHead>
+                  <TableHead className="w-[90px]">{t("firmware.wifiRssi")}</TableHead>
+                  <TableHead className="hidden md:table-cell w-[120px]">{t("firmware.lastComm")}</TableHead>
                   <TableHead className="w-[100px]">{t("common.status")}</TableHead>
                 </TableRow>
               </TableHeader>
@@ -467,18 +464,18 @@ function FirmwareTab({ gateways, loading, onRefresh }: {
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
             <Activity className="h-4 w-4 text-emerald-500" />
-            Firmware Version Distribution
+            {t("firmware.versionDistribution")}
           </CardTitle>
         </CardHeader>
         <CardContent>
           {loading && gateways.length === 0 ? (
             <Skeleton className="h-64 w-full" />
           ) : dist.length === 0 ? (
-            <EmptyState icon={HardDriveDownload} title="No firmware data" description="No ESP devices available." />
+            <EmptyState icon={HardDriveDownload} title={t("firmware.noFirmware")} description={t("firmware.noFirmwareDesc")} />
           ) : (
             <div className="h-64 w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={dist} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
+                <BarChart tabIndex={-1} data={dist} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={cc.grid} />
                   <XAxis
                     dataKey="fw"
@@ -518,13 +515,13 @@ function FirmwareTab({ gateways, loading, onRefresh }: {
       {/* Devices grouped by firmware */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm">Devices by Firmware Version</CardTitle>
+          <CardTitle className="text-sm">{t("firmware.devicesByVersion")}</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           {loading && gateways.length === 0 ? (
             <RegistrySkeleton cols={5} />
           ) : dist.length === 0 ? (
-            <EmptyState icon={CircuitBoard} title="No devices" />
+            <EmptyState icon={CircuitBoard} title={t("firmware.noDevices")} />
           ) : (
             <div className="max-h-[500px] overflow-y-auto">
               <Table>
@@ -534,7 +531,7 @@ function FirmwareTab({ gateways, loading, onRefresh }: {
                     <TableHead className="hidden md:table-cell">{t("common.site")}</TableHead>
                     <TableHead className="w-[100px]">Current</TableHead>
                     <TableHead className="w-[100px]">Target</TableHead>
-                    <TableHead className="w-[120px]">OTA Status</TableHead>
+                    <TableHead className="w-[120px]">{t("firmware.otaStatus")}</TableHead>
                     <TableHead className="w-[90px] text-right">Action</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -587,20 +584,16 @@ function FirmwareTab({ gateways, loading, onRefresh }: {
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <HardDriveDownload className="h-4 w-4 text-emerald-500" />
-              OTA Firmware Update
-            </DialogTitle>
-            <DialogDescription>
-              Queue a firmware update for the selected ESP device.
-            </DialogDescription>
+              <HardDriveDownload className="h-4 w-4 text-emerald-500" />{t("firmware.otaUpdate")}</DialogTitle>
+            <DialogDescription>{t("firmware.otaDesc")}</DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
             <p className="text-xs text-muted-foreground">
               Device: <b className="font-mono text-foreground">{otaTarget?.espId}</b>
             </p>
             <p className="text-xs text-muted-foreground">
-              Current: <span className="font-mono">{otaTarget?.firmware}</span>
-              {" → "}Target: <span className="font-mono">{otaFw}</span>
+              {t("firmware.currentFirmware")}: <span className="font-mono">{otaTarget?.firmware}</span>
+              {" → "}{t("firmware.targetLabel")}: <span className="font-mono">{otaFw}</span>
             </p>
             <Label className="text-xs">{t("iot.targetFirmware")}</Label>
             <Input value={otaFw} onChange={(e) => setOtaFw(e.target.value)} className="font-mono" dir="ltr" />
@@ -614,7 +607,7 @@ function FirmwareTab({ gateways, loading, onRefresh }: {
             </Button>
             <Button onClick={startOta} className="bg-emerald-500 hover:bg-emerald-600 text-white">
               <HardDriveDownload className="mr-1.5 h-4 w-4" />
-              Deploy OTA
+              {t("iot.deployOta")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -702,7 +695,7 @@ function Rs485Tab({ gateways, loading, numLang }: {
           <CardContent className="p-4">
             <div className="flex items-center gap-2">
               <Radio className="h-4 w-4 text-emerald-500" />
-              <p className="text-xs text-muted-foreground">Total Buses</p>
+              <p className="text-xs text-muted-foreground">{t("firmware.totalBuses")}</p>
             </div>
             <p className="mt-1 text-2xl font-semibold tabular-nums">
               {formatNumber(totalBuses, numLang)}
@@ -717,7 +710,7 @@ function Rs485Tab({ gateways, loading, numLang }: {
               ) : (
                 <AlertTriangle className="h-4 w-4 text-rose-500" />
               )}
-              <p className="text-xs text-muted-foreground">Address Conflicts</p>
+              <p className="text-xs text-muted-foreground">{t("firmware.addressConflicts")}</p>
             </div>
             <p className={"mt-1 text-2xl font-semibold tabular-nums " + (totalConflicts > 0 ? "text-rose-500" : "text-emerald-500")}>
               {formatNumber(totalConflicts, numLang)}
@@ -728,7 +721,7 @@ function Rs485Tab({ gateways, loading, numLang }: {
           <CardContent className="p-4">
             <div className="flex items-center gap-2">
               <Cpu className="h-4 w-4 text-emerald-500" />
-              <p className="text-xs text-muted-foreground">Total RS485 Devices</p>
+              <p className="text-xs text-muted-foreground">{t("firmware.totalRs485")}</p>
             </div>
             <p className="mt-1 text-2xl font-semibold tabular-nums">
               {formatNumber(gateways.length, numLang)}
@@ -740,23 +733,23 @@ function Rs485Tab({ gateways, loading, numLang }: {
       {/* Bus table */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm">RS485 Bus Health per Site</CardTitle>
+          <CardTitle className="text-sm">{t("firmware.rs485Health")}</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           {loading && gateways.length === 0 ? (
             <RegistrySkeleton cols={6} />
           ) : buses.length === 0 ? (
-            <EmptyState icon={Radio} title="No RS485 buses" description="No RS485-connected ESP devices detected." />
+            <EmptyState icon={Radio} title={t("firmware.noBuses")} description={t("firmware.noBusesDesc")} />
           ) : (
-            <div className="max-h-[600px] overflow-y-auto">
+            <div className="max-h-[600px] overflow-y-auto" tabIndex={0} role="region" aria-label={t("firmware.busList")}>
               <Table>
                 <TableHeader className="sticky top-0 bg-card">
                   <TableRow>
                     <TableHead>{t("common.site")}</TableHead>
-                    <TableHead className="w-[120px]">Bus Config</TableHead>
+                    <TableHead className="w-[120px]">{t("firmware.busConfig")}</TableHead>
                     <TableHead className="w-[60px]">Devices</TableHead>
                     <TableHead className="w-[200px]">Addresses</TableHead>
-                    <TableHead className="w-[150px]">Signal Quality</TableHead>
+                    <TableHead className="w-[150px]">{t("firmware.signalQuality")}</TableHead>
                     <TableHead className="w-[110px]">{t("common.status")}</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -787,8 +780,8 @@ function Rs485Tab({ gateways, loading, numLang }: {
                                 className={
                                   "text-[9px] tabular-nums " +
                                   (isConflict
-                                    ? "border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400"
-                                    : "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400")
+                                    ? "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-400"
+                                    : "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400")
                                 }
                               >
                                 {isConflict && <AlertTriangle className="mr-0.5 h-2 w-2" />}
@@ -805,6 +798,7 @@ function Rs485Tab({ gateways, loading, numLang }: {
                         <div className="space-y-1">
                           <Progress
                             value={b.signalQuality}
+                            label={t("firmware.signalQuality")}
                             className={
                               "h-1.5 " +
                               (b.signalQuality > 70
@@ -821,15 +815,15 @@ function Rs485Tab({ gateways, loading, numLang }: {
                       </TableCell>
                       <TableCell>
                         {b.conflicts.length > 0 ? (
-                          <Badge variant="outline" className="border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400 text-[9px]">
+                          <Badge variant="outline" className="border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-400 text-[9px]">
                             CONFLICT
                           </Badge>
                         ) : b.signalQuality > 50 ? (
-                          <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[9px]">
+                          <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-[9px]">
                             HEALTHY
                           </Badge>
                         ) : (
-                          <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[9px]">
+                          <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[9px]">
                             DEGRADED
                           </Badge>
                         )}
@@ -902,24 +896,22 @@ function RebootTab({ gateways, loading, numLang, onReboot, isAdmin }: {
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="text-sm flex items-center gap-2">
-          <RefreshCw className="h-4 w-4 text-emerald-500" />
-          ESP Device Reboot
-        </CardTitle>
+          <RefreshCw className="h-4 w-4 text-emerald-500" />{t("firmware.deviceReboot")}</CardTitle>
       </CardHeader>
       <CardContent className="p-0">
         {loading && gateways.length === 0 ? (
           <RegistrySkeleton cols={5} />
         ) : gateways.length === 0 ? (
-          <EmptyState icon={RefreshCw} title="No ESP devices" description="No ESP devices available to reboot." />
+          <EmptyState icon={RefreshCw} title={t("firmware.noRebootDevices")} description={t("firmware.noRebootDevicesDesc")} />
         ) : (
-          <div className="max-h-[600px] overflow-y-auto">
+          <div className="max-h-[600px] overflow-y-auto" tabIndex={0} role="region" aria-label={t("firmware.rebootList")}>
             <Table>
               <TableHeader className="sticky top-0 bg-card">
                 <TableRow>
                   <TableHead>ESP Device ID</TableHead>
                   <TableHead className="hidden md:table-cell">{t("common.site")}</TableHead>
                   <TableHead className="hidden lg:table-cell w-[100px]">{t("iot.firmware")}</TableHead>
-                  <TableHead className="w-[120px]">Last Comm</TableHead>
+                  <TableHead className="w-[120px]">{t("firmware.lastComm")}</TableHead>
                   <TableHead className="w-[100px]">{t("common.status")}</TableHead>
                   <TableHead className="w-[110px] text-right">Action</TableHead>
                 </TableRow>
@@ -963,11 +955,9 @@ function RebootTab({ gateways, loading, numLang, onReboot, isAdmin }: {
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
               <RefreshCw className="h-4 w-4 text-amber-500" />
-              Confirm ESP Reboot
+              {t("firmware.confirmReboot")}
             </AlertDialogTitle>
-            <AlertDialogDescription>
-              This will send a reboot command to the ESP device. It will be temporarily unavailable during the restart.
-              <br />
+            <AlertDialogDescription>{t("firmware.rebootConfirm")}<br />
               <span className="font-mono text-[11px] text-foreground">{confirmTarget?.espId}</span>
               {" · "}
               <span className="text-xs">{confirmTarget?.siteName}</span>

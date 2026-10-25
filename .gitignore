@@ -109,3 +109,10 @@ package-lock.json
 /.wrangler/
 .dev.vars*
 cloudflare-env.d.ts
+
+# ── Browser-test artifacts ───────────────────────────────────────────────────
+# Playwright is installed on demand by the `ui` CI job into `.pw/`, and its
+# reports/screenshots are build output, not source.
+.pw/
+playwright-report/
+test-results/

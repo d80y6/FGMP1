@@ -4,6 +4,7 @@ import { useSyncExternalStore } from "react";
 import { useTheme } from "next-themes";
 import { Monitor, Moon, Sun, ChevronDown, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useT } from "@/lib/fgmp/use-language";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -43,6 +44,7 @@ const getServerSnapshot = () => false;
  * mount.
  */
 export function ThemeSwitcher() {
+  const t = useT();
   const { theme, resolvedTheme, setTheme } = useTheme();
   const mounted = useSyncExternalStore(
     subscribeNoop,
@@ -60,8 +62,8 @@ export function ThemeSwitcher() {
           variant="outline"
           size="icon"
           className="relative"
-          aria-label="Switch theme"
-          title="Switch theme"
+          aria-label={t("common.switchTheme")}
+          title={t("common.switchTheme")}
           data-testid="theme-switcher"
         >
           {/* Stable placeholder during SSR to avoid hydration mismatch */}

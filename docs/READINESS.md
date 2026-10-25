@@ -44,7 +44,7 @@ readable list; booting with a valid environment logs 4 warnings and serves.
 
 `/api/fgmp/health` is ADMIN-only (process memory, table counts, error ring
 buffer) — correctly so. But the compose healthcheck probed it and treated *any*
-response as success, the Render blueprint had `healthCheckPath` commented out,
+response as success, no hosted platform was configured to probe the real one,
 and the CI boot test used `wget ... || true`, which cannot fail.
 
 Two unauthenticated probes now exist:
@@ -55,9 +55,9 @@ Two unauthenticated probes now exist:
 | `/api/health/ready` | can it reach PostgreSQL **and** has the schema been migrated | 200 / 503 with a coarse reason |
 
 The readiness body carries only `{status, reason}`. It is wired into the
-Dockerfile `HEALTHCHECK`, the compose healthcheck, `render.yaml`
-(`healthCheckPath`) and the CI container boot test, which now asserts
-`"status":"ready"`.
+Dockerfile `HEALTHCHECK`, the compose healthcheck, the CI container boot test
+(which asserts `"status":"ready"`), and the Cloudflare first-deploy checklist
+in [DEPLOYMENT.md](DEPLOYMENT.md) §4.
 
 **Verified:** against a real standalone server — `live` 200,
 `ready` 503 `db_unreachable` with no database, `fgmp/health` 401 unauthenticated.
@@ -105,8 +105,8 @@ Two i18n keys were added (`detail.health`, `detail.healthLive`) so the
 * CI's container assertions were checking for **24** FORCE-RLS tables when the
   migrations create **36**, so that check failed (or would have passed only by
   accident had it been `-ge`). It now asserts `>= 36`.
-* `render.yaml` no longer gives the web service the schema-owner URL; migrations
-  run in a `fgmp-migrate` job, and `FGMP_REQUIRE_RLS` is `1` instead of `0`.
+* The web service no longer receives the schema-owner URL; migrations run as a
+  separate one-shot job, and `FGMP_REQUIRE_RLS` is `1` instead of `0`.
 
 ## 7. Quality gates
 

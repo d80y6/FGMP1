@@ -32,12 +32,12 @@ function auditActionLabel(action: string, lang: Language): string {
 
 
 const ACTION_TONE: Record<string, string> = {
-  CONTROL: "border-sky-500/40 bg-sky-500/10 text-sky-600 dark:text-sky-400",
-  ACK: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
-  RESOLVE: "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-  DELETE: "border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400",
-  OTA: "border-purple-500/40 bg-purple-500/10 text-purple-600 dark:text-purple-400",
-  REBOOT: "border-indigo-500/40 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400",
+  CONTROL: "border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-400",
+  ACK: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+  RESOLVE: "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+  DELETE: "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-400",
+  OTA: "border-purple-500/40 bg-purple-500/10 text-purple-700 dark:text-purple-400",
+  REBOOT: "border-indigo-500/40 bg-indigo-500/10 text-indigo-700 dark:text-indigo-400",
 };
 
 export function AuditView() {
@@ -103,7 +103,7 @@ export function AuditView() {
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("audit.search")} className="h-9 w-[220px] pl-8" />
               </div>
-              <Select value={action} onValueChange={setAction}>
+              <Select label={t("audit.action")} value={action} onValueChange={setAction}>
                 <SelectTrigger className="h-9 w-[160px] text-xs"><SelectValue placeholder={t("audit.action")} /></SelectTrigger>
                 <SelectContent><SelectItem value="all">{t("audit.allActions")}</SelectItem>{ACTIONS.map((a) => <SelectItem key={a} value={a}>{auditActionLabel(a, numLang)}</SelectItem>)}</SelectContent>
               </Select>

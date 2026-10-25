@@ -102,16 +102,16 @@ function useRulePermissions(): { canEdit: boolean; canToggle: boolean; canView: 
 }
 
 const ALARM_TYPE_TONE: Record<string, string> = {
-  FUEL_THEFT: "text-rose-600 dark:text-rose-400",
-  FUEL_REFILL: "text-emerald-600 dark:text-emerald-400",
-  FUEL_LOW: "text-amber-600 dark:text-amber-400",
-  FUEL_CRITICAL: "text-rose-600 dark:text-rose-400",
-  GEN_OFFLINE: "text-amber-600 dark:text-amber-400",
-  GEN_FAILURE: "text-rose-600 dark:text-rose-400",
-  GEN_OVERHEAT: "text-orange-600 dark:text-orange-400",
-  BATT_LOW_VOLTAGE: "text-amber-600 dark:text-amber-400",
-  BATT_FAILURE: "text-rose-600 dark:text-rose-400",
-  COMM_LOSS: "text-violet-600 dark:text-violet-400",
+  FUEL_THEFT: "text-rose-700 dark:text-rose-400",
+  FUEL_REFILL: "text-emerald-700 dark:text-emerald-400",
+  FUEL_LOW: "text-amber-700 dark:text-amber-400",
+  FUEL_CRITICAL: "text-rose-700 dark:text-rose-400",
+  GEN_OFFLINE: "text-amber-700 dark:text-amber-400",
+  GEN_FAILURE: "text-rose-700 dark:text-rose-400",
+  GEN_OVERHEAT: "text-orange-700 dark:text-orange-400",
+  BATT_LOW_VOLTAGE: "text-amber-700 dark:text-amber-400",
+  BATT_FAILURE: "text-rose-700 dark:text-rose-400",
+  COMM_LOSS: "text-violet-700 dark:text-violet-400",
   ANY: "text-slate-600 dark:text-slate-400",
 };
 
@@ -127,24 +127,26 @@ function AlarmTypeSpan({ value }: { value: AlarmType }) {
 function SeveritySpan({ value }: { value: Severity }) {
   const tone =
     value === "L3"
-      ? "text-rose-600 dark:text-rose-400"
+      ? "text-rose-700 dark:text-rose-400"
       : value === "L2"
-        ? "text-amber-600 dark:text-amber-400"
-        : "text-sky-600 dark:text-sky-400";
+        ? "text-amber-700 dark:text-amber-400"
+        : "text-sky-700 dark:text-sky-400";
   return <span className={cn("font-mono font-semibold", tone)}>{value}</span>;
 }
 
 function ScopeSpan({ value }: { value: RuleScope }) {
-  return <span className="font-mono font-semibold text-violet-600 dark:text-violet-400">{value}</span>;
+  return <span className="font-mono font-semibold text-violet-700 dark:text-violet-400">{value}</span>;
 }
 
 /** Format the trigger condition with color-coded parts. */
 function TriggerCondition({ rule }: { rule: CorrelationRule }) {
+  // Module-scope component: the hook has to be called here, not inherited.
+  const t = useT();
   return (
     <code className="block rounded bg-muted/60 px-2 py-1.5 font-mono text-[11px] leading-relaxed">
-      <span className="font-semibold text-amber-600 dark:text-amber-400">{rule.threshold}+</span>{" "}
-      <AlarmTypeSpan value={rule.alarmType} /> in <ScopeSpan value={rule.scope} /> within{" "}
-      <span className="font-semibold text-amber-600 dark:text-amber-400">{rule.windowMinutes}min</span>{" "}
+      <span className="font-semibold text-amber-700 dark:text-amber-400">{rule.threshold}+</span>{" "}
+      <AlarmTypeSpan value={rule.alarmType} /> {t("rules.summaryIn")} <ScopeSpan value={rule.scope} /> {t("rules.summaryWithin")}{" "}
+      <span className="font-semibold text-amber-700 dark:text-amber-400">{rule.windowMinutes}min</span>{" "}
       → <SeveritySpan value={rule.escalateTo} />
     </code>
   );
@@ -268,7 +270,7 @@ export function CorrelationRulesEditor({ open, onOpenChange }: Props) {
                 {triggeredCount > 0 && (
                   <Badge
                     variant="secondary"
-                    className="ml-1.5 h-4 bg-rose-500/20 px-1 text-[9px] text-rose-600 dark:text-rose-400"
+                    className="ml-1.5 h-4 bg-rose-500/20 px-1 text-[9px] text-rose-700 dark:text-rose-400"
                   >
                     {triggeredCount}
                   </Badge>
@@ -332,7 +334,7 @@ function ActiveRulesTab({
       <div className="flex flex-col items-center justify-center py-12 text-center">
         <ShieldAlert className="mb-3 h-10 w-10 text-muted-foreground/40" />
         <p className="text-sm font-medium text-muted-foreground">{t("rules.noRulesConfigured")}</p>
-        <p className="mt-1 text-xs text-muted-foreground/70">
+        <p className="mt-1 text-xs text-muted-foreground">
           {t("rules.switchToEditor")}
         </p>
       </div>
@@ -429,7 +431,7 @@ function ActiveRuleCard({
           {/* Evaluation status */}
           <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
             {triggered ? (
-              <span className="inline-flex items-center gap-1 font-medium text-rose-600 dark:text-rose-400">
+              <span className="inline-flex items-center gap-1 font-medium text-rose-700 dark:text-rose-400">
                 <AlertTriangle className="h-3.5 w-3.5" />
                 {t("rules.triggeredIn")} {match?.scopeLabel ?? "—"} ({match?.matchCount ?? 0})
               </span>
@@ -560,7 +562,7 @@ function EditorTab({ rules }: { rules: CorrelationRule[] }) {
         <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-10 text-center">
           <ShieldAlert className="mb-2 h-8 w-8 text-muted-foreground/40" />
           <p className="text-sm text-muted-foreground">{t("rules.noRulesConfigured")}</p>
-          <p className="mt-1 text-[11px] text-muted-foreground/70">
+          <p className="mt-1 text-[11px] text-muted-foreground">
             {t("rules.clickAddOrCreate")}
           </p>
         </div>
@@ -781,7 +783,7 @@ const t = useT();
         {/* Alarm Type */}
         <div>
           <Label className="mb-1 text-[11px] text-muted-foreground">{t("rules.alarmType")}</Label>
-          <Select
+          <Select label={t("rules.alarmType")}
             value={draft.alarmType}
             onValueChange={(v) => setDraft((d) => ({ ...d, alarmType: v as AlarmType }))}
           >
@@ -801,7 +803,7 @@ const t = useT();
         {/* Scope */}
         <div>
           <Label className="mb-1 text-[11px] text-muted-foreground">{t("rules.scope")}</Label>
-          <Select
+          <Select label={t("rules.scope")}
             value={draft.scope}
             onValueChange={(v) => setDraft((d) => ({ ...d, scope: v as RuleScope }))}
           >
@@ -859,7 +861,7 @@ const t = useT();
         {/* Escalate To */}
         <div className="sm:col-span-2">
           <Label className="mb-1 text-[11px] text-muted-foreground">{t("rules.escalateTo")}</Label>
-          <Select
+          <Select label={t("rules.escalateTo")}
             value={draft.escalateTo}
             onValueChange={(v) => setDraft((d) => ({ ...d, escalateTo: v as Severity }))}
           >
@@ -931,7 +933,7 @@ const t = useT();
           size="sm"
           variant="outline"
           onClick={() => setDeleteOpen(true)}
-          className="ml-auto h-7 border-rose-500/30 text-rose-600 hover:bg-rose-500/10 hover:text-rose-700 dark:text-rose-400"
+          className="ml-auto h-7 border-rose-500/30 text-rose-700 dark:text-rose-400 hover:bg-rose-500/10 hover:text-rose-700 dark:text-rose-400"
         >
           <Trash2 className="mr-1.5 h-3.5 w-3.5" />
           {t("rules.delete")}
