@@ -97,11 +97,12 @@ load; a sentence reads as an empty fleet.
 * **Responsive behaviour is inspected, not exercised at intermediate widths.** Every view uses responsive
   utilities (`sm:`/`md:`/`xl:`) and the sweep checks horizontal overflow at 1440 and 390, but 768 and 1024
   have not been rendered.
-* **RTL was not exercised when this document was written.** The sweep rendered English only, so the Arabic
-  layout of all 27 views had never been on a screen. `tests/e2e/views-rtl.e2e.ts` now renders every view
-  again in `dir="rtl"` — asserting the direction actually applied, that Arabic is on screen, and re-checking
-  overflow and axe in the mirrored layout. Its first run is the CI job, and until that run is green the RTL
-  column of this audit stays unverified.
+* **RTL was not exercised when this document was written; it is now VERIFIED.** The sweep rendered English
+  only, so the Arabic layout of all 27 views had never been on a screen. `tests/e2e/views-rtl.e2e.ts` renders
+  every view again in `dir="rtl"` — asserting the direction actually applied, that Arabic is on screen, and
+  re-checking overflow and axe in the mirrored layout. First run, CI `40226811051` job `121270103663`:
+  **29 loads, 6.2 m, zero axe findings, zero overflow at 1440/390, nothing suppressed.** That is RTL
+  *integrity* — and it was green on code whose Arabic layout was physically spelled, which is the next point.
 * **The Arabic layout is not a mirrored layout — it is the English one turned around.** The tree contained no
   logical utilities and ~410 physical ones (`ml`/`mr`/`pl`/`pr`, `text-left`/`text-right`, `border-l`/`r`), so
   when `dir` flips the icon gap moves to the outside of the row, a numeric column aligns to the edge its column
