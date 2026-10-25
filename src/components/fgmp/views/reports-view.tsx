@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { FileText, FileSpreadsheet, FileType2, Calendar } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useApi } from "@/lib/fgmp/use-api";
+import { TruncationNote } from "@/components/fgmp/truncation-note";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { StatusBadge } from "@/components/fgmp/status-badge";
@@ -166,6 +167,7 @@ export function ReportsView() {
                           ))}
                         </TableBody>
                       </Table>
+                      <TruncationNote shown={50} total={data.alarms.length} />
                     </TabsContent>
                     <TabsContent value="deliveries" className="m-0 p-2">
                       <Table>
@@ -176,6 +178,7 @@ export function ReportsView() {
                           ))}
                         </TableBody>
                       </Table>
+                      <TruncationNote shown={50} total={data.deliveries.length} />
                     </TabsContent>
                     <TabsContent value="tickets" className="m-0 p-2">
                       <Table>
@@ -186,6 +189,7 @@ export function ReportsView() {
                           ))}
                         </TableBody>
                       </Table>
+                      <TruncationNote shown={50} total={data.tickets.length} />
                     </TabsContent>
                     <TabsContent value="commands" className="m-0 p-2">
                       <Table>
@@ -196,6 +200,7 @@ export function ReportsView() {
                           ))}
                         </TableBody>
                       </Table>
+                      <TruncationNote shown={50} total={data.commands.length} />
                     </TabsContent>
                   </ScrollArea>
                 </Tabs>

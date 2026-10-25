@@ -44,6 +44,7 @@ import type { AlarmRow } from "@/lib/fgmp/types";
 import { translate } from "@/lib/fgmp/i18n";
 import { ResourceError } from "@/components/fgmp/resource-error";
 import { DecorativeChart } from "@/components/fgmp/decorative-chart";
+import { TruncationNote } from "@/components/fgmp/truncation-note";
 
 type DashboardRange = "1h" | "24h" | "7d";
 
@@ -536,6 +537,8 @@ export function DashboardView() {
           <CardContent className="p-0">
             <ScrollArea className="h-[220px]">
               <div className="space-y-1 px-3 pb-3">
+                {/* The activity feed is the 40 most recent events. Without the
+                    note, the 40th row reads as the oldest event there is. */}
                 {snapshot.events.slice(0, 40).map((e) => (
                   <div key={e.id} className="flex items-start gap-2 border-b py-1.5 text-xs last:border-0">
                     <span className={cn("mt-1 h-1.5 w-1.5 shrink-0 rounded-full",
@@ -556,7 +559,8 @@ export function DashboardView() {
                   />
                 )}
               </div>
-            </ScrollArea>
+            <TruncationNote shown={40} total={snapshot.events.length} />
+              </ScrollArea>
           </CardContent>
         </Card>
       </div>

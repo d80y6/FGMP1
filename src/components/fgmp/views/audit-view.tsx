@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { ScrollText, Search, ShieldCheck, User, Activity, FileQuestion } from "lucide-react";
 import { useApi } from "@/lib/fgmp/use-api";
+import { TruncationNote } from "@/components/fgmp/truncation-note";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { EmptyState } from "@/components/fgmp/empty-state";
@@ -146,6 +147,7 @@ export function AuditView() {
                   )}
                 </TableBody>
               </Table>
+              <TruncationNote shown={200} total={filtered.length} />
             </ScrollArea>
           </CardContent>
         </Card>

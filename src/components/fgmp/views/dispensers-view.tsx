@@ -13,6 +13,7 @@ import {
 } from "recharts";
 import { useFgmp } from "@/lib/fgmp/store";
 import { useApi, apiPost, apiPatch, apiDelete } from "@/lib/fgmp/use-api";
+import { TruncationNote } from "@/components/fgmp/truncation-note";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { StatusBadge } from "@/components/fgmp/status-badge";
@@ -611,6 +612,7 @@ export function DispensersView() {
                       })}
                     </TableBody>
                   </Table>
+                  <TruncationNote shown={100} total={filtered.length} />
                 </div>
               )}
             </CardContent>
@@ -708,6 +710,7 @@ export function DispensersView() {
                       })}
                     </TableBody>
                   </Table>
+                  <TruncationNote shown={200} total={filteredTxns.length} />
                 </div>
               )}
             </CardContent>

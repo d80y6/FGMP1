@@ -8,6 +8,7 @@ import {
 import { useFgmp } from "@/lib/fgmp/store";
 import { useApi } from "@/lib/fgmp/use-api";
 import { useChartColors } from "@/lib/fgmp/use-chart-colors";
+import { TruncationNote } from "@/components/fgmp/truncation-note";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -186,6 +187,7 @@ export function AnalyticsView() {
                   </div>
                 ))}
                 {theftEvents.length === 0 && <p className="py-8 text-center text-xs text-muted-foreground">{t("analytics.noTheftEvents")}</p>}
+                <TruncationNote shown={20} total={theftEvents.length} />
               </div>
             </ScrollArea>
           </CardContent>

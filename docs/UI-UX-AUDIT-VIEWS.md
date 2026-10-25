@@ -63,8 +63,11 @@ The failure is specific and worth stating precisely: on a tenant with 140 sites,
 like the last row that exists. An operator who filters for a site that sorts past the cap concludes the
 site is not there. **A rendering decision produced a data-integrity impression.** Fixed with
 `TruncationNote`, which renders "Showing {shown} of {total}. Narrow the filters to see the rest." and
-nothing at all when the list fits, so the common case gains no noise. Applied to `sites`, `batteries`,
-`fuel`, `generators`, `iot`.
+nothing at all when the list fits, so the common case gains no noise. Applied to **every** capped list in
+the 27 views: `sites`, `batteries`, `fuel`, `generators`, `iot`, `dispensers` (both tables), `reports` (all
+four), `audit`, `analytics` and the dashboard activity feed. A mechanical check now fails if a view caps a
+list at 20+ rows without importing `TruncationNote`, which is how the last four were caught after the first
+five had been wired.
 
 ### B. Three primary lists had no zero-row state (FIXED)
 
