@@ -65,8 +65,9 @@ import { db as ambientDb } from "@/lib/db";
  *
  * which NextAuth surfaced as a login redirect to
  * `/api/auth/error?error=Cannot%20read%20properties%20of%20undefined…`. With no
- * ops credential configured — the documented posture for the web container, and
- * the state `render.yaml` actually deploys — NOBODY could sign in, and the
+ * ops credential configured — the documented posture for the web service, and
+ * the state the retired Render blueprint actually deployed — NOBODY could sign
+ * in, and the
  * failure looked like a credential problem. Reproduced on a live server: the
  * same login succeeded as soon as FGMP_OPS_DATABASE_URL was added, with no code
  * change.

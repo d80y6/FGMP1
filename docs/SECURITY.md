@@ -171,7 +171,7 @@ trigger, download or restore a dump over HTTP.
 
 | Gap | Impact | Mitigation |
 |---|---|---|
-| `render.yaml` deployments may lack a non-owner role | RLS cannot be enforced | Create `fgmp_app` and keep `FGMP_REQUIRE_RLS=1`; the app refuses to start otherwise |
+| A Worker deployment may be given an owner-role `DATABASE_URL` | RLS cannot be enforced | Create `fgmp_app`, keep `FGMP_REQUIRE_RLS=1` in the Worker secrets; the app refuses to start otherwise |
 | `SensorReading` has no retention policy | Dumps and tables grow without bound | Plan a TimescaleDB retention policy |
 | Recovery-code + password policy is configurable, not prescribed | Weak operator choices | Documented defaults; review in code review |
 | Audit log is append-only in the app, not in the database | A compromised app role could rewrite it | Restrict `fgmp_app` to INSERT/SELECT on `AuditLog`; export logs off-box |
