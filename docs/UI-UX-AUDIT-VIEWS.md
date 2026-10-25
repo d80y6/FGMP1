@@ -94,9 +94,14 @@ load; a sentence reads as an empty fleet.
   order, target sizes and overflow at 1440/390 are decided in Chromium by `views.e2e.ts`.
 * **No performance claim.** No view has a measured render cost. A dev server without a database cannot
   produce an honest number, and reporting one would be dishonest.
-* **Responsive behaviour is inspected, not exercised.** Every view uses responsive utilities
-  (`sm:`/`md:`/`xl:`) and the sweep checks horizontal overflow at two widths, but intermediate widths
-  (768, 1024) have not been rendered.
+* **Responsive behaviour is inspected, not exercised at intermediate widths.** Every view uses responsive
+  utilities (`sm:`/`md:`/`xl:`) and the sweep checks horizontal overflow at 1440 and 390, but 768 and 1024
+  have not been rendered.
+* **RTL was not exercised when this document was written.** The sweep rendered English only, so the Arabic
+  layout of all 27 views had never been on a screen. `tests/e2e/views-rtl.e2e.ts` now renders every view
+  again in `dir="rtl"` — asserting the direction actually applied, that Arabic is on screen, and re-checking
+  overflow and axe in the mirrored layout. Its first run is the CI job, and until that run is green the RTL
+  column of this audit stays unverified.
 * **Density is a product decision, deliberately not overridden.** 10px and 11px type remain throughout
   (682 occurrences). The 8px/9px band — genuinely unreadable — was raised to 10px (D-10) and is now
   enforced; the rest is a judgement about the operator's real screen that this audit cannot make.

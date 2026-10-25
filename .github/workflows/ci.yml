@@ -357,9 +357,11 @@ jobs:
   # every `bun install` or baked into the application image.
   ui:
     runs-on: ubuntu-latest
-    # Raised from 30: this job now also renders all 27 views twice over (ADMIN
-    # and the four screens whose rendering differs for SUPERADMIN), which is 30
-    # page loads with axe on each. The build and browser install are unchanged.
+    # Raised from 30: this job renders all 27 views twice over (ADMIN and the
+    # four screens whose rendering differs for SUPERADMIN) — 30 page loads with
+    # axe on each — and now does the whole thing AGAIN in Arabic/RTL, another 29
+    # page loads. Measured: LTR ~7 min, so budget ~2x that for the sweeps plus
+    # the unchanged build and browser install.
     timeout-minutes: 45
     needs: [verify]
 
@@ -466,12 +468,17 @@ jobs:
       # overflow, tiny-text count). It is published whether the run passed or
       # failed: on a pass it is the evidence, on a failure it is the diagnosis,
       # and reading it from the job log alone means re-running to see it again.
-      - name: Upload the per-view sweep report
+      - name: Upload the per-view sweep reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: views-report
-          path: test-results/views-report.md
+          # Two sweeps now: LTR (the default language) and RTL (Arabic). The RTL
+          # one is new — it is the first time the 27 views have ever been
+          # rendered in the direction half the product is written for.
+          path: |
+            test-results/views-report.md
+            test-results/views-rtl-report.md
           if-no-files-found: warn
 
       - name: Publish failure diagnostics
