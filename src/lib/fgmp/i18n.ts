@@ -2381,6 +2381,52 @@ export const DICTIONARY: Dict = {
   "geography.cascadeGovernorate": { en: "All districts under this governorate will be cascade-deleted.", ar: "ستُحذف كل المديريات التابعة لهذه المحافظة تلقائياً." },
   "geography.deletedToast": { en: "{kind} deleted", ar: "تم حذف {kind}" },
   "geography.deleteFailed": { en: "Delete failed", ar: "فشل الحذف" },
+
+  /* ===== Refusal screen for a view the effective role may not open =====
+     Shown instead of a silent redirect. `{role}` is the *effective* role
+     (preview included), which is the same one the server enforces. */
+  "access.deniedTitle": { en: "Access denied", ar: "تم رفض الوصول" },
+  "access.deniedBody": {
+    en: "Your role ({role}) does not include permission to open {view}. A Super Admin can grant it.",
+    ar: "دورك ({role}) لا يتضمن صلاحية فتح {view}. يمكن للمدير الأعلى منحها.",
+  },
+  "access.deniedBack": { en: "Back to dashboard", ar: "العودة إلى اللوحة" },
+
+  /* ===== Accessible names for controls whose visible text is a value =====
+     A Radix Select trigger is a <button role="combobox">, so it takes its name
+     from aria-label, never from the value it displays. Each Select now carries
+     a `label` (see components/ui/select.tsx) that resolves to one of these. */
+  "sites.site": { en: "Site", ar: "الموقع" },
+  "batteries.chemistry": { en: "Chemistry", ar: "الكيمياء" },
+  "preferences.quietFrom": { en: "Quiet hours start", ar: "بداية ساعات الهدوء" },
+  "preferences.quietTo": { en: "Quiet hours end", ar: "نهاية ساعات الهدوء" },
+  "reports.period": { en: "Report period", ar: "فترة التقرير" },
+  "reports.exportFormat": { en: "Export format", ar: "صيغة التصدير" },
+  "fuel.sortBy": { en: "Sort by", ar: "الترتيب حسب" },
+  "alarms.statusFilter": { en: "Alarm status", ar: "حالة الإنذار" },
+  "maintenance.statusFilter": { en: "Ticket status", ar: "حالة التذكرة" },
+  "prediction.filterLabel": { en: "Maintenance risk", ar: "مخاطر الصيانة" },
+  "iot.rebootDevice": { en: "Reboot device", ar: "إعادة تشغيل الجهاز" },
+  "firmware.gatewayList": { en: "Gateway list", ar: "قائمة البوابات" },
+  "firmware.busList": { en: "Modbus bus list", ar: "قائمة نواقل مودباس" },
+  "firmware.rebootList": { en: "Reboot queue", ar: "قائمة إعادة التشغيل" },
+
+  /* ===== Names for scrollable regions (axe: scrollable-region-focusable) =====
+     A max-height box with nothing focusable inside is a keyboard trap: the
+     content below the fold cannot be reached at all without a pointer. Making
+     the box focusable is half the fix; it also needs a name, or a screen reader
+     announces "region" with no indication of what is inside. */
+  "a11y.scrollCommandHistory": { en: "Command history", ar: "سجل الأوامر" },
+  "a11y.scrollPredictions": { en: "Maintenance predictions", ar: "توقعات الصيانة" },
+  "a11y.scrollReconciliation": { en: "Reconciliation results", ar: "نتائج المطابقة" },
+  "a11y.scrollDueGenerators": { en: "Generators due for service", ar: "المولدات المستحقة للصيانة" },
+  "a11y.scrollTankTable": { en: "Tank table", ar: "جدول الخزانات" },
+  "a11y.scrollGeneratorTable": { en: "Generator table", ar: "جدول المولدات" },
+  "a11y.scrollBatteryTable": { en: "Battery table", ar: "جدول البطاريات" },
+  "a11y.scrollDeviceTable": { en: "IoT device table", ar: "جدول أجهزة إنترنت الأشياء" },
+  "a11y.scrollDispenserTable": { en: "Dispenser table", ar: "جدول المضخات" },
+  "leaderboard.rank": { en: "Rank {n}", ar: "المرتبة {n}" },
+  "a11y.scrollTransactionTable": { en: "Transaction table", ar: "جدول المعاملات" },
 };
 
 /**

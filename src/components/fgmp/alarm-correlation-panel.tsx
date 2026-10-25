@@ -158,7 +158,7 @@ export function AlarmCorrelationPanel({ alarms, onSelectSite }: Props) {
               {correlatedTypes.map(([pair, count]) => (
                 <Badge key={pair} variant="outline" className="gap-1 text-[9px]">
                   <span className="font-mono">{alarmTypeLabel(pair, numLang)}</span>
-                  <span className="rounded bg-violet-500/15 px-1 text-violet-600 dark:text-violet-400">×{formatNumber(count, numLang)}</span>
+                  <span className="rounded bg-violet-500/15 px-1 text-violet-700 dark:text-violet-400">×{formatNumber(count, numLang)}</span>
                 </Badge>
               ))}
             </div>
@@ -193,9 +193,9 @@ export function AlarmCorrelationPanel({ alarms, onSelectSite }: Props) {
                     {/* Rank */}
                     <div className={cn(
                       "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold",
-                      idx === 0 ? "bg-rose-500/20 text-rose-600 dark:text-rose-400"
-                        : idx === 1 ? "bg-amber-500/20 text-amber-600 dark:text-amber-400"
-                        : idx === 2 ? "bg-orange-500/20 text-orange-600 dark:text-orange-400"
+                      idx === 0 ? "bg-rose-500/20 text-rose-700 dark:text-rose-400"
+                        : idx === 1 ? "bg-amber-500/20 text-amber-700 dark:text-amber-400"
+                        : idx === 2 ? "bg-orange-500/20 text-orange-700 dark:text-orange-400"
                         : "bg-muted text-muted-foreground"
                     )}>
                       {idx + 1}

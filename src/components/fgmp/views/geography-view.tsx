@@ -613,7 +613,7 @@ function ListItem({
             <Button
               size="icon"
               variant="ghost"
-              className="h-6 w-6 text-rose-500 hover:text-rose-600 hover:bg-rose-500/10"
+              className="h-6 w-6 text-rose-500 hover:text-rose-700 dark:hover:text-rose-400 hover:bg-rose-500/10"
               onClick={(e) => { e.stopPropagation(); onDelete(); }}
               aria-label={t("common.delete")}
             >
@@ -759,7 +759,7 @@ function DeleteEntityDialog({
             {hasSites ? (
               <>
                 <br /><br />
-                <span className="text-rose-600 dark:text-rose-400 font-medium">
+                <span className="text-rose-700 dark:text-rose-400 font-medium">
                   {target ? tFmt("geography.stillHasSites", { kind: t(`geo.${target.kind}`), n: target.siteCount }) : ""}
                 </span>
               </>

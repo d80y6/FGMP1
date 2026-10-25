@@ -34,6 +34,7 @@ import { useT, useArabicNumerals } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 import type { AlarmRow } from "@/lib/fgmp/types";
 import { alarmTypeLabel } from "@/lib/fgmp/labels";
+import { DecorativeChart } from "@/components/fgmp/decorative-chart";
 
 
 /* ------------------------------------------------------------------ */
@@ -112,9 +113,9 @@ function computeSiteHealth(
 
 /** Severity chip — task spec: L1 sky, L2 amber, L3 rose. */
 function severityChipClass(sev: string): string {
-  if (sev === "L3") return "bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30";
-  if (sev === "L2") return "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30";
-  return "bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/30";
+  if (sev === "L3") return "bg-rose-500/15 text-rose-700 dark:text-rose-400 border-rose-500/30";
+  if (sev === "L2") return "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30";
+  return "bg-sky-500/15 text-sky-700 dark:text-sky-400 border-sky-500/30";
 }
 
 /* ------------------------------------------------------------------ */
@@ -485,23 +486,25 @@ export function RegionDetailSheet({ region, onOpenChange }: RegionDetailSheetPro
                         <p className="mt-1.5 text-[11px] text-muted-foreground">{t("region.noActiveAlarms")}</p>
                       </div>
                     ) : (
-                      <ResponsiveContainer width="100%" height={160}>
-                        <PieChart>
-                          <Pie
-                            data={data.alarmPie}
-                            dataKey="value"
-                            nameKey="name"
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={40}
-                            outerRadius={62}
-                            paddingAngle={2}
-                          >
-                            {data.alarmPie.map((e, i) => <Cell key={i} fill={e.fill} />)}
-                          </Pie>
-                          <RTooltip contentStyle={{ fontSize: 11 }} formatter={(v: number, n: string) => [`${v} alarm${v === 1 ? "" : "s"}`, n]} />
-                        </PieChart>
-                      </ResponsiveContainer>
+                      <DecorativeChart>
+                        <ResponsiveContainer width="100%" height={160}>
+                          <PieChart>
+                            <Pie
+                              data={data.alarmPie}
+                              dataKey="value"
+                              nameKey="name"
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={40}
+                              outerRadius={62}
+                              paddingAngle={2}
+                            >
+                              {data.alarmPie.map((e, i) => <Cell key={i} fill={e.fill} />)}
+                            </Pie>
+                            <RTooltip contentStyle={{ fontSize: 11 }} formatter={(v: number, n: string) => [`${v} alarm${v === 1 ? "" : "s"}`, n]} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </DecorativeChart>
                     )}
                     <div className="mt-1 flex justify-center gap-3 text-[10px]">
                       <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ background: cc.sky }} />L1: <b className="tabular-nums">{data.alarmsL1}</b></span>

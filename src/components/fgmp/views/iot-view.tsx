@@ -121,11 +121,11 @@ export function IotView() {
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("iot.search")} className="h-9 w-[200px] pl-8" />
             </div>
-            <Select value={protocol} onValueChange={setProtocol}>
+            <Select label={t("iot.protocol")} value={protocol} onValueChange={setProtocol}>
               <SelectTrigger className="h-9 w-[140px] text-xs"><SelectValue placeholder={t("iot.protocolPlaceholder")} /></SelectTrigger>
               <SelectContent><SelectItem value="all">{t("iot.allProtocols")}</SelectItem>{PROTOCOLS.map((p) => <SelectItem key={p} value={p}>{iotProtocolLabel(p, numLang)}</SelectItem>)}</SelectContent>
             </Select>
-            <Select value={type} onValueChange={setType}>
+            <Select label={t("iot.deviceType")} value={type} onValueChange={setType}>
               <SelectTrigger className="h-9 w-[170px] text-xs"><SelectValue placeholder={t("iot.typePlaceholder")} /></SelectTrigger>
               <SelectContent><SelectItem value="all">{t("iot.allTypes")}</SelectItem>{TYPES.map((tp) => <SelectItem key={tp} value={tp}>{iotTypeLabel(tp, numLang)}</SelectItem>)}</SelectContent>
             </Select>
@@ -167,7 +167,7 @@ export function IotView() {
                         <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => { setOta({ id: d.id, name: d.name, current: d.firmware }); setOtaFw(nextFw(d.firmware)); }}>
                           <HardDriveDownload className="mr-1 h-3 w-3" />{t("iot.ota")}
                         </Button>
-                        <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => reboot(d.id, d.name)}><RefreshCw className="h-3 w-3" /></Button>
+                        <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => reboot(d.id, d.name)} aria-label={t("iot.rebootDevice")} title={t("iot.rebootDevice")}><RefreshCw className="h-3 w-3" /></Button>
                       </div>
                     </TableCell>
                   </TableRow>

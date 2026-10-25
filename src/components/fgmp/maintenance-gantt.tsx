@@ -327,7 +327,7 @@ export function MaintenanceGantt({ tickets, defaultRange = 30, onTicketClick }: 
               >
                 <Badge
                   variant="outline"
-                  className="h-4 px-1 text-[8px] border-rose-500/50 bg-rose-500/15 text-rose-600 dark:text-rose-400"
+                  className="h-4 px-1 text-[8px] border-rose-500/50 bg-rose-500/15 text-rose-700 dark:text-rose-400"
                 >
                   TODAY
                 </Badge>

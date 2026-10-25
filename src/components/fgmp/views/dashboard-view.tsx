@@ -43,6 +43,7 @@ import type { AnalyticsPayload } from "@/lib/fgmp/types";
 import type { AlarmRow } from "@/lib/fgmp/types";
 import { translate } from "@/lib/fgmp/i18n";
 import { ResourceError } from "@/components/fgmp/resource-error";
+import { DecorativeChart } from "@/components/fgmp/decorative-chart";
 
 type DashboardRange = "1h" | "24h" | "7d";
 
@@ -415,14 +416,16 @@ export function DashboardView() {
         <Card>
           <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-sm"><Building2 className="h-4 w-4 text-emerald-500" /> {t("dash.fleet")}</CardTitle></CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={180}>
-              <PieChart>
-                <Pie data={fleetStatus} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={3}>
-                  {fleetStatus.map((e, i) => <Cell key={i} fill={e.fill} />)}
-                </Pie>
-                <Tooltip contentStyle={{ fontSize: 12 }} />
-              </PieChart>
-            </ResponsiveContainer>
+            <DecorativeChart>
+              <ResponsiveContainer width="100%" height={180}>
+                <PieChart>
+                  <Pie data={fleetStatus} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={3}>
+                    {fleetStatus.map((e, i) => <Cell key={i} fill={e.fill} />)}
+                  </Pie>
+                  <Tooltip contentStyle={{ fontSize: 12 }} />
+                </PieChart>
+              </ResponsiveContainer>
+            </DecorativeChart>
             <div className="mt-2 flex justify-center gap-3 text-[11px]">
               {fleetStatus.map((f) => (
                 <span key={f.name} className="flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ background: f.fill }} />{f.name}: <b>{f.value}</b></span>

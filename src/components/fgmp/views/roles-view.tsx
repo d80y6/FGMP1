@@ -158,12 +158,12 @@ export function RolesView() {
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium">{roleLabel(r, numLang)}</span>
                           {isMine && (
-                            <Badge variant="outline" className="h-4 px-1 text-[9px] border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                            <Badge variant="outline" className="h-4 px-1 text-[9px] border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
                               YOU
                             </Badge>
                           )}
                           {isWildcard && (
-                            <Badge variant="outline" className="h-4 px-1 text-[9px] border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                            <Badge variant="outline" className="h-4 px-1 text-[9px] border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400">
                               <Asterisk className="h-2.5 w-2.5 mr-0.5" />WILDCARD
                             </Badge>
                           )}
@@ -244,10 +244,10 @@ function RoleDetailPanel({
             <ShieldCheck className="h-4 w-4 text-emerald-500" />
             {roleLabel(role, lang)}
             {isMine && (
-              <Badge variant="outline" className="text-[10px] border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">{t("roles.yourRole")}</Badge>
+              <Badge variant="outline" className="text-[10px] border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">{t("roles.yourRole")}</Badge>
             )}
             {isWildcard && (
-              <Badge variant="outline" className="text-[10px] border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400">
+              <Badge variant="outline" className="text-[10px] border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400">
                 <Asterisk className="h-2.5 w-2.5 mr-0.5" />WILDCARD
               </Badge>
             )}
@@ -276,7 +276,7 @@ function RoleDetailPanel({
             <div className="flex items-center gap-2">
               <Badge
                 variant="outline"
-                className="text-[10px] font-mono uppercase tracking-wide border-emerald-500/30 bg-emerald-500/5 text-emerald-600 dark:text-emerald-400"
+                className="text-[10px] font-mono uppercase tracking-wide border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400"
               >
                 {g.prefix}:
               </Badge>

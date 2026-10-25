@@ -298,23 +298,23 @@ export const HEALTH_BAND_CLASSES: Record<
   { cls: string; dot: string }
 > = {
   excellent: {
-    cls: "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+    cls: "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
     dot: "bg-emerald-500",
   },
   good: {
-    cls: "border-green-500/40 bg-green-500/10 text-green-600 dark:text-green-400",
+    cls: "border-green-500/40 bg-green-500/10 text-green-700 dark:text-green-400",
     dot: "bg-green-500",
   },
   fair: {
-    cls: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+    cls: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400",
     dot: "bg-amber-500",
   },
   poor: {
-    cls: "border-orange-500/40 bg-orange-500/10 text-orange-600 dark:text-orange-400",
+    cls: "border-orange-500/40 bg-orange-500/10 text-orange-700 dark:text-orange-400",
     dot: "bg-orange-500",
   },
   critical: {
-    cls: "border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400",
+    cls: "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-400",
     dot: "bg-rose-500",
   },
 };

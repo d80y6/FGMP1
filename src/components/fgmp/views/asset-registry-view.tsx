@@ -252,7 +252,7 @@ function SiteSelect({ value, onChange, sites, lang }: {
   void lang;
   const t = useT();
   return (
-    <Select value={value} onValueChange={onChange}>
+    <Select label={t("sites.site")} value={value} onValueChange={onChange}>
       <SelectTrigger className="w-full"><SelectValue placeholder={t("common.selectSite")} /></SelectTrigger>
       <SelectContent className="max-h-72">
         {sites.map((s) => (
@@ -302,7 +302,7 @@ function RowActions({ onEdit, onDelete, disabled }: {
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onClick={onDelete}
-          className="text-rose-600 focus:text-rose-700 focus:bg-rose-50 dark:focus:bg-rose-950/40"
+          className="text-rose-700 dark:text-rose-400 focus:text-rose-700 focus:bg-rose-50 dark:focus:bg-rose-950/40"
         >
           <Trash2 className="mr-2 h-3.5 w-3.5" />
           {t("common.delete")}
@@ -404,7 +404,7 @@ function TanksTab({ sites, isAdmin, numLang }: {
               className="h-9 w-[200px] pl-8"
             />
           </div>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <Select label={t("common.status")} value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="h-9 w-[150px] text-xs">
               <SelectValue />
             </SelectTrigger>
@@ -415,7 +415,7 @@ function TanksTab({ sites, isAdmin, numLang }: {
               ))}
             </SelectContent>
           </Select>
-          <Select value={fuelFilter} onValueChange={setFuelFilter}>
+          <Select label={t("assets.fuelType")} value={fuelFilter} onValueChange={setFuelFilter}>
             <SelectTrigger className="h-9 w-[140px] text-xs">
               <SelectValue />
             </SelectTrigger>
@@ -444,7 +444,7 @@ function TanksTab({ sites, isAdmin, numLang }: {
         ) : filtered.length === 0 ? (
           <EmptyState icon={Fuel} title={t("registry.noTanks")} description={t("registry.noTanksDesc")} />
         ) : (
-          <div className="max-h-[600px] overflow-y-auto">
+          <div className="max-h-[600px] overflow-y-auto" tabIndex={0} role="region" aria-label={t("a11y.scrollTankTable")}>
             <Table>
               <TableHeader className="sticky top-0 bg-card">
                 <TableRow>
@@ -675,7 +675,7 @@ function TankFormDialog({ open, onOpenChange, target, sites, lang, onSaved }: {
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">{t("assets.fuelType")}</Label>
-            <Select value={form.fuelType} onValueChange={(v) => setForm({ ...form, fuelType: v })}>
+            <Select label={t("assets.fuelType")} value={form.fuelType} onValueChange={(v) => setForm({ ...form, fuelType: v })}>
               <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {TANK_FUEL_TYPES.map((f) => (
@@ -687,7 +687,7 @@ function TankFormDialog({ open, onOpenChange, target, sites, lang, onSaved }: {
           {target && (
             <div className="space-y-1.5">
               <Label className="text-xs">Status</Label>
-              <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
+              <Select label={t("common.status")} value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
                 <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {TANK_STATUSES.map((s) => (
@@ -788,7 +788,7 @@ function GeneratorsTab({ sites, isAdmin, numLang }: {
               className="h-9 w-[200px] pl-8"
             />
           </div>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <Select label={t("common.status")} value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="h-9 w-[150px] text-xs">
               <SelectValue />
             </SelectTrigger>
@@ -817,7 +817,7 @@ function GeneratorsTab({ sites, isAdmin, numLang }: {
         ) : filtered.length === 0 ? (
           <EmptyState icon={Zap} title={t("registry.noGenerators")} description={t("registry.noGeneratorsDesc")} />
         ) : (
-          <div className="max-h-[600px] overflow-y-auto">
+          <div className="max-h-[600px] overflow-y-auto" tabIndex={0} role="region" aria-label={t("a11y.scrollGeneratorTable")}>
             <Table>
               <TableHeader className="sticky top-0 bg-card">
                 <TableRow>
@@ -1026,7 +1026,7 @@ function GeneratorFormDialog({ open, onOpenChange, target, sites, lang, onSaved 
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">{t("assets.fuelType")}</Label>
-            <Select value={form.fuelType} onValueChange={(v) => setForm({ ...form, fuelType: v })}>
+            <Select label={t("assets.fuelType")} value={form.fuelType} onValueChange={(v) => setForm({ ...form, fuelType: v })}>
               <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {["DIESEL", "PETROL"].map((f) => (
@@ -1039,7 +1039,7 @@ function GeneratorFormDialog({ open, onOpenChange, target, sites, lang, onSaved 
             <>
               <div className="space-y-1.5">
                 <Label className="text-xs">Status</Label>
-                <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
+                <Select label={t("common.status")} value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
                   <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {GEN_STATUSES.map((s) => (
@@ -1050,7 +1050,7 @@ function GeneratorFormDialog({ open, onOpenChange, target, sites, lang, onSaved 
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">{t("generators.mode")}</Label>
-                <Select value={form.mode} onValueChange={(v) => setForm({ ...form, mode: v })}>
+                <Select label={t("generators.mode")} value={form.mode} onValueChange={(v) => setForm({ ...form, mode: v })}>
                   <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {GEN_MODES.map((m) => (
@@ -1124,7 +1124,7 @@ function BatteriesTab({ sites, isAdmin, numLang }: {
               className="h-9 w-[200px] pl-8"
             />
           </div>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <Select label={t("common.status")} value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="h-9 w-[150px] text-xs">
               <SelectValue />
             </SelectTrigger>
@@ -1153,7 +1153,7 @@ function BatteriesTab({ sites, isAdmin, numLang }: {
         ) : filtered.length === 0 ? (
           <EmptyState icon={BatteryCharging} title={t("registry.noBatteries")} description={t("registry.noBatteriesDesc")} />
         ) : (
-          <div className="max-h-[600px] overflow-y-auto">
+          <div className="max-h-[600px] overflow-y-auto" tabIndex={0} role="region" aria-label={t("a11y.scrollBatteryTable")}>
             <Table>
               <TableHeader className="sticky top-0 bg-card">
                 <TableRow>
@@ -1360,7 +1360,7 @@ function BatteryFormDialog({ open, onOpenChange, target, sites, lang, onSaved }:
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Chemistry</Label>
-            <Select value={form.chemistry} onValueChange={(v) => setForm({ ...form, chemistry: v })}>
+            <Select label={t("batteries.chemistry")} value={form.chemistry} onValueChange={(v) => setForm({ ...form, chemistry: v })}>
               <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {BATT_CHEMISTRIES.map((c) => (
@@ -1372,7 +1372,7 @@ function BatteryFormDialog({ open, onOpenChange, target, sites, lang, onSaved }:
           {target && (
             <div className="space-y-1.5">
               <Label className="text-xs">Status</Label>
-              <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
+              <Select label={t("common.status")} value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
                 <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {BATT_STATUSES.map((s) => (
@@ -1470,7 +1470,7 @@ function IotTab({ sites, isAdmin, numLang }: {
               className="h-9 w-[180px] pl-8"
             />
           </div>
-          <Select value={protocol} onValueChange={setProtocol}>
+          <Select label={t("iot.protocol")} value={protocol} onValueChange={setProtocol}>
             <SelectTrigger className="h-9 w-[130px] text-xs">
               <SelectValue />
             </SelectTrigger>
@@ -1481,7 +1481,7 @@ function IotTab({ sites, isAdmin, numLang }: {
               ))}
             </SelectContent>
           </Select>
-          <Select value={type} onValueChange={setType}>
+          <Select label={t("iot.deviceType")} value={type} onValueChange={setType}>
             <SelectTrigger className="h-9 w-[150px] text-xs">
               <SelectValue />
             </SelectTrigger>
@@ -1492,7 +1492,7 @@ function IotTab({ sites, isAdmin, numLang }: {
               ))}
             </SelectContent>
           </Select>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <Select label={t("common.status")} value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="h-9 w-[130px] text-xs">
               <SelectValue />
             </SelectTrigger>
@@ -1521,7 +1521,7 @@ function IotTab({ sites, isAdmin, numLang }: {
         ) : filtered.length === 0 ? (
           <EmptyState icon={Cpu} title={t("registry.noIot")} description={t("registry.noIotDesc")} />
         ) : (
-          <div className="max-h-[600px] overflow-y-auto">
+          <div className="max-h-[600px] overflow-y-auto" tabIndex={0} role="region" aria-label={t("a11y.scrollDeviceTable")}>
             <Table>
               <TableHeader className="sticky top-0 bg-card">
                 <TableRow>
@@ -1705,7 +1705,7 @@ function IotFormDialog({ open, onOpenChange, target, sites, lang, onSaved }: {
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">{t("common.type")}</Label>
-            <Select value={form.type} onValueChange={(v) => setForm({ ...form, type: v })}>
+            <Select label={t("iot.deviceType")} value={form.type} onValueChange={(v) => setForm({ ...form, type: v })}>
               <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {IOT_TYPES.map((tp) => (
@@ -1716,7 +1716,7 @@ function IotFormDialog({ open, onOpenChange, target, sites, lang, onSaved }: {
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">{t("iot.protocol")}</Label>
-            <Select value={form.protocol} onValueChange={(v) => setForm({ ...form, protocol: v })}>
+            <Select label={t("iot.protocol")} value={form.protocol} onValueChange={(v) => setForm({ ...form, protocol: v })}>
               <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {IOT_PROTOCOLS.map((p) => (
@@ -1736,7 +1736,7 @@ function IotFormDialog({ open, onOpenChange, target, sites, lang, onSaved }: {
           {target && (
             <div className="space-y-1.5">
               <Label className="text-xs">{t("common.status")}</Label>
-              <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
+              <Select label={t("common.status")} value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
                 <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {IOT_STATUSES.map((s) => (
@@ -1913,7 +1913,7 @@ function DispensersTab({ sites, isAdmin, numLang }: {
               className="h-9 w-[200px] pl-8"
             />
           </div>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <Select label={t("common.status")} value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="h-9 w-[140px] text-xs">
               <SelectValue />
             </SelectTrigger>
@@ -1926,7 +1926,7 @@ function DispensersTab({ sites, isAdmin, numLang }: {
               ))}
             </SelectContent>
           </Select>
-          <Select value={fuelFilter} onValueChange={setFuelFilter}>
+          <Select label={t("dispenser.lblFuelType")} value={fuelFilter} onValueChange={setFuelFilter}>
             <SelectTrigger className="h-9 w-[130px] text-xs">
               <SelectValue />
             </SelectTrigger>
@@ -1955,7 +1955,7 @@ function DispensersTab({ sites, isAdmin, numLang }: {
         ) : filtered.length === 0 ? (
           <EmptyState icon={Droplets} title={t("registry.noDispensers")} description={t("registry.noDispensersDesc")} />
         ) : (
-          <div className="max-h-[600px] overflow-y-auto">
+          <div className="max-h-[600px] overflow-y-auto" tabIndex={0} role="region" aria-label={t("a11y.scrollDispenserTable")}>
             <Table>
               <TableHeader className="sticky top-0 bg-card">
                 <TableRow>
@@ -2180,7 +2180,7 @@ function DispenserFormDialog({ open, onOpenChange, target, sites, lang, onSaved,
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">{t("dispenser.colNozzles")}</Label>
-            <Select value={form.nozzleCount} onValueChange={(v) => setForm({ ...form, nozzleCount: v })}>
+            <Select label={t("dispenser.colNozzles")} value={form.nozzleCount} onValueChange={(v) => setForm({ ...form, nozzleCount: v })}>
               <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {[1, 2, 3, 4].map((n) => (
@@ -2191,7 +2191,7 @@ function DispenserFormDialog({ open, onOpenChange, target, sites, lang, onSaved,
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">{t("dispenser.colFuelType")}</Label>
-            <Select value={form.fuelType} onValueChange={(v) => setForm({ ...form, fuelType: v })}>
+            <Select label={t("dispenser.lblFuelType")} value={form.fuelType} onValueChange={(v) => setForm({ ...form, fuelType: v })}>
               <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {["DIESEL", "PETROL"].map((f) => (
@@ -2221,7 +2221,7 @@ function DispenserFormDialog({ open, onOpenChange, target, sites, lang, onSaved,
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">RS485 Baudrate</Label>
-            <Select value={form.rs485Baudrate} onValueChange={(v) => setForm({ ...form, rs485Baudrate: v })}>
+            <Select label={t("dispenser.lblBaudrate")} value={form.rs485Baudrate} onValueChange={(v) => setForm({ ...form, rs485Baudrate: v })}>
               <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {["9600", "19200", "38400", "115200"].map((b) => (
@@ -2232,7 +2232,7 @@ function DispenserFormDialog({ open, onOpenChange, target, sites, lang, onSaved,
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">RS485 Parity</Label>
-            <Select value={form.rs485Parity} onValueChange={(v) => setForm({ ...form, rs485Parity: v })}>
+            <Select label={t("dispenser.lblParity")} value={form.rs485Parity} onValueChange={(v) => setForm({ ...form, rs485Parity: v })}>
               <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {["8N1", "8E1", "8O1", "8N2"].map((p) => (

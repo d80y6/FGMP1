@@ -100,9 +100,9 @@ const SEVERITIES = [
 ];
 
 const TONE_BADGE: Record<"amber" | "orange" | "rose", string> = {
-  amber: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30",
-  orange: "bg-orange-500/15 text-orange-600 dark:text-orange-400 border-orange-500/30",
-  rose: "bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30",
+  amber: "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30",
+  orange: "bg-orange-500/15 text-orange-700 dark:text-orange-400 border-orange-500/30",
+  rose: "bg-rose-500/15 text-rose-700 dark:text-rose-400 border-rose-500/30",
 };
 
 const TONE_DOT: Record<"amber" | "orange" | "rose", string> = {
@@ -489,7 +489,7 @@ export function PreferencesView() {
                 control={control}
                 name="quietHoursStart"
                 render={({ field }) => (
-                  <Select
+                  <Select label={t("preferences.quietFrom")}
                     value={field.value !== null ? String(field.value) : undefined}
                     onValueChange={(v) => field.onChange(Number(v))}
                     disabled={!quietHoursEnabled}
@@ -517,7 +517,7 @@ export function PreferencesView() {
                 control={control}
                 name="quietHoursEnd"
                 render={({ field }) => (
-                  <Select
+                  <Select label={t("preferences.quietTo")}
                     value={field.value !== null ? String(field.value) : undefined}
                     onValueChange={(v) => field.onChange(Number(v))}
                     disabled={!quietHoursEnabled}
@@ -584,7 +584,7 @@ export function PreferencesView() {
             )}
           </div>
           {isDirty && (
-            <span className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400" dir={dir === "rtl" ? "rtl" : undefined}>
+            <span className="flex items-center gap-1 text-[10px] text-amber-700 dark:text-amber-400" dir={dir === "rtl" ? "rtl" : undefined}>
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500" />
               {t("preferences.save")}
             </span>

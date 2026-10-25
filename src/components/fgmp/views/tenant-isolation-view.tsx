@@ -159,7 +159,7 @@ export function TenantIsolationView() {
 
       {error && (
         <Card className="border-rose-500/30 bg-rose-500/5 p-4">
-          <div className="flex items-center gap-2 text-rose-600">
+          <div className="flex items-center gap-2 text-rose-700 dark:text-rose-400">
             <AlertCircle className="h-5 w-5" />
             <span className="font-medium">{t("isolation.loadFailed")}</span>
             <span className="text-sm">{error}</span>
@@ -209,15 +209,15 @@ export function TenantIsolationView() {
               </div>
               <div className="flex gap-6">
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-emerald-600">{current.summary.passed}</div>
+                  <div className="text-2xl font-bold text-emerald-700 dark:text-emerald-400">{current.summary.passed}</div>
                   <div className="text-xs text-muted-foreground">Passed</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-rose-600">{current.summary.failed}</div>
+                  <div className="text-2xl font-bold text-rose-700 dark:text-rose-400">{current.summary.failed}</div>
                   <div className="text-xs text-muted-foreground">Failed</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-amber-600">{current.summary.unmeasured}</div>
+                  <div className="text-2xl font-bold text-amber-700 dark:text-amber-400">{current.summary.unmeasured}</div>
                   <div className="text-xs text-muted-foreground">Unmeasured</div>
                 </div>
                 <div className="text-center">
@@ -249,7 +249,7 @@ export function TenantIsolationView() {
                       <td className="p-2 font-medium">
                         {tn.tenantName}
                         {tn.tenantCode === "PLATFORM" && (
-                          <Badge className="ml-2 bg-amber-500/15 text-amber-600 text-[9px]">PLATFORM</Badge>
+                          <Badge className="ml-2 bg-amber-500/15 text-amber-700 dark:text-amber-400 text-[9px]">PLATFORM</Badge>
                         )}
                       </td>
                       <td className="p-2 text-muted-foreground">{tn.tenantCode}</td>
@@ -302,10 +302,10 @@ export function TenantIsolationView() {
                         </div>
                         <div className="flex shrink-0 gap-4 text-xs">
                           {!test.recordFound ? (
-                            <span className="text-amber-600" title={test.reason}>{t("isolation.notMeasured")}</span>
+                            <span className="text-amber-700 dark:text-amber-400" title={test.reason}>{t("isolation.notMeasured")}</span>
                           ) : (
                             <>
-                              <span className={test.crossTenantDenied ? "text-emerald-600" : "text-rose-600"}>
+                              <span className={test.crossTenantDenied ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"}>
                                 Cross-tenant: {test.crossTenantDenied ? "Denied ✓" : "Allowed ✗"}
                               </span>
                               <span className="text-muted-foreground" title={t("isolation.ownershipTooltip")}>

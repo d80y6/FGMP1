@@ -435,14 +435,14 @@ export function DispensersView() {
                   <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("dispenser.search")} className="h-9 w-[220px] pl-8" />
                 </div>
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <Select label={t("common.status")} value={statusFilter} onValueChange={setStatusFilter}>
                   <SelectTrigger className="h-9 w-[140px] text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">{t("dispenser.allStatuses")}</SelectItem>
                     {STATUSES.map((s) => <SelectItem key={s} value={s}>{statusLabel(s, numLang)}</SelectItem>)}
                   </SelectContent>
                 </Select>
-                <Select value={fuelFilter} onValueChange={setFuelFilter}>
+                <Select label={t("dispenser.lblFuelType")} value={fuelFilter} onValueChange={setFuelFilter}>
                   <SelectTrigger className="h-9 w-[120px] text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">{t("dispenser.allFuelTypes")}</SelectItem>
@@ -457,7 +457,7 @@ export function DispensersView() {
               ) : filtered.length === 0 ? (
                 <EmptyState icon={Fuel} title={t("dispenser.noDispensers")} />
               ) : (
-                <div className="max-h-[640px] overflow-y-auto">
+                <div className="max-h-[640px] overflow-y-auto" tabIndex={0} role="region" aria-label={t("a11y.scrollTransactionTable")}>
                   <Table>
                     <TableHeader className="sticky top-0 bg-card">
                       <TableRow>
@@ -495,8 +495,8 @@ export function DispensersView() {
                             <TableCell className="hidden lg:table-cell">
                               <Badge variant="outline" className={
                                 d.fuelType === "DIESEL"
-                                  ? "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[9px]"
-                                  : "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[9px]"
+                                  ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[9px]"
+                                  : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-[9px]"
                               }>{fuelTypeLabel(d.fuelType, numLang)}</Badge>
                             </TableCell>
                             <TableCell className="hidden xl:table-cell text-[10px] tabular-nums text-muted-foreground" dir="ltr">
@@ -625,7 +625,7 @@ export function DispensersView() {
                 {t("dispenser.tabTransactions")} ({formatNumber(filteredTxns.length, numLang)})
               </CardTitle>
               <div className="flex flex-wrap items-center gap-2">
-                <Select value={txnStatusFilter} onValueChange={setTxnStatusFilter}>
+                <Select label={t("common.status")} value={txnStatusFilter} onValueChange={setTxnStatusFilter}>
                   <SelectTrigger className="h-9 w-[140px] text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">{t("dispenser.allStatuses")}</SelectItem>
@@ -644,7 +644,7 @@ export function DispensersView() {
               {filteredTxns.length === 0 ? (
                 <EmptyState icon={Receipt} title={t("dispenser.noTxnMatch")} />
               ) : (
-                <div className="max-h-[640px] overflow-y-auto">
+                <div className="max-h-[640px] overflow-y-auto" tabIndex={0} role="region" aria-label={t("a11y.scrollTransactionTable")}>
                   <Table>
                     <TableHeader className="sticky top-0 bg-card">
                       <TableRow>
@@ -697,10 +697,10 @@ export function DispensersView() {
                             <TableCell className="text-right text-xs tabular-nums">{formatYer(tx.amountYer, numLang)}</TableCell>
                             <TableCell>
                               <Badge variant="outline" className={
-                                tx.status === "COMPLETED" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[9px]" :
-                                tx.status === "IN_PROGRESS" ? "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[9px]" :
+                                tx.status === "COMPLETED" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-[9px]" :
+                                tx.status === "IN_PROGRESS" ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[9px]" :
                                 tx.status === "CANCELLED" ? "border-slate-500/30 bg-slate-500/10 text-slate-500 text-[9px]" :
-                                "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400 text-[9px]"
+                                "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400 text-[9px]"
                               }>{txnStatusLabel(tx.status, numLang)}</Badge>
                             </TableCell>
                           </TableRow>
@@ -977,7 +977,7 @@ function DispenserFormFields({
     <div className="space-y-3">
       <div className="space-y-1.5">
         <Label className="text-xs">{t("dispenser.lblSite")}</Label>
-        <Select value={form.siteId} onValueChange={form.setSiteId}>
+        <Select label={t("dispenser.lblSite")} value={form.siteId} onValueChange={form.setSiteId}>
           <SelectTrigger className="h-9 w-full"><SelectValue placeholder={t("dispenser.selectSite")} /></SelectTrigger>
           <SelectContent>
             {sites.map((s) => <SelectItem key={s.id} value={s.id}>{s.name} ({s.code})</SelectItem>)}
@@ -991,7 +991,7 @@ function DispenserFormFields({
         </div>
         <div className="space-y-1.5">
           <Label className="text-xs">{t("dispenser.lblNozzleCount")}</Label>
-          <Select value={String(form.nozzleCount)} onValueChange={(v) => form.setNozzleCount(Number(v))}>
+          <Select label={t("dispenser.colNozzles")} value={String(form.nozzleCount)} onValueChange={(v) => form.setNozzleCount(Number(v))}>
             <SelectTrigger className="h-9 w-full"><SelectValue /></SelectTrigger>
             <SelectContent>
               {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => <SelectItem key={n} value={String(n)}>{String(n)}</SelectItem>)}
@@ -1012,7 +1012,7 @@ function DispenserFormFields({
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label className="text-xs">{t("dispenser.lblFuelType")}</Label>
-          <Select value={form.fuelType} onValueChange={form.setFuelType}>
+          <Select label={t("dispenser.lblFuelType")} value={form.fuelType} onValueChange={form.setFuelType}>
             <SelectTrigger className="h-9 w-full"><SelectValue /></SelectTrigger>
             <SelectContent>
               {FUEL_TYPES.map((f) => <SelectItem key={f} value={f}>{fuelTypeLabel(f, lang)}</SelectItem>)}
@@ -1041,7 +1041,7 @@ function DispenserFormFields({
         </div>
         <div className="space-y-1.5">
           <Label className="text-xs">{t("dispenser.lblBaudrate")}</Label>
-          <Select value={String(form.rs485Baudrate)} onValueChange={(v) => form.setRs485Baudrate(Number(v))}>
+          <Select label={t("dispenser.lblBaudrate")} value={String(form.rs485Baudrate)} onValueChange={(v) => form.setRs485Baudrate(Number(v))}>
             <SelectTrigger className="h-9 w-full"><SelectValue /></SelectTrigger>
             <SelectContent>
               {[1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200].map((b) => <SelectItem key={b} value={String(b)}>{String(b)}</SelectItem>)}
@@ -1050,7 +1050,7 @@ function DispenserFormFields({
         </div>
         <div className="space-y-1.5">
           <Label className="text-xs">{t("dispenser.lblParity")}</Label>
-          <Select value={form.rs485Parity} onValueChange={form.setRs485Parity}>
+          <Select label={t("dispenser.lblParity")} value={form.rs485Parity} onValueChange={form.setRs485Parity}>
             <SelectTrigger className="h-9 w-full"><SelectValue /></SelectTrigger>
             <SelectContent>
               {["8N1", "8E1", "8O1", "7N1", "7E1", "7O1"].map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}

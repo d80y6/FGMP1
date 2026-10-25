@@ -328,20 +328,33 @@ export function AppShell() {
 
   // URL parameters, keyboard shortcuts and child components are all untrusted
   // navigation inputs. Never mount a view unless the effective role has its
-  // view capability; normalize denied URLs to the dashboard.
+  // view capability.
+  //
+  // A denied URL is NOT silently rewritten to the dashboard. It stays in the
+  // address bar and the content area explains the refusal, because (a) an
+  // operator who was sent a link deserves to know a permission denied, not
+  // that the app "went somewhere else", and (b) the URL a colleague with the
+  // right role needs is the one that was typed. Security is unchanged either
+  // way: the view component is never mounted, and the API endpoints behind it
+  // enforce the same matrix server-side.
+  //
+  // Derived during render instead of stored: a denial is a function of
+  // (session, effective role, URL), and keeping a copy in state meant the
+  // effect had to write state on every navigation — the exact pattern that
+  // desynchronises a URL from what is on screen.
+  const requestedView = searchParams.get("view") as ViewKey | null;
+  const deniedView: ViewKey | null =
+    me && requestedView && VIEW_COMPONENTS[requestedView] && !hasCapability(role, `view:${requestedView}`)
+      ? requestedView
+      : null;
+
   useEffect(() => {
     if (!me) return; // Wait for the session-derived effective role.
     const requested = searchParams.get("view") as ViewKey | null;
     if (!requested || !VIEW_COMPONENTS[requested]) return;
-    const allowed = hasCapability(role, `view:${requested}`);
-    const destination = allowed ? requested : "dashboard";
-    if (destination !== view) setView(destination);
-    if (!allowed) {
-      const params = new URLSearchParams(searchParams.toString());
-      params.set("view", "dashboard");
-      router.replace(`/?${params.toString()}`, { scroll: false });
-    }
-  }, [me, role, searchParams, view, setView, router]);
+    if (!hasCapability(role, `view:${requested}`)) return; // rendered as a refusal, never mounted
+    if (requested !== view) setView(requested);
+  }, [me, role, searchParams, view, setView]);
 
   const navigate = (v: ViewKey) => {
     if (!hasCapability(role, `view:${v}`)) return;
@@ -503,7 +516,7 @@ export function AppShell() {
               <div className="flex items-center gap-2">
                 <span className="text-sm font-bold tracking-tight">{t("brand.name")}</span>
                 {role === "SUPERADMIN" && (
-                  <Badge className="bg-amber-500/15 text-amber-600 text-[9px]">SUPER</Badge>
+                  <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-400 text-[9px]">SUPER</Badge>
                 )}
                 <Badge variant="secondary" className="hidden h-4 px-1 text-[9px] font-medium md:inline-flex">v2.4</Badge>
               </div>
@@ -523,10 +536,10 @@ export function AppShell() {
               className={cn(
                 "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium",
                 livePaused
-                  ? "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                  ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400"
                   : rtConnected
-                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                    : "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                    : "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400",
               )}
               title={
                 livePaused
@@ -626,7 +639,7 @@ export function AppShell() {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-9 gap-1.5 border-amber-500/40 bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-400"
+                  className="h-9 gap-1.5 border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:bg-amber-500/20 dark:text-amber-400"
                   onClick={() => {
                     returnToPermanentRole().catch(() => {
                       toast.error(t("auth.invalidCredentials"));
@@ -639,7 +652,7 @@ export function AppShell() {
                   {t("auth.returnToAdmin")}
                 </Button>
               )}
-              <Select
+              <Select label={t("users.role")}
                 value={role}
                 disabled={role !== "ADMIN" && role !== "SUPERADMIN" && !me.previewRole}
                 onValueChange={(v) => {
@@ -695,7 +708,11 @@ export function AppShell() {
         <main id="main-content" className="flex min-w-0 flex-1 flex-col" tabIndex={-1}>
           <div className="flex-1 px-3 py-4 sm:px-5 sm:py-6">
             <div className="mx-auto max-w-[1600px]">
-              <ViewHost Component={ViewComponent} hasSnapshot={hasSnapshot} />
+              {deniedView ? (
+                <AccessDeniedPanel view={deniedView} role={role} onBack={() => navigate("dashboard")} />
+              ) : (
+                <ViewHost Component={ViewComponent} hasSnapshot={hasSnapshot} />
+              )}
             </div>
           </div>
 
@@ -738,6 +755,46 @@ export function AppShell() {
 
       {/* Keyboard shortcuts help dialog (?) */}
       <KeyboardHelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
+    </div>
+  );
+}
+
+/**
+ * The content shown when the URL asks for a view the effective role may not
+ * open. Deliberately NOT an empty page or a silent redirect: it names the
+ * screen that was refused, states the role that lacks it, and offers the one
+ * navigation that is always allowed. The role name shown is the *effective*
+ * role, so a Super Admin previewing a lesser role sees the preview's ceiling —
+ * the same number the server uses.
+ */
+function AccessDeniedPanel({ view, role, onBack }: { view: ViewKey; role: string; onBack: () => void }) {
+  const t = useT();
+  const tFmt = useTF();
+  const dir = useDir();
+  const labelKey = NAV.find((n) => n.key === view)?.tKey ?? `nav.${view}`;
+  const viewLabel = t(labelKey);
+  const roleKey = `role.${role.toLowerCase()}`;
+  const roleLabel = t(roleKey) === roleKey ? role.replace(/_/g, " ") : t(roleKey);
+  return (
+    <div
+      role="alert"
+      aria-labelledby="access-denied-title"
+      className="mx-auto mt-6 flex max-w-lg flex-col items-center gap-3 rounded-xl border border-rose-500/30 bg-rose-500/5 px-6 py-10 text-center"
+      dir={dir === "rtl" ? "rtl" : undefined}
+    >
+      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-500/10" aria-hidden="true">
+        <ShieldOff className="h-6 w-6 text-rose-700 dark:text-rose-400" />
+      </span>
+      <h1 id="access-denied-title" className="text-lg font-semibold text-foreground">
+        {t("access.deniedTitle")}
+      </h1>
+      <p className="text-sm text-muted-foreground">
+        {tFmt("access.deniedBody", { view: viewLabel, role: roleLabel })}
+      </p>
+      <p className="font-mono text-xs text-muted-foreground" dir="ltr">{`view:${view}`}</p>
+      <Button variant="outline" onClick={onBack} className="mt-1 gap-2">
+        {t("access.deniedBack")}
+      </Button>
     </div>
   );
 }
@@ -841,7 +898,7 @@ function AlarmCountBadge() {
   // digits, subtle rose drop-shadow so the alarm count pops at a glance.
   return (
     <span
-      className="ml-auto inline-flex min-w-[20px] items-center justify-center rounded-full bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-rose-600 shadow-sm shadow-rose-500/20 dark:text-rose-400"
+      className="ml-auto inline-flex min-w-[20px] items-center justify-center rounded-full bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-rose-700 dark:text-rose-400 shadow-sm shadow-rose-500/20 dark:text-rose-400"
     >
       <span aria-hidden="true">{n}</span>
       {/* The visible digit alone would be read as "3" inside the nav link.
@@ -854,10 +911,10 @@ function AlarmCountBadge() {
 
 function KpiChip({ label, value, tone }: { label: string; value: React.ReactNode; tone: "good" | "danger" | "info" | "warn" }) {
   const tones = {
-    good: "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-    danger: "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400",
-    info: "border-sky-500/30 bg-sky-500/10 text-sky-600 dark:text-sky-400",
-    warn: "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+    good: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+    danger: "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400",
+    info: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-400",
+    warn: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400",
   };
   return (
     <div className={cn("flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs", tones[tone])}>

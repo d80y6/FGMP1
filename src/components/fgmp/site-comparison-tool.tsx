@@ -252,7 +252,7 @@ export function SiteComparisonTool() {
       <CardContent className="space-y-3">
         {/* Site selector */}
         <div className="flex flex-wrap items-center gap-2">
-          <Select value={pickerValue} onValueChange={addSite}>
+          <Select label={t("comparison.selectTwo")} value={pickerValue} onValueChange={addSite}>
             <SelectTrigger className="h-8 w-[260px] text-xs" disabled={selectedIds.length >= 4}>
               <SelectValue placeholder={selectedIds.length >= 4 ? "Max 4 sites selected" : "Add a site to compare…"} />
             </SelectTrigger>
@@ -347,10 +347,10 @@ export function SiteComparisonTool() {
                           <td key={i} className="p-2 text-center">
                             <div className={cn(
                               "inline-flex items-center gap-1 rounded px-1.5 py-0.5",
-                              isBest && "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                              isBest && "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
                             )}>
                               {isBest && <Trophy className="h-3 w-3" />}
-                              <span className={cn("font-bold tabular-nums", isBest && "text-emerald-600 dark:text-emerald-400")}>
+                              <span className={cn("font-bold tabular-nums", isBest && "text-emerald-700 dark:text-emerald-400")}>
                                 {metric.format(v)}
                               </span>
                               {metric.unit && <span className="text-[9px] text-muted-foreground">{metric.unit}</span>}
@@ -376,7 +376,7 @@ export function SiteComparisonTool() {
                       <td key={i} className="p-2 text-center">
                         <span className={cn(
                           "inline-flex items-center gap-1 rounded px-2 py-1 text-sm font-bold tabular-nums",
-                          isLeader ? "bg-amber-500/15 text-amber-600 dark:text-amber-400" : "text-muted-foreground"
+                          isLeader ? "bg-amber-500/15 text-amber-700 dark:text-amber-400" : "text-muted-foreground"
                         )}>
                           {isLeader && <TrendingUp className="h-3 w-3" />}
                           {wins}
@@ -408,7 +408,7 @@ export function SiteComparisonTool() {
                 </span>
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-semibold">{leaderSite.name}</span>
-                  <span className="inline-flex items-center gap-1 bg-amber-500/15 text-amber-600 rounded-full px-2 py-0.5 text-[11px] font-bold">
+                  <span className="inline-flex items-center gap-1 bg-amber-500/15 text-amber-700 dark:text-amber-400 rounded-full px-2 py-0.5 text-[11px] font-bold">
                     {maxWins} {maxWins === 1 ? "win" : "wins"}
                   </span>
                 </div>

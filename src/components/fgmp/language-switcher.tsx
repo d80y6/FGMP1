@@ -102,8 +102,8 @@ export function LanguageSwitcher() {
                 className={cn(
                   "flex h-5 w-5 shrink-0 items-center justify-center rounded text-[9px] font-bold",
                   opt.value === "ar"
-                    ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
-                    : "bg-sky-500/15 text-sky-600 dark:text-sky-400",
+                    ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
+                    : "bg-sky-500/15 text-sky-700 dark:text-sky-400",
                 )}
               >
                 {opt.short}

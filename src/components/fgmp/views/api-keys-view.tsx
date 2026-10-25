@@ -110,20 +110,20 @@ function keyStatus(k: ApiKeyRow): KeyStatus {
 function StatusBadge({ status }: { status: KeyStatus }) {
   if (status === "active") {
     return (
-      <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px]">
+      <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-[10px]">
         Active
       </Badge>
     );
   }
   if (status === "revoked") {
     return (
-      <Badge variant="outline" className="border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400 text-[10px]">
+      <Badge variant="outline" className="border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-400 text-[10px]">
         Revoked
       </Badge>
     );
   }
   return (
-    <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px]">
+    <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[10px]">
       Expired
     </Badge>
   );
@@ -132,9 +132,9 @@ function StatusBadge({ status }: { status: KeyStatus }) {
 /** Scope badge color per scope code (no indigo/blue). */
 function ScopeBadge({ scope }: { scope: string }) {
   const tone =
-    scope === "admin"   ? "border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400"
-    : scope === "control" ? "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400"
-    : scope === "write"   ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+    scope === "admin"   ? "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-400"
+    : scope === "control" ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+    : scope === "write"   ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
     : "border-slate-500/40 bg-slate-500/10 text-slate-600 dark:text-slate-400";
   return (
     <Badge variant="outline" className={cn("text-[9px] font-mono uppercase", tone)}>
@@ -335,7 +335,7 @@ export function ApiKeysView() {
                               <DropdownMenuItem
                                 disabled={status !== "active"}
                                 onClick={() => setRevokeTarget(k)}
-                                className="text-rose-600 dark:text-rose-400 focus:text-rose-600 focus:bg-rose-500/10"
+                                className="text-rose-700 dark:text-rose-400 focus:text-rose-700 dark:focus:text-rose-400 focus:bg-rose-500/10"
                               >
                                 <Ban className="mr-2 h-3.5 w-3.5" />
                                 Revoke

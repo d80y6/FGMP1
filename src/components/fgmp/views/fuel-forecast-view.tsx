@@ -48,9 +48,9 @@ interface ForecastRow {
 
 const RISK_COLORS: Record<RiskLevel, { bg: string; text: string; border: string }> = {
   CRITICAL: { bg: "bg-rose-500/15", text: "text-rose-700 dark:text-rose-300", border: "border-rose-500/40" },
-  HIGH: { bg: "bg-rose-500/10", text: "text-rose-600 dark:text-rose-400", border: "border-rose-500/30" },
-  MEDIUM: { bg: "bg-amber-500/10", text: "text-amber-600 dark:text-amber-400", border: "border-amber-500/30" },
-  LOW: { bg: "bg-emerald-500/10", text: "text-emerald-600 dark:text-emerald-400", border: "border-emerald-500/30" },
+  HIGH: { bg: "bg-rose-500/10", text: "text-rose-700 dark:text-rose-400", border: "border-rose-500/30" },
+  MEDIUM: { bg: "bg-amber-500/10", text: "text-amber-700 dark:text-amber-400", border: "border-amber-500/30" },
+  LOW: { bg: "bg-emerald-500/10", text: "text-emerald-700 dark:text-emerald-400", border: "border-emerald-500/30" },
 };
 
 const RISK_ORDER: Record<RiskLevel, number> = {
@@ -321,7 +321,7 @@ export function FuelForecastView() {
                       <TableCell className="text-right text-xs tabular-nums">{fmtLitres(r.current, numLang)}</TableCell>
                       <TableCell className="text-right text-xs tabular-nums text-muted-foreground">{fmtLitres(r.capacity, numLang)}</TableCell>
                       <TableCell className="text-right text-xs tabular-nums">
-                        <span className={r.pct <= 12 ? "text-rose-600 dark:text-rose-400" : r.pct <= 25 ? "text-amber-600 dark:text-amber-400" : ""}>
+                        <span className={r.pct <= 12 ? "text-rose-700 dark:text-rose-400" : r.pct <= 25 ? "text-amber-700 dark:text-amber-400" : ""}>
                           {formatNumber(r.pct.toFixed(1), numLang)}%
                         </span>
                       </TableCell>

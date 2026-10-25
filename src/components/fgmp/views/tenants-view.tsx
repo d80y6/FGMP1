@@ -194,7 +194,7 @@ export function TenantsView() {
                           <span className="flex items-center gap-1.5 text-sm font-medium">
                             {tnt.name}
                             {tnt.code === "PLATFORM" && (
-                              <Badge className="h-4 px-1 text-[9px] bg-amber-500/15 text-amber-600 dark:text-amber-400 hover:bg-amber-500/15">
+                              <Badge className="h-4 px-1 text-[9px] bg-amber-500/15 text-amber-700 dark:text-amber-400 hover:bg-amber-500/15">
                                 {t("tenants.platformTenant")}
                               </Badge>
                             )}
@@ -247,7 +247,7 @@ export function TenantsView() {
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
-                              className="text-rose-600 focus:text-rose-700"
+                              className="text-rose-700 dark:text-rose-400 focus:text-rose-700"
                               onClick={() => setDeleteTarget(tnt)}
                             >
                               <Trash2 className="mr-2 h-3.5 w-3.5" />
@@ -588,7 +588,7 @@ function DeleteTenantDialog({
             {hasDependents ? (
               <>
                 <br /><br />
-                <span className="text-rose-600 dark:text-rose-400 font-medium">
+                <span className="text-rose-700 dark:text-rose-400 font-medium">
                   This tenant still has {target?._count.users ?? 0} users and{" "}
                   {target?._count.sites ?? 0} sites. Remove or reassign them first.
                 </span>
@@ -850,7 +850,7 @@ function SupportAccessDialog({
       <DialogContent className="sm:max-w-[460px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <ShieldAlert className="h-4 w-4 text-amber-600" />
+            <ShieldAlert className="h-4 w-4 text-amber-700 dark:text-amber-400" />
             {t("tenants.supportAccess")}
           </DialogTitle>
           <DialogDescription>

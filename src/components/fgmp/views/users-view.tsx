@@ -193,7 +193,7 @@ export function UsersView() {
                 className="h-9 w-[200px] pl-8"
               />
             </div>
-            <Select value={roleFilter} onValueChange={setRoleFilter}>
+            <Select label={t("users.role")} value={roleFilter} onValueChange={setRoleFilter}>
               <SelectTrigger className="h-9 w-[170px] text-xs">
                 <SelectValue placeholder={t("users.filterByRole")} />
               </SelectTrigger>
@@ -241,7 +241,7 @@ export function UsersView() {
                         <TableCell className="hidden lg:table-cell text-xs text-muted-foreground" dir="ltr">{u.phone ?? "—"}</TableCell>
                         <TableCell>
                           {u.active ? (
-                            <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px]">{t("users.active")}</Badge>
+                            <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-[10px]">{t("users.active")}</Badge>
                           ) : (
                             <Badge variant="outline" className="border-slate-500/40 bg-slate-500/10 text-slate-600 dark:text-slate-400 text-[10px]">{t("users.inactive")}</Badge>
                           )}
@@ -408,7 +408,7 @@ function RoleSelect({
     [excludeSuperAdmin],
   );
   return (
-    <Select value={value} onValueChange={onChange} disabled={disabled}>
+    <Select label={t("users.role")} value={value} onValueChange={onChange} disabled={disabled}>
       <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
       <SelectContent>
         {roles.map((r) => {
@@ -554,7 +554,7 @@ function CreateUserDialog({
                       {selectedRole !== "SUPERADMIN" && <span className="text-rose-500"> *</span>}
                     </FormLabel>
                     <FormControl>
-                      <Select
+                      <Select label={t("users.role")}
                         value={field.value ?? ""}
                         onValueChange={field.onChange}
                         disabled={selectedRole === "SUPERADMIN"}

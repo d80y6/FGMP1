@@ -69,7 +69,7 @@ export function KeyboardHelpDialog({ open, onOpenChange }: Props) {
             ))}
             <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
               <p className="text-[11px] leading-relaxed text-muted-foreground">
-                <Badge variant="outline" className="mr-1.5 h-4 px-1 text-[9px] border-emerald-500/30 text-emerald-600 dark:text-emerald-400">
+                <Badge variant="outline" className="mr-1.5 h-4 px-1 text-[9px] border-emerald-500/30 text-emerald-700 dark:text-emerald-400">
                   {t("keyboard.tip")}
                 </Badge>
                 {t("keyboard.gPrefixTip")}

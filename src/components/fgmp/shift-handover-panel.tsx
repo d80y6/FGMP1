@@ -111,15 +111,15 @@ const SHIFT_ICON = {
 } as const;
 
 const PRIORITY_TONE: Record<string, string> = {
-  P1: "border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400",
-  P2: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  P1: "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-400",
+  P2: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400",
   P3: "border-slate-500/30 bg-slate-500/5 text-slate-600 dark:text-slate-400",
 };
 
 const SHIFT_TONE: Record<string, string> = {
-  MORNING: "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400",
-  EVENING: "border-orange-500/30 bg-orange-500/10 text-orange-600 dark:text-orange-400",
-  NIGHT: "border-indigo-500/30 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400",
+  MORNING: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+  EVENING: "border-orange-500/30 bg-orange-500/10 text-orange-700 dark:text-orange-400",
+  NIGHT: "border-indigo-500/30 bg-indigo-500/10 text-indigo-700 dark:text-indigo-400",
 };
 
 export function ShiftHandoverPanel() {
@@ -214,7 +214,7 @@ export function ShiftHandoverPanel() {
           {openCount > 0 && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <span className="inline-flex items-center gap-1 rounded-full border border-rose-500/40 bg-rose-500/10 px-2 py-0.5 text-[10px] font-bold text-rose-600 dark:text-rose-400">
+                <span className="inline-flex items-center gap-1 rounded-full border border-rose-500/40 bg-rose-500/10 px-2 py-0.5 text-[10px] font-bold text-rose-700 dark:text-rose-400">
                   <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-rose-500" />
                   {formatNumber(openCount, numLang)} {t("handover.openAwaiting")}
                 </span>
@@ -268,8 +268,8 @@ export function ShiftHandoverPanel() {
                       </span>
                       <span className={cn("inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold",
                         n.status === "OPEN"
-                          ? "border-sky-500/30 bg-sky-500/10 text-sky-600 dark:text-sky-400"
-                          : "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400")}>
+                          ? "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-400"
+                          : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400")}>
                         {n.status === "OPEN" ? t("handover.open") : t("handover.acknowledged")}
                       </span>
                       <span className="ml-auto text-[10px] text-muted-foreground">
@@ -290,7 +290,7 @@ export function ShiftHandoverPanel() {
                       </p>
                       {n.ongoingIssues && (isExpanded || n.priority === "P1") && (
                         <div className="mt-2 rounded border border-amber-500/20 bg-amber-500/5 p-2">
-                          <p className="mb-0.5 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400">
+                          <p className="mb-0.5 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">
                             <AlertCircle className="h-3 w-3" />
                             {t("handover.ongoingIssues")}
                           </p>
@@ -329,7 +329,7 @@ export function ShiftHandoverPanel() {
                     {/* Acknowledgement reply (if acknowledged) */}
                     {n.status === "ACKNOWLEDGED" && n.acknowledgedNote && n.acknowledgedAt && (
                       <div className="mx-3 mb-2 rounded border border-emerald-500/20 bg-emerald-500/5 p-2">
-                        <p className="mb-0.5 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
+                        <p className="mb-0.5 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
                           <Check className="h-3 w-3" />
                           {t("handover.acknowledgedBy")} · {timeAgo(n.acknowledgedAt, numLang)}
                         </p>
@@ -354,7 +354,7 @@ export function ShiftHandoverPanel() {
                         <span className="text-[10px] italic text-muted-foreground">{t("handover.youCantAckOwn")}</span>
                       )}
                       {n.status === "ACKNOWLEDGED" && n.acknowledgedAt && (
-                        <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400">
+                        <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 dark:text-emerald-400">
                           <Check className="h-3 w-3" />
                           {t("handover.acknowledgedBy")} {timeAgo(n.acknowledgedAt, numLang)}
                         </span>
@@ -371,7 +371,7 @@ export function ShiftHandoverPanel() {
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="h-7 w-7 p-0 text-muted-foreground hover:bg-rose-500/10 hover:text-rose-600"
+                              className="h-7 w-7 p-0 text-muted-foreground hover:bg-rose-500/10 hover:text-rose-700 dark:hover:text-rose-400"
                               onClick={() => {
                                 setPendingDeleteId(n.id);
                                 confirmDelete.ask({
@@ -508,7 +508,7 @@ function HandoverComposer({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">{t("handover.shift")}</Label>
-              <Select value={shift} onValueChange={(v) => setShift(v as "MORNING" | "EVENING" | "NIGHT")}>
+              <Select label={t("handover.shift")} value={shift} onValueChange={(v) => setShift(v as "MORNING" | "EVENING" | "NIGHT")}>
                 <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="MORNING">{t("handover.shiftMorning")}</SelectItem>
@@ -519,7 +519,7 @@ function HandoverComposer({
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">{t("handover.priority")}</Label>
-              <Select value={priority} onValueChange={(v) => setPriority(v as "P1" | "P2" | "P3")}>
+              <Select label={t("handover.priority")} value={priority} onValueChange={(v) => setPriority(v as "P1" | "P2" | "P3")}>
                 <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="P1">P1</SelectItem>

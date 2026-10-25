@@ -42,7 +42,7 @@ const STATUS_CONFIG: Record<StatusLevel, StatusConfig> = {
     Icon: ShieldCheck,
     iconClass: "text-emerald-500 dark:text-emerald-400",
     containerClass: "bg-emerald-500/15 ring-1 ring-inset ring-emerald-500/30",
-    titleClass: "text-emerald-600 dark:text-emerald-400",
+    titleClass: "text-emerald-700 dark:text-emerald-400",
     cardClass:
       "bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-transparent ring-1 ring-emerald-500/20",
     pulse: false,
@@ -52,7 +52,7 @@ const STATUS_CONFIG: Record<StatusLevel, StatusConfig> = {
     Icon: AlertTriangle,
     iconClass: "text-amber-500 dark:text-amber-400",
     containerClass: "bg-amber-500/15 ring-1 ring-inset ring-amber-500/30",
-    titleClass: "text-amber-600 dark:text-amber-400",
+    titleClass: "text-amber-700 dark:text-amber-400",
     cardClass:
       "bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent ring-1 ring-amber-500/20",
     pulse: false,
@@ -62,7 +62,7 @@ const STATUS_CONFIG: Record<StatusLevel, StatusConfig> = {
     Icon: Siren,
     iconClass: "text-rose-500 dark:text-rose-400",
     containerClass: "bg-rose-500/15 ring-1 ring-inset ring-rose-500/40",
-    titleClass: "text-rose-600 dark:text-rose-400",
+    titleClass: "text-rose-700 dark:text-rose-400",
     cardClass:
       "bg-gradient-to-r from-rose-500/10 via-rose-500/5 to-transparent ring-1 ring-rose-500/30",
     pulse: true,
@@ -94,8 +94,8 @@ const INDICATORS: Array<Omit<Indicator, "count">> = [
 
 function chipToneClass(tone: "rose" | "amber"): string {
   return tone === "rose"
-    ? "border-rose-500/20 bg-rose-500/[0.04] text-rose-600 dark:text-rose-400"
-    : "border-amber-500/20 bg-amber-500/[0.04] text-amber-600 dark:text-amber-400";
+    ? "border-rose-500/20 bg-rose-500/[0.04] text-rose-700 dark:text-rose-400"
+    : "border-amber-500/20 bg-amber-500/[0.04] text-amber-700 dark:text-amber-400";
 }
 
 export function SystemStatusBanner({ kpis }: SystemStatusBannerProps) {
@@ -195,7 +195,7 @@ export function SystemStatusBanner({ kpis }: SystemStatusBannerProps) {
                   className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/[0.04] px-2.5 py-1 text-xs transition-colors hover:bg-muted/50"
                 >
                   <Check className="h-3.5 w-3.5 text-emerald-500 dark:text-emerald-400" />
-                  <span className="font-bold tabular-nums text-sm text-emerald-600 dark:text-emerald-400">
+                  <span className="font-bold tabular-nums text-sm text-emerald-700 dark:text-emerald-400">
                     {formatNumber(0, numLang)}
                   </span>
                   <span className="text-[10px] uppercase tracking-wide text-muted-foreground">

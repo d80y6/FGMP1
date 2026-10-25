@@ -293,7 +293,7 @@ export function OnboardingChecklist() {
       <CardHeader className="gap-2 pb-3">
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-start gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
               <Sparkles className="h-5 w-5" />
             </div>
             <div className="min-w-0">
@@ -332,8 +332,8 @@ export function OnboardingChecklist() {
             className={cn(
               "shrink-0 tabular-nums",
               completedCount === totalCount
-                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                : "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                : "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400",
             )}
             aria-label={t("onboarding.progressLabel")}
           >
@@ -372,7 +372,7 @@ export function OnboardingChecklist() {
                   className={cn(
                     "flex h-7 w-7 shrink-0 items-center justify-center rounded-md",
                     item.complete
-                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                      ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
                       : "bg-muted/60 text-muted-foreground",
                   )}
                   aria-hidden="true"
@@ -393,7 +393,7 @@ export function OnboardingChecklist() {
                     className={cn(
                       "block text-[10px] leading-tight",
                       item.complete
-                        ? "text-emerald-600 dark:text-emerald-400"
+                        ? "text-emerald-700 dark:text-emerald-400"
                         : "text-muted-foreground",
                     )}
                   >

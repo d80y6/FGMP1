@@ -18,20 +18,20 @@ const EMERALD = {
   text: "text-emerald-500",
   bar: "bg-gradient-to-r from-emerald-500 to-emerald-400",
   badge:
-    "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+    "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
 } as const;
 
 const AMBER = {
   text: "text-amber-500",
   bar: "bg-gradient-to-r from-amber-500 to-amber-400",
   badge:
-    "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+    "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400",
 } as const;
 
 const ROSE = {
   text: "text-rose-500",
   bar: "bg-gradient-to-r from-rose-500 to-rose-400",
-  badge: "border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400",
+  badge: "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-400",
 } as const;
 
 function tone(score: number): typeof EMERALD | typeof AMBER | typeof ROSE {

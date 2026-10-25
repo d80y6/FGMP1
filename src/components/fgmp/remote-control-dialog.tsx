@@ -69,7 +69,7 @@ export function RemoteControlDialog({ open, onOpenChange, generatorId, generator
         </DialogHeader>
 
         {isEmergency && (
-          <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 p-3 text-xs text-rose-600 dark:text-rose-400">
+          <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 p-3 text-xs text-rose-700 dark:text-rose-400">
             <AlertOctagon className="mb-1 inline h-4 w-4" /> {t("remoteControl.emergencyNote")}
           </div>
         )}

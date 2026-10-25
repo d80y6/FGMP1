@@ -331,7 +331,7 @@ function SettingsSection({ category, numLang }: { category: Category; numLang: L
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {isDirty && (
-              <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px]">
+              <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[10px]">
                 {t("settings.unsavedChanges")}
               </Badge>
             )}
@@ -438,7 +438,7 @@ function FieldRow({
               className={cn(
                 "text-[10px]",
                 value === "true"
-                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
                   : "border-slate-500/40 bg-slate-500/10 text-slate-600 dark:text-slate-400",
               )}
             >

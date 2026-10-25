@@ -17,7 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { FilterTabs, FilterTab } from "@/components/fgmp/filter-tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import { fmtDateTime, timeAgo } from "@/lib/fgmp/format";
@@ -55,9 +55,9 @@ function maintenanceStatusLabel(status: string, lang: Language): string {
 }
 
 const PRIORITY_TONE: Record<string, string> = {
-  P1: "border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400",
-  P2: "border-orange-500/40 bg-orange-500/10 text-orange-600 dark:text-orange-400",
-  P3: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  P1: "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-400",
+  P2: "border-orange-500/40 bg-orange-500/10 text-orange-700 dark:text-orange-400",
+  P3: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400",
   P4: "border-slate-500/40 bg-slate-500/10 text-slate-600 dark:text-slate-400",
 };
 
@@ -69,10 +69,10 @@ const STATUS_BORDER: Record<string, string> = {
 };
 
 const STATUS_BADGE_DETAIL: Record<string, string> = {
-  OPEN: "border-sky-500/40 bg-sky-500/15 text-sky-600 dark:text-sky-400",
-  SCHEDULED: "border-amber-500/40 bg-amber-500/15 text-amber-600 dark:text-amber-400",
-  IN_PROGRESS: "border-violet-500/40 bg-violet-500/15 text-violet-600 dark:text-violet-400",
-  DONE: "border-emerald-500/40 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+  OPEN: "border-sky-500/40 bg-sky-500/15 text-sky-700 dark:text-sky-400",
+  SCHEDULED: "border-amber-500/40 bg-amber-500/15 text-amber-700 dark:text-amber-400",
+  IN_PROGRESS: "border-violet-500/40 bg-violet-500/15 text-violet-700 dark:text-violet-400",
+  DONE: "border-emerald-500/40 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
 };
 
 export function MaintenanceView() {
@@ -193,22 +193,20 @@ export function MaintenanceView() {
         <Card className="xl:col-span-2">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
             <CardTitle className="text-sm">{t("maintenance.tickets")} ({formatNumber(tickets?.length ?? 0, numLang)})</CardTitle>
-            <Tabs value={status} onValueChange={setStatus}>
-              <TabsList className="h-8">
-                <TabsTrigger value="OPEN,SCHEDULED,IN_PROGRESS" className="text-xs">{t("common.active")}</TabsTrigger>
-                <TabsTrigger value="DONE" className="text-xs">{t("maintenance.done")}</TabsTrigger>
-                <TabsTrigger value="OPEN,SCHEDULED,IN_PROGRESS,DONE" className="text-xs">{t("common.all")}</TabsTrigger>
-              </TabsList>
-            </Tabs>
+            <FilterTabs value={status} onValueChange={setStatus} label={t("maintenance.statusFilter")}>
+              <FilterTab value="OPEN,SCHEDULED,IN_PROGRESS">{t("common.active")}</FilterTab>
+              <FilterTab value="DONE">{t("maintenance.done")}</FilterTab>
+              <FilterTab value="OPEN,SCHEDULED,IN_PROGRESS,DONE">{t("common.all")}</FilterTab>
+            </FilterTabs>
           </CardHeader>
           <CardContent className="p-0">
             {/* Ticket stats mini bar */}
             <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2">
               <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t("maintenance.ticketsLabel")}:</span>
-              <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold border-sky-500/30 bg-sky-500/10 text-sky-600 dark:text-sky-400">{formatNumber(counts.open, numLang)} {t("maintenance.open")}</span>
-              <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400">{formatNumber(counts.scheduled, numLang)} {t("maintenance.scheduled")}</span>
-              <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold border-violet-500/30 bg-violet-500/10 text-violet-600 dark:text-violet-400">{formatNumber(counts.inProgress, numLang)} {t("maintenance.inProgress")}</span>
-              <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">{formatNumber(counts.done, numLang)} {t("maintenance.done")}</span>
+              <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-400">{formatNumber(counts.open, numLang)} {t("maintenance.open")}</span>
+              <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400">{formatNumber(counts.scheduled, numLang)} {t("maintenance.scheduled")}</span>
+              <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-400">{formatNumber(counts.inProgress, numLang)} {t("maintenance.inProgress")}</span>
+              <span className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">{formatNumber(counts.done, numLang)} {t("maintenance.done")}</span>
             </div>
             <ScrollArea className="h-[520px]">
               <Table>
@@ -237,7 +235,7 @@ export function MaintenanceView() {
                       <TableCell className="hidden md:table-cell text-[10px] text-muted-foreground">{tk.scheduledFor ? timeAgo(tk.scheduledFor, numLang) : "—"}</TableCell>
                       <TableCell className="text-right">
                         {tk.status !== "DONE" && (
-                          <Button size="sm" variant="outline" className="h-6 px-2 text-[10px] text-emerald-600 hover:bg-emerald-500/10" onClick={() => complete(tk.id)}>
+                          <Button size="sm" variant="outline" className="h-6 px-2 text-[10px] text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10" onClick={() => complete(tk.id)}>
                             <CheckCircle2 className="mr-1 h-3 w-3" />{t("maintenance.complete")}
                           </Button>
                         )}
@@ -254,17 +252,17 @@ export function MaintenanceView() {
         <Card>
           <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-sm"><Calendar className="h-4 w-4 text-amber-500" /> {t("maintenance.predictive")}</CardTitle></CardHeader>
           <CardContent className="p-3">
-            <div className="max-h-[500px] space-y-2 overflow-y-auto">
+            <div className="max-h-[500px] space-y-2 overflow-y-auto" tabIndex={0} role="region" aria-label={t("a11y.scrollDueGenerators")}>
               {dueGens.map((g) => (
                 <div key={g.id} className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-2.5">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-medium">{g.label}</span>
-                    <Badge variant="outline" className="h-4 px-1 text-[8px] border-amber-500/40 text-amber-600 dark:text-amber-400">{t("maintenance.due")}</Badge>
+                    <Badge variant="outline" className="h-4 px-1 text-[8px] border-amber-500/40 text-amber-700 dark:text-amber-400">{t("maintenance.due")}</Badge>
                   </div>
                   <p className="text-[10px] text-muted-foreground">{g.site} · {g.manufacturer}</p>
                   <div className="mt-1.5 flex items-center justify-between text-[10px]">
                     <span className="text-muted-foreground">{t("maintenance.runtime")}: <b className="text-foreground">{formatNumber(Math.round(g.runtimeHours), numLang)}h</b></span>
-                    <span className="text-muted-foreground">{t("maintenance.next")}: <b className="text-amber-600 dark:text-amber-400">{formatNumber(Math.round(g.nextMaintenanceHrs), numLang)}h</b></span>
+                    <span className="text-muted-foreground">{t("maintenance.next")}: <b className="text-amber-700 dark:text-amber-400">{formatNumber(Math.round(g.nextMaintenanceHrs), numLang)}h</b></span>
                   </div>
                   <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
                     <div className="h-full bg-amber-500" style={{ width: `${Math.min(100, (g.runtimeHours / g.nextMaintenanceHrs) * 100)}%` }} />
@@ -389,15 +387,15 @@ function CreateTicketDialog({ open, onOpenChange, sites, generators, onCreated }
         <div className="grid grid-cols-2 gap-3">
           <div className="col-span-2">
             <Label className="text-xs">{t("maintenance.site")}</Label>
-            <Select value={siteId} onValueChange={setSiteId}><SelectTrigger><SelectValue placeholder={t("inventory.selectSite")} /></SelectTrigger><SelectContent className="max-h-60">{sites.map((s) => <SelectItem key={s.id} value={s.id}>{s.code} · {s.name}</SelectItem>)}</SelectContent></Select>
+            <Select label={t("maintenance.site")} value={siteId} onValueChange={setSiteId}><SelectTrigger><SelectValue placeholder={t("inventory.selectSite")} /></SelectTrigger><SelectContent className="max-h-60">{sites.map((s) => <SelectItem key={s.id} value={s.id}>{s.code} · {s.name}</SelectItem>)}</SelectContent></Select>
           </div>
           <div>
             <Label className="text-xs">{t("maintenance.type")}</Label>
-            <Select value={type} onValueChange={setType}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="PREVENTIVE">{t("maintenance.typePreventive")}</SelectItem><SelectItem value="CORRECTIVE">{t("maintenance.typeCorrective")}</SelectItem><SelectItem value="OIL_CHANGE">{t("maintenance.typeOilChange")}</SelectItem><SelectItem value="INSPECTION">{t("maintenance.typeInspection")}</SelectItem><SelectItem value="CALIBRATION">{t("maintenance.typeCalibration")}</SelectItem></SelectContent></Select>
+            <Select label={t("maintenance.type")} value={type} onValueChange={setType}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="PREVENTIVE">{t("maintenance.typePreventive")}</SelectItem><SelectItem value="CORRECTIVE">{t("maintenance.typeCorrective")}</SelectItem><SelectItem value="OIL_CHANGE">{t("maintenance.typeOilChange")}</SelectItem><SelectItem value="INSPECTION">{t("maintenance.typeInspection")}</SelectItem><SelectItem value="CALIBRATION">{t("maintenance.typeCalibration")}</SelectItem></SelectContent></Select>
           </div>
           <div>
             <Label className="text-xs">{t("maintenance.priority")}</Label>
-            <Select value={priority} onValueChange={setPriority}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="P1">{t("maintenance.p1Critical")}</SelectItem><SelectItem value="P2">{t("maintenance.p2High")}</SelectItem><SelectItem value="P3">{t("maintenance.p3Medium")}</SelectItem><SelectItem value="P4">{t("maintenance.p4Low")}</SelectItem></SelectContent></Select>
+            <Select label={t("maintenance.priority")} value={priority} onValueChange={setPriority}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="P1">{t("maintenance.p1Critical")}</SelectItem><SelectItem value="P2">{t("maintenance.p2High")}</SelectItem><SelectItem value="P3">{t("maintenance.p3Medium")}</SelectItem><SelectItem value="P4">{t("maintenance.p4Low")}</SelectItem></SelectContent></Select>
           </div>
           <div className="col-span-2">
             <Label className="text-xs">{t("maintenance.title")}</Label>

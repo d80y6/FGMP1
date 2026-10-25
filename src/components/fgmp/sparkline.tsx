@@ -10,9 +10,13 @@ interface SparklineProps {
   color?: string;
   className?: string;
   fill?: boolean;
+  /** Set when a text label or number next to the sparkline already says what it
+   *  shows (KPI cards do). Keeps the SVG out of the accessibility tree and out
+   *  of the tab order in every browser. */
+  decorative?: boolean;
 }
 
-export function Sparkline({ data, width = 120, height = 32, color, className, fill }: SparklineProps) {
+export function Sparkline({ data, width = 120, height = 32, color, className, fill, decorative = false }: SparklineProps) {
   // Stable per-instance gradient id. Math.random() in the render body produced a
   // new id on every render (visible flicker) and is a latent SSR hydration
   // mismatch, since the server and client renders would disagree.
@@ -28,7 +32,13 @@ export function Sparkline({ data, width = 120, height = 32, color, className, fi
   const areaPath = `${path} L ${width},${height} L 0,${height} Z`;
 
   return (
-    <svg width={width} height={height} className={cn("overflow-visible", className)}>
+    <svg
+      width={width}
+      height={height}
+      className={cn("overflow-visible", className)}
+      aria-hidden={decorative ? "true" : undefined}
+      focusable={decorative ? false : undefined}
+    >
       {fill && (
         <>
           <defs>

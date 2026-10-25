@@ -318,7 +318,7 @@ function GatewaysTab({ gateways, loading, numLang }: {
               className="h-9 w-[220px] pl-8"
             />
           </div>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <Select label={t("common.status")} value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="h-9 w-[140px] text-xs"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">{t("common.all")}</SelectItem>
@@ -337,7 +337,7 @@ function GatewaysTab({ gateways, loading, numLang }: {
         ) : filtered.length === 0 ? (
           <EmptyState icon={Router} title={t("firmware.noGateways")} description={t("firmware.noGatewaysDesc")} />
         ) : (
-          <div className="max-h-[600px] overflow-y-auto">
+          <div className="max-h-[600px] overflow-y-auto" tabIndex={0} role="region" aria-label={t("firmware.gatewayList")}>
             <Table>
               <TableHeader className="sticky top-0 bg-card">
                 <TableRow>
@@ -740,7 +740,7 @@ function Rs485Tab({ gateways, loading, numLang }: {
           ) : buses.length === 0 ? (
             <EmptyState icon={Radio} title={t("firmware.noBuses")} description={t("firmware.noBusesDesc")} />
           ) : (
-            <div className="max-h-[600px] overflow-y-auto">
+            <div className="max-h-[600px] overflow-y-auto" tabIndex={0} role="region" aria-label={t("firmware.busList")}>
               <Table>
                 <TableHeader className="sticky top-0 bg-card">
                   <TableRow>
@@ -779,8 +779,8 @@ function Rs485Tab({ gateways, loading, numLang }: {
                                 className={
                                   "text-[9px] tabular-nums " +
                                   (isConflict
-                                    ? "border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400"
-                                    : "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400")
+                                    ? "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-400"
+                                    : "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400")
                                 }
                               >
                                 {isConflict && <AlertTriangle className="mr-0.5 h-2 w-2" />}
@@ -813,15 +813,15 @@ function Rs485Tab({ gateways, loading, numLang }: {
                       </TableCell>
                       <TableCell>
                         {b.conflicts.length > 0 ? (
-                          <Badge variant="outline" className="border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400 text-[9px]">
+                          <Badge variant="outline" className="border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-400 text-[9px]">
                             CONFLICT
                           </Badge>
                         ) : b.signalQuality > 50 ? (
-                          <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[9px]">
+                          <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-[9px]">
                             HEALTHY
                           </Badge>
                         ) : (
-                          <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[9px]">
+                          <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[9px]">
                             DEGRADED
                           </Badge>
                         )}
@@ -902,7 +902,7 @@ function RebootTab({ gateways, loading, numLang, onReboot, isAdmin }: {
         ) : gateways.length === 0 ? (
           <EmptyState icon={RefreshCw} title={t("firmware.noRebootDevices")} description={t("firmware.noRebootDevicesDesc")} />
         ) : (
-          <div className="max-h-[600px] overflow-y-auto">
+          <div className="max-h-[600px] overflow-y-auto" tabIndex={0} role="region" aria-label={t("firmware.rebootList")}>
             <Table>
               <TableHeader className="sticky top-0 bg-card">
                 <TableRow>

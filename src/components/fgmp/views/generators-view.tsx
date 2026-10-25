@@ -107,7 +107,7 @@ export function GeneratorsView() {
                     <Button size="sm" variant="outline" className="h-6 flex-1 text-[10px]" onClick={() => doControl(g, "RESET")}>
                       <RotateCcw className="mr-1 h-3 w-3 text-sky-500" />{t("generators.reset")}
                     </Button>
-                    <Button size="sm" variant="outline" className="h-6 flex-1 text-[10px] border-rose-500/40 text-rose-600 hover:bg-rose-500/10" onClick={() => doControl(g, "EMERGENCY_STOP")}>
+                    <Button size="sm" variant="outline" className="h-6 flex-1 text-[10px] border-rose-500/40 text-rose-700 dark:text-rose-400 hover:bg-rose-500/10" onClick={() => doControl(g, "EMERGENCY_STOP")}>
                       <AlertOctagon className="mr-1 h-3 w-3" />{t("generators.eStop")}
                     </Button>
                   </div>

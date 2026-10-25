@@ -17,6 +17,7 @@ import { timeAgo } from "@/lib/fgmp/format";
 import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 import type { AnalyticsPayload } from "@/lib/fgmp/types";
+import { DecorativeChart } from "@/components/fgmp/decorative-chart";
 
 /**
  * Render a currency figure that is null when no FX rate is configured.
@@ -175,7 +176,7 @@ export function AnalyticsView() {
               <div className="space-y-1.5">
                 {theftEvents.slice(0, 20).map((e, i: number) => (
                   <div key={i} className="flex items-start gap-2 rounded border border-rose-500/20 bg-rose-500/5 p-2 text-[11px]">
-                    <Badge variant="outline" className="h-4 shrink-0 px-1 text-[8px] border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400">{t("fuel.theft")}</Badge>
+                    <Badge variant="outline" className="h-4 shrink-0 px-1 text-[8px] border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400">{t("fuel.theft")}</Badge>
                     <div className="min-w-0 flex-1"><p className="line-clamp-2">{e.message}</p><p className="text-[10px] text-muted-foreground">{timeAgo(e.ts, numLang)}</p></div>
                   </div>
                 ))}
@@ -322,26 +323,28 @@ export function AnalyticsView() {
                   ];
                   return (
                     <>
-                      <ResponsiveContainer width="100%" height={200}>
-                        <PieChart>
-                          <Pie
-                            data={data}
-                            dataKey="value"
-                            nameKey="name"
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={50}
-                            outerRadius={80}
-                            paddingAngle={3}
-                          >
-                            {data.map((e, i) => <Cell key={i} fill={e.fill} />)}
-                          </Pie>
-                          <Tooltip
-                            contentStyle={{ fontSize: 12 }}
-                            formatter={(v: number, n: string) => [`$${formatNumber(Number(v).toLocaleString(), numLang)}`, n]}
-                          />
-                        </PieChart>
-                      </ResponsiveContainer>
+                      <DecorativeChart>
+                        <ResponsiveContainer width="100%" height={200}>
+                          <PieChart>
+                            <Pie
+                              data={data}
+                              dataKey="value"
+                              nameKey="name"
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={50}
+                              outerRadius={80}
+                              paddingAngle={3}
+                            >
+                              {data.map((e, i) => <Cell key={i} fill={e.fill} />)}
+                            </Pie>
+                            <Tooltip
+                              contentStyle={{ fontSize: 12 }}
+                              formatter={(v: number, n: string) => [`$${formatNumber(Number(v).toLocaleString(), numLang)}`, n]}
+                            />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </DecorativeChart>
                       <div className="mt-2 space-y-1.5">
                         {data.map((d) => (
                           <div key={d.name} className="flex items-center justify-between text-xs">

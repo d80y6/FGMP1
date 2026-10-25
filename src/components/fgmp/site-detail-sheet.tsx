@@ -167,7 +167,7 @@ export function SiteDetailSheet({ siteId, open, onOpenChange }: { siteId: string
                               <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={() => setCtrl({ id: g.id, label: g.label, cmd: "RESET" })}>
                                 <RotateCcw className="mr-1 h-3 w-3 text-sky-500" />{t("detail.reset")}
                               </Button>
-                              <Button size="sm" variant="outline" className="h-7 text-[11px] border-rose-500/40 text-rose-600 hover:bg-rose-500/10" onClick={() => setCtrl({ id: g.id, label: g.label, cmd: "EMERGENCY_STOP" })}>
+                              <Button size="sm" variant="outline" className="h-7 text-[11px] border-rose-500/40 text-rose-700 dark:text-rose-400 hover:bg-rose-500/10" onClick={() => setCtrl({ id: g.id, label: g.label, cmd: "EMERGENCY_STOP" })}>
                                 <AlertOctagon className="mr-1 h-3 w-3" />{t("detail.eStop")}
                               </Button>
                               <span className="ml-auto self-center text-[10px] text-muted-foreground">{t("detail.nextMaint")}: {Math.round(g.nextMaintenanceHrs)} h</span>
