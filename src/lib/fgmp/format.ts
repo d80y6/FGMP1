@@ -117,3 +117,63 @@ export function fmtTime(ts: number | string | Date, lang: Language = "en"): stri
   }
   return d.toLocaleTimeString("en-GB", { hour12: false, timeZone: "Asia/Aden" });
 }
+
+/**
+ * Yemeni-rial amount for display: grouped integer + the localised currency
+ * suffix ("YER" / "ر.ي").
+ *
+ * WHY IT LIVES HERE
+ * -----------------
+ * The dispensers view had its own copy that ended with
+ * `return lang === "ar" ? `${num} ${digits}` : `${num} ${digits}`;` — both
+ * branches identical — after converting the digits with
+ * `toArabicNumerals()` unconditionally. The result was that the English UI
+ * rendered `١١٩,٩٩٦ YER` (and every transaction duration as Arabic-Indic
+ * digits) whenever the Arabic-numeral preference was on, which it is by
+ * default for Arabic users who then switch back to English.
+ *
+ * One implementation, one rule: digits follow the caller's language, the
+ * suffix comes from the dictionary.
+ */
+export function fmtYer(amount: number, lang: Language = "en"): string {
+  const value = formatNumber(Math.round(amount), lang);
+  return `${value} ${translateFmt("dispenser.yerSuffix", lang, {})}`;
+}
+
+/**
+ * Duration in seconds as "M:SS" / "H:MM:SS", digits localised per language.
+ * Negative or non-finite input renders "0:00" rather than "NaN:NaN".
+ */
+export function fmtDurationSeconds(sec: number, lang: Language = "en"): string {
+  if (!Number.isFinite(sec) || sec < 1) return formatNumber("0:00", lang);
+  const total = Math.floor(sec);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const out = h > 0
+    ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
+    : `${m}:${String(s).padStart(2, "0")}`;
+  return formatNumber(out, lang);
+}
+
+/**
+ * Clock-only, minute precision (HH:MM), digits localised per language.
+ *
+ * Exists because six screens wanted "the time, without the seconds" and got it
+ * with `fmtDateTime(...).slice(11, 16)` or `.slice(5, 16)` — cutting a
+ * locale-formatted string at character offsets. That is not a formatting
+ * decision: the offsets only line up for one locale, the visible fragment loses
+ * the date, and the column renders things like "…/2026. 23:2" (D-33).
+ */
+export function fmtTimeShort(ts: number | string | Date, lang: Language = "en"): string {
+  const full = fmtTime(ts, lang);
+  // fmtTime is HH:MM:SS; keep HH:MM. Split rather than slice so a future
+  // locale that returns "HH.MM.SS" still truncates at the right place.
+  const parts = full.split(":");
+  return parts.length >= 2 ? `${parts[0]}:${parts[1]}` : full;
+}
+
+/** Date + minute-precision time on one line, for dense table cells. */
+export function fmtDateTimeShort(ts: number | string | Date, lang: Language = "en"): string {
+  return `${fmtDate(ts, lang)} ${fmtTimeShort(ts, lang)}`;
+}

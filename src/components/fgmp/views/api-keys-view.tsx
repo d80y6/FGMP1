@@ -50,7 +50,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
-import { fmtDateTime, timeAgo } from "@/lib/fgmp/format";
+import { fmtDate, fmtDateTimeShort, timeAgo } from "@/lib/fgmp/format";
 import { useT, useTF, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 import { cn } from "@/lib/utils";
@@ -108,23 +108,24 @@ function keyStatus(k: ApiKeyRow): KeyStatus {
 }
 
 function StatusBadge({ status }: { status: KeyStatus }) {
+  const t = useT();
   if (status === "active") {
     return (
       <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-[10px]">
-        Active
+        {t("common.active")}
       </Badge>
     );
   }
   if (status === "revoked") {
     return (
       <Badge variant="outline" className="border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-400 text-[10px]">
-        Revoked
+        {t("common.revoked")}
       </Badge>
     );
   }
   return (
     <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[10px]">
-      Expired
+      {t("common.expiredStatus")}
     </Badge>
   );
 }
@@ -314,14 +315,14 @@ export function ApiKeysView() {
                           {k.lastUsedAt ? (
                             <>
                               <p>{timeAgo(k.lastUsedAt, numLang)}</p>
-                              <p className="text-[10px]">{fmtDateTime(k.lastUsedAt, numLang).slice(5, 16)}</p>
+                              <p className="text-[10px]">{fmtDateTimeShort(k.lastUsedAt, numLang)}</p>
                             </>
                           ) : (
                             <span>{t("apiKeys.never")}</span>
                           )}
                         </TableCell>
                         <TableCell className="hidden lg:table-cell text-[10px] text-muted-foreground">
-                          {fmtDateTime(k.createdAt, numLang).slice(0, 10)}
+                          {fmtDate(k.createdAt, numLang)}
                         </TableCell>
                         <TableCell><StatusBadge status={status} /></TableCell>
                         <TableCell className="text-right">
@@ -338,7 +339,7 @@ export function ApiKeysView() {
                                 className="text-rose-700 dark:text-rose-400 focus:text-rose-700 dark:focus:text-rose-400 focus:bg-rose-500/10"
                               >
                                 <Ban className="mr-2 h-3.5 w-3.5" />
-                                Revoke
+                                {t("common.revoke")}
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
@@ -559,7 +560,7 @@ function CreateKeyDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>Cancel</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>{t("common.cancel")}</Button>
           <Button onClick={handleSubmit} disabled={submitting || !name.trim()}>
             {submitting ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <KeyRound className="mr-1 h-3.5 w-3.5" />}
             {t("apiKeys.generate")}

@@ -26,6 +26,7 @@ import { FuelRunoutEta } from "@/components/fgmp/fuel-runout-eta";
 import { ShiftHandoverPanel } from "@/components/fgmp/shift-handover-panel";
 import { StatusBadge, severityDot } from "@/components/fgmp/status-badge";
 import { DashboardSkeleton } from "@/components/fgmp/skeletons";
+import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/fgmp/empty-state";
 import { ExportButton } from "@/components/fgmp/export-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -69,7 +70,7 @@ export function DashboardView() {
   // wide enough pool of OPEN alarms to pick the 5 most urgent from.
   const { data: alarms, error: alarmsError, refetch: refetchAlarms } = useApi<AlarmRow[]>("/api/fgmp/alarms?status=OPEN,ACKNOWLEDGED,ESCALATED&limit=50", { interval: 6000 });
   const [range, setRange] = useState<DashboardRange>("24h");
-  const { data: analytics, error: analyticsError, refetch: refetchAnalytics } = useApi<AnalyticsPayload>(`/api/fgmp/analytics?range=${range}&projection=dashboard`, { interval: 15000, deps: [range] });
+  const { data: analytics, loading: analyticsLoading, error: analyticsError, refetch: refetchAnalytics } = useApi<AnalyticsPayload>(`/api/fgmp/analytics?range=${range}&projection=dashboard`, { interval: 15000, deps: [range] });
   const cc = useChartColors();
   const [regionSheet, setRegionSheet] = useState<string | null>(null);
 
@@ -476,6 +477,16 @@ export function DashboardView() {
             </ToggleGroup>
           </CardHeader>
           <CardContent>
+            {analyticsLoading && !analytics ? (
+              <Skeleton className="h-[180px] w-full" />
+            ) : consumption.length === 0 ? (
+              <EmptyState
+                icon={TrendingUp}
+                title={t("common.noDataInRange")}
+                description={t("common.noDataInRangeHint")}
+                compact
+              />
+            ) : (
             <ResponsiveContainer width="100%" height={180}>
               <AreaChart tabIndex={-1} data={consumption} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                 <defs>
@@ -491,6 +502,7 @@ export function DashboardView() {
                 <Area type="monotone" dataKey="litres" stroke={cc.emerald} strokeWidth={2} fill="url(#cons-grad)" />
               </AreaChart>
             </ResponsiveContainer>
+            )}
             <div className="mt-1 flex items-center justify-between px-2 text-[11px] text-muted-foreground">
               <span>{t("dash.consumedToday")}: <b className="text-foreground">{formatNumber(k.fuelConsumedTodayL.toLocaleString(), numLang)} L</b></span>
               <span>{t("dash.genHoursToday")}: <b className="text-foreground">{formatNumber(k.generatorHoursToday, numLang)} h</b></span>
@@ -505,6 +517,21 @@ export function DashboardView() {
           <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-sm"><GaugeIcon className="h-4 w-4 text-amber-500" /> {t("dash.regionBreakdownTitle")}</CardTitle></CardHeader>
           <CardContent>
             <div className="space-y-2">
+              {analyticsLoading && !analytics ? (
+                <div className="space-y-2" aria-hidden="true">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <Skeleton key={i} className="h-7 w-full" />
+                  ))}
+                </div>
+              ) : null}
+              {!analyticsLoading && (analytics?.regionBreakdown ?? []).length === 0 && (
+                <EmptyState
+                  icon={GaugeIcon}
+                  title={t("common.noRegionData")}
+                  description={t("common.noRegionDataHint")}
+                  compact
+                />
+              )}
               {(analytics?.regionBreakdown ?? []).map((r) => (
                 <button
                   key={r.region}

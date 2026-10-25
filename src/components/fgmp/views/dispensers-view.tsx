@@ -12,6 +12,7 @@ import {
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { useFgmp } from "@/lib/fgmp/store";
+import { useNow } from "@/lib/fgmp/use-now";
 import { useApi, apiPost, apiPatch, apiDelete } from "@/lib/fgmp/use-api";
 import { TruncationNote } from "@/components/fgmp/truncation-note";
 import { SectionHeader } from "@/components/fgmp/section-header";
@@ -35,8 +36,8 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { timeAgo, fmtDateTime } from "@/lib/fgmp/format";
-import { useT, useArabicNumerals, formatNumber, toArabicNumerals } from "@/lib/fgmp/use-language";
+import { fmtDateTime, fmtDateTimeShort, fmtDurationSeconds, fmtYer, timeAgo } from "@/lib/fgmp/format";
+import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import { useChartColors } from "@/lib/fgmp/use-chart-colors";
 import type { Language } from "@/lib/fgmp/i18n";
 import { translate } from "@/lib/fgmp/i18n";
@@ -144,23 +145,14 @@ function txnStatusLabel(status: string, lang: Language): string {
   return translated === key ? status.replace(/_/g, " ") : translated;
 }
 
-/** Format a YER amount with thousands separators + Arabic-Indic numerals if AR. */
-function formatYer(amount: number, lang: Language): string {
-  const s = Math.round(amount).toLocaleString("en-US");
-  const digits = lang === "ar" ? translate("dispenser.yerSuffix", lang) : "YER";
-  const num = toArabicNumerals(s);
-  return lang === "ar" ? `${num} ${digits}` : `${num} ${digits}`;
-}
-
-/** Format a duration in seconds as "M:SS" or "H:MM:SS". */
-function formatDuration(sec: number, _lang: Language): string {
-  if (!sec || sec < 1) return "0:00";
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  const s = sec % 60;
-  const out = h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
-  return toArabicNumerals(out);
-}
+/**
+ * Money and durations come from the shared formatters (`fmtYer`,
+ * `fmtDurationSeconds`). The local copies that used to live here converted
+ * digits with `toArabicNumerals()` regardless of language, so the ENGLISH UI
+ * rendered `١١٩,٩٩٦ YER` — see D-28 in TASK_LEDGER.md.
+ */
+const formatYer = (amount: number, lang: Language): string => fmtYer(amount, lang);
+const formatDuration = (sec: number, lang: Language): string => fmtDurationSeconds(sec, lang);
 
 /* ────────────────────────────────────────────────────────────────────────
  * Main view
@@ -178,6 +170,9 @@ export function DispensersView() {
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
   const cc = useChartColors();
+  // One coarse clock for this view: staleness badges and the report period
+  // must advance while the screen is open (D-34).
+  const now = useNow();
 
   const isAdmin = me?.role === "ADMIN";
   const canControl = me?.role === "ADMIN" || me?.role === "NOC_OPERATOR" || me?.role === "FIELD_ENGINEER";
@@ -257,7 +252,7 @@ export function DispensersView() {
   // 24h / 7d / 30d period picker.
   const [reportPeriod, setReportPeriod] = useState<"24h" | "7d" | "30d">("7d");
   const periodMs = reportPeriod === "24h" ? 24 * 3600_000 : reportPeriod === "7d" ? 7 * 86400_000 : 30 * 86400_000;
-  const periodStartMs = Date.now() - periodMs;
+  const periodStartMs = now - periodMs;
 
   const periodTxns = useMemo(
     () => transactions.filter((t2) => t2.status === "COMPLETED" && new Date(t2.startedAt).getTime() >= periodStartMs),
@@ -281,7 +276,7 @@ export function DispensersView() {
     const buckets = reportPeriod === "24h" ? 24 : reportPeriod === "7d" ? 7 : 30;
     for (let i = buckets - 1; i >= 0; i--) {
       const start = reportPeriod === "24h"
-        ? Date.now() - (i + 1) * 3600_000
+        ? now - (i + 1) * 3600_000
         : (() => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - i); return d.getTime(); })();
       const end = reportPeriod === "24h" ? start + 3600_000 : start + 86400000;
       const bucketTxns = periodTxns.filter((t2) => {
@@ -296,7 +291,10 @@ export function DispensersView() {
       days.push({ day: label, volume: Math.round(volume * 10) / 10, amount });
     }
     return days;
-  }, [periodTxns, reportPeriod]);
+    // `now` is a dependency, not a recompute trigger: it moves once per 30 s
+    // (useNow), which is what keeps the 24 h buckets sliding instead of freezing
+    // at the timestamp of the first render (D-34).
+  }, [periodTxns, reportPeriod, now]);
 
   const revenueBySite = useMemo(() => {
     const m = new Map<string, { name: string; amount: number; volume: number }>();
@@ -415,8 +413,10 @@ export function DispensersView() {
         <KpiCard label={t("dispenser.kpiDispensing")} value={formatNumber(dispensersDispensing, numLang)} icon={<Droplet className="h-4 w-4" />} tone={dispensersDispensing > 0 ? "good" : "default"} />
         <KpiCard label={t("dispenser.kpiFaulty")} value={formatNumber(dispensersFault, numLang)} icon={<AlertTriangle className="h-4 w-4" />} tone={dispensersFault > 0 ? "danger" : "good"} />
         <KpiCard label={t("dispenser.kpiTxnToday")} value={formatNumber(txnToday, numLang)} icon={<Receipt className="h-4 w-4" />} tone="info" />
-        <KpiCard label={t("dispenser.kpiVolumeToday")} value={formatNumber(volToday, numLang)} icon={<Gauge className="h-4 w-4" />} tone="info" />
-        <KpiCard label={t("dispenser.kpiRevenueToday")} value={formatYer(revenueToday, numLang)} icon={<Wallet className="h-4 w-4" />} tone="good" />
+        <KpiCard label={t("dispenser.kpiVolumeToday")} value={formatNumber(volToday, numLang)} unit={t("dispenser.litres")} icon={<Gauge className="h-4 w-4" />} tone="info" />
+        {/* Value and currency are separate: passing one pre-joined string made
+            the 2xl figure wrap onto two lines inside a 1/6-width card. */}
+        <KpiCard label={t("dispenser.kpiRevenueToday")} value={formatNumber(Math.round(revenueToday), numLang)} unit={t("dispenser.yerSuffix")} icon={<Wallet className="h-4 w-4" />} tone="good" />
       </div>
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
@@ -444,7 +444,7 @@ export function DispensersView() {
                   </SelectContent>
                 </Select>
                 <Select label={t("dispenser.lblFuelType")} value={fuelFilter} onValueChange={setFuelFilter}>
-                  <SelectTrigger className="h-9 w-[120px] text-xs"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="h-9 w-[136px] text-xs" title={fuelFilter === "all" ? t("dispenser.allFuelTypes") : fuelTypeLabel(fuelFilter, numLang)}><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">{t("dispenser.allFuelTypes")}</SelectItem>
                     {FUEL_TYPES.map((f) => <SelectItem key={f} value={f}>{fuelTypeLabel(f, numLang)}</SelectItem>)}
@@ -478,7 +478,7 @@ export function DispensersView() {
                       {filtered.slice(0, 100).map((d) => {
                         const status = d.liveStatus ?? d.status;
                         const dispensing = status === "DISPENSING";
-                        const commsStale = Date.now() - (d.liveLastCommAt ?? 0) > 90_000;
+                        const commsStale = now - (d.liveLastCommAt ?? 0) > 90_000;
                         return (
                           <TableRow key={d.id} className="transition-colors hover:bg-muted/30">
                             <TableCell>
@@ -527,7 +527,7 @@ export function DispensersView() {
                               <div className="flex items-center gap-1 text-[10px]">
                                 <Wifi className={`h-3 w-3 ${commsStale ? "text-rose-500" : "text-emerald-500"}`} />
                                 <span className={commsStale ? "text-rose-500" : "text-muted-foreground"}>
-                                  {timeAgo(d.liveLastCommAt ?? Date.now(), numLang)}
+                                  {timeAgo(d.liveLastCommAt ?? now, numLang)}
                                 </span>
                               </div>
                               <div className="text-[10px] text-muted-foreground tabular-nums" dir="ltr">{formatNumber(d.liveWifiRssi, numLang)} dBm</div>
@@ -674,7 +674,7 @@ export function DispensersView() {
                         return (
                           <TableRow key={tx.id} className={inProgress ? "bg-emerald-500/5" : "transition-colors hover:bg-muted/30"}>
                             <TableCell className="text-[10px] text-muted-foreground tabular-nums" dir="ltr">
-                              {fmtDateTime(tx.startedAt, numLang).slice(0, 16)}
+                              {fmtDateTimeShort(tx.startedAt, numLang)}
                             </TableCell>
                             <TableCell>
                               <div className="flex flex-col">

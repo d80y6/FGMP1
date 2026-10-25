@@ -82,6 +82,7 @@ import { MiniStatusIndicator } from "@/components/fgmp/mini-status-indicator";
 import { SystemHealthIndicator } from "@/components/fgmp/system-health-indicator";
 import { PinnedSitesWidget } from "@/components/fgmp/pinned-sites-widget";
 import { QuickAccessPopover } from "@/components/fgmp/quick-access-popover";
+import { HeaderOverflowMenu } from "@/components/fgmp/header-overflow-menu";
 import { ThemeSwitcher } from "@/components/fgmp/theme-switcher";
 import { LanguageSwitcher } from "@/components/fgmp/language-switcher";
 import { SupportSessionBanner } from "@/components/fgmp/support-session-banner";
@@ -515,7 +516,7 @@ export function AppShell() {
 
       {/* Top header */}
       <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="flex h-14 items-center gap-3 px-3 sm:px-4">
+        <div className="flex h-14 min-w-0 items-center gap-2 px-3 sm:px-4">
           {/* Mobile nav trigger */}
           <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
             <SheetTrigger asChild>
@@ -547,7 +548,7 @@ export function AppShell() {
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-sm">
               <Fuel className="h-5 w-5" />
             </div>
-            <div className="hidden sm:block">
+            <div className="hidden md:block">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-bold tracking-tight">{t("brand.name")}</span>
                 {role === "SUPERADMIN" && (
@@ -560,7 +561,7 @@ export function AppShell() {
           </div>
 
           {/* Live status + KPI chips */}
-          <div className="ml-2 hidden items-center gap-2 md:flex">
+          <div className="ml-2 hidden min-w-0 items-center gap-2 lg:flex">
             <div
               // Connection state is the one status an operator needs while
               // looking somewhere else on the page: "LIVE" silently becoming
@@ -593,12 +594,12 @@ export function AppShell() {
             </div>
             {k && <MiniStatusIndicator kpis={k} />}
             {k && (
-              <>
+              <div className="hidden items-center gap-2 xl:flex">
                 <KpiChip label={t("kpi.sites")} value={`${formatNumber(k.onlineSites, numLang)}/${formatNumber(k.totalSites, numLang)}`} tone="good" />
                 <KpiChip label={t("kpi.alarms")} value={formatNumber(k.openAlarms, numLang)} tone={k.openAlarms > 0 ? "danger" : "good"} />
                 <KpiChip label={t("kpi.fuel")} value={`${formatNumber(k.fuelPct, numLang)}%`} tone={k.fuelPct < 25 ? "danger" : "info"} />
                 <KpiChip label={t("kpi.gens")} value={`${formatNumber(k.generatorsRunning, numLang)}/${formatNumber(k.generatorsTotal, numLang)}`} tone="info" />
-              </>
+              </div>
             )}
           </div>
 
@@ -607,7 +608,7 @@ export function AppShell() {
           {/* Command palette trigger */}
           <button
             onClick={() => setCmdOpen(true)}
-            className="hidden items-center gap-2 rounded-md border bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted md:flex"
+            className="hidden items-center gap-2 rounded-md border bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted lg:flex"
             title={t("common.search")}
             aria-label={t("common.search")}
           >
@@ -617,14 +618,16 @@ export function AppShell() {
               <Command className="h-2.5 w-2.5" />K
             </kbd>
           </button>
-          <Button variant="outline" size="icon" className="md:hidden" onClick={() => setCmdOpen(true)} aria-label={t("common.search")} title={t("common.search")}>
+          <Button variant="outline" size="icon" className="lg:hidden" onClick={() => setCmdOpen(true)} aria-label={t("common.search")} title={t("common.search")}>
             <Search className="h-4 w-4" />
           </Button>
 
           {/* Quick Access popover (#18) — pinned + recently-visited sites one
               click away. Mounted right after the global search so it reads as
               a "site jump" shortcut next to the cmd-K palette. */}
-          <QuickAccessPopover />
+          <div className="hidden sm:flex">
+            <QuickAccessPopover />
+          </div>
 
           {/* Clock — self-contained so its 1Hz state never re-renders AppShell */}
           <HeaderClock />
@@ -634,7 +637,9 @@ export function AppShell() {
               widget would show "Checking…" forever for them. Renders a
               pulsing dot + status label; click → system-health view. */}
           {role === "ADMIN" && (
-            <SystemHealthIndicator onClick={() => navigate("system-health")} />
+            <div className="hidden 2xl:block">
+              <SystemHealthIndicator onClick={() => navigate("system-health")} />
+            </div>
           )}
 
           {/* Notification center */}
@@ -642,18 +647,22 @@ export function AppShell() {
 
           {/* Live toggle — label from the same t() keys the adjacent status badge
               uses, so it stays correct in the Arabic locale. */}
-          <Button variant="outline" size="icon" onClick={toggleLive} aria-label={liveToggleLabel} title={liveToggleLabel}>
+          <Button variant="outline" size="icon" className="hidden lg:inline-flex" onClick={toggleLive} aria-label={liveToggleLabel} title={liveToggleLabel}>
             {livePaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
           </Button>
 
           {/* Theme switcher (System / Light / Dark) */}
-          <ThemeSwitcher />
+          <div className="hidden lg:block">
+            <ThemeSwitcher />
+          </div>
 
           {/* Language switcher (EN / AR) */}
-          <LanguageSwitcher />
+          <div className="hidden lg:block">
+            <LanguageSwitcher />
+          </div>
 
           {/* Keyboard shortcuts help */}
-          <Button variant="outline" size="icon" onClick={() => setHelpOpen(true)} aria-label={t("common.keyboardShortcuts")} title={`${t("common.keyboardShortcuts")} (?)`}>
+          <Button variant="outline" size="icon" className="hidden 2xl:inline-flex" onClick={() => setHelpOpen(true)} aria-label={t("common.keyboardShortcuts")} title={`${t("common.keyboardShortcuts")} (?)`}>
             <Keyboard className="h-4 w-4" />
           </Button>
 
@@ -687,6 +696,7 @@ export function AppShell() {
                   {t("auth.returnToAdmin")}
                 </Button>
               )}
+              <div className="hidden items-center 2xl:flex">
               <Select label={t("users.role")}
                 value={role}
                 disabled={role !== "ADMIN" && role !== "SUPERADMIN" && !me.previewRole}
@@ -715,8 +725,26 @@ export function AppShell() {
                   })}
                 </SelectContent>
               </Select>
+              </div>
             </>
           )}
+
+          {/* Overflow: the same actions as named items wherever the inline
+              control above is hidden by a breakpoint (D-26). */}
+          <HeaderOverflowMenu
+            kpis={k ?? null}
+            livePaused={livePaused}
+            onToggleLive={toggleLive}
+            onOpenShortcuts={() => setHelpOpen(true)}
+            onOpenSystemHealth={() => navigate("system-health")}
+            role={role}
+            roles={Array.isArray(me?.roles) && me.roles.length > 0 ? me.roles : role ? [role] : []}
+            onSwitchRole={(next) => {
+              switchRole(next).catch(() => {
+                toast.error(t("auth.invalidCredentials"));
+              });
+            }}
+          />
 
           {/* Sign out (Task 31-A) */}
           <Button
@@ -990,7 +1018,9 @@ function HeaderClock() {
     return () => clearInterval(i);
   }, []);
   return (
-    <div className="hidden items-center gap-1.5 font-mono text-xs text-muted-foreground lg:flex">
+    // Peripheral: it has no place in the budget until the header is wide
+    // (D-26). The overflow menu carries nothing that depends on it.
+    <div className="hidden items-center gap-1.5 font-mono text-xs text-muted-foreground 2xl:flex">
       <Activity className="h-3.5 w-3.5" />
       <span className="tabular-nums">{clock}</span>
     </div>

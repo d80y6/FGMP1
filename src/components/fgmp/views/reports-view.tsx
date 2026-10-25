@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { fmtDateTime } from "@/lib/fgmp/format";
+import { fmtDateTime, fmtDateTimeShort } from "@/lib/fgmp/format";
 import { csvFilename, type CsvColumn } from "@/lib/fgmp/csv-export";
 import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
@@ -163,7 +163,7 @@ export function ReportsView() {
                         <TableHeader><TableRow><TableHead>{t("alarms.type")}</TableHead><TableHead>{t("alarms.site")}</TableHead><TableHead className="w-[70px]">{t("alarms.sev")}</TableHead><TableHead className="w-[120px]">{t("reports.when")}</TableHead></TableRow></TableHeader>
                         <TableBody>
                           {data.alarms.slice(0, 50).map((a) => (
-                            <TableRow key={a.id}><TableCell className="text-[11px] font-mono">{alarmTypeLabel(a.type, numLang)}</TableCell><TableCell className="text-xs">{a.site?.name}</TableCell><TableCell><StatusBadge value={a.severity} className="h-5 text-[10px]" /></TableCell><TableCell className="text-[10px] text-muted-foreground">{fmtDateTime(a.createdAt, numLang).slice(5, 16)}</TableCell></TableRow>
+                            <TableRow key={a.id}><TableCell className="text-[11px] font-mono">{alarmTypeLabel(a.type, numLang)}</TableCell><TableCell className="text-xs">{a.site?.name}</TableCell><TableCell><StatusBadge value={a.severity} className="h-5 text-[10px]" /></TableCell><TableCell className="text-[10px] text-muted-foreground">{fmtDateTimeShort(a.createdAt, numLang)}</TableCell></TableRow>
                           ))}
                         </TableBody>
                       </Table>
@@ -196,7 +196,7 @@ export function ReportsView() {
                         <TableHeader><TableRow><TableHead>{t("reports.command")}</TableHead><TableHead>{t("reports.generator")}</TableHead><TableHead className="w-[90px]">{t("alarms.status")}</TableHead><TableHead className="w-[120px]">{t("reports.when")}</TableHead></TableRow></TableHeader>
                         <TableBody>
                           {data.commands.slice(0, 50).map((c) => (
-                            <TableRow key={c.id}><TableCell className="text-[11px] font-mono">{commandTypeLabel(c.command, numLang)}</TableCell><TableCell className="text-xs">{c.generator?.label}</TableCell><TableCell><StatusBadge value={c.status} className="h-5 text-[10px]" /></TableCell><TableCell className="text-[10px] text-muted-foreground">{fmtDateTime(c.issuedAt, numLang).slice(5, 16)}</TableCell></TableRow>
+                            <TableRow key={c.id}><TableCell className="text-[11px] font-mono">{commandTypeLabel(c.command, numLang)}</TableCell><TableCell className="text-xs">{c.generator?.label}</TableCell><TableCell><StatusBadge value={c.status} className="h-5 text-[10px]" /></TableCell><TableCell className="text-[10px] text-muted-foreground">{fmtDateTimeShort(c.issuedAt, numLang)}</TableCell></TableRow>
                           ))}
                         </TableBody>
                       </Table>

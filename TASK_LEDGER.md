@@ -1183,6 +1183,49 @@ that density is a product decision about the operator's real screen, and only th
 was raised (D-10, now enforced at 10px). And it did not claim a single finding as VERIFIED — every one of
 these is **FIXED**, and the sweep in Chromium remains the only instrument that can promote any of them.
 
+### 6f. Round 7 — the header at every width, and the numbers an operator reads (D-26 … D-36)
+
+Round 6 closed every axe rule. Round 7 asked a different question: what does an operator sitting in
+front of one of these screens actually read, and can they reach the control they need? Everything
+below was reproduced in Chromium against the real server, fixed, and re-measured with the same
+instrument — no rule was disabled and no assertion loosened.
+
+| ID | Where | Finding and root cause | Severity | Status · evidence |
+|---|---|---|---|---|
+| D-26 | `app-shell.tsx`, new `header-overflow-menu.tsx`, `i18n.ts` | **The header did not fit the window it was drawn in.** At 1440 px the control row laid out **1614 px** of content: the notification bell and Sign out were painted past the right edge, and the only way to reach them was a horizontal scroll the shell clips away. `documentElement.scrollWidth === clientWidth` was true the whole time — the header sits inside an overflow-hidden row — which is why earlier sweeps called this view clean. | High | **VERIFIED.** The control set is now breakpoint-staged and every `hidden <bp>:` has a matching entry in a new "More actions" menu (`menuitemradio` + `aria-checked`, Escape returns focus to the trigger). `hdrstate.mjs` across 1280–1920: **0 controls outside the viewport** at every width (worst case 1890/1920). `ui.e2e.ts` → *no header control is rendered outside the viewport*, *the header overflow menu offers the actions the narrow header omits* (English + Arabic, pause/resume, axe `[]`) |
+| D-27 | `use-api.ts`, new `lib/fgmp/in-flight.ts`, `__tests__/in-flight.test.ts` | **A widget whose first request was aborted never retried.** The single-flight registry joined a caller to an in-flight request and never released the entry when that request aborted, so the joiner waited on a promise nobody would settle: the dashboard's fuel/tank/generator cards sat in skeletons indefinitely. An early skeleton render is not the defect — the defect is that it never ended. | High | **VERIFIED (dashboard).** `shouldJoinInFlight`/`shouldReleaseInFlight` are pure and covered by 5 `node:test` cases (including "does not join an aborted request — this is the D-27 defect"). `ui.e2e.ts` → *dashboard widgets leave their loading state* (11.5 s, real fetches) |
+| D-28 | `lib/fgmp/format.ts`, `dispensers-view.tsx` | **Money and durations were formatted in the component.** Dispensers printed `١١٩,٩٩٦ YER` — Arabic-Indic digits glued to a Latin currency suffix — and transaction durations rendered as fractional minutes. Two views formatted the same quantity two ways. | Medium | **VERIFIED.** `fmtYer(amount, lang)` and `fmtDurationSeconds(sec, lang)` live in the shared formatter; `format.test.ts` pins both including the degenerate `0:00` (8 tests). Screenshot @1440 shows `817,336 YER` on one line |
+| D-29 | 7 admin views, `lib/fgmp/i18n.ts`, new `__tests__/i18n-single-token.test.ts` | **The bilingual guard had a blind spot exactly the size of a table header.** It counted English *prose* (2+ words) and deliberately skipped single tokens because most are units and acronyms — so `Code`, `Name`, `Country`, `Users`, `Sites`, `Created`, `Role`, `Status`, `Cancel`, `Active`, `Revoked`, `Expired`, `YOU`, `WILDCARD`, `Passed`, `Failed`, `Unmeasured` rendered English inside the Arabic UI with both guards green. 148 single-token text nodes exist in the tree; **23 were labels**. | Medium | **FIXED**, open tail pinned. Translated the admin tables (`tenants`, `roles`, `users`, `api-keys`) + 26 new label keys. The new guard pins the **remaining 52 occurrences in 14 files** as an exact list — adding a label fails, fixing one fails until its entry is deleted. The rest of the class is inherited work, not claimed |
+| D-30 | `dashboard-view.tsx`, `fuel-view.tsx`, `kpi-card.tsx` | **An empty frame is not an empty state.** KPI tiles and charts rendered a bordered rectangle with no content when a series was empty or a fetch returned nothing — indistinguishable from a failed load. Separately the KPI **label/value overflow their own card** (label 157 px in a 133 px slot on the dashboard; 205>181 on fuel/iot; 244>220 on maintenance). | Medium | Empty states **FIXED** for the dashboard and fuel charts. **KPI clipping still OPEN** — it needs a typographic decision (truncate vs. wrap vs. re-grid), not a nudge |
+| D-31 | `fuel-delivery-tracking.tsx`, `maintenance-prediction-panel.tsx`, `region-leaderboard.tsx`, `fuel-view.tsx` | **Cells clipped with no way to read them.** Long supplier, site and region names were cut by `truncate` with no `title`, and the fuel sort trigger carried a fixed width that clipped "Sort by…" once the row wrapped. Widening a trigger is not a fix: `w-[186px]` pushed it off-screen at 390. | Medium | **VERIFIED.** `title` on every genuinely truncated cell; the fuel header is `flex-wrap` with `w-[168px] sm:w-[200px]` search and `w-[132px] sm:w-[186px]` sort. Re-probe @390/768: the earlier `OFFSCREEN "Sort by"` is gone; remaining `title=N` hits are axe-injected nodes, not content |
+| D-32 | `kpi-card.tsx`, `fuel-delivery-tracking.tsx` | **Targets under 24 px.** The ⓘ affordance measured 13×14 px and the "Recent Completions" disclosure 16 px tall, both under WCAG 2.5.8's 24×24 floor. | Medium | ⓘ **FIXED** with a `::after` hit area; the disclosure is `min-h-6 py-0.5` + `aria-expanded`. Note: the `::after` fix does **not** move the measured glyph box — the 13×14 number is unchanged and is not what was fixed. Alarm select-all checkbox (16×16) still OPEN |
+| D-33 | `users`, `api-keys`, `audit`, `dispensers`, `inventory`, `reports`, `tenants` | **Timestamps were sliced out of a localized string.** `fmtDateTime(...).slice(5,16)` assumed a fixed-width offset in a locale-dependent result; the Last Login column rendered `…/2026. 23:2`. A formatting bug that only shows up in one language and one column width. | Medium | **VERIFIED.** New `fmtTimeShort`/`fmtDateTimeShort` compose from `fmtDate` + `fmtTime` (split, never sliced) and are asserted against `/^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}$/` plus Arabic-Indic digits. Users @1440 renders `25/10/2026 23:23` |
+| D-34 | `dispensers-view.tsx` | **Staleness was computed from a timestamp captured at render.** `Date.now()` inside the render path is impure (React's compiler refuses to memoize it) and, worse, froze: "last seen 4 min ago" stayed 4 min for as long as the screen was open. | Medium | **FIXED.** Reuses the existing shared `useNow()` clock (30 s tick), and `now` is a real `useMemo` dependency so the 24 h buckets slide. The three `react-hooks/purity` errors it caused are gone |
+| D-35 | `command-history-panel.tsx` | **Failure text failed contrast.** `text-rose-500/80` on the card measured under 4.5:1 → axe `color-contrast[serious] ×18` on the generators view. | High | **VERIFIED.** `text-rose-700 dark:text-rose-400` + `title` on the truncated reason; `axe-views.mjs` generators @1440 → `axe=ok` |
+| D-36 | `maintenance-gantt.tsx` | **The past-due cue dimmed the label it was pointing at.** `animate-pulse` was applied to the whole Gantt bar, so at the trough of the cycle the bar and its white 10 px text both sat at ~50 % opacity over the card: white-on-amber-800 fell from 5.6:1 to under 3:1 twice a second. axe caught it as `color-contrast[serious] ×2`. | High | **VERIFIED.** The pulse moved to a ring-only `aria-hidden` overlay (`inset-0 rounded-md ring-2 ring-rose-500`), the label stays at full opacity, and both pulses are `motion-reduce:animate-none`. `axe-views.mjs` maintenance @1440 **and** @390 → `axe=ok` |
+
+**Gates after round 7** (all run in this workspace):
+
+```
+bun test                     955 pass / 0 fail / 19,073 expect (60 files)
+tsc --noEmit                 clean
+eslint src                   25 errors / 2 warnings   (baseline before: 26 / 3 — no new rule broken)
+ui.e2e.ts                    12 passed (1.4 m)  — includes the three D-26/D-27 tests added here
+views.e2e.ts                 5 passed (8.2 m)   — 30 rendered views, 0 problems
+```
+
+**A verification note that cost a false failure.** Two Playwright runs writing into the same
+`test-results/` directory corrupt each other: the second run's teardown deletes trace files the first
+is still copying, and Playwright reports the resulting `ENOENT … copyfile …recording3.network` into
+the test's own console-error collector. It reads exactly like an application error and is not one. Run
+one e2e file at a time.
+
+The same sweep, run while source files were being edited, also reported a React
+`Encountered a script tag while rendering React component` warning on two views. It did not reproduce in a
+standalone run, in a fresh load or in client-side navigation — the honest reading is that it was the dev
+server hot-reloading the very files under test mid-run, which is why the numbers above come from a run
+with no concurrent edits.
+
 ### 7. Environment note (worth knowing, not a product defect)
 
 Loaded over `http://127.0.0.1:3000` the app sits on "Signing in…" forever; over `http://localhost:3000`
