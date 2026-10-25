@@ -843,6 +843,8 @@ workaround, `Low` = polish.
 | D-11 | `app-shell.tsx` sign-in | **CRITICAL.** `signIn({redirect:false})` resolves when the cookie is set, but nothing pushed the new session into `<SessionProvider>`, which still held the "nobody" it fetched at mount. The dialog stayed on top of an authenticated session; the server log recorded six successful sign-ins while the browser still showed the form. `LoginDialog` had an `onSuccess` hook that `AppShell` never passed. | Critical | **VERIFIED** (CI: 4 authenticated tests reach the shell) |
 | D-12 | shell / dashboard | Six colour-contrast failures (WCAG 1.4.3, serious) on the rendered dashboard: sidebar group headings at 60% opacity (4), the KPI chip label at 70% (1), the 8px EN/AR badge (white on `emerald-500` = 2.3:1) (1). | High | **VERIFIED** (CI: axe 6 → 0) |
 | D-13 | docs + seed | The README (Part C) told operators to rotate "readonly@fgmp.telecom"; **no seeder creates that account**. The suite proved it by failing to sign in. | Medium | **FIXED** (README lists the five real accounts; test uses `field.engineer@`) |
+| D-17 | 30 rendered views | **The first browser sweep of every view returned 19 findings, all accessibility.** `button-name` (critical) on 8 views — up to **102 nodes** on `iot` alone, because a Radix Select trigger is `<button role="combobox">` and a combobox is named by `aria-label`, never by the value it displays (69 triggers, all unnamed); `aria-valid-attr-value` (critical) on 3 views — `<TabsTrigger>` with no `<TabsContent>` of the same value, so `aria-controls` pointed at nothing; `color-contrast` (serious) on 5 views / 56 nodes — `text-*-600` at **2.9:1** against the **default dark** card; `aria-prohibited-attr` on the dashboard (an `aria-label` on a non-focusable `<div>`, so its tooltip was unreachable by keyboard); `svg-img-alt` on 2 views (Recharts hard-codes `role="img"` on every pie sector with no name); `scrollable-region-focusable` on `edge-firmware` (a max-height box with nothing focusable inside). | High | **FIXED** — `Select` now requires `label` and forwards it to the trigger (69 sites, enforced by `tsc`); 3 filter controls became a `FilterTabs` segmented control (`role="radiogroup"`); 228 `text-*-600` → `text-*-700 dark:text-*-400`; the sparkline is a `<button>`; 4 doughnuts wrapped in `DecorativeChart` because their legends are already text; 12 scroll boxes made focusable and named. `a11y-guards.test.ts` fails on each shape at the file and line that introduces it |
+| D-18 | `render.yaml`, docs, `.env.example` | **Three retired platforms were still described as deploy targets.** `render.yaml` (102 lines: web service, migration job, IoT bridge, shared environment group) sat in the tree after the move to Cloudflare, and DEPLOYMENT/ARCHITECTURE/SECURITY/READINESS all pointed at it. A blueprint that looks deployable but is not is what an operator reads when they need to ship. | Medium | **FIXED** — `render.yaml` deleted; DEPLOYMENT.md §4 rewritten around Cloudflare Workers (manifest key-by-key, `wrangler secret put`, the `NEXT_PUBLIC_*` rebuild trap, migrations as operator jobs, per-isolate connection caps, the pooler/RLS caveat, a first-deploy checklist, rollback); DB-CONNECTION-ASSESSMENT marked superseded on the deployment question only; `deployment-target.test.ts` fails if any retired manifest reappears, if the build script stops being OpenNext, if `WORKER_SELF_REFERENCE` stops naming the Worker, or if a doc heading names a retired platform |
 
 ### 2. What was measured (public surface, Chromium 153, real server)
 
@@ -996,11 +998,48 @@ worse than the gap.
 | Authenticated surface | skipped locally — no database in this sandbox | covered by CI |
 | CI, run `40141945829` @ `e725fb2` | `gh pr checks 18` | `verify` pass · **`ui` pass (step "Browser suite (public + authenticated)", `FGMP_E2E_AUTH=1` → the authenticated tests ran, not skipped)** · `rls` pass 10m54s · `docker` pass 2m30s · `provisioning` pass · `mini-services` pass · Netlify preview pass |
 
-**What is still not claimed.** The 27 views' individual layouts, forms and tables are still **D-06,
-unaudited** — the sweep above proves their *strings*, not their behaviour; the CI half covers the shell,
-navigation and the dashboard's axe result, not 27 screens. D-15 (33 `title`/`placeholder` literals) is
-open and ratcheted. D-10 (509 uses of 9–10px type) remains a product decision to be made per screen,
-not swept.
+**What is still not claimed.** D-06 is now measured, not closed: 30 views render, none crashes, none
+returns a 5xx and none overflows at either viewport — but "renders without error" is not "the layout is
+right". What each screen *looks like* still needs a human on a real screen (D-10 is the same question in
+pixels). D-09 is partial. The 16 Prisma-Decimal test failures are a local toolchain artefact (the schema
+engine cannot be downloaded in this sandbox), not a passing suite.
+
+### 6b. Round 3 — the first sweep of all 30 views, and the platform move
+
+Round 3 changed how the browser suite reports. The previous round could only assert the *public* surface
+plus five authenticated shell tests, because a failing authenticated test produced a log line the
+sandbox could not read: Actions logs and artifacts are served from `productionresultssa*.blob.core.windows.net`,
+which is unreachable here. The fix was to stop needing that host — the sweep now runs as **one** test that
+visits every view, keeps going past a broken one, and fails once with the complete list of defects, which
+the Playwright `github` reporter turns into a check-run **annotation**. Annotations come from
+`api.github.com`, which is reachable. That is how the 19 findings below were read at all.
+
+**The result, which is the honest headline:** 34 problems across 30 rendered views — **zero** page errors,
+**zero** 5xx, **zero** horizontal overflow at 1440 or 390, and 19 distinct accessibility findings (D-17).
+The views are not broken; the controls in them were not properly *described*. That is a different kind of
+defect from the ones in rounds 1–2 and it needed a browser to see, which is why D-06 sat open for two
+rounds.
+
+Two findings are worth naming because neither is an "a11y ticket":
+
+* **102 unnamed buttons on one screen.** Not 102 mistakes — one component shape (`<SelectTrigger>`) used 69
+  times, plus table row buttons, where the accessible name is taken from `aria-label` and never from the
+  visible value. Fixing it site-by-site would have left the next Select broken within a week, so `Select`
+  now *requires* a `label` and the compiler is the guard.
+* **`text-*-600` at 2.9:1 in the default theme.** The light theme passed; the dark theme — the one the app
+  ships with — did not. Red "EMERGENCY STOP" text on a rose-tinted card was the least readable string in
+  the product. Contrast had been checked on the dashboard only (D-12), where these classes did not appear.
+
+**Platform move.** Deployment consolidated to **Cloudflare Workers** (D-18). Netlify, Vercel and Render are
+retired; `render.yaml` is deleted and every document that treated it as the target is corrected. The build
+path did not change — `npm run build` was already `opennextjs-cloudflare build` — so this is a paperwork
+defect, not a runtime one, but it was actively misleading: three of the four deploy documents described a
+platform that no longer receives a push. A guard test now fails if a retired manifest reappears.
+
+**Verification for this round.** The 19 a11y findings are **FIXED** and locally proven by
+`a11y-guards.test.ts`; they are **not yet VERIFIED** in the browser — that requires the next CI run of the
+sweep, which is the only place all 30 views can be rendered. Nothing in this round is marked VERIFIED on
+the strength of a static test.
 
 ### 7. Environment note (worth knowing, not a product defect)
 

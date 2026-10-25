@@ -189,7 +189,12 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
     "@typescript-eslint/no-non-null-assertion": "off",
   },
 }, {
-  ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts", "examples/**", "skills"]
+  // `.open-next/**` is the Cloudflare/OpenNext build output. It is gitignored,
+  // so it never reaches CI's lint step (which runs before the build), but a
+  // developer who builds and then lints was getting warnings from generated
+  // bundles — and warnings from a file nobody wrote are how a lint gate stops
+  // being read. Lint the source, not the artefact.
+  ignores: ["node_modules/**", ".next/**", ".open-next/**", "out/**", "build/**", "next-env.d.ts", "examples/**", "skills"]
 }];
 
 export default eslintConfig;

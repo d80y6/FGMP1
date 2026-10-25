@@ -27,7 +27,7 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 const ROOT = process.cwd();
@@ -104,7 +104,6 @@ describe("deployment target", () => {
     // A comment pointing at `render.yaml` sends the next reader to a file that
     // does not exist. Historical documents under docs/history/ are exempt: they
     // are records of what was true then, not instructions.
-    const { readdirSync, statSync } = require("node:fs") as typeof import("node:fs");
     const offenders: string[] = [];
     const walk = (dir: string) => {
       for (const entry of readdirSync(dir)) {
