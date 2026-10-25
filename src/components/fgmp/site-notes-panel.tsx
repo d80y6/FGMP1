@@ -282,7 +282,7 @@ export function SiteNotesPanel({
                     {timeAgo(note.updatedAt)}
                   </span>
                   {note.pinned && (
-                    <span className="ml-auto rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-400">
+                    <span className="ml-auto rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-400">
                       {t("notes.pinned")}
                     </span>
                   )}

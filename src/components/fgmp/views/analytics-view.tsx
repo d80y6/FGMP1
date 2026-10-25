@@ -181,7 +181,7 @@ export function AnalyticsView() {
               <div className="space-y-1.5">
                 {theftEvents.slice(0, 20).map((e, i: number) => (
                   <div key={i} className="flex items-start gap-2 rounded border border-rose-500/20 bg-rose-500/5 p-2 text-[11px]">
-                    <Badge variant="outline" className="h-4 shrink-0 px-1 text-[8px] border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400">{t("fuel.theft")}</Badge>
+                    <Badge variant="outline" className="h-4 shrink-0 px-1 text-[10px] border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400">{t("fuel.theft")}</Badge>
                     <div className="min-w-0 flex-1"><p className="line-clamp-2">{e.message}</p><p className="text-[10px] text-muted-foreground">{timeAgo(e.ts, numLang)}</p></div>
                   </div>
                 ))}

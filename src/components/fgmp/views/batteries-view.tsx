@@ -76,15 +76,15 @@ export function BatteriesView() {
                       <p className="truncate text-sm font-medium">{b.label}</p>
                       <p className="truncate text-[10px] text-muted-foreground">{b.code} · {b.site}</p>
                     </div>
-                    <StatusBadge value={b.status} className="h-5 text-[9px]" />
+                    <StatusBadge value={b.status} className="h-5 text-[10px]" />
                   </div>
                   <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
                     <div className="rounded bg-muted/40 px-2 py-1">
-                      <p className="text-[9px] text-muted-foreground">{t("batteries.voltage")}</p>
+                      <p className="text-[10px] text-muted-foreground">{t("batteries.voltage")}</p>
                       <p className={cn("font-semibold tabular-nums", b.vPct < 88 && "text-amber-500")}>{tFmt("batteries.voltageOf", { v: formatNumber(b.voltage, numLang), nominal: formatNumber(b.nominalVoltage, numLang) })}</p>
                     </div>
                     <div className="rounded bg-muted/40 px-2 py-1">
-                      <p className="text-[9px] text-muted-foreground">{t("batteries.current")}</p>
+                      <p className="text-[10px] text-muted-foreground">{t("batteries.current")}</p>
                       <p className="font-semibold tabular-nums">{formatNumber(b.currentA, numLang)}A {b.charging && "↑"}</p>
                     </div>
                   </div>

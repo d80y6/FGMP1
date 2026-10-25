@@ -118,7 +118,7 @@ export function NotificationCenter() {
           title={t("common.notifications")}>
           <Bell className={cn("h-4 w-4 transition-colors", unreadCount > 0 && "text-amber-500")} />
           {unreadCount > 0 && (
-            <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-bold text-white animate-in zoom-in-50 duration-200">
+            <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white animate-in zoom-in-50 duration-200">
               {unreadCount > 99 ? "99+" : unreadCount}
             </span>
           )}
@@ -258,7 +258,7 @@ function NotificationItem({
             <Badge
               variant="outline"
               className={cn(
-                "h-4 px-1 text-[8px] font-bold",
+                "h-4 px-1 text-[10px] font-bold",
                 severity === "L3"
                   ? "border-rose-500/30 text-rose-500"
                   : severity === "L2"
@@ -269,16 +269,16 @@ function NotificationItem({
               {severity}
             </Badge>
           )}
-          <Badge variant="outline" className="h-4 px-1 text-[8px]">
+          <Badge variant="outline" className="h-4 px-1 text-[10px]">
             {notification.channel}
           </Badge>
           {notification.status === "QUEUED" && (
-            <Badge variant="outline" className="h-4 px-1 text-[8px] border-amber-500/30 text-amber-500">
+            <Badge variant="outline" className="h-4 px-1 text-[10px] border-amber-500/30 text-amber-500">
               Pending
             </Badge>
           )}
           {notification.status === "SENT" && (
-            <Badge variant="outline" className="h-4 px-1 text-[8px] border-emerald-500/30 text-emerald-500">
+            <Badge variant="outline" className="h-4 px-1 text-[10px] border-emerald-500/30 text-emerald-500">
               Sent
             </Badge>
           )}

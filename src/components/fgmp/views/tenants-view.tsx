@@ -194,7 +194,7 @@ export function TenantsView() {
                           <span className="flex items-center gap-1.5 text-sm font-medium">
                             {tnt.name}
                             {tnt.code === "PLATFORM" && (
-                              <Badge className="h-4 px-1 text-[9px] bg-amber-500/15 text-amber-700 dark:text-amber-400 hover:bg-amber-500/15">
+                              <Badge className="h-4 px-1 text-[10px] bg-amber-500/15 text-amber-700 dark:text-amber-400 hover:bg-amber-500/15">
                                 {t("tenants.platformTenant")}
                               </Badge>
                             )}

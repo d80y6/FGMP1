@@ -90,7 +90,7 @@ dozen task notes. The current set is:
 |---|---|
 | `README.md` | what the system is, quick start, layout, commands |
 | `docs/ARCHITECTURE.md` | request path, engine/clock, tenancy, protocols, realtime |
-| `docs/DEPLOYMENT.md` | compose + Render, migrate/seed split, backups, restore drill |
+| `docs/DEPLOYMENT.md` | Cloudflare Workers (OpenNext), migrate/seed split, backups, restore drill |
 | `docs/SECURITY.md` | auth, RBAC, RLS, MFA, secrets, known gaps |
 | `docs/OPERATIONS.md` | health, metrics, scheduler, broker, symptom table |
 | `docs/TESTING.md` | suites, browser walk-through, expected non-bugs |

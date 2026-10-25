@@ -124,7 +124,7 @@ export function SiteHealthWidget({ overall, factors }: SiteHealthWidgetProps) {
               {/* Subtle "live" indicator — pulsing dot below the label to signal
                   that the score is being polled in real time. Replaces the
                   trend arrow (which would have required forbidden ref access). */}
-              <span className="mt-1 flex items-center gap-1 text-[9px] font-medium text-muted-foreground">
+              <span className="mt-1 flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
                 <span
                   className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse-soft motion-reduce:animate-none"
                   aria-hidden="true"
@@ -145,7 +145,7 @@ export function SiteHealthWidget({ overall, factors }: SiteHealthWidgetProps) {
                     <div className="flex items-center gap-1.5">
                       <Icon className={cn("h-3 w-3", factor.good ? "text-emerald-500" : "text-amber-500")} />
                       <span className="text-[11px] font-medium">{t(FACTOR_LABEL_KEYS[factor.icon] ?? "") || factor.label}</span>
-                      <span className="text-[9px] text-muted-foreground">({formatNumber(Math.round(factor.weight * 100), numLang)}%)</span>
+                      <span className="text-[10px] text-muted-foreground">({formatNumber(Math.round(factor.weight * 100), numLang)}%)</span>
                     </div>
                     <span className="text-xs font-bold tabular-nums" style={{ color: fColor }}>
                       {formatNumber(factor.value, numLang)}%

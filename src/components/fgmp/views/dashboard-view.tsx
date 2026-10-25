@@ -220,7 +220,7 @@ export function DashboardView() {
             </Button>
             <Button variant="outline" size="sm" onClick={() => setView("alarms")}>
               <Siren className="mr-1.5 h-4 w-4" /> {t("dash.alarms")}
-              {k.openAlarms > 0 && <Badge className="ml-1.5 h-4 px-1 text-[9px]">{formatNumber(k.openAlarms, numLang)}</Badge>}
+              {k.openAlarms > 0 && <Badge className="ml-1.5 h-4 px-1 text-[10px]">{formatNumber(k.openAlarms, numLang)}</Badge>}
             </Button>
             <ExportButton
               filename={csvFilename("kpi-snapshot")}
@@ -405,8 +405,8 @@ export function DashboardView() {
                       </div>
                       <p className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">{a.message}</p>
                       <div className="mt-1 flex items-center gap-1.5">
-                        <StatusBadge value={a.severity} className="h-4 px-1 text-[9px]" />
-                        <StatusBadge value={a.status} className="h-4 px-1 text-[9px]" />
+                        <StatusBadge value={a.severity} className="h-4 px-1 text-[10px]" />
+                        <StatusBadge value={a.status} className="h-4 px-1 text-[10px]" />
                         <span className="truncate text-[10px] text-muted-foreground">{a.site?.name}</span>
                       </div>
                     </div>

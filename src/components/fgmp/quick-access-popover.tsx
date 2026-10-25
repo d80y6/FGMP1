@@ -140,7 +140,7 @@ export function QuickAccessPopover() {
                       className="flex min-w-0 flex-1 items-center gap-2 text-left"
                       title={s.name}
                     >
-                      <StatusBadge value={s.status} className="h-5 shrink-0 px-1 text-[9px]" showShape={false} />
+                      <StatusBadge value={s.status} className="h-5 shrink-0 px-1 text-[10px]" showShape={false} />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-xs font-medium text-foreground">
                           {s.name}
@@ -203,7 +203,7 @@ export function QuickAccessPopover() {
                         className="flex min-w-0 flex-1 items-center gap-2 text-left"
                         title={s.name}
                       >
-                        <StatusBadge value={s.status} className="h-5 shrink-0 px-1 text-[9px]" showShape={false} />
+                        <StatusBadge value={s.status} className="h-5 shrink-0 px-1 text-[10px]" showShape={false} />
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-xs font-medium text-foreground">
                             {s.name}

@@ -251,7 +251,7 @@ export function TenantIsolationView() {
                       <td className="p-2 font-medium">
                         {tn.tenantName}
                         {tn.tenantCode === "PLATFORM" && (
-                          <Badge className="ml-2 bg-amber-500/15 text-amber-700 dark:text-amber-400 text-[9px]">PLATFORM</Badge>
+                          <Badge className="ml-2 bg-amber-500/15 text-amber-700 dark:text-amber-400 text-[10px]">PLATFORM</Badge>
                         )}
                       </td>
                       <td className="p-2 text-muted-foreground">{tn.tenantCode}</td>

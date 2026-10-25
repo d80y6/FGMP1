@@ -137,7 +137,7 @@ function ScopeBadge({ scope }: { scope: string }) {
     : scope === "write"   ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
     : "border-slate-500/40 bg-slate-500/10 text-slate-600 dark:text-slate-400";
   return (
-    <Badge variant="outline" className={cn("text-[9px] font-mono uppercase", tone)}>
+    <Badge variant="outline" className={cn("text-[10px] font-mono uppercase", tone)}>
       {scope}
     </Badge>
   );
@@ -297,7 +297,7 @@ export function ApiKeysView() {
                           ) : (
                             <div className="flex flex-wrap gap-1 max-w-[160px]">
                               {ips.map((ip, i) => (
-                                <code key={i} className="rounded bg-muted px-1 py-0.5 text-[9px]" dir="ltr">{ip}</code>
+                                <code key={i} className="rounded bg-muted px-1 py-0.5 text-[10px]" dir="ltr">{ip}</code>
                               ))}
                             </div>
                           )}
@@ -306,7 +306,7 @@ export function ApiKeysView() {
                           <div className="flex flex-col">
                             <span className="text-xs">{k.creatorName ?? "—"}</span>
                             {k.creatorEmail && (
-                              <span className="text-[9px] text-muted-foreground" dir="ltr">{k.creatorEmail}</span>
+                              <span className="text-[10px] text-muted-foreground" dir="ltr">{k.creatorEmail}</span>
                             )}
                           </div>
                         </TableCell>
@@ -314,7 +314,7 @@ export function ApiKeysView() {
                           {k.lastUsedAt ? (
                             <>
                               <p>{timeAgo(k.lastUsedAt, numLang)}</p>
-                              <p className="text-[9px]">{fmtDateTime(k.lastUsedAt, numLang).slice(5, 16)}</p>
+                              <p className="text-[10px]">{fmtDateTime(k.lastUsedAt, numLang).slice(5, 16)}</p>
                             </>
                           ) : (
                             <span>{t("apiKeys.never")}</span>

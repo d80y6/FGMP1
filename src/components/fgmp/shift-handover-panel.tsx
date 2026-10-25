@@ -259,14 +259,14 @@ export function ShiftHandoverPanel() {
                   >
                     {/* Top row: shift + priority + status + time */}
                     <div className="flex items-center gap-1.5 px-3 pt-2.5">
-                      <span className={cn("inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide", SHIFT_TONE[n.shift])}>
+                      <span className={cn("inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide", SHIFT_TONE[n.shift])}>
                         <ShiftIcon className="h-3 w-3" />
                         {shiftLabel(n.shift)}
                       </span>
-                      <span className={cn("inline-flex items-center rounded border px-1.5 py-0.5 text-[9px] font-bold", PRIORITY_TONE[n.priority])}>
+                      <span className={cn("inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-bold", PRIORITY_TONE[n.priority])}>
                         {n.priority}
                       </span>
-                      <span className={cn("inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold",
+                      <span className={cn("inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold",
                         n.status === "OPEN"
                           ? "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-400"
                           : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400")}>
@@ -280,7 +280,7 @@ export function ShiftHandoverPanel() {
                     {/* Author row */}
                     <div className="flex items-center gap-1.5 px-3 pt-1.5 text-[11px]">
                       <span className="font-medium text-foreground">{n.authorName}</span>
-                      <span className="rounded bg-muted/60 px-1 py-0.5 text-[9px] uppercase tracking-wide text-muted-foreground">{n.authorRole}</span>
+                      <span className="rounded bg-muted/60 px-1 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">{n.authorRole}</span>
                     </div>
 
                     {/* Notes body — truncated unless expanded */}

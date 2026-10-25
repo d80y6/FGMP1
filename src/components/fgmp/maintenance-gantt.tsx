@@ -277,7 +277,7 @@ export function MaintenanceGantt({ tickets, defaultRange = 30, onTicketClick }: 
         <div className="flex items-stretch gap-2 rounded-md border border-dashed border-muted-foreground/20 bg-muted/20 px-2 py-1.5">
           <div className="flex w-[168px] shrink-0 items-center">
             <span className="text-[11px] font-medium text-muted-foreground">Unscheduled</span>
-            <Badge variant="outline" className="ml-1.5 h-4 px-1 text-[9px]">
+            <Badge variant="outline" className="ml-1.5 h-4 px-1 text-[10px]">
               {unscheduled.length}
             </Badge>
           </div>
@@ -288,14 +288,14 @@ export function MaintenanceGantt({ tickets, defaultRange = 30, onTicketClick }: 
                 <span
                   key={t.id}
                   title={t.title}
-                  className={cn("rounded px-1.5 py-0.5 text-[9px] text-white", m.bg)}
+                  className={cn("rounded px-1.5 py-0.5 text-[10px] text-white", m.bg)}
                 >
                   {t.title.length > 22 ? t.title.slice(0, 22) + "…" : t.title}
                 </span>
               );
             })}
             {unscheduled.length > 8 && (
-              <span className="rounded bg-muted px-1.5 py-0.5 text-[9px] text-muted-foreground">
+              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
                 +{unscheduled.length - 8} more
               </span>
             )}
@@ -327,7 +327,7 @@ export function MaintenanceGantt({ tickets, defaultRange = 30, onTicketClick }: 
               >
                 <Badge
                   variant="outline"
-                  className="h-4 px-1 text-[8px] border-rose-500/50 bg-rose-500/15 text-rose-700 dark:text-rose-400"
+                  className="h-4 px-1 text-[10px] border-rose-500/50 bg-rose-500/15 text-rose-700 dark:text-rose-400"
                 >
                   TODAY
                 </Badge>
@@ -342,7 +342,7 @@ export function MaintenanceGantt({ tickets, defaultRange = 30, onTicketClick }: 
                   <span className="text-[10px] font-semibold leading-none text-foreground">
                     {d.label}
                   </span>
-                  <span className="text-[9px] leading-none text-muted-foreground">{d.month}</span>
+                  <span className="text-[10px] leading-none text-muted-foreground">{d.month}</span>
                 </div>
               ))}
             </div>
@@ -366,7 +366,7 @@ export function MaintenanceGantt({ tickets, defaultRange = 30, onTicketClick }: 
                   <p className="truncate text-[11px] font-medium leading-tight" title={row.name}>
                     {row.name}
                   </p>
-                  <p className="text-[9px] text-muted-foreground">
+                  <p className="text-[10px] text-muted-foreground">
                     {row.code} · {row.count}
                   </p>
                 </div>
@@ -388,7 +388,7 @@ export function MaintenanceGantt({ tickets, defaultRange = 30, onTicketClick }: 
                       <div
                         key={t.id}
                         className={cn(
-                          "group absolute top-1/2 -translate-y-1/2 cursor-pointer overflow-hidden rounded-md px-1.5 text-[9px] font-medium text-white shadow-sm transition-[filter,box-shadow] hover:z-30 hover:brightness-125 hover:shadow-md",
+                          "group absolute top-1/2 -translate-y-1/2 cursor-pointer overflow-hidden rounded-md px-1.5 text-[10px] font-medium text-white shadow-sm transition-[filter,box-shadow] hover:z-30 hover:brightness-125 hover:shadow-md",
                           m.bg,
                           pos.isPastDue && "ring-2 ring-rose-500 animate-pulse",
                         )}

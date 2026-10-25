@@ -237,12 +237,12 @@ export function SitesView() {
                         if (!govSites.length) return null;
                         return (
                           <div key={g.id} className="ml-3 border-l pl-2">
-                            <p className="px-2 py-0.5 text-[11px] font-medium text-muted-foreground">{g.name} <span className="text-[9px]">({formatNumber(govSites.length, numLang)})</span></p>
+                            <p className="px-2 py-0.5 text-[11px] font-medium text-muted-foreground">{g.name} <span className="text-[10px]">({formatNumber(govSites.length, numLang)})</span></p>
                             {govSites.map((s) => (
                               <div key={s.id} className={cn("group flex w-full items-center justify-between rounded px-1 text-xs hover:bg-muted", selectedSiteId === s.id && "bg-muted")}>
                                 <button onClick={() => openSite(s.id)} className="flex min-w-0 flex-1 items-center justify-between gap-1 px-1 py-1 text-left">
                                   <span className="truncate">{s.name}</span>
-                                  <StatusBadge value={s.status} className="h-4 px-1 text-[8px]" />
+                                  <StatusBadge value={s.status} className="h-4 px-1 text-[10px]" />
                                 </button>
                                 <TreeStarButton siteId={s.id} />
                               </div>
@@ -344,7 +344,7 @@ export function SitesView() {
                     <TableCell className="font-medium">{s.name}</TableCell>
                     <TableCell className="hidden md:table-cell text-xs text-muted-foreground">{s.region}</TableCell>
                     <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">{s.governorate}</TableCell>
-                    <TableCell className="hidden sm:table-cell"><StatusBadge value={s.criticality} className="h-5 text-[9px]" /></TableCell>
+                    <TableCell className="hidden sm:table-cell"><StatusBadge value={s.criticality} className="h-5 text-[10px]" /></TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <SiteHealthBadge
                         site={s}
@@ -354,7 +354,7 @@ export function SitesView() {
                         compact
                       />
                     </TableCell>
-                    <TableCell><StatusBadge value={s.status} className="h-5 text-[9px]" /></TableCell>
+                    <TableCell><StatusBadge value={s.status} className="h-5 text-[10px]" /></TableCell>
                     <TableCell className="hidden md:table-cell text-right text-xs tabular-nums">{formatNumber(s.loadKw, numLang)} kW</TableCell>
                     {isAdmin && (
                       <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>

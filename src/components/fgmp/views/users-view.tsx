@@ -230,7 +230,7 @@ export function UsersView() {
                       <TableRow key={u.id} className={cn("transition-colors hover:bg-muted/30", u.active ? "" : "opacity-60")}>
                         <TableCell>
                           <div className="flex flex-col">
-                            <span className="text-sm font-medium">{u.name}{isSelf && <Badge variant="outline" className="ml-2 h-4 px-1 text-[9px]">YOU</Badge>}</span>
+                            <span className="text-sm font-medium">{u.name}{isSelf && <Badge variant="outline" className="ml-2 h-4 px-1 text-[10px]">YOU</Badge>}</span>
                             <span className="text-[11px] text-muted-foreground">{u.email}</span>
                           </div>
                         </TableCell>
@@ -250,7 +250,7 @@ export function UsersView() {
                           {u.lastLoginAt ? (
                             <>
                               <p>{timeAgo(u.lastLoginAt, numLang)}</p>
-                              <p className="text-[9px]">{fmtDateTime(u.lastLoginAt, numLang).slice(5, 16)}</p>
+                              <p className="text-[10px]">{fmtDateTime(u.lastLoginAt, numLang).slice(5, 16)}</p>
                             </>
                           ) : (
                             <span>{t("users.lastLoginNever")}</span>

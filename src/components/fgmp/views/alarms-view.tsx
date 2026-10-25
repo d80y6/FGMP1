@@ -446,7 +446,7 @@ export function AlarmsView() {
                 {triggeredRuleCount > 0 && (
                   <Badge
                     variant="secondary"
-                    className="ml-1.5 h-4 bg-rose-500/20 px-1 text-[9px] font-bold text-rose-700 dark:text-rose-400"
+                    className="ml-1.5 h-4 bg-rose-500/20 px-1 text-[10px] font-bold text-rose-700 dark:text-rose-400"
                   >
                     {formatNumber(triggeredRuleCount, numLang)}
                   </Badge>
@@ -486,15 +486,15 @@ export function AlarmsView() {
           <Keyboard className="h-3.5 w-3.5" />
           <span className="font-medium">{t("alarms.keyboardActive")}</span>
           <span className="flex items-center gap-1">
-            <kbd className="rounded border bg-background px-1.5 py-0.5 font-mono text-[9px]">A</kbd>
+            <kbd className="rounded border bg-background px-1.5 py-0.5 font-mono text-[10px]">A</kbd>
             {t("alarms.acknowledge")}
           </span>
           <span className="flex items-center gap-1">
-            <kbd className="rounded border bg-background px-1.5 py-0.5 font-mono text-[9px]">R</kbd>
+            <kbd className="rounded border bg-background px-1.5 py-0.5 font-mono text-[10px]">R</kbd>
             {t("alarms.resolve")}
           </span>
           <span className="flex items-center gap-1">
-            <kbd className="rounded border bg-background px-1.5 py-0.5 font-mono text-[9px]">Esc</kbd>
+            <kbd className="rounded border bg-background px-1.5 py-0.5 font-mono text-[10px]">Esc</kbd>
             {t("alarms.clearSelection")}
           </span>
         </div>
@@ -596,7 +596,7 @@ export function AlarmsView() {
                     onClick={bulkAck}
                   >
                     <CheckCheck className="mr-1.5 h-3.5 w-3.5" />{t("alarms.bulkAck")}
-                    <kbd className="ml-2 hidden items-center rounded border bg-background/80 px-1.5 py-0.5 font-mono text-[9px] sm:inline-flex">A</kbd>
+                    <kbd className="ml-2 hidden items-center rounded border bg-background/80 px-1.5 py-0.5 font-mono text-[10px] sm:inline-flex">A</kbd>
                   </Button>
                   <Button
                     size="sm"
@@ -605,11 +605,11 @@ export function AlarmsView() {
                     onClick={bulkResolve}
                   >
                     <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />{t("alarms.bulkResolve")}
-                    <kbd className="ml-2 hidden items-center rounded border bg-background/80 px-1.5 py-0.5 font-mono text-[9px] sm:inline-flex">R</kbd>
+                    <kbd className="ml-2 hidden items-center rounded border bg-background/80 px-1.5 py-0.5 font-mono text-[10px] sm:inline-flex">R</kbd>
                   </Button>
                   <Button size="sm" variant="ghost" className="h-7" onClick={clearSelection}>
                     <X className="mr-1.5 h-3.5 w-3.5" />{t("alarms.clear")}
-                    <kbd className="ml-2 hidden items-center rounded border bg-background/80 px-1.5 py-0.5 font-mono text-[9px] sm:inline-flex">Esc</kbd>
+                    <kbd className="ml-2 hidden items-center rounded border bg-background/80 px-1.5 py-0.5 font-mono text-[10px] sm:inline-flex">Esc</kbd>
                   </Button>
                 </div>
               </div>
@@ -668,8 +668,8 @@ export function AlarmsView() {
                           <p className="line-clamp-1 text-xs">{a.message}</p>
                           <p className="text-[10px] text-muted-foreground">{a.site?.name} · {a.site?.code}</p>
                         </TableCell>
-                        <TableCell><StatusBadge value={a.severity} className="h-5 text-[9px]" /></TableCell>
-                        <TableCell><StatusBadge value={a.status} className="h-5 text-[9px]" /></TableCell>
+                        <TableCell><StatusBadge value={a.severity} className="h-5 text-[10px]" /></TableCell>
+                        <TableCell><StatusBadge value={a.status} className="h-5 text-[10px]" /></TableCell>
                         <TableCell className="text-center text-xs">L{formatNumber(a.escalationLevel, numLang)}</TableCell>
                         <TableCell className="text-[10px] text-muted-foreground">{timeAgo(a.createdAt, numLang)}</TableCell>
                         <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
@@ -739,8 +739,8 @@ export function AlarmsView() {
             <div className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
               <Field label={t("alarms.alarmId")} value={<span className="font-mono">{formatNumber(selectedAlarm.id.slice(-12), numLang)}</span>} />
               <Field label={t("common.created")} value={fmtDateTime(selectedAlarm.createdAt, numLang)} />
-              <Field label={t("alarms.severity")} value={<StatusBadge value={selectedAlarm.severity} className="h-5 text-[9px]" />} />
-              <Field label={t("alarms.status")} value={<StatusBadge value={selectedAlarm.status} className="h-5 text-[9px]" />} />
+              <Field label={t("alarms.severity")} value={<StatusBadge value={selectedAlarm.severity} className="h-5 text-[10px]" />} />
+              <Field label={t("alarms.status")} value={<StatusBadge value={selectedAlarm.status} className="h-5 text-[10px]" />} />
               <Field label={t("alarms.escalationLevel")} value={`L${formatNumber(selectedAlarm.escalationLevel, numLang)}`} />
               <Field label={t("alarms.site")} value={selectedAlarm.site?.name} />
               <Field label={t("alarms.value")} value={selectedAlarm.value != null ? formatNumber(selectedAlarm.value, numLang) : "—"} />
@@ -869,10 +869,10 @@ function EscalationTimeline({
                   {step.label}
                 </p>
                 {step.time && (
-                  <p className="mt-0.5 text-[9px] text-muted-foreground">{timeAgo(createdAt, numLang)}</p>
+                  <p className="mt-0.5 text-[10px] text-muted-foreground">{timeAgo(createdAt, numLang)}</p>
                 )}
               </div>
-              <p className="mt-1 text-center text-[9px] leading-tight text-muted-foreground">
+              <p className="mt-1 text-center text-[10px] leading-tight text-muted-foreground">
                 {step.desc}
               </p>
             </div>

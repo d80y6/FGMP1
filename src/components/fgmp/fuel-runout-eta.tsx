@@ -211,7 +211,7 @@ export function FuelRunoutEta() {
                   >
                     {formatDuration(tk.etaHours, numLang, t)}
                   </span>
-                  <Badge variant="outline" className={cn("h-4 px-1 text-[9px] tabular-nums", pctBadgeClass(tk.pct))}>
+                  <Badge variant="outline" className={cn("h-4 px-1 text-[10px] tabular-nums", pctBadgeClass(tk.pct))}>
                     {formatNumber(tk.pct, numLang)}%
                   </Badge>
                 </div>

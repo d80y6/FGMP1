@@ -224,14 +224,14 @@ export function MaintenanceView() {
                 <TableBody>
                   {(tickets ?? []).map((tk) => (
                     <TableRow key={tk.id} className={cn("transition-all hover:shadow-md hover:border-border", STATUS_BORDER[tk.status])}>
-                      <TableCell><Badge variant="outline" className={cn("h-5 text-[9px]", PRIORITY_TONE[tk.priority])}>{tk.priority}</Badge></TableCell>
+                      <TableCell><Badge variant="outline" className={cn("h-5 text-[10px]", PRIORITY_TONE[tk.priority])}>{tk.priority}</Badge></TableCell>
                       <TableCell>
                         <p className="text-xs font-medium">{tk.title}</p>
                         <p className="text-[10px] text-muted-foreground">{tk.site?.name} · {maintenanceAssetKindLabel(tk.assetKind, numLang)}</p>
                       </TableCell>
                       <TableCell className="hidden md:table-cell text-[11px]">{maintenanceTypeLabel(tk.type, numLang)}</TableCell>
                       <TableCell className="hidden lg:table-cell text-[11px] text-muted-foreground">{tk.assignedTo?.name ?? "—"}</TableCell>
-                      <TableCell><StatusBadge value={tk.status} className="h-5 text-[9px]" /></TableCell>
+                      <TableCell><StatusBadge value={tk.status} className="h-5 text-[10px]" /></TableCell>
                       <TableCell className="hidden md:table-cell text-[10px] text-muted-foreground">{tk.scheduledFor ? timeAgo(tk.scheduledFor, numLang) : "—"}</TableCell>
                       <TableCell className="text-right">
                         {tk.status !== "DONE" && (
@@ -257,7 +257,7 @@ export function MaintenanceView() {
                 <div key={g.id} className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-2.5">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-medium">{g.label}</span>
-                    <Badge variant="outline" className="h-4 px-1 text-[8px] border-amber-500/40 text-amber-700 dark:text-amber-400">{t("maintenance.due")}</Badge>
+                    <Badge variant="outline" className="h-4 px-1 text-[10px] border-amber-500/40 text-amber-700 dark:text-amber-400">{t("maintenance.due")}</Badge>
                   </div>
                   <p className="text-[10px] text-muted-foreground">{g.site} · {g.manufacturer}</p>
                   <div className="mt-1.5 flex items-center justify-between text-[10px]">
@@ -296,10 +296,10 @@ export function MaintenanceView() {
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-center gap-3">
               <h3 className="text-sm font-semibold">{selectedTicket.title}</h3>
-              <Badge variant="outline" className={cn("h-5 text-[9px]", PRIORITY_TONE[selectedTicket.priority])}>
+              <Badge variant="outline" className={cn("h-5 text-[10px]", PRIORITY_TONE[selectedTicket.priority])}>
                 {selectedTicket.priority}
               </Badge>
-              <Badge variant="outline" className={cn("h-5 text-[9px]", STATUS_BADGE_DETAIL[selectedTicket.status] ?? "")}>
+              <Badge variant="outline" className={cn("h-5 text-[10px]", STATUS_BADGE_DETAIL[selectedTicket.status] ?? "")}>
                 {maintenanceStatusLabel(selectedTicket.status, numLang)}
               </Badge>
             </div>
@@ -321,7 +321,7 @@ export function MaintenanceView() {
             </div>
             <div className="rounded-lg border bg-muted/30 px-3 py-2">
               <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{t("alarms.status")}</p>
-              <Badge variant="outline" className={cn("mt-0.5 h-5 text-[9px]", STATUS_BADGE_DETAIL[selectedTicket.status] ?? "")}>
+              <Badge variant="outline" className={cn("mt-0.5 h-5 text-[10px]", STATUS_BADGE_DETAIL[selectedTicket.status] ?? "")}>
                 {maintenanceStatusLabel(selectedTicket.status, numLang)}
               </Badge>
             </div>

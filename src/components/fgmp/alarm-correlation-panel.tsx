@@ -130,21 +130,21 @@ export function AlarmCorrelationPanel({ alarms, onSelectSite }: Props) {
         {/* Summary stats */}
         <div className="grid grid-cols-3 gap-2">
           <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 p-2 text-center">
-            <p className="text-[9px] uppercase tracking-wide text-muted-foreground">{t("correlation.hotspots")}</p>
+            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{t("correlation.hotspots")}</p>
             <p className="text-lg font-bold text-rose-500 tabular-nums">{hotspots}</p>
-            <p className="text-[8px] text-muted-foreground">{t("correlation.sitesWithAlarms")}</p>
+            <p className="text-[10px] text-muted-foreground">{t("correlation.sitesWithAlarms")}</p>
           </div>
           <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-2 text-center">
-            <p className="text-[9px] uppercase tracking-wide text-muted-foreground">{t("correlation.avgPerSite")}</p>
+            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{t("correlation.avgPerSite")}</p>
             <p className="text-lg font-bold text-amber-500 tabular-nums">
               {totalSites > 0 ? (totalAlarms / totalSites).toFixed(1) : "0"}
             </p>
-            <p className="text-[8px] text-muted-foreground">{t("correlation.alarmsPerSite")}</p>
+            <p className="text-[10px] text-muted-foreground">{t("correlation.alarmsPerSite")}</p>
           </div>
           <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-2 text-center">
-            <p className="text-[9px] uppercase tracking-wide text-muted-foreground">{t("correlation.correlations")}</p>
+            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{t("correlation.correlations")}</p>
             <p className="text-lg font-bold text-violet-500 tabular-nums">{correlatedTypes.length}</p>
-            <p className="text-[8px] text-muted-foreground">{t("correlation.typePairs")}</p>
+            <p className="text-[10px] text-muted-foreground">{t("correlation.typePairs")}</p>
           </div>
         </div>
 
@@ -157,7 +157,7 @@ export function AlarmCorrelationPanel({ alarms, onSelectSite }: Props) {
             </p>
             <div className="flex flex-wrap gap-1.5">
               {correlatedTypes.map(([pair, count]) => (
-                <Badge key={pair} variant="outline" className="gap-1 text-[9px]">
+                <Badge key={pair} variant="outline" className="gap-1 text-[10px]">
                   <span className="font-mono">{alarmTypeLabel(pair, numLang)}</span>
                   <span className="rounded bg-violet-500/15 px-1 text-violet-700 dark:text-violet-400">×{formatNumber(count, numLang)}</span>
                 </Badge>
@@ -208,7 +208,7 @@ export function AlarmCorrelationPanel({ alarms, onSelectSite }: Props) {
                         <div className="flex min-w-0 items-center gap-1.5">
                           <MapPin className="h-3 w-3 shrink-0 text-muted-foreground" />
                           <span className="truncate text-xs font-semibold">{g.siteName}</span>
-                          <span className="shrink-0 font-mono text-[9px] text-muted-foreground">{g.siteCode}</span>
+                          <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{g.siteCode}</span>
                         </div>
                         <span className="shrink-0 text-xs font-bold tabular-nums text-rose-500">{g.count}</span>
                       </div>
@@ -229,14 +229,14 @@ export function AlarmCorrelationPanel({ alarms, onSelectSite }: Props) {
                       {/* Type tags + time */}
                       <div className="mt-1.5 flex flex-wrap items-center gap-1">
                         {g.types.slice(0, 3).map((tp) => (
-                          <span key={tp} className="rounded bg-muted px-1 py-0.5 text-[8px] font-mono">
+                          <span key={tp} className="rounded bg-muted px-1 py-0.5 text-[10px] font-mono">
                             {alarmTypeLabel(tp, numLang)}
                           </span>
                         ))}
                         {g.types.length > 3 && (
-                          <span className="text-[8px] text-muted-foreground">+{formatNumber(g.types.length - 3, numLang)} more</span>
+                          <span className="text-[10px] text-muted-foreground">+{formatNumber(g.types.length - 3, numLang)} more</span>
                         )}
-                        <span className="ml-auto flex items-center gap-0.5 text-[9px] text-muted-foreground">
+                        <span className="ml-auto flex items-center gap-0.5 text-[10px] text-muted-foreground">
                           <Clock className="h-2.5 w-2.5" />
                           {durationMin > 0 ? `${formatNumber(durationMin, numLang)}m span` : timeAgo(g.firstAt, numLang)}
                         </span>

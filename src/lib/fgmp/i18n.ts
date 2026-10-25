@@ -1453,6 +1453,7 @@ export const DICTIONARY: Dict = {
   /* ===== Auth (Task 31-A) =====
      Used by the LoginDialog, the logout button, and session-expiry toasts.
      Arabic translations follow MSA enterprise-software register. */
+  "auth.roleChanged": { en: "Your role is now {role}. The menu and available actions have been updated.", ar: "أصبح دورك الآن {role}. تم تحديث القائمة والإجراءات المتاحة." },
   "auth.signIn": { en: "Sign in", ar: "تسجيل الدخول" },
   "auth.signOut": { en: "Sign out", ar: "تسجيل الخروج" },
   "auth.returnToAdmin": { en: "Return to Admin", ar: "العودة إلى مدير" },
