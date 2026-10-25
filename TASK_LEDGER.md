@@ -931,11 +931,11 @@ application image.
 | Route inventory | 27 views + `/` + `/login` alias + 171 API handlers; each view has a `view:*` capability and is filtered by `hasCapability` |
 | Public surface | audited in a browser; **0** defects found; 5 tests green |
 | Shell (nav, header, footer) | 5 defects found (D-01, D-02, D-03, D-04, D-11), all fixed; proven by the CI half of the suite |
-| Authenticated views | Shell, navigation and the dashboard's a11y are **VERIFIED in CI**. The 27 views' individual layouts/forms/tables are **still unaudited** — the suite covers the shell, not every view. |
-| RTL | login surface verified; shell/views only statically |
-| Performance | **not measured** — a dev server with no database cannot produce a meaningful number, and reporting one would be dishonest |
-| i18n | **0** English JSX prose and **0** English `aria-label` literals remain in `src/components`; 179 dictionary keys added; both guarded by `src/lib/fgmp/__tests__/untranslated-text.test.ts` (ceiling 0 for prose and labels, 33 for `title`/`placeholder`) |
-| Remaining defects | D-09 (partial), D-10 (product decision), D-15 (33 literals), D-06 (per-view layouts: still BLOCKED locally, covered by the CI half) |
+| Authenticated views | Shell, navigation and the dashboard's a11y are **VERIFIED in CI**. All 27 views are rendered by the axe sweep (0 page errors, 0 overflow at 1440/390 in the last full run) and were **audited individually** in round 5 — `docs/UI-UX-AUDIT-VIEWS.md`: 9 silently-capped lists and 3 empty grids found and fixed (D-21). |
+| RTL | login surface verified in a browser; every view rendered in the sweep, but the RTL *rendering* of the 27 views is inspected statically (dir/RTL utilities), not exercised at width |
+| Performance | **not measured** — a dev server with no database cannot produce a meaningful number, and reporting one would be dishonest. No view has a measured render cost |
+| i18n | **0** English JSX prose, **0** English `aria-label` literals and **0** English `title`/`placeholder`/`label`/`description` literals remain in `src/components`; the guard is a TypeScript JSX parse, all three ceilings are **0** |
+| Remaining defects | **D-06 closed** (round 5 audits every view). **D-09 closed** (role change announced). **D-10 bounded** (10px floor enforced; 10/11px density is a product decision, deliberately not overridden). **D-15 closed** (ceiling 0). Open and tracked: **D-22** (Next pinned outside the OpenNext range — documented, remediation needs registry egress) and **D-23** (pooler proof script exists; the operator's pooler run is still outstanding) |
 
 ### 6. Round 2 — the bilingual sweep (D-14, D-15) and the last native confirm
 
