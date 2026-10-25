@@ -266,6 +266,32 @@ after confirming that the pooler supports the transaction-local RLS context
 session state between statements breaks tenant isolation in a way that looks like
 missing data.
 
+### A dependency pairing to know about before the first deploy
+
+`@opennextjs/cloudflare@1.20.13` declares its Next.js support as
+`>=15.5.28 <16 || >=16.4.1`. `package.json` asks for `^16.1.1`, and `bun.lock`
+resolves that to **16.1.3** — which is *outside* the adapter's declared range.
+
+What is known, and what is not:
+
+* **Known:** `bun run build` (`opennextjs-cloudflare build`) completes on
+  16.1.3 in CI's `verify` job, and the standalone server built from it boots in
+  the `docker` job. So the pairing builds and runs as a Node server.
+* **Not known:** that the Worker runtime path is correct on an unsupported
+  Next. A declared range is the adapter author saying "not tested here", and
+  this audit has no Cloudflare credentials, so it cannot become evidence.
+
+**Remediation, on a machine with working registry egress:**
+
+```
+bun update next          # resolves within ^16.1.1 → 16.4.x, inside the range
+bun run build            # must still succeed
+git diff bun.lock        # expect only next + the @next/swc-* pins to move
+```
+
+Do not hand-edit `bun.lock`: the `@next/swc-*` optional dependencies are pinned
+to the same version and have their own integrity hashes.
+
 ### First-deploy checklist (what to confirm, not assume)
 
 1. `bunx wrangler deploy` succeeds and the Worker answers `/api/health/ready`
