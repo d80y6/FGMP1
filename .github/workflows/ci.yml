@@ -257,13 +257,30 @@ jobs:
           set -o pipefail
           bun run test:rls 2>&1 | tee /tmp/rls.log
 
+      # The instrument itself has to be proven, not just the property it
+      # measures. `pooler-rls-proof.ts` is the script an operator runs against
+      # their real pooler to close the Hyperdrive question; nothing in this
+      # repository has ever executed it. Running it here against the DIRECT
+      # endpoint is the control: if the four assertions fail on a database this
+      # job just migrated and seeded, the script is wrong and any operator
+      # running it against a pooler would get a false verdict.
+      #
+      # This does NOT prove the pooler. CI has no route to it and no
+      # credentials — that run is still the operator's, and the ledger says so.
+      - name: Pooler RLS proof — control run on the direct endpoint
+        run: |
+          set -o pipefail
+          bun run scripts/verify/pooler-rls-proof.ts 2>&1 | tee /tmp/pooler-proof.log
+        env:
+          DATABASE_URL: postgresql://fgmp_app:ciapp@127.0.0.1:5432/fgmp?schema=public
+
       - name: Publish failure diagnostics
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: >
           python3 scripts/ci/publish-logs.py "rls: migration + isolation logs"
-          /tmp/migrate.log /tmp/seed.log /tmp/smoke.log /tmp/dbtests.log /tmp/rls.log
+          /tmp/migrate.log /tmp/seed.log /tmp/smoke.log /tmp/dbtests.log /tmp/rls.log /tmp/pooler-proof.log
 
   # ── The HOSTED provisioning path ────────────────────────────────────────
   # `scripts/supabase/{01..04}.sql` are what a customer runs against Supabase,

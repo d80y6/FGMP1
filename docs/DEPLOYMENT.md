@@ -266,6 +266,22 @@ after confirming that the pooler supports the transaction-local RLS context
 session state between statements breaks tenant isolation in a way that looks like
 missing data.
 
+**Run the proof before adding any pooler or Hyperdrive binding:**
+
+```
+DATABASE_URL='<the exact URL the Worker will use>' \
+  bun run scripts/verify/pooler-rls-proof.ts
+```
+
+It asserts the four properties the app depends on — `SET LOCAL` visible inside
+its transaction, gone after `COMMIT`, two concurrently-open transactions each
+seeing only their own context, and `ENABLE` + `FORCE` RLS with an unset context
+returning zero rows — and exits non-zero on any failure. **Record the host and
+the mode with the result:** a proof without its target is not a proof, and
+"it passed on the direct endpoint" says nothing about the pooler. CI runs the
+same script against the direct endpoint as a control, so a broken instrument
+fails there rather than in front of an operator.
+
 ### A dependency pairing to know about before the first deploy
 
 `@opennextjs/cloudflare@1.20.13` declares its Next.js support as
