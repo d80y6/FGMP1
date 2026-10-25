@@ -937,7 +937,7 @@ application image.
 | RTL | login surface verified in a browser; every view rendered in the sweep, but the RTL *rendering* of the 27 views is inspected statically (dir/RTL utilities), not exercised at width |
 | Performance | **not measured** — a dev server with no database cannot produce a meaningful number, and reporting one would be dishonest. No view has a measured render cost |
 | i18n | **0** English JSX prose, **0** English `aria-label` literals and **0** English `title`/`placeholder`/`label`/`description` literals remain in `src/components`; the guard is a TypeScript JSX parse, all three ceilings are **0** |
-| Remaining defects | **D-06 closed** (round 5 audits every view). **D-09 closed** (role change announced). **D-10 bounded** (10px floor enforced; 10/11px density is a product decision, deliberately not overridden). **D-15 closed** (ceiling 0). Open and tracked: **D-22** (Next pinned outside the OpenNext range — documented, remediation needs registry egress) and **D-23** (pooler proof script exists; the operator's pooler run is still outstanding) |
+| Remaining defects | **D-06 closed** (round 5 audits every view). **D-09 closed** (role change announced). **D-10 bounded** (10px floor enforced; 10/11px density is a product decision, deliberately not overridden). **D-15 closed** (ceiling 0). Open and tracked: **D-22** (Next pinned outside the OpenNext range — documented, remediation needs registry egress) and **D-23** (pooler proof passes its CI control run; the operator's own pooler run is still outstanding, because this audit has no route to it). **D-25** is added but has never executed (no Cloudflare credentials) |
 
 ### 6. Round 2 — the bilingual sweep (D-14, D-15) and the last native confirm
 
