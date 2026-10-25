@@ -18,7 +18,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
-import { fmtDateTime, fmtLitres } from "@/lib/fgmp/format";
+import { fmtDate, fmtLitres } from "@/lib/fgmp/format";
 import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 import type { AnalyticsPayload, DeliveryRow, SiteState, TankState } from "@/lib/fgmp/types";
@@ -134,7 +134,7 @@ export function InventoryView() {
                       </TableCell>
                       <TableCell className="text-xs tabular-nums">{formatNumber(Math.round(d.volumeOrderedLitres), numLang)}L</TableCell>
                       <TableCell className="text-[11px] text-muted-foreground">{supplierLabel(d.supplier, numLang)}</TableCell>
-                      <TableCell className="text-[10px] text-muted-foreground">{fmtDateTime(d.scheduledAt, numLang).slice(0, 10)}</TableCell>
+                      <TableCell className="text-[10px] text-muted-foreground">{fmtDate(d.scheduledAt, numLang)}</TableCell>
                       <TableCell><StatusBadge value={d.status} className="h-5 text-[10px]" /></TableCell>
                       <TableCell className="text-right">
                         {d.status === "SCHEDULED" && <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => dispatch(d.id)}>{t("inventory.dispatch")}</Button>}

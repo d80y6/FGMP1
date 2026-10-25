@@ -89,8 +89,8 @@ export function GeneratorsView() {
                 <div key={g.id} className={cn("rounded-lg border p-3 transition-shadow hover:shadow-sm", g.status === "FAULT" && "border-rose-500/40 bg-rose-500/5", g.status === "RUNNING" && "border-emerald-500/20")}>
                   <div className="flex items-start justify-between">
                     <button onClick={() => setDetailId(g.id)} className="min-w-0 text-left">
-                      <p className="truncate text-sm font-medium hover:underline">{g.label}</p>
-                      <p className="truncate text-[10px] text-muted-foreground">{g.code} · {g.manufacturer} {g.model}</p>
+                      <p className="truncate text-sm font-medium hover:underline" title={g.label}>{g.label}</p>
+                      <p className="truncate text-[10px] text-muted-foreground" title={`${g.code} · ${g.manufacturer} ${g.model}`}>{g.code} · {g.manufacturer} {g.model}</p>
                     </button>
                     <StatusBadge value={g.status} className="h-5 text-[10px]" />
                   </div>

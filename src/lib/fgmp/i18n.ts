@@ -52,6 +52,55 @@ export const DICTIONARY: Dict = {
   "common.closeNavigation": { en: "Close navigation", ar: "إغلاق قائمة التنقل" },
   "common.switchLanguage": { en: "Switch language", ar: "تغيير اللغة" },
   "common.switchTheme": { en: "Switch theme", ar: "تغيير المظهر" },
+  // Header overflow ("More actions"). Everything the wide header shows inline
+  // has a named entry here so the same controls stay reachable on a phone,
+  // where the single header row has no room for them (D-26).
+  "common.snapshot": { en: "Live snapshot", ar: "ملخص مباشر" },
+  "common.theme": { en: "Theme", ar: "المظهر" },
+  "common.themeSystem": { en: "System", ar: "النظام" },
+  "common.themeLight": { en: "Light", ar: "فاتح" },
+  "common.themeDark": { en: "Dark", ar: "داكن" },
+  "common.language": { en: "Language", ar: "اللغة" },
+  "common.english": { en: "English", ar: "الإنجليزية" },
+  "common.arabic": { en: "Arabic", ar: "العربية" },
+  "common.pauseLive": { en: "Pause live updates", ar: "إيقاف التحديثات الحية" },
+  "common.resumeLive": { en: "Resume live updates", ar: "استئناف التحديثات الحية" },
+  "common.currentTime": { en: "Local time", ar: "الوقت المحلي" },
+  "common.activeOption": { en: "Active", ar: "النشط" },
+  /* ── Single-token labels the i18n guard deliberately skipped ──────────────
+   * The untranslated-text guard ignores one-word JSX text nodes because most of
+   * them are correct in both languages (units, acronyms, brand names: "kW",
+   * "SOC", "OTA", "ESP"). That exemption also hid real labels — every admin
+   * table header in `tenants`, `roles` and `geography`, the API-key status
+   * pills, and the "YOU" badge — which rendered in English inside the Arabic
+   * UI. These keys name them; `i18n-single-token.test.ts` now ratchets the
+   * remainder so the gap cannot grow silently (D-29). */
+  "common.code": { en: "Code", ar: "الرمز" },
+  "common.country": { en: "Country", ar: "الدولة" },
+  "common.revoke": { en: "Revoke", ar: "إبطال" },
+  "common.revoked": { en: "Revoked", ar: "مُبطَل" },
+  "common.you": { en: "You", ar: "أنت" },
+  "common.users": { en: "Users", ar: "المستخدمون" },
+  "common.sites": { en: "Sites", ar: "المواقع" },
+  "common.wildcard": { en: "Wildcard", ar: "شامل" },
+  "common.expiredStatus": { en: "Expired", ar: "منتهي" },
+  "common.capabilitiesCount": { en: "{n} capabilities", ar: "{n} صلاحية" },
+  "common.capabilities": { en: "capabilities", ar: "صلاحية" },
+  "common.newCount": { en: "new", ar: "جديد" },
+  "common.recent": { en: "Recent", ar: "الأحدث" },
+  "common.earlier": { en: "Earlier", ar: "الأقدم" },
+  "common.sent": { en: "Sent", ar: "أُرسل" },
+  "common.leader": { en: "Leader", ar: "المتصدر" },
+  "common.unscheduled": { en: "Unscheduled", ar: "غير مجدول" },
+  "common.passed": { en: "Passed", ar: "ناجح" },
+  "common.unmeasured": { en: "Unmeasured", ar: "غير مقاس" },
+  "common.ordered": { en: "ordered", ar: "مطلوب" },
+  "common.samples": { en: "Samples", ar: "العينات" },
+  "common.pattern": { en: "Pattern", ar: "النمط" },
+  "common.risk": { en: "Risk", ar: "الخطورة" },
+  "common.addresses": { en: "Addresses", ar: "العناوين" },
+  "common.gateways": { en: "Gateways", ar: "البوابات" },
+  "common.today": { en: "Today", ar: "اليوم" },
   "common.keyboardShortcuts": { en: "Keyboard shortcuts", ar: "اختصارات لوحة المفاتيح" },
   "nav.primary": { en: "Primary navigation", ar: "التنقل الرئيسي" },
   "nav.openAlarms": { en: "{n} open alarms", ar: "{n} إنذار مفتوح" },
@@ -1992,6 +2041,14 @@ export const DICTIONARY: Dict = {
   // Empty-state polish (icon + heading + description + CTA pattern).
   "common.noDataTitle": { en: "Nothing here yet", ar: "لا توجد بيانات بعد" },
   "common.noDataDesc": { en: "Data will appear here once available.", ar: "ستظهر البيانات هنا عند توفّرها." },
+  // Charts and summary panels: an empty frame is not an empty state (D-30).
+  // "No data" is a fact about the range, not a failed load, so the copy must
+  // not imply an error.
+  "common.noDataInRange": { en: "No data in this range", ar: "لا توجد بيانات في هذه الفترة" },
+  "common.kpiInfoHint": { en: "Show definition", ar: "عرض التعريف" },
+  "common.noDataInRangeHint": { en: "Nothing has been recorded for the selected range yet. Widen the range or check that telemetry is arriving.", ar: "لم يُسجّل شيء في الفترة المحددة بعد. وسّع الفترة أو تحقق من وصول البيانات." },
+  "common.noRegionData": { en: "No regional breakdown available", ar: "لا يتوفر توزيع إقليمي" },
+  "common.noRegionDataHint": { en: "Regions appear once sites report telemetry.", ar: "تظهر المناطق بعد أن ترسل المواقع بياناتها." },
   "common.noResultsTitle": { en: "No results found", ar: "لا توجد نتائج" },
   "common.noResultsDesc": { en: "Try adjusting your filters or search terms.", ar: "حاول تعديل المرشحات أو مصطلحات البحث." },
   "common.noResultsAction": { en: "Clear filters", ar: "مسح المرشحات" },

@@ -34,7 +34,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { toast } from "sonner";
-import { fmtDateTime } from "@/lib/fgmp/format";
+import { fmtDate } from "@/lib/fgmp/format";
 import { useT, useTF, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 
@@ -174,12 +174,12 @@ export function TenantsView() {
               <Table>
                 <TableHeader className="sticky top-0 bg-card">
                   <TableRow>
-                    <TableHead className="w-[120px]">Code</TableHead>
-                    <TableHead>Name</TableHead>
-                    <TableHead className="hidden md:table-cell">Country</TableHead>
-                    <TableHead className="w-[80px] text-center">Users</TableHead>
-                    <TableHead className="w-[80px] text-center">Sites</TableHead>
-                    <TableHead className="hidden lg:table-cell w-[150px]">Created</TableHead>
+                    <TableHead className="w-[120px]">{t("common.code")}</TableHead>
+                    <TableHead>{t("common.name")}</TableHead>
+                    <TableHead className="hidden md:table-cell">{t("common.country")}</TableHead>
+                    <TableHead className="w-[80px] text-center">{t("common.users")}</TableHead>
+                    <TableHead className="w-[80px] text-center">{t("common.sites")}</TableHead>
+                    <TableHead className="hidden lg:table-cell w-[150px]">{t("common.created")}</TableHead>
                     <TableHead className="w-[60px] text-right">{t("users.actions")}</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -223,7 +223,7 @@ export function TenantsView() {
                         </Badge>
                       </TableCell>
                       <TableCell className="hidden lg:table-cell text-[10px] text-muted-foreground" dir="ltr">
-                        {fmtDateTime(tnt.createdAt, numLang).slice(0, 10)}
+                        {fmtDate(tnt.createdAt, numLang)}
                       </TableCell>
                       <TableCell className="text-right">
                         <DropdownMenu>
@@ -385,7 +385,7 @@ function TenantFormFields({
         />
       </div>
       <div className="space-y-1.5">
-        <Label className="text-xs">Code</Label>
+        <Label className="text-xs">{t("common.code")}</Label>
         <Input
           value={form.code}
           onChange={(e) => update("code", e.target.value.toUpperCase())}
@@ -396,7 +396,7 @@ function TenantFormFields({
         <p className="text-[11px] text-muted-foreground">{t("tenants.slugHint")}</p>
       </div>
       <div className="space-y-1.5">
-        <Label className="text-xs">Country</Label>
+        <Label className="text-xs">{t("common.country")}</Label>
         <Input
           value={form.country}
           onChange={(e) => update("country", e.target.value)}

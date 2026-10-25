@@ -402,7 +402,6 @@ export function MaintenanceGantt({ tickets, defaultRange = 30, onTicketClick }: 
                         className={cn(
                           "group absolute top-1/2 -translate-y-1/2 cursor-pointer overflow-hidden rounded-md px-1.5 text-[10px] font-medium text-white shadow-sm transition-[filter,box-shadow] hover:z-30 hover:brightness-125 hover:shadow-md",
                           m.bg,
-                          pos.isPastDue && "ring-2 ring-rose-500 animate-pulse",
                         )}
                         style={{ left: pos.left, width: pos.width, height: BAR_HEIGHT }}
                         onClick={() => onTicketClick?.(t.id)}
@@ -411,6 +410,20 @@ export function MaintenanceGantt({ tickets, defaultRange = 30, onTicketClick }: 
                         }
                         onMouseLeave={() => setHovered(null)}
                       >
+                        {/* Past-due is a ring on its own layer, not an `animate-pulse`
+                            on the bar. Pulsing the bar itself fades the label with
+                            it: at the trough of the cycle white-on-amber-800 drops
+                            from 5.6:1 to under 3:1, and axe caught exactly that
+                            (maintenance view, color-contrast[serious] ×2). The
+                            overlay keeps the "needs attention" cue and leaves the
+                            text at full opacity. Motion is opt-out for users who
+                            ask for it. */}
+                        {pos.isPastDue && (
+                          <span
+                            aria-hidden
+                            className="pointer-events-none absolute inset-0 rounded-md ring-2 ring-rose-500 animate-pulse motion-reduce:animate-none"
+                          />
+                        )}
                         <span className="pointer-events-none block truncate pr-2 leading-[20px]">
                           {t.title}
                         </span>
@@ -565,7 +578,7 @@ function HeaderToolbar({
           })}
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-sm ring-2 ring-rose-500/60 animate-pulse" />
+          <span className="h-2.5 w-2.5 rounded-sm ring-2 ring-rose-500/60 animate-pulse motion-reduce:animate-none" />
           <span className="text-[11px] text-muted-foreground">{t("maintenance.pastDue")}</span>
         </div>
       </div>

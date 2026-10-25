@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { fmtDateTime, timeAgo } from "@/lib/fgmp/format";
+import { fmtDateTimeShort, timeAgo } from "@/lib/fgmp/format";
 import { cn } from "@/lib/utils";
 import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
@@ -131,7 +131,7 @@ export function AuditView() {
                       <TableCell className="text-[11px] text-muted-foreground"><pre className="max-w-md truncate font-mono">{typeof l.details === "string" ? l.details : JSON.stringify(l.details)}</pre></TableCell>
                       <TableCell className="hidden md:table-cell"><div className="flex items-center gap-1.5 text-[11px]"><User className="h-3 w-3 text-muted-foreground" />{l.user?.name ?? t("cmdHistory.system")}<Badge variant="outline" className="h-4 px-1 text-[10px]">{roleLabel(l.user?.role ?? "", numLang)}</Badge></div></TableCell>
                       <TableCell className="hidden lg:table-cell font-mono text-[10px] text-muted-foreground tabular-nums" dir="ltr">{l.ip ?? "—"}</TableCell>
-                      <TableCell className="text-[10px] text-muted-foreground"><p>{timeAgo(l.createdAt, numLang)}</p><p className="text-[10px]">{fmtDateTime(l.createdAt, numLang).slice(5, 16)}</p></TableCell>
+                      <TableCell className="text-[10px] text-muted-foreground"><p>{timeAgo(l.createdAt, numLang)}</p><p className="text-[10px]">{fmtDateTimeShort(l.createdAt, numLang)}</p></TableCell>
                     </TableRow>
                   ))}
                   {filtered.length === 0 && (

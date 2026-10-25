@@ -25,7 +25,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogD
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { toast } from "sonner";
-import { fmtDateTime, timeAgo } from "@/lib/fgmp/format";
+import { fmtDateTime, fmtDateTimeShort, timeAgo } from "@/lib/fgmp/format";
 import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 import { roleLabel } from "@/lib/fgmp/labels";
@@ -230,7 +230,7 @@ export function UsersView() {
                       <TableRow key={u.id} className={cn("transition-colors hover:bg-muted/30", u.active ? "" : "opacity-60")}>
                         <TableCell>
                           <div className="flex flex-col">
-                            <span className="text-sm font-medium">{u.name}{isSelf && <Badge variant="outline" className="ml-2 h-4 px-1 text-[10px]">YOU</Badge>}</span>
+                            <span className="text-sm font-medium">{u.name}{isSelf && <Badge variant="outline" className="ml-2 h-4 px-1 text-[10px]">{t("common.you")}</Badge>}</span>
                             <span className="text-[11px] text-muted-foreground">{u.email}</span>
                           </div>
                         </TableCell>
@@ -248,10 +248,20 @@ export function UsersView() {
                         </TableCell>
                         <TableCell className="hidden md:table-cell text-[10px] text-muted-foreground">
                           {u.lastLoginAt ? (
-                            <>
+                            // `fmtDateTime(...).slice(5, 16)` cut a
+                            // locale-formatted string at fixed character
+                            // offsets, so the column rendered the fragment
+                            // "…/2026. 23:2" — no date, no minutes. Formatting
+                            // is a formatting decision, not a substring of one
+                            // (D-33); compose it from the date and time
+                            // formatters instead, and keep the exact instant in
+                            // the title.
+                            <span title={fmtDateTime(u.lastLoginAt, numLang)}>
                               <p>{timeAgo(u.lastLoginAt, numLang)}</p>
-                              <p className="text-[10px]">{fmtDateTime(u.lastLoginAt, numLang).slice(5, 16)}</p>
-                            </>
+                              <p className="text-[10px] tabular-nums">
+                                {fmtDateTimeShort(u.lastLoginAt, numLang)}
+                              </p>
+                            </span>
                           ) : (
                             <span>{t("users.lastLoginNever")}</span>
                           )}

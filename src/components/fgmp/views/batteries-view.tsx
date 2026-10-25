@@ -75,7 +75,7 @@ export function BatteriesView() {
                   <div className="flex items-center justify-between">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium">{b.label}</p>
-                      <p className="truncate text-[10px] text-muted-foreground">{b.code} · {b.site}</p>
+                      <p className="truncate text-[10px] text-muted-foreground" title={`${b.code} · ${b.site}`}>{b.code} · {b.site}</p>
                     </div>
                     <StatusBadge value={b.status} className="h-5 text-[10px]" />
                   </div>
@@ -119,7 +119,7 @@ export function BatteriesView() {
                 {[...banks].sort((a, b) => a.stateOfHealth - b.stateOfHealth).slice(0, 8).map((b) => (
                   <div key={b.id} className="flex items-center gap-2">
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-xs font-medium">{b.label} <span className="text-muted-foreground">· {b.site}</span></p>
+                      <p className="truncate text-xs font-medium" title={`${b.label} · ${b.site}`}>{b.label} <span className="text-muted-foreground">· {b.site}</span></p>
                       <div className="mt-1"><BarGauge value={b.stateOfHealth} /></div>
                     </div>
                     <span className={cn("w-10 text-right text-xs font-bold tabular-nums", b.stateOfHealth < 70 ? "text-rose-500" : b.stateOfHealth < 80 ? "text-amber-500" : "text-emerald-500")}>{formatNumber(b.stateOfHealth, numLang)}%</span>
