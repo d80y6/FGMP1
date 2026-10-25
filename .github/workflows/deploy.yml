@@ -1,0 +1,158 @@
+# Deploy the Worker to Cloudflare — manual, gated, and the same build CI verified.
+#
+# WHY workflow_dispatch AND NOT push
+# ----------------------------------
+# Every other job in this repository is a check: it can fail without
+# consequence and be re-run. A deploy cannot. This one is deliberately manual
+# for three reasons:
+#
+#   1. **Migrations are not automatic.** They are an operator step with an owner
+#      credential (DEPLOYMENT.md §4). A deploy that shipped new code against an
+#      un-migrated database would fail in a way that looks like a code bug.
+#   2. **The Worker is the only environment.** There is no staging target to
+#      catch a bad build first, so the decision to ship belongs to a person who
+#      has read what changed — not to a merge.
+#   3. **Secrets are not in this repository.** Without `CLOUDFLARE_API_TOKEN`
+#      and `CLOUDFLARE_ACCOUNT_ID` the job cannot run at all, and a workflow
+#      that fails on every push because secrets are absent trains people to
+#      ignore red.
+#
+# It refuses to deploy anything that has not already passed CI on the same
+# commit: `verify` and `ui` must be green for the SHA being deployed. A deploy
+# workflow that can ship an untested commit is a way to bypass every gate this
+# project built.
+name: Deploy (Cloudflare Workers)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Commit SHA or branch to deploy. Must already have a green CI run."
+        required: true
+        type: string
+      confirm:
+        description: "Type DEPLOY to confirm. Anything else aborts."
+        required: true
+        type: string
+
+# Never two deploys at once. `cancel-in-progress: false` on purpose: cancelling
+# a deploy mid-flight can leave the Worker on a half-published version.
+concurrency:
+  group: deploy-cloudflare
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read # to check that CI passed for this commit
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - name: Confirm the operator meant it
+        if: inputs.confirm != 'DEPLOY'
+        run: |
+          echo "::error::confirm must be exactly 'DEPLOY' (got '${{ inputs.confirm }}'). Nothing was deployed."
+          exit 1
+
+      - name: Refuse to run without Cloudflare credentials
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$TOKEN" ] || [ -z "$ACCOUNT" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID must both be set as repository secrets."
+            echo "Never put them in this file, in wrangler.jsonc, or in a commit."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Resolve the commit being deployed
+        id: resolve
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  ci-gate:
+    needs: guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: The commit must already have a green CI run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ needs.guard.outputs.sha }}
+        run: |
+          set -euo pipefail
+          # Pull the most recent completed CI run for this exact SHA and require
+          # success. `gh run list --commit` does not exist, so filter on the API.
+          result=$(gh api "repos/${{ github.repository }}/actions/runs?head_sha=$SHA&per_page=50" \
+            --jq '[.workflow_runs[] | select(.name == "CI" and .status == "completed")] | sort_by(.created_at) | last | .conclusion')
+          echo "CI conclusion for $SHA: ${result:-<no completed run>}"
+          if [ "$result" != "success" ]; then
+            echo "::error::Refusing to deploy $SHA: its CI conclusion is '${result:-none}'. Deploy only a commit that passed CI."
+            exit 1
+          fi
+
+  deploy:
+    needs: [guard, ci-gate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production # requires a reviewer if the environment is protected
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.guard.outputs.sha }}
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Prisma's client is generated, not committed. The Worker bundle cannot
+      # resolve @prisma/client without it and the build fails with a confusing
+      # "no exported member" error.
+      - name: Generate Prisma client
+        run: bunx prisma generate --no-engine
+
+      # `bun run deploy` is `opennextjs-cloudflare build && opennextjs-cloudflare
+      # deploy` — the same build the `verify` and `ui` jobs ran, so what ships is
+      # what was tested. `--frozen-lockfile` above keeps the dependency graph
+      # identical to the one CI checked.
+      - name: Build and deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: bun run deploy
+
+      # A deploy that cannot be observed is not a deploy. /api/health/ready is
+      # unauthenticated and returns 503 until the database is reachable and
+      # migrations are applied — which is exactly what needs checking after a
+      # ship. /api/fgmp/health is ADMIN-only and would 401, marking a healthy
+      # Worker down.
+      - name: Probe the Worker's readiness endpoint
+        env:
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${WORKER_URL:-}" ]; then
+            echo "::warning::WORKER_URL is not set, so the deployed Worker was not probed."
+            echo "Set it to the Worker's origin to make this step meaningful."
+            exit 0
+          fi
+          for i in $(seq 1 10); do
+            code=$(curl -s -o /tmp/ready.json -w '%{http_code}' "$WORKER_URL/api/health/ready" || true)
+            echo "attempt $i: HTTP $code"
+            if [ "$code" = "200" ]; then
+              cat /tmp/ready.json
+              exit 0
+            fi
+            sleep 6
+          done
+          echo "::error::$WORKER_URL/api/health/ready did not return 200. The Worker is deployed but not ready — check the database, FGMP_REQUIRE_RLS and the health payload."
+          cat /tmp/ready.json || true
+          exit 1

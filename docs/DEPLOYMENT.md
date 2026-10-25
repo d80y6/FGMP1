@@ -308,6 +308,27 @@ git diff bun.lock        # expect only next + the @next/swc-* pins to move
 Do not hand-edit `bun.lock`: the `@next/swc-*` optional dependencies are pinned
 to the same version and have their own integrity hashes.
 
+### Deploying from CI (manual, gated)
+
+`.github/workflows/deploy.yml` is `workflow_dispatch` only — it never runs on push. It refuses to
+continue unless all of these hold:
+
+| Gate | Why |
+|---|---|
+| `confirm` input is exactly `DEPLOY` | a deploy should be a decision, not a mis-click in a dropdown |
+| `CLOUDFLARE_API_TOKEN` **and** `CLOUDFLARE_ACCOUNT_ID` exist as secrets | without them the job cannot run, and a job that always fails trains people to ignore red |
+| the commit already has a **green `CI` run** | a deploy path that can ship an untested commit bypasses every gate in this repository |
+| one deploy at a time, not cancelled | cancelling mid-flight can leave a half-published Worker |
+
+It then builds with `bun install --frozen-lockfile` (the exact dependency graph CI checked), runs
+`bun run deploy`, and probes `$WORKER_URL/api/health/ready` for up to a minute. That endpoint is
+unauthenticated by design and returns 503 until the database is reachable and migrations are applied —
+which is precisely what needs confirming after a ship. `/api/fgmp/health` is ADMIN-only and would answer
+401, marking a healthy Worker down; do not point a health check at it.
+
+**Migrations are still an operator step.** They need the owner credential, a `psql` run, and a look at
+the result. The workflow does not touch the database, by design.
+
 ### First-deploy checklist (what to confirm, not assume)
 
 1. `bunx wrangler deploy` succeeds and the Worker answers `/api/health/ready`
