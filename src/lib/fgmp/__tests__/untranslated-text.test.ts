@@ -93,24 +93,37 @@ const CEILING = 0;
 
 /**
  * English that is never a text node: the accessible name of a control
- * (`aria-label`), a tooltip (`title`), or an input hint (`placeholder`). These
- * are announced by screen readers, so an English literal here is a translation
- * gap even when the visible UI is Arabic.
+ * (`aria-label`), a tooltip (`title`), an input hint (`placeholder`), or a prop
+ * that some component renders as text (`label`, `description`, `message`,
+ * `submitLabel`, `text`, `hint`, `heading`). These are read by screen readers
+ * and by operators, so an English literal here is a translation gap even when
+ * the visible UI is Arabic.
  *
- * `aria-label` is held at ZERO — the audit closed the last of them. `title` and
- * `placeholder` still carry 33 literals (mostly per-view dialogs and data
- * examples); the ceiling is a ratchet for the outstanding ones, not a licence.
+ * The first sweep guarded only `aria-label`/`title`/`placeholder` and called
+ * the rest "not text". That was wrong: `<EmptyState title=… description=…>` and
+ * `<KpiCard label=…>` render exactly those strings, and 89 more English
+ * literals were hiding in them.
+ *
+ * Ceiling is ZERO. A value whose only letters are a format example — `v1.0.0`,
+ * `ESP32-DISP-001`, `10.0.0.0/8` — is not language and is skipped by the
+ * three-lowercase-letters rule below.
  */
-const ATTR_CEILING = 33;
+const ATTR_CEILING = 0;
+
+/** Attribute names whose string value some component renders or announces. */
+const TEXT_ATTRS =
+  "aria-label|title|placeholder|label|description|message|submitLabel|text|hint|heading";
 
 function englishAttributeLiterals(): Hit[] {
   const hits: Hit[] = [];
   for (const file of files(SRC)) {
     const source = strip(readFileSync(file, "utf8"));
-    for (const match of source.matchAll(/\b(aria-label|title|placeholder)="([A-Za-z][^"]*)"/g)) {
+    const pattern = new RegExp(`\\b(${TEXT_ATTRS})="([A-Za-z][^"]*)"`, "g");
+    for (const match of source.matchAll(pattern)) {
       const [, attr, value] = match;
-      if (!/[a-z]/.test(value)) continue;              // codes, initials, units
-      if (/^[A-Z0-9][A-Z0-9-]*$/.test(value)) continue;
+      // A value with no run of three lowercase letters is a format example or a
+      // code — `v1.0.0`, `ESP32-DISP-001`, `10.0.0.0/8` — not English prose.
+      if (!/[a-z]{3}/.test(value)) continue;
       const line = source.slice(0, match.index).split("\n").length;
       hits.push({ file: relative(process.cwd(), file), line, text: `${attr}="${value}"` });
     }
@@ -128,11 +141,11 @@ describe("bilingual UI", () => {
     );
   });
 
-  test("tooltips and placeholders do not grow", () => {
-    const hits = englishAttributeLiterals().filter((h) => !h.text.startsWith("aria-label="));
+  test("props that render text carry no English literal", () => {
+    const hits = englishAttributeLiterals();
     assert.ok(
       hits.length <= ATTR_CEILING,
-      `${hits.length} English title/placeholder literals (ceiling ${ATTR_CEILING}):\n  ` +
+      `${hits.length} English literals in rendered props (ceiling ${ATTR_CEILING}):\n  ` +
         hits.map((h) => `${h.file}:${h.line}  ${h.text}`).join("\n  "),
     );
   });

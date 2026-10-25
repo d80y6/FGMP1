@@ -224,10 +224,10 @@ export function ApiKeysView() {
 
       {/* KPI strip */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <KpiCard label="Total Keys"  value={formatNumber(stats.total, numLang)}   icon={<KeyRound className="h-4 w-4" />} />
-        <KpiCard label="Active"      value={formatNumber(stats.active, numLang)} icon={<ShieldCheck className="h-4 w-4" />} tone="good" />
-        <KpiCard label="Revoked"     value={formatNumber(stats.revoked, numLang)} icon={<Ban className="h-4 w-4" />} tone="danger" />
-        <KpiCard label="Expired"     value={formatNumber(stats.expired, numLang)} icon={<Clock className="h-4 w-4" />} tone="warn" />
+        <KpiCard label={t("apiKeys.totalKeys")}  value={formatNumber(stats.total, numLang)}   icon={<KeyRound className="h-4 w-4" />} />
+        <KpiCard label={t("common.active")}      value={formatNumber(stats.active, numLang)} icon={<ShieldCheck className="h-4 w-4" />} tone="good" />
+        <KpiCard label={t("apiKeys.revoked")}     value={formatNumber(stats.revoked, numLang)} icon={<Ban className="h-4 w-4" />} tone="danger" />
+        <KpiCard label={t("apiKeys.expired")}     value={formatNumber(stats.expired, numLang)} icon={<Clock className="h-4 w-4" />} tone="warn" />
       </div>
 
       {/* Keys table */}

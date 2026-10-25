@@ -161,10 +161,10 @@ export function SystemSettingsView() {
 
       {/* KPI strip — quick counts for orientation */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <KpiCard label="Categories"      value={formatNumber(4, numLang)}                        icon={<Settings className="h-4 w-4" />} />
-        <KpiCard label="Total Settings"  value={formatNumber(totalSettings, numLang)}            icon={<Server className="h-4 w-4" />} />
-        <KpiCard label="Alarm Thresholds" value={formatNumber(FIELDS.ALARM.length, numLang)}     icon={<Bell className="h-4 w-4" />} tone="warn" />
-        <KpiCard label="Platform Toggles" value={formatNumber(FIELDS.PLATFORM.length, numLang)}  icon={<Server className="h-4 w-4" />} tone="good" />
+        <KpiCard label={t("settings.categories")}      value={formatNumber(4, numLang)}                        icon={<Settings className="h-4 w-4" />} />
+        <KpiCard label={t("settings.totalSettings")}  value={formatNumber(totalSettings, numLang)}            icon={<Server className="h-4 w-4" />} />
+        <KpiCard label={t("settings.alarmThresholds")} value={formatNumber(FIELDS.ALARM.length, numLang)}     icon={<Bell className="h-4 w-4" />} tone="warn" />
+        <KpiCard label={t("settings.platformToggles")} value={formatNumber(FIELDS.PLATFORM.length, numLang)}  icon={<Server className="h-4 w-4" />} tone="good" />
       </div>
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Category)}>

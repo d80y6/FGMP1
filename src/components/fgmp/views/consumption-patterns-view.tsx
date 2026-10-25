@@ -197,7 +197,7 @@ export function ConsumptionPatternsView() {
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-4">
         <KpiCard
-          label="Peak Hour"
+          label={t("heatmap.peakHour")}
           value={peakHourIdx >= 0
             ? `${formatNumber(String(peakHourIdx).padStart(2, "0"), numLang)}:00`
             : "—"}
@@ -208,7 +208,7 @@ export function ConsumptionPatternsView() {
             : "No data"}
         />
         <KpiCard
-          label="Peak Day"
+          label={t("consumption.peakDay")}
           value={peakDayIdx >= 0 ? DAYS[peakDayIdx] : "—"}
           icon={<Calendar className="h-4 w-4" />}
           tone="warn"
@@ -217,7 +217,7 @@ export function ConsumptionPatternsView() {
             : "No data"}
         />
         <KpiCard
-          label="Night Consumption"
+          label={t("consumption.night")}
           value={formatNumber(nightAvg.toFixed(1), numLang)}
           unit="L/h"
           icon={<Moon className="h-4 w-4" />}
@@ -225,7 +225,7 @@ export function ConsumptionPatternsView() {
           hint="22:00 – 06:00"
         />
         <KpiCard
-          label="Daytime Consumption"
+          label={t("consumption.daytime")}
           value={formatNumber(dayAvg.toFixed(1), numLang)}
           unit="L/h"
           icon={<Sun className="h-4 w-4" />}

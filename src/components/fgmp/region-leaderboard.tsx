@@ -210,23 +210,23 @@ export function RegionLeaderboard({ regions, totalSites, onSelectRegion }: Regio
                   <div className="mt-1.5 flex flex-wrap items-center gap-1.5 pl-9 sm:pl-10">
                     <StatChip
                       icon={<Building2 className="h-3 w-3 text-emerald-500" />}
-                      label="Sites"
+                      label={t("kpi.sites")}
                       value={`${r.sites}`}
                     />
                     <StatChip
                       icon={<Siren className="h-3 w-3 text-rose-500" />}
-                      label="Alarms"
+                      label={t("kpi.alarms")}
                       value={`${r.alarms}`}
                       tone={r.alarms > 0 ? "text-rose-500" : undefined}
                     />
                     <StatChip
                       icon={<Droplet className="h-3 w-3 text-sky-500" />}
-                      label="Fuel (L)"
+                      label={t("leaderboard.fuelLitres")}
                       value={r.fuel >= 1000 ? `${(r.fuel / 1000).toFixed(1)}k` : `${r.fuel}`}
                     />
                     <StatChip
                       icon={<Zap className="h-3 w-3 text-amber-500" />}
-                      label="Generators running"
+                      label={t("leaderboard.generatorsRunning")}
                       value={`${r.running}`}
                       tone={r.running > 0 ? "text-amber-500" : undefined}
                     />

@@ -100,24 +100,24 @@ export function RolesView() {
       {/* KPI strip */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <KpiCard
-          label="All Roles"
+          label={t("users.allRoles")}
           value={formatNumber(ALL_ROLES.length, numLang)}
           icon={<ShieldCheck className="h-4 w-4" />}
         />
         <KpiCard
-          label="Capabilities"
+          label={t("roles.capabilities")}
           value={formatNumber(allCaps.length, numLang)}
           icon={<KeyRound className="h-4 w-4" />}
           tone="good"
         />
         <KpiCard
-          label="Your Role"
+          label={t("roles.yourRole")}
           value={roleLabel(myRole, numLang)}
           icon={<UserCircle2 className="h-4 w-4" />}
           tone="warn"
         />
         <KpiCard
-          label="Your Capabilities"
+          label={t("roles.yourCapabilities")}
           value={formatNumber(myCapsCount, numLang)}
           icon={<Lock className="h-4 w-4" />}
           tone="info"

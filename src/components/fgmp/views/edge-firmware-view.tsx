@@ -194,30 +194,30 @@ export function EdgeFirmwareView() {
       {/* KPI strip */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
         <KpiCard
-          label="Total ESP Devices"
+          label={t("firmware.totalEsp")}
           value={formatNumber(totalEsps, numLang)}
           icon={<CircuitBoard className="h-4 w-4" />}
         />
         <KpiCard
-          label="Online"
+          label={t("common.online")}
           value={formatNumber(onlineEsps, numLang)}
           icon={<Wifi className="h-4 w-4" />}
           tone="good"
         />
         <KpiCard
-          label="Offline / Fault"
+          label={t("firmware.offlineFault")}
           value={formatNumber(offlineEsps, numLang)}
           icon={<AlertTriangle className="h-4 w-4" />}
           tone={offlineEsps > 0 ? "danger" : "good"}
         />
         <KpiCard
-          label="OTA In Progress"
+          label={t("firmware.otaInProgress")}
           value={formatNumber(otaInProgress, numLang)}
           icon={<HardDriveDownload className="h-4 w-4" />}
           tone={otaInProgress > 0 ? "warn" : "default"}
         />
         <KpiCard
-          label="RS485 Conflicts"
+          label={t("firmware.rs485Conflicts")}
           value={formatNumber(rs485Conflicts, numLang)}
           icon={<Radio className="h-4 w-4" />}
           tone={rs485Conflicts > 0 ? "danger" : "good"}
@@ -314,7 +314,7 @@ function GatewaysTab({ gateways, loading, numLang }: {
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               value={q} onChange={(e) => setQ(e.target.value)}
-              placeholder="Search ESP ID, site…"
+              placeholder={t("firmware.searchPlaceholder")}
               className="h-9 w-[220px] pl-8"
             />
           </div>
@@ -335,7 +335,7 @@ function GatewaysTab({ gateways, loading, numLang }: {
         {loading && gateways.length === 0 ? (
           <RegistrySkeleton cols={7} />
         ) : filtered.length === 0 ? (
-          <EmptyState icon={Router} title="No ESP gateways found" description="No ESP devices match the current filters." />
+          <EmptyState icon={Router} title={t("firmware.noGateways")} description={t("firmware.noGatewaysDesc")} />
         ) : (
           <div className="max-h-[600px] overflow-y-auto">
             <Table>
@@ -470,7 +470,7 @@ function FirmwareTab({ gateways, loading, onRefresh }: {
           {loading && gateways.length === 0 ? (
             <Skeleton className="h-64 w-full" />
           ) : dist.length === 0 ? (
-            <EmptyState icon={HardDriveDownload} title="No firmware data" description="No ESP devices available." />
+            <EmptyState icon={HardDriveDownload} title={t("firmware.noFirmware")} description={t("firmware.noFirmwareDesc")} />
           ) : (
             <div className="h-64 w-full">
               <ResponsiveContainer width="100%" height="100%">
@@ -520,7 +520,7 @@ function FirmwareTab({ gateways, loading, onRefresh }: {
           {loading && gateways.length === 0 ? (
             <RegistrySkeleton cols={5} />
           ) : dist.length === 0 ? (
-            <EmptyState icon={CircuitBoard} title="No devices" />
+            <EmptyState icon={CircuitBoard} title={t("firmware.noDevices")} />
           ) : (
             <div className="max-h-[500px] overflow-y-auto">
               <Table>
@@ -738,7 +738,7 @@ function Rs485Tab({ gateways, loading, numLang }: {
           {loading && gateways.length === 0 ? (
             <RegistrySkeleton cols={6} />
           ) : buses.length === 0 ? (
-            <EmptyState icon={Radio} title="No RS485 buses" description="No RS485-connected ESP devices detected." />
+            <EmptyState icon={Radio} title={t("firmware.noBuses")} description={t("firmware.noBusesDesc")} />
           ) : (
             <div className="max-h-[600px] overflow-y-auto">
               <Table>
@@ -900,7 +900,7 @@ function RebootTab({ gateways, loading, numLang, onReboot, isAdmin }: {
         {loading && gateways.length === 0 ? (
           <RegistrySkeleton cols={5} />
         ) : gateways.length === 0 ? (
-          <EmptyState icon={RefreshCw} title="No ESP devices" description="No ESP devices available to reboot." />
+          <EmptyState icon={RefreshCw} title={t("firmware.noRebootDevices")} description={t("firmware.noRebootDevicesDesc")} />
         ) : (
           <div className="max-h-[600px] overflow-y-auto">
             <Table>

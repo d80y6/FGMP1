@@ -141,10 +141,10 @@ export function TenantsView() {
 
       {/* KPI strip */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KpiCard label="Total Tenants" value={formatNumber(stats.total, numLang)} icon={<Building2 className="h-4 w-4" />} />
-        <KpiCard label="Active" value={formatNumber(stats.active, numLang)} icon={<Building2 className="h-4 w-4" />} tone="good" />
-        <KpiCard label="Users" value={formatNumber(stats.users, numLang)} icon={<Users className="h-4 w-4" />} tone="info" />
-        <KpiCard label="Sites" value={formatNumber(stats.sites, numLang)} icon={<MapPin className="h-4 w-4" />} tone="warn" />
+        <KpiCard label={t("tenants.total")} value={formatNumber(stats.total, numLang)} icon={<Building2 className="h-4 w-4" />} />
+        <KpiCard label={t("common.active")} value={formatNumber(stats.active, numLang)} icon={<Building2 className="h-4 w-4" />} tone="good" />
+        <KpiCard label={t("systemHealth.users")} value={formatNumber(stats.users, numLang)} icon={<Users className="h-4 w-4" />} tone="info" />
+        <KpiCard label={t("kpi.sites")} value={formatNumber(stats.sites, numLang)} icon={<MapPin className="h-4 w-4" />} tone="warn" />
       </div>
 
       {/* Filter + table card */}
@@ -159,7 +159,7 @@ export function TenantsView() {
               <Input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="Search tenants…"
+                placeholder={t("tenants.searchPlaceholder")}
                 className="h-9 w-[200px] pl-8"
               />
             </div>
@@ -380,7 +380,7 @@ function TenantFormFields({
           value={form.name}
           onChange={(e) => update("name", e.target.value)}
           className="h-9"
-          placeholder="National Telecom Operator"
+          placeholder={t("tenants.namePlaceholder")}
           autoFocus
         />
       </div>
@@ -401,7 +401,7 @@ function TenantFormFields({
           value={form.country}
           onChange={(e) => update("country", e.target.value)}
           className="h-9"
-          placeholder="Yemen"
+          placeholder={t("tenants.countryPlaceholder")}
         />
       </div>
     </div>

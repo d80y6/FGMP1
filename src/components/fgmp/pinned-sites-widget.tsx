@@ -158,7 +158,7 @@ export function PinnedSitesWidget() {
                       toggle(s.id);
                     }}
                     className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-rose-500/10 hover:text-rose-500 focus-visible:opacity-100 group-hover:opacity-100"
-                    title="Unpin site"
+                    title={t("sites.unpinSite")}
                     aria-label={`Unpin ${s.name}`}
                   >
                     <X className="h-3 w-3" />

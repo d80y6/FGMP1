@@ -141,7 +141,7 @@ export function CommandPalette({ open, onOpenChange }: Props) {
         <CommandEmpty>{t("common.noResults")}</CommandEmpty>
 
         {/* Quick actions */}
-        <CommandGroup heading="Quick Actions">
+        <CommandGroup heading={t("cmdpal.quickActions")}>
           <CommandItem onSelect={() => { toggleLive(); onOpenChange(false); }} className="gap-2">
             {livePaused ? <Play className="h-4 w-4 text-emerald-500" /> : <Pause className="h-4 w-4 text-amber-500" />}
             <span>{livePaused ? "Resume live telemetry feed" : "Pause live telemetry feed"}</span>
@@ -178,7 +178,7 @@ export function CommandPalette({ open, onOpenChange }: Props) {
         <CommandSeparator />
 
         {/* Navigation */}
-        <CommandGroup heading="Navigate">
+        <CommandGroup heading={t("cmdpal.navigate")}>
           {visibleNav.map((item) => {
             const Icon = item.icon;
             const active = view === item.key;
@@ -226,7 +226,7 @@ export function CommandPalette({ open, onOpenChange }: Props) {
         {recentAlarms.length > 0 && (
           <>
             <CommandSeparator />
-            <CommandGroup heading="Recent Alarms">
+            <CommandGroup heading={t("cmdpal.recentAlarms")}>
               {recentAlarms.map((e, i) => (
                 <CommandItem
                   key={`${e.id}-${i}`}
@@ -247,7 +247,7 @@ export function CommandPalette({ open, onOpenChange }: Props) {
         )}
 
         <CommandSeparator />
-        <CommandGroup heading="Help">
+        <CommandGroup heading={t("cmdpal.help")}>
           <CommandItem onSelect={() => onOpenChange(false)} className="gap-2">
             <Search className="h-4 w-4 text-muted-foreground" />
             <span className="text-muted-foreground">{t("common.openPalette")}</span>

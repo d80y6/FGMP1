@@ -181,6 +181,13 @@ async function visit(
 
   try {
     await page.goto(`/?view=${view}`);
+    // Proof the reused session actually applied before measuring anything: a
+    // view measured behind a sign-in dialog would report "rendered nothing" and
+    // send the next reader looking for a layout bug that is not there.
+    await expect(
+      page.getByRole("button", { name: /sign out|تسجيل الخروج/i }),
+      `${view}: the stored session did not authenticate this page`,
+    ).toBeVisible({ timeout: 30_000 });
     const { settled } = await settle(page);
     if (!settled) throw new Error(`${view} never settled: ${await dumpState(page)}`);
 
@@ -242,64 +249,82 @@ async function visit(
   }
 }
 
-/** One row, checked the same way, for both roles. */
-async function sweep(
+/** Check one view and return everything wrong with it, rather than throwing. */
+async function checkView(
   browser: Browser,
-  who: "ADMIN" | "SUPERADMIN",
+  role: "ADMIN" | "SUPERADMIN",
   credentials: typeof ADMIN,
-  views: readonly string[],
-) {
-  const state = await sessionState(browser, credentials);
-  for (const view of views) {
-    const row = await visit(browser, who, state, view);
-    rows.push(row);
-    // The report is written after every view so a mid-sweep failure still
-    // leaves the screens that did run on disk.
-    mkdirSync(join(process.cwd(), "test-results"), { recursive: true });
-    writeFileSync(reportFile(), renderReport(), "utf8");
-
-    const where = `${view} (${who})`;
-    expect(row.renders, `${where} rendered nothing${row.heading ? "" : " and no heading"}`).toBe(true);
-    expect(row.dialogs, `${where} left a dialog open`).toBe(0);
-    expect(row.pageErrors, `${where} threw during render`).toEqual([]);
-    expect(row.consoleErrors, `${where} logged errors`).toEqual([]);
-    expect(row.http5xx, `${where} received a server error`).toEqual([]);
-    expect(row.overflowDesktop, `${where} overflows at 1440`).toBeNull();
-    expect(row.overflowMobile, `${where} overflows at 390`).toBeNull();
-    expect(
-      row.axe.map((v) => `${v.id}[${v.impact}] ${v.targets.join(", ")}`),
-      `${where} has WCAG 2.2 AA violations`,
-    ).toEqual([]);
+  view: string,
+): Promise<{ row: Row; problems: string[] }> {
+  const where = `${view} (${role})`;
+  let row: Row;
+  try {
+    const state = await sessionState(browser, credentials);
+    row = await visit(browser, role, state, view);
+  } catch (err) {
+    // A view that throws (or never authenticates) must not abort the sweep: the
+    // other 29 screens still have something to report, and one test that stops
+    // at the first bad screen reports one defect per run.
+    return {
+      row: {
+        view, role, heading: "(threw before measuring)", renders: false,
+        pageErrors: [], consoleErrors: [], http4xx: [], http5xx: [],
+        overflowDesktop: null, overflowMobile: null, axe: [],
+        tinyText: { tiny: 0, total: 0 }, dialogs: 0,
+      },
+      problems: [`${where}: ${String(err instanceof Error ? err.message : err).slice(0, 500)}`],
+    };
   }
+  rows.push(row);
+
+  const problems: string[] = [];
+  if (!row.renders) problems.push(`rendered nothing in <main> (heading seen: "${row.heading}")`);
+  if (row.dialogs) problems.push(`left ${row.dialogs} dialog(s) open`);
+  if (row.pageErrors.length) problems.push(`pageerror: ${row.pageErrors.join(" | ")}`);
+  if (row.consoleErrors.length) problems.push(`console.error: ${row.consoleErrors.join(" | ")}`);
+  if (row.http5xx.length) problems.push(`HTTP 5xx: ${row.http5xx.join(", ")}`);
+  if (row.overflowDesktop) problems.push(`overflow at 1440: ${row.overflowDesktop}`);
+  if (row.overflowMobile) problems.push(`overflow at 390: ${row.overflowMobile}`);
+  for (const v of row.axe) {
+    problems.push(`axe ${v.id}[${v.impact ?? "?"}] ×${v.nodes} @ ${v.targets.join(", ")}`);
+  }
+  return { row, problems: problems.map((p) => `${where}: ${p}`) };
 }
 
+/**
+ * One test, all views.
+ *
+ * Deliberately not one test per view: a failed assertion surfaces through the
+ * GitHub annotation for the step, and a per-view test would spend that budget
+ * on "view X failed" 27 times instead of printing every defect once. This test
+ * walks the list, keeps going after a bad screen, writes the report, and fails
+ * once with the complete list.
+ */
 test.describe("authenticated · every view", () => {
   test.skip(!AUTH, "needs a seeded database: set FGMP_E2E_AUTH=1");
 
-  test.afterAll(() => {
+  test("all views render without errors, overflow or WCAG 2.2 AA violations", async ({ browser }) => {
+    test.setTimeout(20 * 60_000);
+    const problems: string[] = [];
+
+    for (const view of ADMIN_VIEWS) {
+      const result = await checkView(browser, "ADMIN", ADMIN, view);
+      problems.push(...result.problems);
+    }
+    // The other 22 views render the same components for SUPERADMIN; what differs
+    // is the data (the platform tenant is legitimately empty) and the controls
+    // the role unlocks. Spend these page loads where rendering genuinely differs.
+    for (const view of [...SUPERADMIN_ONLY, "dashboard", "users", "system-settings"]) {
+      const result = await checkView(browser, "SUPERADMIN", SUPERADMIN, view);
+      problems.push(...result.problems);
+    }
+
     mkdirSync(join(process.cwd(), "test-results"), { recursive: true });
     writeFileSync(reportFile(), renderReport(), "utf8");
-    // Printed as well as written: CI publishes the job log on failure, and the
-    // table is the point.
     console.log(`\n${renderReport()}\n`);
+
+    expect(problems, `${problems.length} problem(s) across ${rows.length} rendered views`).toEqual([]);
   });
-
-  for (const view of ADMIN_VIEWS) {
-    test(`ADMIN · ${view}`, async ({ browser }) => {
-      await sweep(browser, "ADMIN", ADMIN, [view]);
-    });
-  }
-
-  // The other 22 views render the same components for SUPERADMIN as for ADMIN;
-  // what differs is the data (the platform tenant is legitimately empty) and
-  // the buttons the role unlocks. Those are covered by the ADMIN sweep, so this
-  // one spends its page loads where the rendering genuinely differs: the two
-  // reserved views, and three screens whose controls are role-conditional.
-  for (const view of [...SUPERADMIN_ONLY, "dashboard", "users", "system-settings"]) {
-    test(`SUPERADMIN · ${view}`, async ({ browser }) => {
-      await sweep(browser, "SUPERADMIN", SUPERADMIN, [view]);
-    });
-  }
 });
 
 /**

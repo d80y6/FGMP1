@@ -340,7 +340,10 @@ jobs:
   # every `bun install` or baked into the application image.
   ui:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Raised from 30: this job now also renders all 27 views twice over (ADMIN
+    # and the four screens whose rendering differs for SUPERADMIN), which is 30
+    # page loads with axe on each. The build and browser install are unchanged.
+    timeout-minutes: 45
     needs: [verify]
 
     services:
@@ -430,12 +433,17 @@ jobs:
           done
           echo "server did not become ready"; tail -50 /tmp/server.log; exit 1
 
+      # `github` as well as `list`: the list reporter's output lives in the job
+      # log, which the Actions log archive serves from a host this project's
+      # sandbox cannot reach, so a red run there is a red run with no readable
+      # cause. The github reporter turns each failure into an annotation on the
+      # check run, and annotations are on api.github.com.
       - name: Browser suite (public + authenticated)
         run: |
           set -o pipefail
           NODE_PATH="$PW_HOME/node_modules" \
           AXE_PATH="$PW_HOME/node_modules/axe-core/axe.min.js" \
-          node "$PW_HOME/node_modules/@playwright/test/cli.js" test --reporter=list 2>&1 | tee /tmp/ui.log
+          node "$PW_HOME/node_modules/@playwright/test/cli.js" test --reporter=list,github 2>&1 | tee /tmp/ui.log
 
       # The per-view sweep writes a table of what every screen did (axe, HTTP,
       # overflow, tiny-text count). It is published whether the run passed or

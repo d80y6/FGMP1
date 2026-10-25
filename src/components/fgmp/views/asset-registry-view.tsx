@@ -250,9 +250,10 @@ function SiteSelect({ value, onChange, sites, lang }: {
   sites: SiteOpt[]; lang: Language;
 }) {
   void lang;
+  const t = useT();
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className="w-full"><SelectValue placeholder="Select site…" /></SelectTrigger>
+      <SelectTrigger className="w-full"><SelectValue placeholder={t("common.selectSite")} /></SelectTrigger>
       <SelectContent className="max-h-72">
         {sites.map((s) => (
           <SelectItem key={s.id} value={s.id}>{s.name} · {s.code}</SelectItem>
@@ -544,8 +545,8 @@ function TanksTab({ sites, isAdmin, numLang }: {
       <DeleteConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(o) => !o && setDeleteTarget(null)}
-        title="Delete Tank"
-        message="This will permanently delete the tank and all its delivery history. Tank:"
+        title={t("assets.deleteTank")}
+        message={t("assets.deleteTankMsg")}
         targetLabel={deleteTarget?.label ?? ""}
         onConfirm={async () => {
           if (!deleteTarget) return;
@@ -669,7 +670,7 @@ function TankFormDialog({ open, onOpenChange, target, sites, lang, onSaved }: {
               value={form.label}
               onChange={(e) => setForm({ ...form, label: e.target.value })}
               className="h-9"
-              placeholder="e.g. Diesel Tank #1"
+              placeholder={t("assets.tankNamePlaceholder")}
             />
           </div>
           <div className="space-y-1.5">
@@ -891,8 +892,8 @@ function GeneratorsTab({ sites, isAdmin, numLang }: {
       <DeleteConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(o) => !o && setDeleteTarget(null)}
-        title="Delete Generator"
-        message="This will permanently delete the generator. Generator:"
+        title={t("assets.deleteGenerator")}
+        message={t("assets.deleteGeneratorMsg")}
         targetLabel={deleteTarget?.label ?? ""}
         onConfirm={async () => {
           if (!deleteTarget) return;
@@ -1237,8 +1238,8 @@ function BatteriesTab({ sites, isAdmin, numLang }: {
       <DeleteConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(o) => !o && setDeleteTarget(null)}
-        title="Delete Battery"
-        message="This will permanently delete the battery bank. Battery:"
+        title={t("assets.deleteBattery")}
+        message={t("assets.deleteBatteryMsg")}
         targetLabel={deleteTarget?.label ?? ""}
         onConfirm={async () => {
           if (!deleteTarget) return;
@@ -1585,8 +1586,8 @@ function IotTab({ sites, isAdmin, numLang }: {
       <DeleteConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(o) => !o && setDeleteTarget(null)}
-        title="Delete IoT Device"
-        message="This will permanently delete the IoT device. Device:"
+        title={t("assets.deleteDevice")}
+        message={t("assets.deleteDeviceMsg")}
         targetLabel={deleteTarget?.name ?? ""}
         onConfirm={async () => {
           if (!deleteTarget) return;

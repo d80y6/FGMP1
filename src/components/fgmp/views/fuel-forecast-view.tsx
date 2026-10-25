@@ -193,35 +193,35 @@ export function FuelForecastView() {
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-4">
         <KpiCard
-          label="Critical Risk"
+          label={t("forecast.criticalRisk")}
           value={formatNumber(critical.length, numLang)}
           icon={<AlertOctagon className="h-4 w-4" />}
           tone="danger"
           hint="< 24h to critical"
         />
         <KpiCard
-          label="High Risk"
+          label={t("forecast.highRisk")}
           value={formatNumber(high.length, numLang)}
           icon={<AlertTriangle className="h-4 w-4" />}
           tone="warn"
           hint="< 72h to critical"
         />
         <KpiCard
-          label="Refuel Needed 72h"
+          label={t("forecast.refuel72h")}
           value={formatNumber(refuelNeeded72h.length, numLang)}
           icon={<PackagePlus className="h-4 w-4" />}
           tone={refuelNeeded72h.length ? "warn" : "good"}
-          hint="Tanks needing action"
+          hint={t("forecast.tanksNeedingAction")}
         />
         <KpiCard
-          label="Avg Dry-Out"
+          label={t("forecast.avgDryOut")}
           value={isFinite(avgDryOutDays) && avgDryOutDays > 0
             ? formatNumber(avgDryOutDays.toFixed(1), numLang)
             : "—"}
           unit={isFinite(avgDryOutDays) && avgDryOutDays > 0 ? "d" : undefined}
           icon={<Clock className="h-4 w-4" />}
           tone="info"
-          hint="Across consuming tanks"
+          hint={t("forecast.acrossTanks")}
         />
       </div>
 

@@ -308,7 +308,7 @@ export function TenantIsolationView() {
                               <span className={test.crossTenantDenied ? "text-emerald-600" : "text-rose-600"}>
                                 Cross-tenant: {test.crossTenantDenied ? "Denied ✓" : "Allowed ✗"}
                               </span>
-                              <span className="text-muted-foreground" title="Ownership helper result only; this is not a route grant">
+                              <span className="text-muted-foreground" title={t("isolation.ownershipTooltip")}>
                                 Platform helper: {test.platformHelperPermits ? "Permits" : "Denies"}
                               </span>
                             </>
