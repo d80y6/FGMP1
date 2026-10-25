@@ -433,8 +433,8 @@ export function DispensersView() {
               <CardTitle className="text-sm">{t("dispenser.tabRegistry")} ({formatNumber(filtered.length, numLang)})</CardTitle>
               <div className="flex flex-wrap items-center gap-2">
                 <div className="relative">
-                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("dispenser.search")} className="h-9 w-[220px] pl-8" />
+                  <Search className="absolute start-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("dispenser.search")} className="h-9 w-[220px] ps-8" />
                 </div>
                 <Select label={t("common.status")} value={statusFilter} onValueChange={setStatusFilter}>
                   <SelectTrigger className="h-9 w-[140px] text-xs"><SelectValue /></SelectTrigger>
@@ -471,7 +471,7 @@ export function DispensersView() {
                         <TableHead className="w-[140px]">{t("dispenser.colFlow")}</TableHead>
                         <TableHead className="hidden md:table-cell w-[100px]">{t("dispenser.colLastComm")}</TableHead>
                         <TableHead className="w-[80px]">{t("dispenser.colStatus")}</TableHead>
-                        <TableHead className="w-[200px] text-right">{t("dispenser.colActions")}</TableHead>
+                        <TableHead className="w-[200px] text-end">{t("dispenser.colActions")}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -536,7 +536,7 @@ export function DispensersView() {
                               <StatusBadge value={status} className="h-5 text-[10px]" />
                               <div className="text-[10px] text-muted-foreground mt-0.5">{modeLabel(d.liveMode, numLang)}</div>
                             </TableCell>
-                            <TableCell className="text-right">
+                            <TableCell className="text-end">
                               {/* The ten control commands of proposal feature
                                   23, shown contextually by pump state so the
                                   row stays readable: authorize/limit when
@@ -547,32 +547,32 @@ export function DispensersView() {
                               <div className="flex justify-end flex-wrap gap-1">
                                 {canControl && (status === "IDLE" || status === "STOPPED") && d.liveMode !== "LOCKED" && (
                                   <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => setAuthorizeTarget(d)}>
-                                    <Play className="mr-1 h-3 w-3" />{t("dispenser.cmdAuthorize")}
+                                    <Play className="me-1 h-3 w-3" />{t("dispenser.cmdAuthorize")}
                                   </Button>
                                 )}
                                 {canControl && status === "AUTHORIZED" && (
                                   <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => sendControl(d, "START")}>
-                                    <Play className="mr-1 h-3 w-3" />{t("dispenser.cmdStart")}
+                                    <Play className="me-1 h-3 w-3" />{t("dispenser.cmdStart")}
                                   </Button>
                                 )}
                                 {canControl && status === "AUTHORIZED" && (
                                   <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => sendControl(d, "DEAUTHORIZE")}>
-                                    <XCircle className="mr-1 h-3 w-3" />{t("dispenser.cmdDeauthorize")}
+                                    <XCircle className="me-1 h-3 w-3" />{t("dispenser.cmdDeauthorize")}
                                   </Button>
                                 )}
                                 {canControl && (status === "DISPENSING" || status === "AUTHORIZED") && (
                                   <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => sendControl(d, "STOP")}>
-                                    <Square className="mr-1 h-3 w-3" />{t("dispenser.cmdStop")}
+                                    <Square className="me-1 h-3 w-3" />{t("dispenser.cmdStop")}
                                   </Button>
                                 )}
                                 {canControl && (status === "DISPENSING" || status === "AUTHORIZED") && (
                                   <Button size="sm" variant="destructive" className="h-6 px-2 text-[10px]" onClick={() => sendControl(d, "EMERGENCY_STOP")}>
-                                    <TriangleAlert className="mr-1 h-3 w-3" />{t("dispenser.cmdEmergencyStop")}
+                                    <TriangleAlert className="me-1 h-3 w-3" />{t("dispenser.cmdEmergencyStop")}
                                   </Button>
                                 )}
                                 {canControl && status === "FAULT" && (
                                   <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => sendControl(d, "RESET")}>
-                                    <RotateCcw className="mr-1 h-3 w-3" />{t("dispenser.cmdReset")}
+                                    <RotateCcw className="me-1 h-3 w-3" />{t("dispenser.cmdReset")}
                                   </Button>
                                 )}
                                 {canControl && status !== "DISPENSING" && status !== "FAULT" && (
@@ -638,7 +638,7 @@ export function DispensersView() {
                   </SelectContent>
                 </Select>
                 <Button variant="outline" size="sm" onClick={exportTxnsCsv}>
-                  <Download className="mr-1.5 h-4 w-4" />{t("dispenser.exportCsv")}
+                  <Download className="me-1.5 h-4 w-4" />{t("dispenser.exportCsv")}
                 </Button>
               </div>
             </CardHeader>
@@ -655,12 +655,12 @@ export function DispensersView() {
                         <TableHead className="hidden md:table-cell">{t("dispenser.colSite")}</TableHead>
                         <TableHead className="hidden lg:table-cell">{t("dispenser.colPlate")}</TableHead>
                         <TableHead className="hidden xl:table-cell">{t("dispenser.colOperator")}</TableHead>
-                        <TableHead className="w-[90px] text-right">{t("dispenser.colVolume")}</TableHead>
-                        <TableHead className="hidden md:table-cell w-[80px] text-right">{t("dispenser.colDuration")}</TableHead>
-                        <TableHead className="hidden lg:table-cell w-[90px] text-right">{t("dispenser.colFlowRate")}</TableHead>
-                        <TableHead className="hidden xl:table-cell w-[110px] text-right">{t("dispenser.colCounter")}</TableHead>
-                        <TableHead className="hidden lg:table-cell w-[90px] text-right">{t("dispenser.colUnitPrice")}</TableHead>
-                        <TableHead className="w-[110px] text-right">{t("dispenser.colAmount")}</TableHead>
+                        <TableHead className="w-[90px] text-end">{t("dispenser.colVolume")}</TableHead>
+                        <TableHead className="hidden md:table-cell w-[80px] text-end">{t("dispenser.colDuration")}</TableHead>
+                        <TableHead className="hidden lg:table-cell w-[90px] text-end">{t("dispenser.colFlowRate")}</TableHead>
+                        <TableHead className="hidden xl:table-cell w-[110px] text-end">{t("dispenser.colCounter")}</TableHead>
+                        <TableHead className="hidden lg:table-cell w-[90px] text-end">{t("dispenser.colUnitPrice")}</TableHead>
+                        <TableHead className="w-[110px] text-end">{t("dispenser.colAmount")}</TableHead>
                         <TableHead className="w-[90px]">{t("dispenser.colStatus")}</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -685,18 +685,18 @@ export function DispensersView() {
                             <TableCell className="hidden md:table-cell text-xs">{tx.site?.name ?? "—"}</TableCell>
                             <TableCell className="hidden lg:table-cell text-xs font-mono" dir="ltr">{tx.vehiclePlate ?? "—"}</TableCell>
                             <TableCell className="hidden xl:table-cell text-xs">{tx.operatorName ?? "—"}</TableCell>
-                            <TableCell className="text-right text-xs tabular-nums">{formatNumber(tx.volumeLitres.toFixed(1), numLang)}</TableCell>
-                            <TableCell className="hidden md:table-cell text-right text-xs tabular-nums">{formatDuration(tx.durationSec, numLang)}</TableCell>
-                            <TableCell className="hidden lg:table-cell text-right text-xs tabular-nums">{formatNumber(flowLpm.toFixed(1), numLang)} {t("dispenser.lpm")}</TableCell>
-                            <TableCell className="hidden xl:table-cell text-right text-xs tabular-nums">
+                            <TableCell className="text-end text-xs tabular-nums">{formatNumber(tx.volumeLitres.toFixed(1), numLang)}</TableCell>
+                            <TableCell className="hidden md:table-cell text-end text-xs tabular-nums">{formatDuration(tx.durationSec, numLang)}</TableCell>
+                            <TableCell className="hidden lg:table-cell text-end text-xs tabular-nums">{formatNumber(flowLpm.toFixed(1), numLang)} {t("dispenser.lpm")}</TableCell>
+                            <TableCell className="hidden xl:table-cell text-end text-xs tabular-nums">
                               {tx.totalizerLitres != null
                                 ? `${formatNumber(Number(tx.totalizerLitres).toLocaleString("en-US"), numLang)} ${t("dispenser.litres")}`
                                 : "—"}
                             </TableCell>
-                            <TableCell className="hidden lg:table-cell text-right text-xs tabular-nums">
+                            <TableCell className="hidden lg:table-cell text-end text-xs tabular-nums">
                               {formatYer(tx.unitPriceYer, numLang)}/{t("dispenser.litres")}
                             </TableCell>
-                            <TableCell className="text-right text-xs tabular-nums">{formatYer(tx.amountYer, numLang)}</TableCell>
+                            <TableCell className="text-end text-xs tabular-nums">{formatYer(tx.amountYer, numLang)}</TableCell>
                             <TableCell>
                               <Badge variant="outline" className={
                                 tx.status === "COMPLETED" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-[10px]" :
@@ -846,18 +846,18 @@ export function DispensersView() {
                     <TableHeader>
                       <TableRow>
                         <TableHead className="w-[110px]">{t("dispenser.colPlate")}</TableHead>
-                        <TableHead className="w-[70px] text-right">{t("dispenser.reportTxns")}</TableHead>
-                        <TableHead className="text-right">{t("dispenser.colVolume")}</TableHead>
-                        <TableHead className="text-right">{t("dispenser.colAmount")}</TableHead>
+                        <TableHead className="w-[70px] text-end">{t("dispenser.reportTxns")}</TableHead>
+                        <TableHead className="text-end">{t("dispenser.colVolume")}</TableHead>
+                        <TableHead className="text-end">{t("dispenser.colAmount")}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {volumeByVehicle.map((v) => (
                         <TableRow key={v.plate}>
                           <TableCell className="text-xs font-mono" dir="ltr">{v.plate}</TableCell>
-                          <TableCell className="text-right text-xs tabular-nums">{formatNumber(v.txns, numLang)}</TableCell>
-                          <TableCell className="text-right text-xs tabular-nums">{formatNumber(Math.round(v.volume * 10) / 10, numLang)} L</TableCell>
-                          <TableCell className="text-right text-xs tabular-nums">{formatYer(Math.round(v.amount), numLang)}</TableCell>
+                          <TableCell className="text-end text-xs tabular-nums">{formatNumber(v.txns, numLang)}</TableCell>
+                          <TableCell className="text-end text-xs tabular-nums">{formatNumber(Math.round(v.volume * 10) / 10, numLang)} L</TableCell>
+                          <TableCell className="text-end text-xs tabular-nums">{formatYer(Math.round(v.amount), numLang)}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -878,16 +878,16 @@ export function DispensersView() {
                     <TableHeader>
                       <TableRow>
                         <TableHead className="w-[120px]">{t("dispenser.colStatus")}</TableHead>
-                        <TableHead className="w-[70px] text-right">{t("dispenser.reportTxns")}</TableHead>
-                        <TableHead className="text-right">{t("dispenser.colVolume")}</TableHead>
+                        <TableHead className="w-[70px] text-end">{t("dispenser.reportTxns")}</TableHead>
+                        <TableHead className="text-end">{t("dispenser.colVolume")}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {volumeByStatus.map((v) => (
                         <TableRow key={v.status}>
                           <TableCell><Badge variant="outline" className="h-5 text-[10px]">{txnStatusLabel(v.status, numLang)}</Badge></TableCell>
-                          <TableCell className="text-right text-xs tabular-nums">{formatNumber(v.txns, numLang)}</TableCell>
-                          <TableCell className="text-right text-xs tabular-nums">{formatNumber(Math.round(v.volume * 10) / 10, numLang)} L</TableCell>
+                          <TableCell className="text-end text-xs tabular-nums">{formatNumber(v.txns, numLang)}</TableCell>
+                          <TableCell className="text-end text-xs tabular-nums">{formatNumber(Math.round(v.volume * 10) / 10, numLang)} L</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -1335,7 +1335,7 @@ function AuthorizeDialog({ target, onOpenChange, onConfirm, lang, limitMode = fa
             }}
             className="bg-emerald-500 hover:bg-emerald-600 text-white"
           >
-            <Play className="mr-1.5 h-4 w-4" />{t("dispenser.cmdAuthorize")}
+            <Play className="me-1.5 h-4 w-4" />{t("dispenser.cmdAuthorize")}
           </Button>
         </DialogFooter>
       </DialogContent>

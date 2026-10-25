@@ -97,8 +97,8 @@ export function SiteHealthCard({
                 style={{ width: `${Math.max(0, Math.min(100, factor.value))}%` }}
               />
             </span>
-            <span className="w-8 shrink-0 text-right font-medium tabular-nums">{factor.value}</span>
-            <span className="w-8 shrink-0 text-right text-muted-foreground">{factor.weight}</span>
+            <span className="w-8 shrink-0 text-end font-medium tabular-nums">{factor.value}</span>
+            <span className="w-8 shrink-0 text-end text-muted-foreground">{factor.weight}</span>
           </div>
         ))}
       </div>

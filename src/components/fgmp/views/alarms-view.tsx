@@ -442,11 +442,11 @@ export function AlarmsView() {
                     "border-rose-500/40 bg-rose-500/5 text-rose-700 dark:text-rose-400 hover:bg-rose-500/10 hover:text-rose-700 dark:text-rose-400",
                 )}
               >
-                <ShieldAlert className="mr-1.5 h-4 w-4" /> {t("alarms.rules")}
+                <ShieldAlert className="me-1.5 h-4 w-4" /> {t("alarms.rules")}
                 {triggeredRuleCount > 0 && (
                   <Badge
                     variant="secondary"
-                    className="ml-1.5 h-4 bg-rose-500/20 px-1 text-[10px] font-bold text-rose-700 dark:text-rose-400"
+                    className="ms-1.5 h-4 bg-rose-500/20 px-1 text-[10px] font-bold text-rose-700 dark:text-rose-400"
                   >
                     {formatNumber(triggeredRuleCount, numLang)}
                   </Badge>
@@ -550,7 +550,7 @@ export function AlarmsView() {
                   <span>
                     {t("alarms.heatmapFilter")}: {heatmapFilter.severity} · {formatNumber(heatmapFilterLabel, numLang)} ({formatNumber(filteredAlarms.length, numLang)})
                   </span>
-                  <span className="ml-2 h-5 px-2 text-[10px] hover:bg-sky-500/20 rounded inline-flex items-center">
+                  <span className="ms-2 h-5 px-2 text-[10px] hover:bg-sky-500/20 rounded inline-flex items-center">
                     <X className="h-3 w-3" /> {t("alarms.clearFilter")}
                   </span>
                 </button>
@@ -588,15 +588,15 @@ export function AlarmsView() {
                   <CheckCheck className="h-3.5 w-3.5 text-sky-500" />
                   <span>{formatNumber(selectedCount, numLang)} {t("common.selected")}</span>
                 </div>
-                <div className="ml-auto flex flex-wrap items-center gap-2">
+                <div className="ms-auto flex flex-wrap items-center gap-2">
                   <Button
                     size="sm"
                     variant="outline"
                     className="h-7 border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-400 hover:bg-sky-500/20 hover:text-sky-700"
                     onClick={bulkAck}
                   >
-                    <CheckCheck className="mr-1.5 h-3.5 w-3.5" />{t("alarms.bulkAck")}
-                    <kbd className="ml-2 hidden items-center rounded border bg-background/80 px-1.5 py-0.5 font-mono text-[10px] sm:inline-flex">A</kbd>
+                    <CheckCheck className="me-1.5 h-3.5 w-3.5" />{t("alarms.bulkAck")}
+                    <kbd className="ms-2 hidden items-center rounded border bg-background/80 px-1.5 py-0.5 font-mono text-[10px] sm:inline-flex">A</kbd>
                   </Button>
                   <Button
                     size="sm"
@@ -604,12 +604,12 @@ export function AlarmsView() {
                     className="h-7 border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/20 hover:text-emerald-700"
                     onClick={bulkResolve}
                   >
-                    <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />{t("alarms.bulkResolve")}
-                    <kbd className="ml-2 hidden items-center rounded border bg-background/80 px-1.5 py-0.5 font-mono text-[10px] sm:inline-flex">R</kbd>
+                    <CheckCircle2 className="me-1.5 h-3.5 w-3.5" />{t("alarms.bulkResolve")}
+                    <kbd className="ms-2 hidden items-center rounded border bg-background/80 px-1.5 py-0.5 font-mono text-[10px] sm:inline-flex">R</kbd>
                   </Button>
                   <Button size="sm" variant="ghost" className="h-7" onClick={clearSelection}>
-                    <X className="mr-1.5 h-3.5 w-3.5" />{t("alarms.clear")}
-                    <kbd className="ml-2 hidden items-center rounded border bg-background/80 px-1.5 py-0.5 font-mono text-[10px] sm:inline-flex">Esc</kbd>
+                    <X className="me-1.5 h-3.5 w-3.5" />{t("alarms.clear")}
+                    <kbd className="ms-2 hidden items-center rounded border bg-background/80 px-1.5 py-0.5 font-mono text-[10px] sm:inline-flex">Esc</kbd>
                   </Button>
                 </div>
               </div>
@@ -621,7 +621,7 @@ export function AlarmsView() {
               <Table>
                 <TableHeader className="sticky top-0 bg-card">
                   <TableRow>
-                    <TableHead className="w-[40px] pr-0">
+                    <TableHead className="w-[40px] pe-0">
                       <Checkbox
                         checked={allSelected ? true : someSelected ? "indeterminate" : false}
                         onCheckedChange={toggleAll}
@@ -636,7 +636,7 @@ export function AlarmsView() {
                     <TableHead className="w-[90px]">{t("alarms.status")}</TableHead>
                     <TableHead className="w-[80px]">{t("alarms.esc")}</TableHead>
                     <TableHead className="w-[90px]">{t("alarms.time")}</TableHead>
-                    <TableHead className="w-[140px] text-right">{t("common.actions")}</TableHead>
+                    <TableHead className="w-[140px] text-end">{t("common.actions")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -651,7 +651,7 @@ export function AlarmsView() {
                         // the ack/resolve mutation is in flight (#20).
                         isSaving && "opacity-50",
                       )} onClick={() => setSelected(a.id)}>
-                        <TableCell className="pr-0" onClick={(e) => e.stopPropagation()}>
+                        <TableCell className="pe-0" onClick={(e) => e.stopPropagation()}>
                           {actionable ? (
                             <Checkbox
                               checked={validSelectedIds.has(a.id)}
@@ -672,7 +672,7 @@ export function AlarmsView() {
                         <TableCell><StatusBadge value={a.status} className="h-5 text-[10px]" /></TableCell>
                         <TableCell className="text-center text-xs">L{formatNumber(a.escalationLevel, numLang)}</TableCell>
                         <TableCell className="text-[10px] text-muted-foreground">{timeAgo(a.createdAt, numLang)}</TableCell>
-                        <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                        <TableCell className="text-end" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-1">
                             {isSaving && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" aria-label={t("common.saving")} />}
                             {(a.status === "OPEN" || a.status === "ESCALATED") && (
@@ -680,7 +680,7 @@ export function AlarmsView() {
                             )}
                             {a.status !== "RESOLVED" && (
                               <Button size="sm" variant="outline" className="h-6 px-2 text-[10px] text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 active:scale-[0.98] transition-transform" disabled={isSaving} onClick={() => resolve(a.id)}>
-                                <CheckCircle2 className="mr-1 h-3 w-3" />{t("alarms.resolve")}
+                                <CheckCircle2 className="me-1 h-3 w-3" />{t("alarms.resolve")}
                               </Button>
                             )}
                           </div>
@@ -712,7 +712,7 @@ export function AlarmsView() {
                                   setStatus("OPEN,ACKNOWLEDGED,ESCALATED");
                                 }}
                               >
-                                <X className="mr-1.5 h-3.5 w-3.5" />{t("alarms.clearAllFilters")}
+                                <X className="me-1.5 h-3.5 w-3.5" />{t("alarms.clearAllFilters")}
                               </Button>
                             ) : undefined
                           }

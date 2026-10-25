@@ -79,7 +79,7 @@ export function ReportsView() {
         icon={<FileText className="h-5 w-5" />}
         actions={
           <Select label={t("reports.period")} value={period} onValueChange={setPeriod}>
-            <SelectTrigger className="w-[150px]"><Calendar className="mr-1.5 h-4 w-4" /><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-[150px]"><Calendar className="me-1.5 h-4 w-4" /><SelectValue /></SelectTrigger>
             <SelectContent>{PERIODS.map((p) => <SelectItem key={p.value} value={p.value}>{t(p.labelKey)}</SelectItem>)}</SelectContent>
           </Select>
         }
@@ -105,10 +105,10 @@ export function ReportsView() {
                     <SelectItem value="pdf">PDF</SelectItem>
                   </SelectContent>
                 </Select>
-                <Button variant="outline" size="sm" onClick={() => window.open(`/api/fgmp/export?type=sites&format=${exportFormat}`, "_blank")}><FileType2 className="mr-1.5 h-4 w-4" />{t("reports.sitesCsv")}</Button>
-                <Button variant="outline" size="sm" onClick={() => window.open(`/api/fgmp/export?type=tanks&format=${exportFormat}`, "_blank")}><FileType2 className="mr-1.5 h-4 w-4" />{t("reports.tanksCsv")}</Button>
-                <Button variant="outline" size="sm" onClick={() => window.open(`/api/fgmp/export?type=generators&format=${exportFormat}`, "_blank")}><FileType2 className="mr-1.5 h-4 w-4" />{t("reports.generatorsCsv")}</Button>
-                <Button variant="outline" size="sm" onClick={() => window.open(`/api/fgmp/export?type=batteries&format=${exportFormat}`, "_blank")}><FileType2 className="mr-1.5 h-4 w-4" />{t("reports.batteriesCsv")}</Button>
+                <Button variant="outline" size="sm" onClick={() => window.open(`/api/fgmp/export?type=sites&format=${exportFormat}`, "_blank")}><FileType2 className="me-1.5 h-4 w-4" />{t("reports.sitesCsv")}</Button>
+                <Button variant="outline" size="sm" onClick={() => window.open(`/api/fgmp/export?type=tanks&format=${exportFormat}`, "_blank")}><FileType2 className="me-1.5 h-4 w-4" />{t("reports.tanksCsv")}</Button>
+                <Button variant="outline" size="sm" onClick={() => window.open(`/api/fgmp/export?type=generators&format=${exportFormat}`, "_blank")}><FileType2 className="me-1.5 h-4 w-4" />{t("reports.generatorsCsv")}</Button>
+                <Button variant="outline" size="sm" onClick={() => window.open(`/api/fgmp/export?type=batteries&format=${exportFormat}`, "_blank")}><FileType2 className="me-1.5 h-4 w-4" />{t("reports.batteriesCsv")}</Button>
                 <ExportButton
                   filename={csvFilename(`report-${period}`)}
                   rows={summaryExportRows}
@@ -116,7 +116,7 @@ export function ReportsView() {
                   disabled={!s}
                   label={t("common.exportReport")}
                 />
-                <Button variant="secondary" size="sm" onClick={() => toastPrint()}><FileSpreadsheet className="mr-1.5 h-4 w-4" />{t("reports.printPdf")}</Button>
+                <Button variant="secondary" size="sm" onClick={() => toastPrint()}><FileSpreadsheet className="me-1.5 h-4 w-4" />{t("reports.printPdf")}</Button>
               </div>
             </CardContent>
           </Card>

@@ -560,7 +560,7 @@ export function AppShell() {
           </div>
 
           {/* Live status + KPI chips */}
-          <div className="ml-2 hidden items-center gap-2 md:flex">
+          <div className="ms-2 hidden items-center gap-2 md:flex">
             <div
               // Connection state is the one status an operator needs while
               // looking somewhere else on the page: "LIVE" silently becoming
@@ -613,7 +613,7 @@ export function AppShell() {
           >
             <Search className="h-3.5 w-3.5" />
             <span>{t("common.search")}</span>
-            <kbd className="ml-4 inline-flex items-center gap-0.5 rounded border bg-background px-1 py-0.5 text-[10px] font-medium" dir="ltr">
+            <kbd className="ms-4 inline-flex items-center gap-0.5 rounded border bg-background px-1 py-0.5 text-[10px] font-medium" dir="ltr">
               <Command className="h-2.5 w-2.5" />K
             </kbd>
           </button>
@@ -736,7 +736,7 @@ export function AppShell() {
 
       {/* Body: sidebar + content */}
       <div className="flex flex-1">
-        <aside className="sticky top-14 hidden h-[calc(100vh-3.5rem)] w-60 shrink-0 border-r bg-card/40 lg:block">
+        <aside className="sticky top-14 hidden h-[calc(100vh-3.5rem)] w-60 shrink-0 border-e bg-card/40 lg:block">
           <SidebarContent grouped={grouped} view={view} navigate={navigate} me={me} />
         </aside>
 
@@ -885,7 +885,7 @@ function SidebarContent({ grouped, view, navigate, me }: {
                   {active && (
                     <span
                       aria-hidden="true"
-                      className="absolute inset-y-1 left-0 w-[3px] rounded-full bg-primary rtl:left-auto rtl:right-0"
+                      className="absolute inset-y-1 start-0 w-[3px] rounded-full bg-primary"
                     />
                   )}
                   <Icon className={cn("h-4 w-4 shrink-0 transition-transform duration-150 group-hover:translate-x-0.5 rtl:group-hover:-translate-x-0.5", active && "text-primary")} />
@@ -933,7 +933,7 @@ function AlarmCountBadge() {
   // digits, subtle rose drop-shadow so the alarm count pops at a glance.
   return (
     <span
-      className="ml-auto inline-flex min-w-[20px] items-center justify-center rounded-full bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-rose-700 dark:text-rose-400 shadow-sm shadow-rose-500/20 dark:text-rose-400"
+      className="ms-auto inline-flex min-w-[20px] items-center justify-center rounded-full bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-rose-700 dark:text-rose-400 shadow-sm shadow-rose-500/20 dark:text-rose-400"
     >
       <span aria-hidden="true">{n}</span>
       {/* The visible digit alone would be read as "3" inside the nav link.

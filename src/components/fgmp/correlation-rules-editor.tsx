@@ -242,7 +242,7 @@ export function CorrelationRulesEditor({ open, onOpenChange }: Props) {
           <DialogTitle className="flex items-center gap-2">
             <ShieldAlert className="h-5 w-5 text-violet-500" />
             {t("rules.alarmCorrelationRules")}
-            <span className="ml-1 inline-flex items-center gap-1.5 rounded-full border bg-muted/60 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+            <span className="ms-1 inline-flex items-center gap-1.5 rounded-full border bg-muted/60 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
               <span className="tabular-nums">{rules.length} {t("rules.rulesCount")}</span>
               <span className="text-rose-500">·</span>
               <span className="tabular-nums text-rose-500">{triggeredCount} {t("rules.triggered")}</span>
@@ -265,19 +265,19 @@ export function CorrelationRulesEditor({ open, onOpenChange }: Props) {
           <div className="border-b px-4 pt-3">
             <TabsList className="h-9">
               <TabsTrigger value="active" className="text-xs">
-                <List className="mr-1.5 h-3.5 w-3.5" />
+                <List className="me-1.5 h-3.5 w-3.5" />
                 {t("rules.activeRules")}
                 {triggeredCount > 0 && (
                   <Badge
                     variant="secondary"
-                    className="ml-1.5 h-4 bg-rose-500/20 px-1 text-[10px] text-rose-700 dark:text-rose-400"
+                    className="ms-1.5 h-4 bg-rose-500/20 px-1 text-[10px] text-rose-700 dark:text-rose-400"
                   >
                     {triggeredCount}
                   </Badge>
                 )}
               </TabsTrigger>
               <TabsTrigger value="editor" className="text-xs">
-                <Edit3 className="mr-1.5 h-3.5 w-3.5" />
+                <Edit3 className="me-1.5 h-3.5 w-3.5" />
                 {t("rules.editor")}
               </TabsTrigger>
             </TabsList>
@@ -389,7 +389,7 @@ function ActiveRuleCard({
   return (
     <div
       className={cn(
-        "animate-slide-in-up rounded-lg border border-l-4 p-3 transition-all",
+        "animate-slide-in-up rounded-lg border border-s-4 p-3 transition-all",
         borderTone,
         bgTone,
         !rule.enabled && "opacity-60",
@@ -528,7 +528,7 @@ function EditorTab({ rules }: { rules: CorrelationRule[] }) {
     return (
       <div className="space-y-3">
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-700 dark:text-amber-300">
-          <AlertTriangle className="mr-1.5 inline h-3.5 w-3.5" />
+          <AlertTriangle className="me-1.5 inline h-3.5 w-3.5" />
           {t("rules.viewOnlyBanner")}
         </div>
         <div className="space-y-2.5">
@@ -546,14 +546,14 @@ function EditorTab({ rules }: { rules: CorrelationRule[] }) {
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" onClick={handleAdd}>
-          <Plus className="mr-1.5 h-3.5 w-3.5" />
+          <Plus className="me-1.5 h-3.5 w-3.5" />
           {t("rules.addRule")}
         </Button>
         <Button size="sm" variant="outline" onClick={() => setResetOpen(true)}>
-          <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+          <RotateCcw className="me-1.5 h-3.5 w-3.5" />
           {t("rules.resetToDefaults")}
         </Button>
-        <span className="ml-auto text-[10px] text-muted-foreground">
+        <span className="ms-auto text-[10px] text-muted-foreground">
           {rules.length} {t("rules.rulesConfigured")}
         </span>
       </div>
@@ -599,7 +599,7 @@ function ReadOnlyRuleCard({ rule }: { rule: CorrelationRule }) {
   return (
     <div
       className={cn(
-        "rounded-lg border border-l-4 p-3 transition-all",
+        "rounded-lg border border-s-4 p-3 transition-all",
         rule.enabled ? "border-l-amber-500 bg-card" : "border-l-slate-400/50 bg-muted/20 opacity-60",
       )}
     >
@@ -739,7 +739,7 @@ const t = useT();
         <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
           {rule.enabled ? t("common.enabled") : t("common.disabled")}
         </span>
-        <span className="ml-auto font-mono text-[10px] text-muted-foreground/60">
+        <span className="ms-auto font-mono text-[10px] text-muted-foreground/60">
           {rule.id.slice(-8)}
         </span>
       </div>
@@ -905,7 +905,7 @@ const t = useT();
           disabled={!formValid || !dirty}
           className="h-7"
         >
-          <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
+          <CheckCircle2 className="me-1.5 h-3.5 w-3.5" />
           {t("rules.save")}
         </Button>
         <Button
@@ -926,16 +926,16 @@ const t = useT();
           disabled={!dirty}
           className="h-7"
         >
-          <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+          <RotateCcw className="me-1.5 h-3.5 w-3.5" />
           {t("rules.revert")}
         </Button>
         <Button
           size="sm"
           variant="outline"
           onClick={() => setDeleteOpen(true)}
-          className="ml-auto h-7 border-rose-500/30 text-rose-700 dark:text-rose-400 hover:bg-rose-500/10 hover:text-rose-700 dark:text-rose-400"
+          className="ms-auto h-7 border-rose-500/30 text-rose-700 dark:text-rose-400 hover:bg-rose-500/10 hover:text-rose-700 dark:text-rose-400"
         >
-          <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+          <Trash2 className="me-1.5 h-3.5 w-3.5" />
           {t("rules.delete")}
         </Button>
       </div>
@@ -978,10 +978,10 @@ export function CorrelationRulesTriggerButton({
       data-testid="open-correlation-rules"
       className="relative"
     >
-      <ShieldAlert className="mr-1.5 h-4 w-4" />
+      <ShieldAlert className="me-1.5 h-4 w-4" />
       Rules
       {triggeredCount > 0 && (
-        <span className="ml-1.5 inline-flex items-center gap-1 rounded-full bg-rose-500 px-1.5 text-[10px] font-bold text-white">
+        <span className="ms-1.5 inline-flex items-center gap-1 rounded-full bg-rose-500 px-1.5 text-[10px] font-bold text-white">
           <Zap className="h-2.5 w-2.5" />
           {triggeredCount}
         </span>

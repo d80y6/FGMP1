@@ -172,14 +172,14 @@ export function FuelRunoutEta() {
             <p className="text-sm font-medium">{t("dash.runoutEtaEmpty")}</p>
           </div>
         ) : (
-          <div className="max-h-72 divide-y overflow-y-auto pr-0.5">
+          <div className="max-h-72 divide-y overflow-y-auto pe-0.5">
             {rows.map((tk) => (
               <button
                 key={tk.tankId}
                 type="button"
                 onClick={() => setView("fuel")}
                 className={cn(
-                  "flex w-full cursor-pointer items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none",
+                  "flex w-full cursor-pointer items-center gap-3 px-4 py-2.5 text-start transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none",
                   URGENCY_TINT[tk.urgency],
                 )}
                 title={`${tk.siteName} — ${tk.label} · ${t(URGENCY_LABEL_KEY[tk.urgency])} · ${t("dash.runoutEtaRate")}: ${formatNumber(tk.ratePerHour, numLang)} L/h`}

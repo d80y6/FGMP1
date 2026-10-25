@@ -168,7 +168,7 @@ export function AlarmCorrelationPanel({ alarms, onSelectSite }: Props) {
 
         {/* Site alarm clusters */}
         <ScrollArea className="h-[280px]">
-          <div className="space-y-1.5 pr-2">
+          <div className="space-y-1.5 pe-2">
             {groups.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-8 text-center">
                 <Network className="mb-2 h-8 w-8 text-muted-foreground/40" />
@@ -185,7 +185,7 @@ export function AlarmCorrelationPanel({ alarms, onSelectSite }: Props) {
                     key={g.key}
                     onClick={() => onSelectSite?.(g.siteId)}
                     className={cn(
-                      "flex w-full items-start gap-2.5 rounded-lg border p-2.5 text-left transition-all hover:shadow-sm",
+                      "flex w-full items-start gap-2.5 rounded-lg border p-2.5 text-start transition-all hover:shadow-sm",
                       isHotspot
                         ? "border-rose-500/30 bg-rose-500/[0.04] hover:bg-rose-500/[0.08]"
                         : "border-border hover:bg-muted/50"
@@ -236,7 +236,7 @@ export function AlarmCorrelationPanel({ alarms, onSelectSite }: Props) {
                         {g.types.length > 3 && (
                           <span className="text-[10px] text-muted-foreground">+{formatNumber(g.types.length - 3, numLang)} more</span>
                         )}
-                        <span className="ml-auto flex items-center gap-0.5 text-[10px] text-muted-foreground">
+                        <span className="ms-auto flex items-center gap-0.5 text-[10px] text-muted-foreground">
                           <Clock className="h-2.5 w-2.5" />
                           {durationMin > 0 ? `${formatNumber(durationMin, numLang)}m span` : timeAgo(g.firstAt, numLang)}
                         </span>

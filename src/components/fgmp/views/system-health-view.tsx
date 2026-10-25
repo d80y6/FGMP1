@@ -737,7 +737,7 @@ function MemoryRow({
       </p>
       <p className="mt-1 font-mono text-sm font-semibold tabular-nums" dir="ltr">
         {value !== undefined ? formatNumber(value, numLang) : "—"}
-        <span className="ml-1 text-[10px] font-normal text-muted-foreground">{unit}</span>
+        <span className="ms-1 text-[10px] font-normal text-muted-foreground">{unit}</span>
       </p>
       {hint && (
         <p className="mt-0.5 text-[10px] text-muted-foreground">{hint}</p>

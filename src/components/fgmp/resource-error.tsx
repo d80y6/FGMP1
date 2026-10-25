@@ -58,7 +58,7 @@ export function ResourceError({ error, onRetry, description, className, compact 
         <p className="font-medium">
           {t("common.error")}
           {status && (
-            <span className="ml-1.5 font-mono text-xs tabular-nums" dir="ltr">
+            <span className="ms-1.5 font-mono text-xs tabular-nums" dir="ltr">
               {status}
             </span>
           )}

@@ -262,7 +262,7 @@ export function ApiKeysView() {
                     <TableHead className="hidden md:table-cell">{t("apiKeys.lastUsed")}</TableHead>
                     <TableHead className="hidden lg:table-cell">{t("common.created")}</TableHead>
                     <TableHead className="w-[90px]">{t("common.status")}</TableHead>
-                    <TableHead className="w-[60px] text-right">{t("common.actions")}</TableHead>
+                    <TableHead className="w-[60px] text-end">{t("common.actions")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -324,7 +324,7 @@ export function ApiKeysView() {
                           {fmtDateTime(k.createdAt, numLang).slice(0, 10)}
                         </TableCell>
                         <TableCell><StatusBadge status={status} /></TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-end">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="icon" className="h-7 w-7" aria-label={t("common.actions")}>
@@ -337,7 +337,7 @@ export function ApiKeysView() {
                                 onClick={() => setRevokeTarget(k)}
                                 className="text-rose-700 dark:text-rose-400 focus:text-rose-700 dark:focus:text-rose-400 focus:bg-rose-500/10"
                               >
-                                <Ban className="mr-2 h-3.5 w-3.5" />
+                                <Ban className="me-2 h-3.5 w-3.5" />
                                 Revoke
                               </DropdownMenuItem>
                             </DropdownMenuContent>
@@ -396,7 +396,7 @@ export function ApiKeysView() {
               disabled={revoking}
               className={cn("bg-rose-600 hover:bg-rose-700 focus-visible:ring-rose-500 text-white")}
             >
-              {revoking ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Ban className="mr-1 h-3.5 w-3.5" />}
+              {revoking ? <Loader2 className="me-1 h-3.5 w-3.5 animate-spin" /> : <Ban className="me-1 h-3.5 w-3.5" />}
               {t("apiKeys.revokeBtn")}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -561,7 +561,7 @@ function CreateKeyDialog({
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>Cancel</Button>
           <Button onClick={handleSubmit} disabled={submitting || !name.trim()}>
-            {submitting ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <KeyRound className="mr-1 h-3.5 w-3.5" />}
+            {submitting ? <Loader2 className="me-1 h-3.5 w-3.5 animate-spin" /> : <KeyRound className="me-1 h-3.5 w-3.5" />}
             {t("apiKeys.generate")}
           </Button>
         </DialogFooter>
@@ -639,7 +639,7 @@ function RevealKeyDialog({
               </div>
               <p className="text-[10px] text-muted-foreground">
                 {t("apiKeys.prefix")}: <code className="font-mono">{created.keyPrefix}</code> ·
-                {t("apiKeys.scopes")}: {created.scopes.split(",").map((s) => <span key={s} className="ml-1 font-mono">{s}</span>)}
+                {t("apiKeys.scopes")}: {created.scopes.split(",").map((s) => <span key={s} className="ms-1 font-mono">{s}</span>)}
                 {created.expiresAt && ` · ${t("apiKeys.expires")}: ${formatNumber(new Date(created.expiresAt).toLocaleDateString("en-GB"), numLang)}`}
               </p>
             </div>

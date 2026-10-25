@@ -134,7 +134,7 @@ export function RolesView() {
             <Table>
               <TableHeader className="sticky top-0 bg-card">
                 <TableRow>
-                  <TableHead className="sticky left-0 bg-card z-10">Role</TableHead>
+                  <TableHead className="sticky start-0 bg-card z-10">Role</TableHead>
                   {CAPABILITY_GROUPS.map((g) => (
                     <TableHead key={g.prefix} className="text-center w-[110px]">{g.label}</TableHead>
                   ))}
@@ -154,7 +154,7 @@ export function RolesView() {
                       )}
                       onClick={() => setSelectedRole(r)}
                     >
-                      <TableCell className="sticky left-0 bg-card z-10">
+                      <TableCell className="sticky start-0 bg-card z-10">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium">{roleLabel(r, numLang)}</span>
                           {isMine && (
@@ -164,7 +164,7 @@ export function RolesView() {
                           )}
                           {isWildcard && (
                             <Badge variant="outline" className="h-4 px-1 text-[10px] border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400">
-                              <Asterisk className="h-2.5 w-2.5 mr-0.5" />WILDCARD
+                              <Asterisk className="h-2.5 w-2.5 me-0.5" />WILDCARD
                             </Badge>
                           )}
                         </div>
@@ -214,7 +214,7 @@ export function RolesView() {
             <span className="text-muted-foreground/30">—</span>
             {t("roles.notGranted")}
           </span>
-          <span className="ml-auto">
+          <span className="ms-auto">
             Click a row to inspect that role&apos;s full capability list below.
           </span>
         </CardContent>
@@ -248,7 +248,7 @@ function RoleDetailPanel({
             )}
             {isWildcard && (
               <Badge variant="outline" className="text-[10px] border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400">
-                <Asterisk className="h-2.5 w-2.5 mr-0.5" />WILDCARD
+                <Asterisk className="h-2.5 w-2.5 me-0.5" />WILDCARD
               </Badge>
             )}
           </CardTitle>

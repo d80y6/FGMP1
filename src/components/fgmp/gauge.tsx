@@ -67,7 +67,7 @@ export function BarGauge({ value, className, showLabel }: BarGaugeProps) {
       <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
         <div className={cn("h-full rounded-full transition-all duration-500", color)} style={{ width: `${v}%` }} />
       </div>
-      {showLabel && <span className="w-9 text-right text-xs font-medium tabular-nums">{Math.round(v)}%</span>}
+      {showLabel && <span className="w-9 text-end text-xs font-medium tabular-nums">{Math.round(v)}%</span>}
     </div>
   );
 }

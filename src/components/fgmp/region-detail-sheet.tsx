@@ -350,10 +350,10 @@ export function RegionDetailSheet({ region, onOpenChange }: RegionDetailSheetPro
             {data && (
               <Badge
                 variant="outline"
-                className={cn("ml-1 h-6 px-2 text-xs font-bold tabular-nums", scoreBadgeClass(data.score))}
+                className={cn("ms-1 h-6 px-2 text-xs font-bold tabular-nums", scoreBadgeClass(data.score))}
                 title={t("region.scoreTitle")}
               >
-                <ShieldCheck className="mr-1 h-3 w-3" />
+                <ShieldCheck className="me-1 h-3 w-3" />
                 {data.score}
               </Badge>
             )}
@@ -524,17 +524,17 @@ export function RegionDetailSheet({ region, onOpenChange }: RegionDetailSheetPro
                     </SectionTitle>
                     <Badge variant="outline" className="text-[10px]">{data.total} {t("region.total")}</Badge>
                   </div>
-                  <ScrollArea className="h-[280px] pr-2">
+                  <ScrollArea className="h-[280px] pe-2">
                     <Table>
                       <TableHeader>
                         <TableRow className="[&_th]:h-7 [&_th]:py-1 [&_th]:text-[10px] [&_th]:uppercase [&_th]:tracking-wider [&_th]:text-muted-foreground">
                           <TableHead>{t("region.code")}</TableHead>
                           <TableHead>{t("region.name")}</TableHead>
                           <TableHead>{t("region.status")}</TableHead>
-                          <TableHead className="text-right">{t("region.health")}</TableHead>
-                          <TableHead className="text-right">{t("region.alarms")}</TableHead>
-                          <TableHead className="text-right">{t("region.fuel")}</TableHead>
-                          <TableHead className="text-right">{t("region.gen")}</TableHead>
+                          <TableHead className="text-end">{t("region.health")}</TableHead>
+                          <TableHead className="text-end">{t("region.alarms")}</TableHead>
+                          <TableHead className="text-end">{t("region.fuel")}</TableHead>
+                          <TableHead className="text-end">{t("region.gen")}</TableHead>
                           <TableHead className="w-6"></TableHead>
                         </TableRow>
                       </TableHeader>
@@ -548,23 +548,23 @@ export function RegionDetailSheet({ region, onOpenChange }: RegionDetailSheetPro
                             <TableCell className="font-mono text-[10px] text-muted-foreground">{site.code}</TableCell>
                             <TableCell className="max-w-[140px] truncate font-medium">{site.name}</TableCell>
                             <TableCell><StatusBadge value={site.status} className="h-5 text-[10px]" /></TableCell>
-                            <TableCell className="text-right">
+                            <TableCell className="text-end">
                               <span className={cn("font-bold tabular-nums", scoreTextClass(health))}>{health}%</span>
                             </TableCell>
-                            <TableCell className="text-right">
+                            <TableCell className="text-end">
                               {alarms > 0 ? (
                                 <span className="font-semibold text-rose-500">{alarms}</span>
                               ) : (
                                 <span className="text-muted-foreground">—</span>
                               )}
                             </TableCell>
-                            <TableCell className="text-right">
+                            <TableCell className="text-end">
                               <span className={cn(
                                 "font-semibold tabular-nums",
                                 fuelPct < 12 ? "text-rose-500" : fuelPct < 25 ? "text-amber-500" : "text-emerald-500",
                               )}>{fuelPct.toFixed(0)}%</span>
                             </TableCell>
-                            <TableCell className="text-right text-[10px] text-muted-foreground">{genStatus}</TableCell>
+                            <TableCell className="text-end text-[10px] text-muted-foreground">{genStatus}</TableCell>
                             <TableCell className="text-muted-foreground"><ChevronRight className="h-3 w-3" /></TableCell>
                           </TableRow>
                         ))}
@@ -579,7 +579,7 @@ export function RegionDetailSheet({ region, onOpenChange }: RegionDetailSheetPro
                       onClick={() => { setView("sites"); onOpenChange(false); }}
                     >
                       {t("region.viewAllSites")} {data.total} {t("region.sites")}
-                      <ChevronRight className="ml-1 h-3 w-3" />
+                      <ChevronRight className="ms-1 h-3 w-3" />
                     </Button>
                   )}
                 </div>
@@ -596,7 +596,7 @@ export function RegionDetailSheet({ region, onOpenChange }: RegionDetailSheetPro
                   </div>
                   {data.recentAlarms.length === 0 ? (
                     <div className="flex items-center justify-center py-6 text-center text-xs text-muted-foreground">
-                      <ShieldCheck className="mr-1.5 h-4 w-4 text-emerald-500" />
+                      <ShieldCheck className="me-1.5 h-4 w-4 text-emerald-500" />
                       {t("region.noActiveAlarmsInRegion")}
                     </div>
                   ) : (
@@ -606,7 +606,7 @@ export function RegionDetailSheet({ region, onOpenChange }: RegionDetailSheetPro
                           key={a.id}
                           onClick={() => handleSiteClick(a.siteId)}
                           className={cn(
-                            "flex w-full items-start gap-2 rounded-md border p-2 text-left transition-colors hover:bg-muted/40",
+                            "flex w-full items-start gap-2 rounded-md border p-2 text-start transition-colors hover:bg-muted/40",
                             a.severity === "L3" ? "border-rose-500/20 bg-rose-500/[0.03]" :
                             a.severity === "L2" ? "border-amber-500/20 bg-amber-500/[0.02]" :
                             "border-sky-500/20 bg-sky-500/[0.02]",
@@ -639,7 +639,7 @@ export function RegionDetailSheet({ region, onOpenChange }: RegionDetailSheetPro
                     onClick={() => { setView("alarms"); onOpenChange(false); }}
                   >
                     {t("region.viewAllAlarms")}
-                    <ChevronRight className="ml-1 h-3 w-3" />
+                    <ChevronRight className="ms-1 h-3 w-3" />
                   </Button>
                 </div>
               </section>

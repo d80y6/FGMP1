@@ -49,7 +49,7 @@ export function KeyboardHelpDialog({ open, onOpenChange }: Props) {
           </DialogDescription>
         </DialogHeader>
         <ScrollArea className="max-h-[60vh]">
-          <div className="space-y-4 pr-2">
+          <div className="space-y-4 pe-2">
             {orderedEntries.map(([category, shortcuts]) => (
               <div key={category}>
                 <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -69,7 +69,7 @@ export function KeyboardHelpDialog({ open, onOpenChange }: Props) {
             ))}
             <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
               <p className="text-[11px] leading-relaxed text-muted-foreground">
-                <Badge variant="outline" className="mr-1.5 h-4 px-1 text-[10px] border-emerald-500/30 text-emerald-700 dark:text-emerald-400">
+                <Badge variant="outline" className="me-1.5 h-4 px-1 text-[10px] border-emerald-500/30 text-emerald-700 dark:text-emerald-400">
                   {t("keyboard.tip")}
                 </Badge>
                 {t("keyboard.gPrefixTip")}

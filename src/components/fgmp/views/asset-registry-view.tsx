@@ -200,23 +200,23 @@ export function AssetRegistryView() {
       <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
         <TabsList className="grid w-full grid-cols-2 sm:grid-cols-5 h-auto">
           <TabsTrigger value="tanks" className="text-xs">
-            <Fuel className="mr-1.5 h-3.5 w-3.5" />
+            <Fuel className="me-1.5 h-3.5 w-3.5" />
             {t("footer.tanks")}
           </TabsTrigger>
           <TabsTrigger value="generators" className="text-xs">
-            <Zap className="mr-1.5 h-3.5 w-3.5" />
+            <Zap className="me-1.5 h-3.5 w-3.5" />
             {t("footer.generators")}
           </TabsTrigger>
           <TabsTrigger value="batteries" className="text-xs">
-            <BatteryCharging className="mr-1.5 h-3.5 w-3.5" />
+            <BatteryCharging className="me-1.5 h-3.5 w-3.5" />
             {t("batteries.banks")}
           </TabsTrigger>
           <TabsTrigger value="iot" className="text-xs">
-            <Cpu className="mr-1.5 h-3.5 w-3.5" />
+            <Cpu className="me-1.5 h-3.5 w-3.5" />
             {t("nav.iot")}
           </TabsTrigger>
           <TabsTrigger value="dispensers" className="text-xs">
-            <Droplets className="mr-1.5 h-3.5 w-3.5" />
+            <Droplets className="me-1.5 h-3.5 w-3.5" />
             {t("nav.dispensers")}
           </TabsTrigger>
         </TabsList>
@@ -296,7 +296,7 @@ function RowActions({ onEdit, onDelete, disabled }: {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-40">
         <DropdownMenuItem onClick={onEdit}>
-          <Pencil className="mr-2 h-3.5 w-3.5" />
+          <Pencil className="me-2 h-3.5 w-3.5" />
           {t("common.edit")}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
@@ -304,7 +304,7 @@ function RowActions({ onEdit, onDelete, disabled }: {
           onClick={onDelete}
           className="text-rose-700 dark:text-rose-400 focus:text-rose-700 focus:bg-rose-50 dark:focus:bg-rose-950/40"
         >
-          <Trash2 className="mr-2 h-3.5 w-3.5" />
+          <Trash2 className="me-2 h-3.5 w-3.5" />
           {t("common.delete")}
         </DropdownMenuItem>
       </DropdownMenuContent>
@@ -397,11 +397,11 @@ function TanksTab({ sites, isAdmin, numLang }: {
         </CardTitle>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute start-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               value={q} onChange={(e) => setQ(e.target.value)}
               placeholder={t("common.search")}
-              className="h-9 w-[200px] pl-8"
+              className="h-9 w-[200px] ps-8"
             />
           </div>
           <Select label={t("common.status")} value={statusFilter} onValueChange={setStatusFilter}>
@@ -453,7 +453,7 @@ function TanksTab({ sites, isAdmin, numLang }: {
                   <TableHead className="w-[100px]">Fuel</TableHead>
                   <TableHead className="w-[140px]">{t("assets.capacityCurrent")}</TableHead>
                   <TableHead className="w-[90px]">{t("common.status")}</TableHead>
-                  {isAdmin && <TableHead className="w-[60px] text-right">{t("common.actions")}</TableHead>}
+                  {isAdmin && <TableHead className="w-[60px] text-end">{t("common.actions")}</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -510,7 +510,7 @@ function TanksTab({ sites, isAdmin, numLang }: {
                         <StatusBadge value={tk.liveStatus ?? tk.status} className="h-5 text-[10px]" />
                       </TableCell>
                       {isAdmin && (
-                        <TableCell className="text-right">
+                        <TableCell className="text-end">
                           <RowActions
                             onEdit={() => setEditTarget(tk)}
                             onDelete={() => setDeleteTarget(tk)}
@@ -781,11 +781,11 @@ function GeneratorsTab({ sites, isAdmin, numLang }: {
         </CardTitle>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute start-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               value={q} onChange={(e) => setQ(e.target.value)}
               placeholder={t("generators.search")}
-              className="h-9 w-[200px] pl-8"
+              className="h-9 w-[200px] ps-8"
             />
           </div>
           <Select label={t("common.status")} value={statusFilter} onValueChange={setStatusFilter}>
@@ -827,7 +827,7 @@ function GeneratorsTab({ sites, isAdmin, numLang }: {
                   <TableHead className="w-[100px]">{t("generators.load")}</TableHead>
                   <TableHead className="w-[110px]">{t("generators.runtime")}</TableHead>
                   <TableHead className="w-[90px]">{t("common.status")}</TableHead>
-                  {isAdmin && <TableHead className="w-[60px] text-right">{t("common.actions")}</TableHead>}
+                  {isAdmin && <TableHead className="w-[60px] text-end">{t("common.actions")}</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -857,7 +857,7 @@ function GeneratorsTab({ sites, isAdmin, numLang }: {
                         <StatusBadge value={g.liveStatus ?? g.status} className="h-5 text-[10px]" />
                       </TableCell>
                       {isAdmin && (
-                        <TableCell className="text-right">
+                        <TableCell className="text-end">
                           <RowActions
                             onEdit={() => setEditTarget(g)}
                             onDelete={() => setDeleteTarget(g)}
@@ -1118,11 +1118,11 @@ function BatteriesTab({ sites, isAdmin, numLang }: {
         </CardTitle>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute start-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               value={q} onChange={(e) => setQ(e.target.value)}
               placeholder={t("batteries.search")}
-              className="h-9 w-[200px] pl-8"
+              className="h-9 w-[200px] ps-8"
             />
           </div>
           <Select label={t("common.status")} value={statusFilter} onValueChange={setStatusFilter}>
@@ -1164,7 +1164,7 @@ function BatteriesTab({ sites, isAdmin, numLang }: {
                   <TableHead className="w-[110px]">{t("batteries.voltage")}</TableHead>
                   <TableHead className="w-[90px]">SOC</TableHead>
                   <TableHead className="w-[90px]">{t("common.status")}</TableHead>
-                  {isAdmin && <TableHead className="w-[60px] text-right">{t("common.actions")}</TableHead>}
+                  {isAdmin && <TableHead className="w-[60px] text-end">{t("common.actions")}</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1204,7 +1204,7 @@ function BatteriesTab({ sites, isAdmin, numLang }: {
                         <StatusBadge value={b.liveStatus ?? b.status} className="h-5 text-[10px]" />
                       </TableCell>
                       {isAdmin && (
-                        <TableCell className="text-right">
+                        <TableCell className="text-end">
                           <RowActions
                             onEdit={() => setEditTarget(b)}
                             onDelete={() => setDeleteTarget(b)}
@@ -1464,11 +1464,11 @@ function IotTab({ sites, isAdmin, numLang }: {
         </CardTitle>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute start-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               value={q} onChange={(e) => setQ(e.target.value)}
               placeholder={t("iot.search")}
-              className="h-9 w-[180px] pl-8"
+              className="h-9 w-[180px] ps-8"
             />
           </div>
           <Select label={t("iot.protocol")} value={protocol} onValueChange={setProtocol}>
@@ -1532,7 +1532,7 @@ function IotTab({ sites, isAdmin, numLang }: {
                   <TableHead className="w-[110px]">{t("iot.protocol")}</TableHead>
                   <TableHead className="hidden lg:table-cell w-[90px]">{t("iot.firmware")}</TableHead>
                   <TableHead className="w-[90px]">{t("common.status")}</TableHead>
-                  {isAdmin && <TableHead className="w-[60px] text-right">{t("common.actions")}</TableHead>}
+                  {isAdmin && <TableHead className="w-[60px] text-end">{t("common.actions")}</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1553,7 +1553,7 @@ function IotTab({ sites, isAdmin, numLang }: {
                       <StatusBadge value={d.liveStatus ?? d.status} className="h-5 text-[10px]" />
                     </TableCell>
                     {isAdmin && (
-                      <TableCell className="text-right">
+                      <TableCell className="text-end">
                         <RowActions
                           onEdit={() => setEditTarget(d)}
                           onDelete={() => setDeleteTarget(d)}
@@ -1907,11 +1907,11 @@ function DispensersTab({ sites, isAdmin, numLang }: {
         </CardTitle>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute start-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               value={q} onChange={(e) => setQ(e.target.value)}
               placeholder={t("dispenser.search")}
-              className="h-9 w-[200px] pl-8"
+              className="h-9 w-[200px] ps-8"
             />
           </div>
           <Select label={t("common.status")} value={statusFilter} onValueChange={setStatusFilter}>
@@ -1967,7 +1967,7 @@ function DispensersTab({ sites, isAdmin, numLang }: {
                   <TableHead className="w-[100px]">{t("dispenser.colFuelType")}</TableHead>
                   <TableHead className="w-[120px]">{t("dispenser.colTotalizer")}</TableHead>
                   <TableHead className="w-[90px]">{t("common.status")}</TableHead>
-                  {isAdmin && <TableHead className="w-[60px] text-right">{t("common.actions")}</TableHead>}
+                  {isAdmin && <TableHead className="w-[60px] text-end">{t("common.actions")}</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1996,7 +1996,7 @@ function DispensersTab({ sites, isAdmin, numLang }: {
                         <StatusBadge value={d.liveStatus ?? d.status} className="h-5 text-[10px]" />
                       </TableCell>
                       {isAdmin && (
-                        <TableCell className="text-right">
+                        <TableCell className="text-end">
                           <RowActions
                             onEdit={() => setEditTarget(d)}
                             onDelete={() => setDeleteTarget(d)}

@@ -280,11 +280,11 @@ export function AlarmSeverityHeatmap({
               value={stats.longestQuiet > 0 ? `${formatNumber(stats.longestQuiet, lang)}h` : "—"}
             />
             <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-700 dark:text-amber-400">
-              <Flame className="mr-1 inline h-3 w-3 align-text-bottom" />
+              <Flame className="me-1 inline h-3 w-3 align-text-bottom" />
               <span className="font-semibold">{t("heatmap.peak")}:</span>{" "}
               <span className="tabular-nums">{peakLabel}</span>
               {stats.peakCount > 0 && (
-                <span className="ml-1 tabular-nums">· {formatNumber(stats.peakCount, lang)}</span>
+                <span className="ms-1 tabular-nums">· {formatNumber(stats.peakCount, lang)}</span>
               )}
             </div>
             {selectedCell && onCellClick && (
@@ -312,12 +312,15 @@ export function AlarmSeverityHeatmap({
         </div>
       </CardHeader>
       <CardContent className="p-3">
-        <div className="overflow-x-auto pb-2">
+        {/* Same reasoning as the maintenance Gantt: a 24-hour grid is a time
+            axis, so it is pinned LTR rather than mirrored — the sticky y-axis
+            column and the hour columns must agree on which edge is "first". */}
+        <div className="overflow-x-auto pb-2" dir="ltr">
           <div className="min-w-[640px]">
             {/* Heatmap grid: sticky-left y-axis label column + 24 hour columns */}
             <div className="flex">
               {/* Y-axis label column */}
-              <div className="sticky left-0 z-10 w-[78px] shrink-0 bg-card/85 pr-2 backdrop-blur">
+              <div className="sticky left-0 z-10 w-[78px] shrink-0 bg-card/85 pe-2 backdrop-blur">
                 {/* spacer matching x-axis label row height */}
                 <div className="h-[18px]" />
                 {SEVERITIES.map((s) => {
@@ -330,7 +333,7 @@ export function AlarmSeverityHeatmap({
                       <span className={cn("h-2 w-2 shrink-0 rounded-full", meta.dot)} />
                       <span className="text-[10px] font-medium">{meta.short}</span>
                       <span className="text-[10px] text-muted-foreground">{t(meta.fullKey)}</span>
-                      <span className="ml-auto text-[10px] tabular-nums text-muted-foreground">
+                      <span className="ms-auto text-[10px] tabular-nums text-muted-foreground">
                         {formatNumber(stats.totals[s], lang)}
                       </span>
                     </div>
@@ -427,7 +430,7 @@ export function AlarmSeverityHeatmap({
             </div>
 
             {/* Legend */}
-            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 pl-[78px] text-[10px] text-muted-foreground">
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 ps-[78px] text-[10px] text-muted-foreground">
               <span className="font-semibold text-foreground/80">{t("heatmap.intensity")}:</span>
               {[
                 { range: "0", cls: SEV_META.L3.tints[0] },
@@ -441,7 +444,7 @@ export function AlarmSeverityHeatmap({
                   <span>{formatNumber(item.range, lang)}</span>
                 </div>
               ))}
-              <span className="ml-2 italic">
+              <span className="ms-2 italic">
                 {t("heatmap.columnsNote")}
               </span>
             </div>

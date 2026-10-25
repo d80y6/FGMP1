@@ -20,8 +20,8 @@ function FactorBar({ label, value, weight, tone }: { label: string; value: numbe
       <div className="h-1.5 w-20 overflow-hidden rounded-full bg-primary-foreground/15">
         <div className={cn("h-full rounded-full", tone)} style={{ width: `${Math.min(100, value)}%` }} />
       </div>
-      <span className="w-8 shrink-0 text-right text-[10px] font-semibold tabular-nums">{Math.round(value)}</span>
-      <span className="w-8 shrink-0 text-right text-[10px] text-primary-foreground/50">{Math.round(weight * 100)}%</span>
+      <span className="w-8 shrink-0 text-end text-[10px] font-semibold tabular-nums">{Math.round(value)}</span>
+      <span className="w-8 shrink-0 text-end text-[10px] text-primary-foreground/50">{Math.round(weight * 100)}%</span>
     </div>
   );
 }
@@ -105,7 +105,7 @@ export function RegionLeaderboard({ regions, totalSites, onSelectRegion }: Regio
         </CardTitle>
         <div className="flex items-center gap-2">
           <Badge variant="outline" className="text-[10px]">
-            <TrendingUp className="mr-1 h-3 w-3" />
+            <TrendingUp className="me-1 h-3 w-3" />
             {ranked.length} regions
           </Badge>
           <Badge
@@ -155,7 +155,7 @@ export function RegionLeaderboard({ regions, totalSites, onSelectRegion }: Regio
                       {isLeader && (
                         <Badge
                           className={cn(
-                            "ml-1 h-4 shrink-0 animate-pulse-soft px-1.5 text-[10px] font-bold uppercase tracking-wide",
+                            "ms-1 h-4 shrink-0 animate-pulse-soft px-1.5 text-[10px] font-bold uppercase tracking-wide",
                             "border border-amber-500/50 bg-amber-500/15 text-amber-700 dark:text-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.5)]",
                           )}
                         >
@@ -177,7 +177,7 @@ export function RegionLeaderboard({ regions, totalSites, onSelectRegion }: Regio
                       </div>
                       <span
                         className={cn(
-                          "w-9 text-right text-sm font-bold tabular-nums",
+                          "w-9 text-end text-sm font-bold tabular-nums",
                           scoreTextClass(r.score),
                         )}
                       >
@@ -198,7 +198,7 @@ export function RegionLeaderboard({ regions, totalSites, onSelectRegion }: Regio
                       </div>
                       <span
                         className={cn(
-                          "w-8 text-right text-sm font-bold tabular-nums",
+                          "w-8 text-end text-sm font-bold tabular-nums",
                           scoreTextClass(r.score),
                         )}
                       >
@@ -208,7 +208,7 @@ export function RegionLeaderboard({ regions, totalSites, onSelectRegion }: Regio
                   </div>
 
                   {/* Stat chips row — wraps on mobile, inline on desktop */}
-                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5 pl-9 sm:pl-10">
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5 ps-9 sm:ps-10">
                     <StatChip
                       icon={<Building2 className="h-3 w-3 text-emerald-500" />}
                       label={t("kpi.sites")}
@@ -235,7 +235,7 @@ export function RegionLeaderboard({ regions, totalSites, onSelectRegion }: Regio
 
                   {/* Hover-revealed drill-down chevron — only when row is clickable */}
                   {onSelectRegion && (
-                    <ChevronRight className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
+                    <ChevronRight className="pointer-events-none absolute end-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
                   )}
                 </div>
               </TooltipTrigger>

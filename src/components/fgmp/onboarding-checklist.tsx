@@ -411,7 +411,7 @@ export function OnboardingChecklist() {
                   aria-label={`${t("onboarding.go")}: ${item.label}`}
                 >
                   {t("onboarding.go")}
-                  <ArrowRight className="ml-1 h-3 w-3 rtl:rotate-180" />
+                  <ArrowRight className="ms-1 h-3 w-3 rtl:rotate-180" />
                 </Button>
               </div>
             </li>

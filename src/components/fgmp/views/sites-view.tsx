@@ -172,11 +172,11 @@ export function SitesView() {
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-[220px] flex-1">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("sites.searchPlaceholder")} className="pl-8" />
+          <Search className="absolute start-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("sites.searchPlaceholder")} className="ps-8" />
         </div>
         <Select label={t("sites.region")} value={region} onValueChange={setRegion}>
-          <SelectTrigger className="w-[180px]"><Filter className="mr-1.5 h-3.5 w-3.5" /><SelectValue placeholder={t("sites.regionPlaceholder")} /></SelectTrigger>
+          <SelectTrigger className="w-[180px]"><Filter className="me-1.5 h-3.5 w-3.5" /><SelectValue placeholder={t("sites.regionPlaceholder")} /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">{t("sites.filterByRegion")}</SelectItem>
             {snapshot?.regions.map((r) => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
@@ -195,7 +195,7 @@ export function SitesView() {
         <span className="text-xs text-muted-foreground">{formatNumber(filtered.length, numLang)} {t("common.of")} {formatNumber(snapshot?.sites.length ?? 0, numLang)} {t("sites.sitesCount")}</span>
         {isAdmin && (
           <Button onClick={openCreate} size="sm" className="h-9 ms-auto">
-            <Plus className="mr-1.5 h-4 w-4" />
+            <Plus className="me-1.5 h-4 w-4" />
             {t("sites.add")}
           </Button>
         )}
@@ -223,7 +223,7 @@ export function SitesView() {
           <CardContent className="p-3">
             <p className="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t("sites.geographicHierarchy")}</p>
             <ScrollArea className="h-[360px]">
-              <div className="space-y-1 pr-2">
+              <div className="space-y-1 pe-2">
                 {snapshot?.regions.map((r) => {
                   const regionSites = snapshot.sites.filter((s) => s.regionId === r.id);
                   const online = regionSites.filter((s) => s.status === "ONLINE").length;
@@ -237,11 +237,11 @@ export function SitesView() {
                         const govSites = regionSites.filter((s) => s.governorateId === g.id);
                         if (!govSites.length) return null;
                         return (
-                          <div key={g.id} className="ml-3 border-l pl-2">
+                          <div key={g.id} className="ms-3 border-s ps-2">
                             <p className="px-2 py-0.5 text-[11px] font-medium text-muted-foreground">{g.name} <span className="text-[10px]">({formatNumber(govSites.length, numLang)})</span></p>
                             {govSites.map((s) => (
                               <div key={s.id} className={cn("group flex w-full items-center justify-between rounded px-1 text-xs hover:bg-muted", selectedSiteId === s.id && "bg-muted")}>
-                                <button onClick={() => openSite(s.id)} className="flex min-w-0 flex-1 items-center justify-between gap-1 px-1 py-1 text-left">
+                                <button onClick={() => openSite(s.id)} className="flex min-w-0 flex-1 items-center justify-between gap-1 px-1 py-1 text-start">
                                   <span className="truncate">{s.name}</span>
                                   <StatusBadge value={s.status} className="h-4 px-1 text-[10px]" />
                                 </button>
@@ -274,8 +274,8 @@ export function SitesView() {
                 <TableHead className="hidden sm:table-cell">{t("sites.criticality")}</TableHead>
                 <TableHead className="w-[80px]">{t("sites.health")}</TableHead>
                 <TableHead>{t("sites.status")}</TableHead>
-                <TableHead className="hidden md:table-cell text-right">{t("sites.load")}</TableHead>
-                {isAdmin && <TableHead className="w-[60px] text-right">{t("sites.actions")}</TableHead>}
+                <TableHead className="hidden md:table-cell text-end">{t("sites.load")}</TableHead>
+                {isAdmin && <TableHead className="w-[60px] text-end">{t("sites.actions")}</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -335,7 +335,7 @@ export function SitesView() {
                       <span
                         aria-hidden="true"
                         className={cn(
-                          "pointer-events-none absolute inset-y-0 -left-2 w-[2px] opacity-0 transition-opacity duration-150 group-hover:opacity-100 motion-reduce:transition-none",
+                          "pointer-events-none absolute inset-y-0 -start-2 w-[2px] opacity-0 transition-opacity duration-150 group-hover:opacity-100 motion-reduce:transition-none",
                           accentColor,
                         )}
                       />
@@ -356,9 +356,9 @@ export function SitesView() {
                       />
                     </TableCell>
                     <TableCell><StatusBadge value={s.status} className="h-5 text-[10px]" /></TableCell>
-                    <TableCell className="hidden md:table-cell text-right text-xs tabular-nums">{formatNumber(s.loadKw, numLang)} kW</TableCell>
+                    <TableCell className="hidden md:table-cell text-end text-xs tabular-nums">{formatNumber(s.loadKw, numLang)} kW</TableCell>
                     {isAdmin && (
-                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                      <TableCell className="text-end" onClick={(e) => e.stopPropagation()}>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon" className="h-7 w-7" aria-label={t("sites.actions")}>
@@ -369,14 +369,14 @@ export function SitesView() {
                             <DropdownMenuLabel className="font-mono text-[10px] text-muted-foreground">{s.code}</DropdownMenuLabel>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem onClick={() => openEdit(s)}>
-                              <Pencil className="mr-2 h-3.5 w-3.5" />
+                              <Pencil className="me-2 h-3.5 w-3.5" />
                               {t("common.edit")}
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               className="text-destructive focus:text-destructive"
                               onClick={() => setDeleteTarget(s)}
                             >
-                              <Trash2 className="mr-2 h-3.5 w-3.5" />
+                              <Trash2 className="me-2 h-3.5 w-3.5" />
                               {t("common.delete")}
                             </DropdownMenuItem>
                           </DropdownMenuContent>
@@ -459,7 +459,7 @@ export function SitesView() {
               disabled={deleting}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {deleting && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+              {deleting && <Loader2 className="me-1.5 h-4 w-4 animate-spin" />}
               {t("sites.permDelete")}
             </AlertDialogAction>
           </AlertDialogFooter>

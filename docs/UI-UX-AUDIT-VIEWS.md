@@ -102,6 +102,15 @@ load; a sentence reads as an empty fleet.
   again in `dir="rtl"` — asserting the direction actually applied, that Arabic is on screen, and re-checking
   overflow and axe in the mirrored layout. Its first run is the CI job, and until that run is green the RTL
   column of this audit stays unverified.
+* **The Arabic layout is not a mirrored layout — it is the English one turned around.** The tree contained no
+  logical utilities and ~410 physical ones (`ml`/`mr`/`pl`/`pr`, `text-left`/`text-right`, `border-l`/`r`), so
+  when `dir` flips the icon gap moves to the outside of the row, a numeric column aligns to the edge its column
+  no longer starts from, and a sticky first column pins to the physical left while its rows begin on the right.
+  None of that is visible in English and none of it breaks an axe rule, which is why it survived every sweep. It
+  is now logical throughout and guarded (`rtl-logical-classes.test.ts`, D-27). The exceptions are deliberate:
+  decorative glows and `left-[50%]` centring are not direction, `ui/sheet.tsx` is anchored to a physical edge
+  together with its slide animation, and the two time-axis grids (Gantt, 24-hour heatmap) are pinned `dir="ltr"`
+  because time does not mirror.
 * **Density is a product decision, deliberately not overridden.** 10px and 11px type remain throughout
   (682 occurrences). The 8px/9px band — genuinely unreadable — was raised to 10px (D-10) and is now
   enforced; the rest is a judgement about the operator's real screen that this audit cannot make.

@@ -155,12 +155,12 @@ export function TenantsView() {
           </CardTitle>
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute start-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder={t("tenants.searchPlaceholder")}
-                className="h-9 w-[200px] pl-8"
+                className="h-9 w-[200px] ps-8"
               />
             </div>
             <CountrySelect value={countryFilter} onChange={setCountryFilter} countries={countries} />
@@ -180,7 +180,7 @@ export function TenantsView() {
                     <TableHead className="w-[80px] text-center">Users</TableHead>
                     <TableHead className="w-[80px] text-center">Sites</TableHead>
                     <TableHead className="hidden lg:table-cell w-[150px]">Created</TableHead>
-                    <TableHead className="w-[60px] text-right">{t("users.actions")}</TableHead>
+                    <TableHead className="w-[60px] text-end">{t("users.actions")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -225,7 +225,7 @@ export function TenantsView() {
                       <TableCell className="hidden lg:table-cell text-[10px] text-muted-foreground" dir="ltr">
                         {fmtDateTime(tnt.createdAt, numLang).slice(0, 10)}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-end">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon" className="h-7 w-7" aria-label={t("common.moreActions")}>
@@ -234,15 +234,15 @@ export function TenantsView() {
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="w-40">
                             <DropdownMenuItem onClick={() => setEditTarget(tnt)}>
-                              <Pencil className="mr-2 h-3.5 w-3.5" />
+                              <Pencil className="me-2 h-3.5 w-3.5" />
                               {t("common.edit")}
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => setCreateAdminTarget(tnt)}>
-                              <UserPlus className="mr-2 h-3.5 w-3.5" />
+                              <UserPlus className="me-2 h-3.5 w-3.5" />
                               {t("tenants.createAdmin")}
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => setSupportTarget(tnt)}>
-                              <ShieldAlert className="mr-2 h-3.5 w-3.5" />
+                              <ShieldAlert className="me-2 h-3.5 w-3.5" />
                               {t("tenants.supportAccess")}
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
@@ -250,7 +250,7 @@ export function TenantsView() {
                               className="text-rose-700 dark:text-rose-400 focus:text-rose-700"
                               onClick={() => setDeleteTarget(tnt)}
                             >
-                              <Trash2 className="mr-2 h-3.5 w-3.5" />
+                              <Trash2 className="me-2 h-3.5 w-3.5" />
                               {t("common.delete")}
                             </DropdownMenuItem>
                           </DropdownMenuContent>
@@ -702,10 +702,10 @@ function CreateTenantAdminDialog({
             {target && (
               <span className="mt-1 block">
                 <span className="text-muted-foreground">{t("users.tenant")}: </span>
-                <Badge variant="outline" className="ml-1 h-4 px-1 text-[10px]">
+                <Badge variant="outline" className="ms-1 h-4 px-1 text-[10px]">
                   {target.name}
                 </Badge>
-                <span className="ml-1.5 font-mono text-[10px] text-muted-foreground" dir="ltr">{target.code}</span>
+                <span className="ms-1.5 font-mono text-[10px] text-muted-foreground" dir="ltr">{target.code}</span>
               </span>
             )}
           </DialogDescription>

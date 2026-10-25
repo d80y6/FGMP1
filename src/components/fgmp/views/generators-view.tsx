@@ -79,8 +79,8 @@ export function GeneratorsView() {
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
             <CardTitle className="text-sm">{t("generators.fleet")} ({formatNumber(gens.length, numLang)})</CardTitle>
             <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("generators.search")} className="h-9 w-[220px] pl-8" />
+              <Search className="absolute start-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("generators.search")} className="h-9 w-[220px] ps-8" />
             </div>
           </CardHeader>
           <CardContent className="p-0">
@@ -88,7 +88,7 @@ export function GeneratorsView() {
               {gens.slice(0, 40).map((g) => (
                 <div key={g.id} className={cn("rounded-lg border p-3 transition-shadow hover:shadow-sm", g.status === "FAULT" && "border-rose-500/40 bg-rose-500/5", g.status === "RUNNING" && "border-emerald-500/20")}>
                   <div className="flex items-start justify-between">
-                    <button onClick={() => setDetailId(g.id)} className="min-w-0 text-left">
+                    <button onClick={() => setDetailId(g.id)} className="min-w-0 text-start">
                       <p className="truncate text-sm font-medium hover:underline">{g.label}</p>
                       <p className="truncate text-[10px] text-muted-foreground">{g.code} · {g.manufacturer} {g.model}</p>
                     </button>
@@ -101,16 +101,16 @@ export function GeneratorsView() {
                   </div>
                   <div className="mt-2 flex items-center gap-1">
                     <Button size="sm" variant="outline" className="h-6 flex-1 text-[10px]" disabled={g.status === "RUNNING"} onClick={() => doControl(g, "START")}>
-                      <Power className="mr-1 h-3 w-3 text-emerald-500" />{t("generators.start")}
+                      <Power className="me-1 h-3 w-3 text-emerald-500" />{t("generators.start")}
                     </Button>
                     <Button size="sm" variant="outline" className="h-6 flex-1 text-[10px]" disabled={g.status !== "RUNNING"} onClick={() => doControl(g, "STOP")}>
-                      <Power className="mr-1 h-3 w-3 text-amber-500" />{t("generators.stop")}
+                      <Power className="me-1 h-3 w-3 text-amber-500" />{t("generators.stop")}
                     </Button>
                     <Button size="sm" variant="outline" className="h-6 flex-1 text-[10px]" onClick={() => doControl(g, "RESET")}>
-                      <RotateCcw className="mr-1 h-3 w-3 text-sky-500" />{t("generators.reset")}
+                      <RotateCcw className="me-1 h-3 w-3 text-sky-500" />{t("generators.reset")}
                     </Button>
                     <Button size="sm" variant="outline" className="h-6 flex-1 text-[10px] border-rose-500/40 text-rose-700 dark:text-rose-400 hover:bg-rose-500/10" onClick={() => doControl(g, "EMERGENCY_STOP")}>
-                      <AlertOctagon className="mr-1 h-3 w-3" />{t("generators.eStop")}
+                      <AlertOctagon className="me-1 h-3 w-3" />{t("generators.eStop")}
                     </Button>
                   </div>
                 </div>
@@ -148,8 +148,8 @@ export function GeneratorsView() {
                   </div>
                   <Tabs defaultValue="temp">
                     <TabsList className="grid w-full grid-cols-2">
-                      <TabsTrigger value="temp" className="text-xs"><Thermometer className="mr-1 h-3 w-3" />{t("generators.temp")}</TabsTrigger>
-                      <TabsTrigger value="load" className="text-xs"><Zap className="mr-1 h-3 w-3" />{t("generators.load")}</TabsTrigger>
+                      <TabsTrigger value="temp" className="text-xs"><Thermometer className="me-1 h-3 w-3" />{t("generators.temp")}</TabsTrigger>
+                      <TabsTrigger value="load" className="text-xs"><Zap className="me-1 h-3 w-3" />{t("generators.load")}</TabsTrigger>
                     </TabsList>
                     <TabsContent value="temp" className="mt-2">
                       <ResponsiveContainer width="100%" height={120}>

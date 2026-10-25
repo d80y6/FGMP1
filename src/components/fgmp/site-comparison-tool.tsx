@@ -303,7 +303,7 @@ export function SiteComparisonTool() {
                 siteStatusTextClass(s.status)
               )}>
                 <span className="max-w-[160px] truncate">{s.name}</span>
-                <button onClick={() => removeSite(s.id)} className="ml-0.5 rounded-sm hover:bg-foreground/10">
+                <button onClick={() => removeSite(s.id)} className="ms-0.5 rounded-sm hover:bg-foreground/10">
                   <X className="h-3 w-3" />
                 </button>
               </div>
@@ -317,7 +317,7 @@ export function SiteComparisonTool() {
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b bg-muted/30">
-                  <th className="sticky left-0 z-10 bg-muted/30 p-2 text-left font-medium text-muted-foreground">
+                  <th className="sticky start-0 z-10 bg-muted/30 p-2 text-start font-medium text-muted-foreground">
                     Metric
                   </th>
                   {selectedSites.map((s, i) => (
@@ -336,7 +336,7 @@ export function SiteComparisonTool() {
                   const Icon = metric.icon;
                   return (
                     <tr key={metric.label} className="border-b last:border-0 hover:bg-muted/20">
-                      <td className="sticky left-0 z-10 bg-card p-2">
+                      <td className="sticky start-0 z-10 bg-card p-2">
                         <div className="flex items-center gap-1.5">
                           <Icon className="h-3 w-3 text-muted-foreground" />
                           <span className="font-medium">{metric.label}</span>
@@ -364,7 +364,7 @@ export function SiteComparisonTool() {
                 })}
                 {/* Summary row */}
                 <tr className="bg-muted/20 font-medium">
-                  <td className="sticky left-0 z-10 bg-muted/20 p-2">
+                  <td className="sticky start-0 z-10 bg-muted/20 p-2">
                     <div className="flex items-center gap-1.5">
                       <Trophy className="h-3 w-3 text-amber-500" />
                       <span>{t("comparison.bestCount")}</span>

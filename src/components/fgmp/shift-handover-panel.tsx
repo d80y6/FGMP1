@@ -226,7 +226,7 @@ export function ShiftHandoverPanel() {
         <div className="flex shrink-0 items-center gap-2">
           {canCreate && (
             <Button size="sm" className="h-7 text-xs" onClick={() => setComposerOpen(true)}>
-              <Plus className="mr-1 h-3.5 w-3.5" />
+              <Plus className="me-1 h-3.5 w-3.5" />
               {t("handover.new")}
             </Button>
           )}
@@ -253,7 +253,7 @@ export function ShiftHandoverPanel() {
                     className={cn(
                       "group relative rounded-lg border bg-background/40 transition-all duration-200",
                       "animate-slide-in-up motion-reduce:animate-none",
-                      n.status === "OPEN" ? "border-l-2 border-l-sky-500" : "border-l-2 border-l-transparent opacity-80",
+                      n.status === "OPEN" ? "border-s-2 border-l-sky-500" : "border-s-2 border-l-transparent opacity-80",
                       n.priority === "P1" && n.status === "OPEN" && "ring-1 ring-rose-500/20",
                     )}
                   >
@@ -272,7 +272,7 @@ export function ShiftHandoverPanel() {
                           : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400")}>
                         {n.status === "OPEN" ? t("handover.open") : t("handover.acknowledged")}
                       </span>
-                      <span className="ml-auto text-[10px] text-muted-foreground">
+                      <span className="ms-auto text-[10px] text-muted-foreground">
                         {timeAgo(n.createdAt, numLang)}
                       </span>
                     </div>
@@ -346,7 +346,7 @@ export function ShiftHandoverPanel() {
                           className="h-7 px-2 text-[11px]"
                           onClick={() => setExpandedId(isExpanded ? null : n.id)}
                         >
-                          {isExpanded ? <ChevronUp className="mr-1 h-3 w-3" /> : <ChevronDown className="mr-1 h-3 w-3" />}
+                          {isExpanded ? <ChevronUp className="me-1 h-3 w-3" /> : <ChevronDown className="me-1 h-3 w-3" />}
                           {isExpanded ? t("handover.collapse") : t("handover.acknowledge")}
                         </Button>
                       )}
@@ -359,7 +359,7 @@ export function ShiftHandoverPanel() {
                           {t("handover.acknowledgedBy")} {timeAgo(n.acknowledgedAt, numLang)}
                         </span>
                       )}
-                      <span className="ml-auto inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+                      <span className="ms-auto inline-flex items-center gap-1 text-[10px] text-muted-foreground">
                         <Clock className="h-3 w-3" />
                         {new Date(n.createdAt).toLocaleString(numLang === "ar" ? "ar" : "en-US", {
                           month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
@@ -407,7 +407,7 @@ export function ShiftHandoverPanel() {
                             {t("handover.cancel")}
                           </Button>
                           <Button size="sm" className="h-7 text-xs" onClick={() => handleAcknowledge(n.id)}>
-                            <Check className="mr-1 h-3.5 w-3.5" />
+                            <Check className="me-1 h-3.5 w-3.5" />
                             {t("handover.acknowledge")}
                           </Button>
                         </div>
@@ -541,7 +541,7 @@ function HandoverComposer({
               placeholder={t("handover.notesPlaceholder")}
               className="min-h-[120px] resize-y text-sm leading-relaxed"
             />
-            <p className="text-right font-mono text-[10px] tabular-nums text-muted-foreground">{notes.length}/4000</p>
+            <p className="text-end font-mono text-[10px] tabular-nums text-muted-foreground">{notes.length}/4000</p>
           </div>
 
           {/* Ongoing issues (optional) */}
@@ -560,11 +560,11 @@ function HandoverComposer({
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            <X className="mr-1 h-4 w-4" />
+            <X className="me-1 h-4 w-4" />
             {t("handover.cancel")}
           </Button>
           <Button onClick={handleSubmit} disabled={notesEmpty || submitting}>
-            <Plus className="mr-1 h-4 w-4" />
+            <Plus className="me-1 h-4 w-4" />
             {t("handover.submit")}
           </Button>
         </DialogFooter>

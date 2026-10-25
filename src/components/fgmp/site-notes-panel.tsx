@@ -154,12 +154,12 @@ export function SiteNotesPanel({
         <span className="text-sm font-semibold">{t("notes.title")}</span>
         <Badge
           variant="secondary"
-          className="ml-1 h-5 px-1.5 text-[10px] font-bold tabular-nums"
+          className="ms-1 h-5 px-1.5 text-[10px] font-bold tabular-nums"
         >
           {count} {count === 1 ? t("notes.note") : t("notes.notes")}
         </Badge>
         {readOnly && (
-          <span className="ml-auto text-[10px] uppercase tracking-wide text-muted-foreground">
+          <span className="ms-auto text-[10px] uppercase tracking-wide text-muted-foreground">
             {t("notes.readOnly")}
           </span>
         )}
@@ -196,7 +196,7 @@ export function SiteNotesPanel({
                   className="h-7 px-2 text-xs"
                   onClick={handleCancelEdit}
                 >
-                  <X className="mr-1 h-3 w-3" />
+                  <X className="me-1 h-3 w-3" />
                   {t("notes.cancel")}
                 </Button>
               )}
@@ -208,7 +208,7 @@ export function SiteNotesPanel({
                   className="h-7 px-2 text-xs text-muted-foreground"
                   onClick={() => setDraft("")}
                 >
-                  <X className="mr-1 h-3 w-3" />
+                  <X className="me-1 h-3 w-3" />
                   {t("notes.clear")}
                 </Button>
               )}
@@ -231,12 +231,12 @@ export function SiteNotesPanel({
               >
                 {editingId ? (
                   <>
-                    <Check className="mr-1 h-3 w-3" />
+                    <Check className="me-1 h-3 w-3" />
                     {t("notes.saveEdit")}
                   </>
                 ) : (
                   <>
-                    <Plus className="mr-1 h-3 w-3" />
+                    <Plus className="me-1 h-3 w-3" />
                     {t("notes.addNote")}
                   </>
                 )}
@@ -256,14 +256,14 @@ export function SiteNotesPanel({
             </p>
           </div>
         ) : (
-          <div className="site-notes-scroll max-h-[320px] space-y-1.5 overflow-y-auto pr-1">
+          <div className="site-notes-scroll max-h-[320px] space-y-1.5 overflow-y-auto pe-1">
             {notes.map((note) => (
               <div
                 key={note.id}
                 className={cn(
                   "group animate-in fade-in slide-in-from-bottom-1 duration-200",
                   "relative rounded-md border bg-background/40 p-2.5",
-                  "border-l-2 transition-colors",
+                  "border-s-2 transition-colors",
                   note.pinned
                     ? "border-l-amber-500"
                     : "border-l-transparent hover:bg-muted/30",
@@ -282,7 +282,7 @@ export function SiteNotesPanel({
                     {timeAgo(note.updatedAt)}
                   </span>
                   {note.pinned && (
-                    <span className="ml-auto rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-400">
+                    <span className="ms-auto rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-400">
                       {t("notes.pinned")}
                     </span>
                   )}
@@ -307,12 +307,12 @@ export function SiteNotesPanel({
                         >
                           {note.pinned ? (
                             <>
-                              <PinOff className="mr-1 h-3 w-3" />
+                              <PinOff className="me-1 h-3 w-3" />
                               {t("notes.unpin")}
                             </>
                           ) : (
                             <>
-                              <Pin className="mr-1 h-3 w-3" />
+                              <Pin className="me-1 h-3 w-3" />
                               {t("notes.pin")}
                             </>
                           )}
@@ -332,7 +332,7 @@ export function SiteNotesPanel({
                           onClick={() => handleEdit(note.id, note.text)}
                           disabled={editingId === note.id}
                         >
-                          <Edit3 className="mr-1 h-3 w-3" />
+                          <Edit3 className="me-1 h-3 w-3" />
                           {t("notes.edit")}
                         </Button>
                       </TooltipTrigger>
@@ -347,7 +347,7 @@ export function SiteNotesPanel({
                           className="h-7 px-2 text-[11px] text-muted-foreground hover:bg-rose-500/10 hover:text-rose-700 dark:hover:text-rose-400"
                           onClick={() => handleDelete(note.id)}
                         >
-                          <Trash2 className="mr-1 h-3 w-3" />
+                          <Trash2 className="me-1 h-3 w-3" />
                           {t("notes.delete")}
                         </Button>
                       </TooltipTrigger>

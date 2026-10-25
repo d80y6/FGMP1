@@ -11,9 +11,12 @@
  *
  * What RTL actually changes in this app, and therefore what this sweep tests:
  *
- *   - Tailwind logical properties flip (`ms-`/`me-`, `start-`/`end-`), so any
- *     hand-written `left-`/`right-` that was never converted now points the
- *     wrong way;
+ *   - `dir="rtl"` reverses flex rows, table columns and scroll origins, so any
+ *     physical class (`ml`/`mr`, `text-left`/`text-right`, `left-0`) now points
+ *     the wrong way. The tree held ~400 of them and zero logical equivalents
+ *     when this file was written — see D-27, and its guard;
+ *   - a time axis (the Gantt, the 24-hour heatmap) must NOT mirror, so those
+ *     two grids pin `dir="ltr"` and are asserted to keep it;
  *   - tables, toolbars and the sticky Gantt label column mirror, which is
  *     exactly where a width tuned for LTR breaks;
  *   - Arabic strings are not the same length as their English source, so a

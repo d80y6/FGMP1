@@ -149,7 +149,7 @@ export function StatusBadge({ value, className, showShape = true }: { value: str
         // Tiny pulsing dot for active/dynamic statuses (RUNNING, OPEN, …).
         // Respects prefers-reduced-motion via the motion-reduce: prefix.
         <span
-          className="animate-pulse-soft motion-reduce:animate-none -ml-0.5 h-1.5 w-1.5 rounded-full bg-current opacity-80"
+          className="animate-pulse-soft motion-reduce:animate-none -ms-0.5 h-1.5 w-1.5 rounded-full bg-current opacity-80"
           aria-hidden="true"
         />
       )}

@@ -130,9 +130,9 @@ export function ExportButton({
             )}
           >
             {loading ? (
-              <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+              <Loader2 className="me-1.5 h-4 w-4 animate-spin" />
             ) : (
-              <Download className="mr-1.5 h-4 w-4 transition-transform duration-200 group-hover:translate-y-0.5" />
+              <Download className="me-1.5 h-4 w-4 transition-transform duration-200 group-hover:translate-y-0.5" />
             )}
             {loading ? t("common.exporting") : labelText}
           </Button>

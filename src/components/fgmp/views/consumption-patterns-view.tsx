@@ -250,7 +250,7 @@ export function ConsumptionPatternsView() {
             >
               <thead>
                 <tr>
-                  <th className="px-2 py-1 text-left font-medium text-muted-foreground">
+                  <th className="px-2 py-1 text-start font-medium text-muted-foreground">
                     Day
                   </th>
                   {HOURS.map((h) => (
@@ -266,7 +266,7 @@ export function ConsumptionPatternsView() {
               <tbody>
                 {DAYS.map((day, d) => (
                   <tr key={day}>
-                    <td className="px-2 py-1 text-left font-medium">{day}</td>
+                    <td className="px-2 py-1 text-start font-medium">{day}</td>
                     {HOURS.map((h) => {
                       const v = avgCell(matrix[d][h]);
                       const intensity = maxCell > 0 ? v / maxCell : 0;
@@ -374,10 +374,10 @@ export function ConsumptionPatternsView() {
             <TableHeader>
               <TableRow>
                 <TableHead>Site</TableHead>
-                <TableHead className="text-right">{t("patterns.mean")}</TableHead>
-                <TableHead className="text-right">{t("patterns.stdDev")}</TableHead>
-                <TableHead className="text-right">{t("patterns.variance")}</TableHead>
-                <TableHead className="text-right">Samples</TableHead>
+                <TableHead className="text-end">{t("patterns.mean")}</TableHead>
+                <TableHead className="text-end">{t("patterns.stdDev")}</TableHead>
+                <TableHead className="text-end">{t("patterns.variance")}</TableHead>
+                <TableHead className="text-end">Samples</TableHead>
                 <TableHead>Pattern</TableHead>
               </TableRow>
             </TableHeader>
@@ -388,10 +388,10 @@ export function ConsumptionPatternsView() {
                 return (
                   <TableRow key={s.siteId}>
                     <TableCell className="text-xs font-medium">{s.site}</TableCell>
-                    <TableCell className="text-right text-xs tabular-nums">{formatNumber(s.mean.toFixed(2), numLang)}</TableCell>
-                    <TableCell className="text-right text-xs tabular-nums">{formatNumber(stdDev.toFixed(2), numLang)}</TableCell>
-                    <TableCell className="text-right text-xs tabular-nums">{formatNumber(s.variance.toFixed(2), numLang)}</TableCell>
-                    <TableCell className="text-right text-xs tabular-nums">{formatNumber(s.samples, numLang)}</TableCell>
+                    <TableCell className="text-end text-xs tabular-nums">{formatNumber(s.mean.toFixed(2), numLang)}</TableCell>
+                    <TableCell className="text-end text-xs tabular-nums">{formatNumber(stdDev.toFixed(2), numLang)}</TableCell>
+                    <TableCell className="text-end text-xs tabular-nums">{formatNumber(s.variance.toFixed(2), numLang)}</TableCell>
+                    <TableCell className="text-end text-xs tabular-nums">{formatNumber(s.samples, numLang)}</TableCell>
                     <TableCell>
                       <Badge
                         variant="outline"

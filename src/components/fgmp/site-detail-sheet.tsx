@@ -95,13 +95,13 @@ export function SiteDetailSheet({ siteId, open, onOpenChange }: { siteId: string
 
               <Tabs defaultValue="tanks" className="flex flex-1 flex-col overflow-hidden">
                 <TabsList className="mx-5 mt-3 grid grid-cols-7">
-                  <TabsTrigger value="tanks" className="text-xs"><Droplet className="mr-1 h-3.5 w-3.5" />{t("detail.tanks")}</TabsTrigger>
-                  <TabsTrigger value="gens" className="text-xs"><Zap className="mr-1 h-3.5 w-3.5" />{t("detail.gens")}</TabsTrigger>
-                  <TabsTrigger value="batt" className="text-xs"><BatteryCharging className="mr-1 h-3.5 w-3.5" />{t("detail.batt")}</TabsTrigger>
-                  <TabsTrigger value="iot" className="text-xs"><Cpu className="mr-1 h-3.5 w-3.5" />{t("detail.iot")}</TabsTrigger>
-                  <TabsTrigger value="events" className="text-xs"><Siren className="mr-1 h-3.5 w-3.5" />{t("detail.events")}</TabsTrigger>
-                  <TabsTrigger value="trends" className="text-xs"><TrendingUp className="mr-1 h-3.5 w-3.5" />{t("detail.trends")}</TabsTrigger>
-                  <TabsTrigger value="notes" className="text-xs"><StickyNote className="mr-1 h-3.5 w-3.5" />{t("detail.notes")}</TabsTrigger>
+                  <TabsTrigger value="tanks" className="text-xs"><Droplet className="me-1 h-3.5 w-3.5" />{t("detail.tanks")}</TabsTrigger>
+                  <TabsTrigger value="gens" className="text-xs"><Zap className="me-1 h-3.5 w-3.5" />{t("detail.gens")}</TabsTrigger>
+                  <TabsTrigger value="batt" className="text-xs"><BatteryCharging className="me-1 h-3.5 w-3.5" />{t("detail.batt")}</TabsTrigger>
+                  <TabsTrigger value="iot" className="text-xs"><Cpu className="me-1 h-3.5 w-3.5" />{t("detail.iot")}</TabsTrigger>
+                  <TabsTrigger value="events" className="text-xs"><Siren className="me-1 h-3.5 w-3.5" />{t("detail.events")}</TabsTrigger>
+                  <TabsTrigger value="trends" className="text-xs"><TrendingUp className="me-1 h-3.5 w-3.5" />{t("detail.trends")}</TabsTrigger>
+                  <TabsTrigger value="notes" className="text-xs"><StickyNote className="me-1 h-3.5 w-3.5" />{t("detail.notes")}</TabsTrigger>
                 </TabsList>
 
                 <ScrollArea className="flex-1">
@@ -160,18 +160,18 @@ export function SiteDetailSheet({ siteId, open, onOpenChange }: { siteId: string
                             </div>
                             <div className="mt-2 flex flex-wrap gap-1.5">
                               <Button size="sm" variant="outline" className="h-7 text-[11px]" disabled={g.status === "RUNNING"} onClick={() => setCtrl({ id: g.id, label: g.label, cmd: "START" })}>
-                                <Power className="mr-1 h-3 w-3 text-emerald-500" />{t("detail.start")}
+                                <Power className="me-1 h-3 w-3 text-emerald-500" />{t("detail.start")}
                               </Button>
                               <Button size="sm" variant="outline" className="h-7 text-[11px]" disabled={g.status === "STOPPED"} onClick={() => setCtrl({ id: g.id, label: g.label, cmd: "STOP" })}>
-                                <Power className="mr-1 h-3 w-3 text-amber-500" />{t("detail.stop")}
+                                <Power className="me-1 h-3 w-3 text-amber-500" />{t("detail.stop")}
                               </Button>
                               <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={() => setCtrl({ id: g.id, label: g.label, cmd: "RESET" })}>
-                                <RotateCcw className="mr-1 h-3 w-3 text-sky-500" />{t("detail.reset")}
+                                <RotateCcw className="me-1 h-3 w-3 text-sky-500" />{t("detail.reset")}
                               </Button>
                               <Button size="sm" variant="outline" className="h-7 text-[11px] border-rose-500/40 text-rose-700 dark:text-rose-400 hover:bg-rose-500/10" onClick={() => setCtrl({ id: g.id, label: g.label, cmd: "EMERGENCY_STOP" })}>
-                                <AlertOctagon className="mr-1 h-3 w-3" />{t("detail.eStop")}
+                                <AlertOctagon className="me-1 h-3 w-3" />{t("detail.eStop")}
                               </Button>
-                              <span className="ml-auto self-center text-[10px] text-muted-foreground">{t("detail.nextMaint")}: {Math.round(g.nextMaintenanceHrs)} h</span>
+                              <span className="ms-auto self-center text-[10px] text-muted-foreground">{t("detail.nextMaint")}: {Math.round(g.nextMaintenanceHrs)} h</span>
                               {canEditThresholds && (
                                 <GenMaintenanceEditor
                                   generatorId={g.id}

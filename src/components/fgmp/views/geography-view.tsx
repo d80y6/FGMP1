@@ -328,7 +328,7 @@ export function GeographyView() {
                       <TableHead>Name</TableHead>
                       <TableHead className="hidden md:table-cell w-[110px]">Criticality</TableHead>
                       <TableHead className="w-[100px]">Status</TableHead>
-                      <TableHead className="w-[80px] text-right">Load (kW)</TableHead>
+                      <TableHead className="w-[80px] text-end">Load (kW)</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -347,7 +347,7 @@ export function GeographyView() {
                           <Badge variant="outline" className="text-[10px]">{s.criticality}</Badge>
                         </TableCell>
                         <TableCell><StatusBadge value={s.status} /></TableCell>
-                        <TableCell className="text-right tabular-nums text-xs" dir="ltr">
+                        <TableCell className="text-end tabular-nums text-xs" dir="ltr">
                           {formatNumber(s.loadKw, numLang)}
                         </TableCell>
                       </TableRow>
@@ -604,7 +604,7 @@ function ListItem({
         <span className="block text-[10px] text-muted-foreground">{meta}</span>
       </button>
       {(canEdit || canDelete) && (
-        <div className="flex items-center gap-0.5 pr-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+        <div className="flex items-center gap-0.5 pe-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
           {canEdit && onEdit && (
             <Button
               size="icon"

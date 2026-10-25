@@ -195,7 +195,7 @@ export function SystemHealthIndicator({ onClick }: SystemHealthIndicatorProps) {
       <TooltipContent
         side="bottom"
         align="center"
-        className="max-w-[240px] p-3 text-left"
+        className="max-w-[240px] p-3 text-start"
       >
         <div
           className="flex flex-col gap-1"

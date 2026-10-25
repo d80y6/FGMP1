@@ -393,7 +393,7 @@ function GeneratorCard({ row }: { row: MaintRow }) {
       open={open}
       onOpenChange={setOpen}
       className={cn(
-        "group rounded-lg border border-l-2 bg-card p-3 transition-all duration-200 hover:bg-muted/30 hover:shadow-sm",
+        "group rounded-lg border border-s-2 bg-card p-3 transition-all duration-200 hover:bg-muted/30 hover:shadow-sm",
         meta.border,
       )}
     >
@@ -594,25 +594,25 @@ export function MaintenancePredictionPanel() {
         <FilterTabs value={filter} onValueChange={(v) => setFilter(v as FilterKind)} label={t("prediction.filterLabel")}>
           <FilterTab value="all">
               {t("prediction.all")}
-              <span className="ml-1 rounded-full bg-foreground/10 px-1.5 text-[10px] tabular-nums text-foreground">
+              <span className="ms-1 rounded-full bg-foreground/10 px-1.5 text-[10px] tabular-nums text-foreground">
                 {total}
               </span>
             </FilterTab>
             <FilterTab value="urgent">
               {t("prediction.urgent")}
-              <span className="ml-1 rounded-full bg-foreground/10 px-1.5 text-[10px] tabular-nums text-foreground">
+              <span className="ms-1 rounded-full bg-foreground/10 px-1.5 text-[10px] tabular-nums text-foreground">
                 {totalUrgent}
               </span>
             </FilterTab>
             <FilterTab value="overdue">
               {t("prediction.overdueTab")}
-              <span className="ml-1 rounded-full bg-foreground/10 px-1.5 text-[10px] tabular-nums text-foreground">
+              <span className="ms-1 rounded-full bg-foreground/10 px-1.5 text-[10px] tabular-nums text-foreground">
                 {counts.OVERDUE}
               </span>
             </FilterTab>
             <FilterTab value="ok">
               {t("prediction.okLabel")}
-              <span className="ml-1 rounded-full bg-foreground/10 px-1.5 text-[10px] tabular-nums text-foreground">
+              <span className="ms-1 rounded-full bg-foreground/10 px-1.5 text-[10px] tabular-nums text-foreground">
                 {counts.OK}
               </span>
             </FilterTab>
@@ -690,7 +690,7 @@ export function MaintenancePredictionPanel() {
                 })
               }
             >
-              <Phone className="mr-1.5 h-3.5 w-3.5" />
+              <Phone className="me-1.5 h-3.5 w-3.5" />
               {t("prediction.scheduleMaintenance")}
             </Button>
           </div>

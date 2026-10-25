@@ -185,12 +185,12 @@ export function UsersView() {
           </CardTitle>
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute start-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder={t("users.searchUsers")}
-                className="h-9 w-[200px] pl-8"
+                className="h-9 w-[200px] ps-8"
               />
             </div>
             <Select label={t("users.role")} value={roleFilter} onValueChange={setRoleFilter}>
@@ -220,7 +220,7 @@ export function UsersView() {
                     <TableHead className="hidden lg:table-cell">{t("users.phone")}</TableHead>
                     <TableHead className="w-[90px]">{t("users.status")}</TableHead>
                     <TableHead className="hidden md:table-cell w-[150px]">{t("users.lastLogin")}</TableHead>
-                    <TableHead className="w-[60px] text-right">{t("users.actions")}</TableHead>
+                    <TableHead className="w-[60px] text-end">{t("users.actions")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -230,7 +230,7 @@ export function UsersView() {
                       <TableRow key={u.id} className={cn("transition-colors hover:bg-muted/30", u.active ? "" : "opacity-60")}>
                         <TableCell>
                           <div className="flex flex-col">
-                            <span className="text-sm font-medium">{u.name}{isSelf && <Badge variant="outline" className="ml-2 h-4 px-1 text-[10px]">YOU</Badge>}</span>
+                            <span className="text-sm font-medium">{u.name}{isSelf && <Badge variant="outline" className="ms-2 h-4 px-1 text-[10px]">YOU</Badge>}</span>
                             <span className="text-[11px] text-muted-foreground">{u.email}</span>
                           </div>
                         </TableCell>
@@ -256,7 +256,7 @@ export function UsersView() {
                             <span>{t("users.lastLoginNever")}</span>
                           )}
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-end">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="icon" className="h-7 w-7" aria-label={t("users.moreActions")}>
@@ -275,7 +275,7 @@ export function UsersView() {
                                 }}
                                 disabled={u.role === "SUPERADMIN" && me?.role === "ADMIN"}
                               >
-                                <Pencil className="mr-2 h-3.5 w-3.5" />
+                                <Pencil className="me-2 h-3.5 w-3.5" />
                                 {t("users.editUser")}
                               </DropdownMenuItem>
                               <DropdownMenuItem
@@ -288,7 +288,7 @@ export function UsersView() {
                                 }}
                                 disabled={isSelf || (u.role === "SUPERADMIN" && me?.role === "ADMIN")}
                               >
-                                <KeyRound className="mr-2 h-3.5 w-3.5" />
+                                <KeyRound className="me-2 h-3.5 w-3.5" />
                                 {t("users.resetPassword")}
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
@@ -311,12 +311,12 @@ export function UsersView() {
                               >
                                 {u.active ? (
                                   <>
-                                    <UserX className="mr-2 h-3.5 w-3.5" />
+                                    <UserX className="me-2 h-3.5 w-3.5" />
                                     {t("users.deactivate")}
                                   </>
                                 ) : (
                                   <>
-                                    <UserCheck className="mr-2 h-3.5 w-3.5" />
+                                    <UserCheck className="me-2 h-3.5 w-3.5" />
                                     {t("users.activate")}
                                   </>
                                 )}
@@ -566,7 +566,7 @@ function CreateUserDialog({
                           {(tenants ?? []).map((tnt) => (
                             <SelectItem key={tnt.id} value={tnt.id} className="text-xs">
                               <span className="font-medium">{tnt.name}</span>
-                              <span className="ml-1.5 font-mono text-[10px] text-muted-foreground" dir="ltr">{tnt.code}</span>
+                              <span className="ms-1.5 font-mono text-[10px] text-muted-foreground" dir="ltr">{tnt.code}</span>
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -581,7 +581,7 @@ function CreateUserDialog({
                 <Label className="text-xs">{t("users.tenant")}</Label>
                 <div>
                   <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-[10px]">
-                    <Building2 className="mr-1 h-3 w-3" />
+                    <Building2 className="me-1 h-3 w-3" />
                     {ownTenantName}
                   </Badge>
                 </div>

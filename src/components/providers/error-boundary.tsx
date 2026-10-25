@@ -214,7 +214,7 @@ Time: ${new Date().toISOString()}
               </span>
               <Button onClick={copyDetails} variant="outline" size="sm" aria-label={t("error.boundary.copyDetails")}>
                 {copied ? <Check className="size-3.5 text-emerald-500" /> : <Copy className="size-3.5" />}
-                <span className="ml-1.5">{copied ? t("error.boundary.copied") : t("error.boundary.copyDetails")}</span>
+                <span className="ms-1.5">{copied ? t("error.boundary.copied") : t("error.boundary.copyDetails")}</span>
               </Button>
             </div>
             <p className="text-[11px] leading-relaxed text-muted-foreground">

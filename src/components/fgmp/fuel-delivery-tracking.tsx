@@ -250,9 +250,9 @@ export function FuelDeliveryTracking() {
           <Truck className="h-4 w-4 text-sky-500" />
           {t("deliveries.title")}
           {loading && deliveries === null ? (
-            <span className="ml-1 text-[10px] font-normal text-muted-foreground">loading…</span>
+            <span className="ms-1 text-[10px] font-normal text-muted-foreground">loading…</span>
           ) : (
-            <span className="ml-1 text-[10px] font-normal text-muted-foreground">
+            <span className="ms-1 text-[10px] font-normal text-muted-foreground">
               {tFmt("deliveries.totalLive", { n: pipeline.total.count })}
             </span>
           )}
@@ -326,7 +326,7 @@ export function FuelDeliveryTracking() {
           <button
             type="button"
             onClick={() => setCompletionsOpen((v) => !v)}
-            className="mb-2 flex w-full items-center justify-between text-left"
+            className="mb-2 flex w-full items-center justify-between text-start"
           >
             <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {completionsOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
@@ -358,7 +358,7 @@ export function FuelDeliveryTracking() {
                         <div className="flex items-center gap-2">
                           <p className="truncate text-xs font-medium">
                             {d.site?.name ?? "—"}
-                            <span className="ml-1 text-[10px] text-muted-foreground">({d.site?.code ?? "—"})</span>
+                            <span className="ms-1 text-[10px] text-muted-foreground">({d.site?.code ?? "—"})</span>
                           </p>
                           <span className={cn(
                             "rounded-full border px-2 py-0.5 text-[10px] font-semibold",
@@ -429,10 +429,10 @@ export function FuelDeliveryTracking() {
                       <span className="font-medium">{d.label}</span>
                       <span className="mx-1 text-muted-foreground">·</span>
                       <span className="tabular-nums">{fmtLitres(d.litres)}</span>
-                      <span className="ml-1 text-muted-foreground">({d.count} delivery{d.count === 1 ? "" : "ies"})</span>
+                      <span className="ms-1 text-muted-foreground">({d.count} delivery{d.count === 1 ? "" : "ies"})</span>
                     </div>
                   </div>
-                  <div className="w-16 shrink-0 text-right text-[10px] tabular-nums text-muted-foreground">
+                  <div className="w-16 shrink-0 text-end text-[10px] tabular-nums text-muted-foreground">
                     {d.litres > 0 ? fmtLitres(d.litres) : "—"}
                   </div>
                 </div>

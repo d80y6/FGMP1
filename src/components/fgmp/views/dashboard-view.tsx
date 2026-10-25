@@ -217,11 +217,11 @@ export function DashboardView() {
         actions={
           <>
             <Button variant="outline" size="sm" onClick={() => setView("analytics")}>
-              <TrendingUp className="mr-1.5 h-4 w-4" /> {t("dash.analytics")}
+              <TrendingUp className="me-1.5 h-4 w-4" /> {t("dash.analytics")}
             </Button>
             <Button variant="outline" size="sm" onClick={() => setView("alarms")}>
-              <Siren className="mr-1.5 h-4 w-4" /> {t("dash.alarms")}
-              {k.openAlarms > 0 && <Badge className="ml-1.5 h-4 px-1 text-[10px]">{formatNumber(k.openAlarms, numLang)}</Badge>}
+              <Siren className="me-1.5 h-4 w-4" /> {t("dash.alarms")}
+              {k.openAlarms > 0 && <Badge className="ms-1.5 h-4 px-1 text-[10px]">{formatNumber(k.openAlarms, numLang)}</Badge>}
             </Button>
             <ExportButton
               filename={csvFilename("kpi-snapshot")}
@@ -284,7 +284,7 @@ export function DashboardView() {
                   key={a.id}
                   className={cn(
                     // Slide-in animation + smooth hover transitions.
-                    "group relative flex items-center gap-2 pr-3 transition-all duration-200 animate-slide-in-up motion-reduce:animate-none",
+                    "group relative flex items-center gap-2 pe-3 transition-all duration-200 animate-slide-in-up motion-reduce:animate-none",
                     // Severity-tinted background (subtle).
                     a.severity === "L3" && "bg-rose-500/[0.03] hover:bg-rose-500/[0.07]",
                     a.severity === "L2" && "bg-amber-500/[0.02] hover:bg-amber-500/[0.06]",
@@ -294,14 +294,14 @@ export function DashboardView() {
                   <button
                       type="button"
                       onClick={() => setView("alarms")}
-                      className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
+                      className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 px-4 py-2.5 text-start transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
                     >
                     {/* Left-border accent coloured by severity (L3=rose, L2=amber, L1=slate).
                         Absolute-positioned so it spans the row height. */}
                     <span
                       aria-hidden="true"
                       className={cn(
-                        "absolute inset-y-0 left-0 w-[3px] transition-opacity duration-200 group-hover:opacity-100",
+                        "absolute inset-y-0 start-0 w-[3px] transition-opacity duration-200 group-hover:opacity-100",
                         a.severity === "L3" && "bg-rose-500 opacity-70",
                         a.severity === "L2" && "bg-amber-500 opacity-70",
                         a.severity === "L1" && "bg-slate-400 opacity-60",
@@ -312,7 +312,7 @@ export function DashboardView() {
                       <p className="truncate text-sm font-medium">{translate(`alarm.${a.type}`, numLang) !== `alarm.${a.type}` ? translate(`alarm.${a.type}`, numLang) : (a.type ?? "").replace(/_/g, " ")}</p>
                       <p className="truncate text-[11px] text-muted-foreground">{a.message}</p>
                     </div>
-                    <div className="hidden w-40 shrink-0 text-right text-[11px] sm:block">
+                    <div className="hidden w-40 shrink-0 text-end text-[11px] sm:block">
                       <p className="truncate font-medium text-foreground">{a.site?.name ?? "—"}</p>
                       {/* Time-ago badge with subtle background. */}
                       <span className="mt-0.5 inline-flex items-center rounded-full bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
@@ -336,7 +336,7 @@ export function DashboardView() {
                       }
                     }}
                   >
-                    <CheckCircle2 className="mr-1 h-3.5 w-3.5" /> {t("dash.ackAlarmShort")}
+                    <CheckCircle2 className="me-1 h-3.5 w-3.5" /> {t("dash.ackAlarmShort")}
                   </Button>
                 </div>
               ))}
@@ -392,7 +392,7 @@ export function DashboardView() {
                     key={a.id}
                     onClick={() => { selectSite(a.siteId); setView("sites"); addRecent(a.siteId); }}
                     className={cn(
-                      "flex w-full items-start gap-2.5 rounded-lg border p-2.5 text-left transition-all duration-200 hover:bg-muted/50 hover:shadow-sm motion-reduce:transition-none",
+                      "flex w-full items-start gap-2.5 rounded-lg border p-2.5 text-start transition-all duration-200 hover:bg-muted/50 hover:shadow-sm motion-reduce:transition-none",
                       a.severity === "L3" && "border-rose-500/20 bg-rose-500/[0.03]",
                       a.severity === "L2" && "border-amber-500/20 bg-amber-500/[0.02]",
                       "animate-slide-in-up motion-reduce:animate-none"
@@ -510,18 +510,18 @@ export function DashboardView() {
                   key={r.region}
                   type="button"
                   onClick={() => setRegionSheet(r.region)}
-                  className="group flex w-full items-center gap-3 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-muted/40"
+                  className="group flex w-full items-center gap-3 rounded-md px-1.5 py-1 text-start transition-colors hover:bg-muted/40"
                   title={`${t("dash.openRegion")}: ${r.region}`}
                 >
                   <div className="w-32 shrink-0 truncate text-xs font-medium">{r.region}</div>
                   <div className="flex flex-1 items-center gap-2">
                     <div className="flex flex-1 gap-0.5">
-                      <div className="h-5 rounded-l bg-emerald-500/70" style={{ width: `${(r.sites / k.totalSites) * 100}%` }} title={`${formatNumber(r.sites, numLang)} ${t("dash.sites")}`} />
+                      <div className="h-5 rounded-s bg-emerald-500/70" style={{ width: `${(r.sites / k.totalSites) * 100}%` }} title={`${formatNumber(r.sites, numLang)} ${t("dash.sites")}`} />
                     </div>
                   </div>
-                  <div className="w-16 text-right text-[11px] tabular-nums text-muted-foreground">{formatNumber(r.sites, numLang)} {t("dash.sites")}</div>
-                  <div className="w-16 text-right text-[11px] tabular-nums text-sky-500">{tFmt("dash.fuelK", { n: formatNumber(Math.round(r.fuel / 1000), numLang) })}</div>
-                  <div className="w-14 text-right text-[11px] tabular-nums text-amber-500">{formatNumber(r.alarms, numLang)} {t("dash.alm")}</div>
+                  <div className="w-16 text-end text-[11px] tabular-nums text-muted-foreground">{formatNumber(r.sites, numLang)} {t("dash.sites")}</div>
+                  <div className="w-16 text-end text-[11px] tabular-nums text-sky-500">{tFmt("dash.fuelK", { n: formatNumber(Math.round(r.fuel / 1000), numLang) })}</div>
+                  <div className="w-14 text-end text-[11px] tabular-nums text-amber-500">{formatNumber(r.alarms, numLang)} {t("dash.alm")}</div>
                   <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
                 </button>
               ))}
