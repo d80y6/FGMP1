@@ -297,16 +297,40 @@ What is known, and what is not:
   Next. A declared range is the adapter author saying "not tested here", and
   this audit has no Cloudflare credentials, so it cannot become evidence.
 
-**Remediation, on a machine with working registry egress:**
+**Remediation is not a lockfile edit — it is a lint migration.** Measured, not
+assumed. `next@^16.4.1` resolves to **16.4.3**, inside the declared range, but
+the lock moves **60 packages**: `next` + all ten `@next/*`, `eslint-config-next`,
+`@swc/helpers`, `postcss`, and a `sharp` **0.34.5 → 0.35.5** major that pulls
+the whole libvips `@img/*` tree (1.2.4 → 1.3.4), plus 5 entries added and 31
+removed by the restructure. Two consequences:
 
-```
-bun update next          # resolves within ^16.1.1 → 16.4.x, inside the range
-bun run build            # must still succeed
-git diff bun.lock        # expect only next + the @next/swc-* pins to move
-```
+* `eslint-config-next@16.4.3` brings the **React Compiler** hook rules through
+  `eslint-plugin-react-hooks@7.1.x`. Against this codebase that is **29 errors**:
+
+  | Rule | Count | Where |
+  |---|---|---|
+  | `react-hooks/set-state-in-effect` | 15 | 8 files — `asset-registry` (5), `dispensers` (2), `tenants` (2), `site-form-dialog` (2), `api-keys`, `geography`, `system-health`, `system-settings` |
+  | `react-hooks/purity` | 6 | `Date.now()` called during render — `dispensers` (4), `suppressions`, `system-health` |
+  | `react-hooks/refs` | 6 | reading a ref during render — `system-health` |
+  | `react-hooks/preserve-manual-memoization` | 2 | `system-health`, `tenant-isolation` — compiler-only diagnostic |
+
+  The project does not run the React Compiler, so the last two rules describe an
+  optimisation that is not enabled; the first two are real (impure render breaks
+  hydration, ref reads during render are unstable). The honest fix is to change
+  that state logic — 15 effect-driven `setState` sites and 6 render-time clock
+  reads — and verify it in the browser sweep, not to silence the rules.
+* Note what the current lock is doing: it pins `eslint-plugin-react-hooks@7.0.1`
+  for `eslint-config-next@16.1.3` (whose range is `^7.0.0`). A plain
+  `bun install` refresh of the lint toolchain alone would land 7.1.x and turn
+  `verify` red. The lockfile is currently the only thing keeping `eslint` green,
+  which is worth knowing before anyone "just updates dependencies".
 
 Do not hand-edit `bun.lock`: the `@next/swc-*` optional dependencies are pinned
 to the same version and have their own integrity hashes.
+
+If the adapter's range check ever becomes a hard failure, the alternative is to
+stay on 16.1.3 and pin the adapter to a version whose range includes it — a
+decision for whoever ships, recorded here so it is not rediscovered.
 
 ### Deploying from CI (manual, gated)
 
