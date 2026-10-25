@@ -93,7 +93,7 @@ export function TenantIsolationView() {
   const t = useT();
   const tFmt = useTF();
   const me = useFgmp((s) => s.me);
-  const { data: report, loading, error, refetch } = useApi<IsolationReport>("/api/fgmp/admin/tenant-isolation-test");
+  const { data: report, loading, error } = useApi<IsolationReport>("/api/fgmp/admin/tenant-isolation-test");
   const [running, setRunning] = useState(false);
   const [localReport, setLocalReport] = useState<IsolationReport | null>(null);
 
@@ -402,10 +402,13 @@ export function TenantIsolationView() {
         </Card>
       )}
 
-      {/* Hidden refetch trigger for the useApi polling */}
-      <button type="button" onClick={() => refetch?.()} className="sr-only" aria-hidden>
-        refetch
-      </button>
+      {/* The hidden `<button className="sr-only" aria-hidden onClick={refetch}>`
+          that used to sit here was dead code twice over: nothing ever clicked
+          it (useApi already polls on its own), and a focusable <button> inside
+          aria-hidden is `aria-hidden-focus` — the finding the sweep reported on
+          this view as the truncated "tenant-isolation (SUPERADMIN): axe ari…".
+          Removed rather than hidden further: an element no user can reach and
+          no code invokes is not a control. */}
     </div>
   );
 }
