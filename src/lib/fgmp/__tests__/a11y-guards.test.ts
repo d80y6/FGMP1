@@ -55,6 +55,13 @@
  *    either announced once by a wrapper (aria-hidden, or role="img" + label) or
  *    not at all — never a dead tab stop.
  *
+ * 11. `aria-hidden-focus` on decorative charts. Recharts builds its DOM at
+ *    render time and a focusable node appears somewhere under a PieChart; its
+ *    exact position moved between builds. Chasing it inside Recharts would
+ *    break on the next minor. `DecorativeChart` now also sets `inert` and
+ *    strips a non-negative tabindex from any descendant, so the guard checks
+ *    that the suppression is still three-way rather than a bare aria-hidden.
+ *
  * 10. A legibility FLOOR (D-10). 164 labels were 8px or 9px — status badges, KPI
  *    captions, table annotations. WCAG sets no minimum font size, so no tool
  *    would ever flag them, and an operator reading "CRITICAL" at 8px is a
@@ -263,6 +270,19 @@ function findings(): Finding[] {
       }
     }
 
+    // ── 11. a hidden chart subtree is also non-interactive ──────────────
+    // aria-hidden silences it for assistive tech; `inert` takes it out of the
+    // tab order; the effect removes any tabindex Recharts adds back. All three
+    // are needed because a different one satisfies a different consumer.
+    if (/decorative-chart\.tsx$/.test(rel)) {
+      if (!/\binert\b/.test(src)) {
+        push(0, 'DecorativeChart lost `inert` — aria-hidden alone leaves focusable descendants');
+      }
+      if (!/querySelectorAll.*\[tabindex\]/.test(src)) {
+        push(0, 'DecorativeChart lost its tabindex sweep — Recharts can put a tab stop back');
+      }
+    }
+
     // ── 10. nothing below the legibility floor ──────────────────────────
     // A floor, not a style rule: 10px and 11px are the app's dense convention
     // and stay. 8px and 9px were unreadable on the operator's screen.
@@ -324,6 +344,11 @@ describe("accessibility regression guards", () => {
   test("no interactive control is nested inside another", () => {
     const bad = ALL.filter((f) => f.detail.includes("nested interactive"));
     assert.deepEqual(bad, [], `${bad.length} nested control(s)`);
+  });
+
+  test("a decorative chart subtree is hidden, inert and swept", () => {
+    const bad = ALL.filter((f) => f.detail.includes("DecorativeChart lost"));
+    assert.deepEqual(bad, [], `${bad.length} regression(s) in DecorativeChart`);
   });
 
   test("no text is below the 10px legibility floor", () => {

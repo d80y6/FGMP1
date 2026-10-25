@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 
 /**
  * Takes a Recharts chart out of the accessibility tree — used only where the
@@ -40,10 +40,50 @@ export function DecorativeChart({
   //                     — and a tab stop inside aria-hidden is a different
   //                     violation (aria-hidden-focus). The axe check looks at
   //                     the TAB ORDER, so -1 is enough.
-  if (!label) return <div aria-hidden="true">{children}</div>;
+  if (!label) return <Hidden>{children}</Hidden>;
   return (
     <div role="img" aria-label={label}>
-      <div aria-hidden="true">{children}</div>
+      <Hidden>{children}</Hidden>
+    </div>
+  );
+}
+
+/**
+ * The suppressed wrapper.
+ *
+ * `aria-hidden` alone was not enough. Recharts builds its own DOM at render
+ * time, and somewhere under a PieChart there is a focusable node whose exact
+ * identity depends on the chart and the data — the sweep reported
+ * `aria-hidden-focus` on the dashboard and on fuel, the two views with a
+ * doughnut, and moved between builds. Chasing the node in Recharts' internals
+ * would have been a fix that breaks on the next minor release.
+ *
+ * So the subtree is made non-interactive three ways, each of which is
+ * independently sufficient for a different consumer:
+ *
+ *   aria-hidden  tells assistive tech to skip it (the svg-img-alt fix);
+ *   inert        removes it from the tab order and from hit-testing entirely
+ *                (the aria-hidden-focus fix, and honest: a decorative chart
+ *                should not be operable);
+ *   the effect   strips a non-negative tabindex from any descendant that
+ *                Recharts or a future version puts back, because `inert` is
+ *                not honoured by every tool that inspects the DOM.
+ */
+function Hidden({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const root = ref.current;
+    if (!root) return;
+    for (const el of root.querySelectorAll<HTMLElement>("[tabindex]")) {
+      if ((el.getAttribute("tabindex") ?? "-1").startsWith("-")) continue;
+      el.setAttribute("tabindex", "-1");
+    }
+  }, [children]);
+
+  return (
+    <div ref={ref} aria-hidden="true" inert>
+      {children}
     </div>
   );
 }

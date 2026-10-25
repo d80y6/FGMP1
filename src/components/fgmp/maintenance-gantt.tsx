@@ -37,9 +37,21 @@ interface MaintenanceGanttProps {
 }
 
 // Status -> bar color tokens (DONE gets 50% opacity per spec)
+/**
+ * Bar colours for the Gantt. Text on every bar is white at 10px, so the surface
+ * has to clear 4.5:1 against white on its own:
+ *
+ *   sky-700    4.9:1
+ *   amber-800  5.6:1   (amber-700 measures 4.4:1 — it failed the sweep on a
+ *                       past-due bar, whose rose ring does not lighten the fill)
+ *   violet-700 6.9:1
+ *
+ * Do not "brighten" these back to the 500/600 range for looks: white on
+ * amber-500 is 2.1:1.
+ */
 const STATUS_META: Record<string, { bg: string; text: string; label: string }> = {
   OPEN: { bg: "bg-sky-700", text: "text-sky-500", label: "Open" },
-  SCHEDULED: { bg: "bg-amber-700", text: "text-amber-500", label: "Scheduled" },
+  SCHEDULED: { bg: "bg-amber-800", text: "text-amber-500", label: "Scheduled" },
   IN_PROGRESS: { bg: "bg-violet-700", text: "text-violet-500", label: "In Progress" },
   DONE: { bg: "bg-emerald-500/50", text: "text-emerald-500", label: "Done" },
 };
