@@ -323,9 +323,9 @@ export function SiteComparisonTool() {
                   {selectedSites.map((s, i) => (
                     <th key={s.id} className="min-w-[120px] p-2 text-center">
                       <div className="flex flex-col items-center gap-0.5">
-                        <span className="text-[9px] text-muted-foreground">Site {i + 1}</span>
+                        <span className="text-[10px] text-muted-foreground">Site {i + 1}</span>
                         <span className="max-w-[110px] truncate text-[11px] font-semibold">{s.name}</span>
-                        <span className={cn("rounded border px-1 text-[8px]", siteStatusTextClass(s.status))}>{s.status}</span>
+                        <span className={cn("rounded border px-1 text-[10px]", siteStatusTextClass(s.status))}>{s.status}</span>
                       </div>
                     </th>
                   ))}
@@ -354,7 +354,7 @@ export function SiteComparisonTool() {
                               <span className={cn("font-bold tabular-nums", isBest && "text-emerald-700 dark:text-emerald-400")}>
                                 {metric.format(v)}
                               </span>
-                              {metric.unit && <span className="text-[9px] text-muted-foreground">{metric.unit}</span>}
+                              {metric.unit && <span className="text-[10px] text-muted-foreground">{metric.unit}</span>}
                             </div>
                           </td>
                         );
@@ -381,7 +381,7 @@ export function SiteComparisonTool() {
                         )}>
                           {isLeader && <TrendingUp className="h-3 w-3" />}
                           {wins}
-                          <span className="text-[9px] font-normal">wins</span>
+                          <span className="text-[10px] font-normal">wins</span>
                         </span>
                       </td>
                     );

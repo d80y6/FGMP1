@@ -21,7 +21,7 @@ function FactorBar({ label, value, weight, tone }: { label: string; value: numbe
         <div className={cn("h-full rounded-full", tone)} style={{ width: `${Math.min(100, value)}%` }} />
       </div>
       <span className="w-8 shrink-0 text-right text-[10px] font-semibold tabular-nums">{Math.round(value)}</span>
-      <span className="w-8 shrink-0 text-right text-[9px] text-primary-foreground/50">{Math.round(weight * 100)}%</span>
+      <span className="w-8 shrink-0 text-right text-[10px] text-primary-foreground/50">{Math.round(weight * 100)}%</span>
     </div>
   );
 }
@@ -155,7 +155,7 @@ export function RegionLeaderboard({ regions, totalSites, onSelectRegion }: Regio
                       {isLeader && (
                         <Badge
                           className={cn(
-                            "ml-1 h-4 shrink-0 animate-pulse-soft px-1.5 text-[9px] font-bold uppercase tracking-wide",
+                            "ml-1 h-4 shrink-0 animate-pulse-soft px-1.5 text-[10px] font-bold uppercase tracking-wide",
                             "border border-amber-500/50 bg-amber-500/15 text-amber-700 dark:text-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.5)]",
                           )}
                         >

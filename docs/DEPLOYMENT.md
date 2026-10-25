@@ -266,6 +266,69 @@ after confirming that the pooler supports the transaction-local RLS context
 session state between statements breaks tenant isolation in a way that looks like
 missing data.
 
+**Run the proof before adding any pooler or Hyperdrive binding:**
+
+```
+DATABASE_URL='<the exact URL the Worker will use>' \
+  bun run scripts/verify/pooler-rls-proof.ts
+```
+
+It asserts the four properties the app depends on — `SET LOCAL` visible inside
+its transaction, gone after `COMMIT`, two concurrently-open transactions each
+seeing only their own context, and `ENABLE` + `FORCE` RLS with an unset context
+returning zero rows — and exits non-zero on any failure. **Record the host and
+the mode with the result:** a proof without its target is not a proof, and
+"it passed on the direct endpoint" says nothing about the pooler. CI runs the
+same script against the direct endpoint as a control, so a broken instrument
+fails there rather than in front of an operator.
+
+### A dependency pairing to know about before the first deploy
+
+`@opennextjs/cloudflare@1.20.13` declares its Next.js support as
+`>=15.5.28 <16 || >=16.4.1`. `package.json` asks for `^16.1.1`, and `bun.lock`
+resolves that to **16.1.3** — which is *outside* the adapter's declared range.
+
+What is known, and what is not:
+
+* **Known:** `bun run build` (`opennextjs-cloudflare build`) completes on
+  16.1.3 in CI's `verify` job, and the standalone server built from it boots in
+  the `docker` job. So the pairing builds and runs as a Node server.
+* **Not known:** that the Worker runtime path is correct on an unsupported
+  Next. A declared range is the adapter author saying "not tested here", and
+  this audit has no Cloudflare credentials, so it cannot become evidence.
+
+**Remediation, on a machine with working registry egress:**
+
+```
+bun update next          # resolves within ^16.1.1 → 16.4.x, inside the range
+bun run build            # must still succeed
+git diff bun.lock        # expect only next + the @next/swc-* pins to move
+```
+
+Do not hand-edit `bun.lock`: the `@next/swc-*` optional dependencies are pinned
+to the same version and have their own integrity hashes.
+
+### Deploying from CI (manual, gated)
+
+`.github/workflows/deploy.yml` is `workflow_dispatch` only — it never runs on push. It refuses to
+continue unless all of these hold:
+
+| Gate | Why |
+|---|---|
+| `confirm` input is exactly `DEPLOY` | a deploy should be a decision, not a mis-click in a dropdown |
+| `CLOUDFLARE_API_TOKEN` **and** `CLOUDFLARE_ACCOUNT_ID` exist as secrets | without them the job cannot run, and a job that always fails trains people to ignore red |
+| the commit already has a **green `CI` run** | a deploy path that can ship an untested commit bypasses every gate in this repository |
+| one deploy at a time, not cancelled | cancelling mid-flight can leave a half-published Worker |
+
+It then builds with `bun install --frozen-lockfile` (the exact dependency graph CI checked), runs
+`bun run deploy`, and probes `$WORKER_URL/api/health/ready` for up to a minute. That endpoint is
+unauthenticated by design and returns 503 until the database is reachable and migrations are applied —
+which is precisely what needs confirming after a ship. `/api/fgmp/health` is ADMIN-only and would answer
+401, marking a healthy Worker down; do not point a health check at it.
+
+**Migrations are still an operator step.** They need the owner credential, a `psql` run, and a look at
+the result. The workflow does not touch the database, by design.
+
 ### First-deploy checklist (what to confirm, not assume)
 
 1. `bunx wrangler deploy` succeeds and the Worker answers `/api/health/ready`

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { BatteryCharging, Search, AlertTriangle, Zap, Thermometer, HeartPulse } from "lucide-react";
 import { useFgmp } from "@/lib/fgmp/store";
+import { TruncationNote } from "@/components/fgmp/truncation-note";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { BarGauge } from "@/components/fgmp/gauge";
@@ -76,15 +77,15 @@ export function BatteriesView() {
                       <p className="truncate text-sm font-medium">{b.label}</p>
                       <p className="truncate text-[10px] text-muted-foreground">{b.code} · {b.site}</p>
                     </div>
-                    <StatusBadge value={b.status} className="h-5 text-[9px]" />
+                    <StatusBadge value={b.status} className="h-5 text-[10px]" />
                   </div>
                   <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
                     <div className="rounded bg-muted/40 px-2 py-1">
-                      <p className="text-[9px] text-muted-foreground">{t("batteries.voltage")}</p>
+                      <p className="text-[10px] text-muted-foreground">{t("batteries.voltage")}</p>
                       <p className={cn("font-semibold tabular-nums", b.vPct < 88 && "text-amber-500")}>{tFmt("batteries.voltageOf", { v: formatNumber(b.voltage, numLang), nominal: formatNumber(b.nominalVoltage, numLang) })}</p>
                     </div>
                     <div className="rounded bg-muted/40 px-2 py-1">
-                      <p className="text-[9px] text-muted-foreground">{t("batteries.current")}</p>
+                      <p className="text-[10px] text-muted-foreground">{t("batteries.current")}</p>
                       <p className="font-semibold tabular-nums">{formatNumber(b.currentA, numLang)}A {b.charging && "↑"}</p>
                     </div>
                   </div>
@@ -100,7 +101,13 @@ export function BatteriesView() {
                   </div>
                 </div>
               ))}
+              {/* A tenant with no batteries used to see an empty grid under a
+                  "Battery Banks (0)" heading with no explanation. */}
+              {banks.length === 0 && (
+                <p className="py-6 text-center text-xs text-muted-foreground">{t("common.noneYet")}</p>
+              )}
             </div>
+            <TruncationNote shown={60} total={banks.length} />
           </CardContent>
         </Card>
 

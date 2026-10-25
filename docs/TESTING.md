@@ -56,6 +56,7 @@ bun run test:proof
 | Script | Asserts |
 |---|---|
 | `scripts/verify/rls-regression.ts` | every tenant table returns rows only with a tenant context |
+| `scripts/verify/pooler-rls-proof.ts` | the transaction-scoped tenant context survives the endpoint it is pointed at — run it against the pooler before adding one (the `rls` job runs it against the direct endpoint as a control) |
 | `scripts/verify/smoke-postgres.ts` | schema present, RLS enforced, roles correct |
 | `scripts/verify/scheduler-proof.ts` | one advance per interval across replicas |
 | `scripts/verify/scheduler-singleflight.ts` | advisory lock excludes a second holder |

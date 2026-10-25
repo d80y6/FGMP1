@@ -420,9 +420,9 @@ export function RegionDetailSheet({ region, onOpenChange }: RegionDetailSheetPro
                     value={data.regionAlarms.length}
                     hint={
                       <span className="flex flex-wrap items-center gap-1">
-                        <Badge variant="outline" className={cn("h-3.5 px-1 text-[9px] font-bold", severityChipClass("L1"))}>L1:{data.alarmsL1}</Badge>
-                        <Badge variant="outline" className={cn("h-3.5 px-1 text-[9px] font-bold", severityChipClass("L2"))}>L2:{data.alarmsL2}</Badge>
-                        <Badge variant="outline" className={cn("h-3.5 px-1 text-[9px] font-bold", severityChipClass("L3"))}>L3:{data.alarmsL3}</Badge>
+                        <Badge variant="outline" className={cn("h-3.5 px-1 text-[10px] font-bold", severityChipClass("L1"))}>L1:{data.alarmsL1}</Badge>
+                        <Badge variant="outline" className={cn("h-3.5 px-1 text-[10px] font-bold", severityChipClass("L2"))}>L2:{data.alarmsL2}</Badge>
+                        <Badge variant="outline" className={cn("h-3.5 px-1 text-[10px] font-bold", severityChipClass("L3"))}>L3:{data.alarmsL3}</Badge>
                       </span>
                     }
                     tone={data.alarmsL3 > 0 ? "danger" : data.regionAlarms.length > 0 ? "warn" : "good"}
@@ -547,7 +547,7 @@ export function RegionDetailSheet({ region, onOpenChange }: RegionDetailSheetPro
                           >
                             <TableCell className="font-mono text-[10px] text-muted-foreground">{site.code}</TableCell>
                             <TableCell className="max-w-[140px] truncate font-medium">{site.name}</TableCell>
-                            <TableCell><StatusBadge value={site.status} className="h-5 text-[9px]" /></TableCell>
+                            <TableCell><StatusBadge value={site.status} className="h-5 text-[10px]" /></TableCell>
                             <TableCell className="text-right">
                               <span className={cn("font-bold tabular-nums", scoreTextClass(health))}>{health}%</span>
                             </TableCell>
@@ -620,7 +620,7 @@ export function RegionDetailSheet({ region, onOpenChange }: RegionDetailSheetPro
                             </div>
                             <p className="mt-0.5 line-clamp-1 text-[11px] text-muted-foreground">{a.message}</p>
                             <div className="mt-1 flex items-center gap-1.5">
-                              <Badge variant="outline" className={cn("h-4 px-1 text-[9px] font-bold", severityChipClass(a.severity))}>
+                              <Badge variant="outline" className={cn("h-4 px-1 text-[10px] font-bold", severityChipClass(a.severity))}>
                                 {a.severity}
                               </Badge>
                               <span className="truncate text-[10px] text-muted-foreground">

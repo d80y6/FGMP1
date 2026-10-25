@@ -529,7 +529,7 @@ function ActiveCard({ row, lang, onExtend, onCancel, onDelete, canDelete }: Acti
             </span>
           </div>
         </div>
-        <Badge variant="outline" className={`shrink-0 text-[9px] ${toneCls.chip}`}>
+        <Badge variant="outline" className={`shrink-0 text-[10px] ${toneCls.chip}`}>
           {toneCls.label}
         </Badge>
       </div>

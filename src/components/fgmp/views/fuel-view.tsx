@@ -6,6 +6,7 @@ import { Area, AreaChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContaine
 import { useFgmp } from "@/lib/fgmp/store";
 import { useApi } from "@/lib/fgmp/use-api";
 import { useChartColors } from "@/lib/fgmp/use-chart-colors";
+import { TruncationNote } from "@/components/fgmp/truncation-note";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { BarGauge, Gauge } from "@/components/fgmp/gauge";
@@ -249,7 +250,7 @@ export function FuelView() {
                     <p className="truncate text-sm font-medium">{t.label}</p>
                     <p className="truncate text-[10px] text-muted-foreground">{t.code} · {t.site}</p>
                   </div>
-                  <StatusBadge value={t.status} className="h-5 text-[9px]" />
+                  <StatusBadge value={t.status} className="h-5 text-[10px]" />
                 </div>
                 <div className="mt-2"><BarGauge value={t.pct} showLabel /></div>
                 <div className="mt-1.5 flex items-center justify-between text-[10px] text-muted-foreground">
@@ -258,7 +259,11 @@ export function FuelView() {
                 </div>
               </div>
             ))}
+            {tanks.length === 0 && (
+              <p className="py-6 text-center text-xs text-muted-foreground">{t("common.noneYet")}</p>
+            )}
           </div>
+          <TruncationNote shown={60} total={tanks.length} />
         </CardContent>
       </Card>
     </div>
@@ -274,7 +279,7 @@ function ScrollList({ events, empty, tone }: { events: EventItem[]; empty: strin
       {events.length === 0 && <p className="py-6 text-center text-xs text-muted-foreground">{empty}</p>}
       {events.map((e, i) => (
         <div key={i} className="flex items-start gap-2 rounded border p-2 text-[11px]">
-          <Badge variant="outline" className={`h-4 shrink-0 px-1 text-[8px] ${tone === "rose" ? "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"}`}>
+          <Badge variant="outline" className={`h-4 shrink-0 px-1 text-[10px] ${tone === "rose" ? "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"}`}>
             {tone === "rose" ? t("fuel.theft") : t("fuel.refill")}
           </Badge>
           <div className="min-w-0 flex-1">

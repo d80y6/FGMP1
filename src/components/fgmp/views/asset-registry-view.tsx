@@ -507,7 +507,7 @@ function TanksTab({ sites, isAdmin, numLang }: {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <StatusBadge value={tk.liveStatus ?? tk.status} className="h-5 text-[9px]" />
+                        <StatusBadge value={tk.liveStatus ?? tk.status} className="h-5 text-[10px]" />
                       </TableCell>
                       {isAdmin && (
                         <TableCell className="text-right">
@@ -854,7 +854,7 @@ function GeneratorsTab({ sites, isAdmin, numLang }: {
                         {formatNumber(Math.round(runtime), numLang)}h
                       </TableCell>
                       <TableCell>
-                        <StatusBadge value={g.liveStatus ?? g.status} className="h-5 text-[9px]" />
+                        <StatusBadge value={g.liveStatus ?? g.status} className="h-5 text-[10px]" />
                       </TableCell>
                       {isAdmin && (
                         <TableCell className="text-right">
@@ -1201,7 +1201,7 @@ function BatteriesTab({ sites, isAdmin, numLang }: {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <StatusBadge value={b.liveStatus ?? b.status} className="h-5 text-[9px]" />
+                        <StatusBadge value={b.liveStatus ?? b.status} className="h-5 text-[10px]" />
                       </TableCell>
                       {isAdmin && (
                         <TableCell className="text-right">
@@ -1545,12 +1545,12 @@ function IotTab({ sites, isAdmin, numLang }: {
                     </TableCell>
                     <TableCell className="hidden md:table-cell text-xs">{d.site?.name ?? "—"}</TableCell>
                     <TableCell>
-                      <Badge variant="outline" className="text-[9px]">{d.type.replace(/_/g, " ")}</Badge>
+                      <Badge variant="outline" className="text-[10px]">{d.type.replace(/_/g, " ")}</Badge>
                     </TableCell>
                     <TableCell className="text-[11px]">{d.protocol}</TableCell>
                     <TableCell className="hidden lg:table-cell text-[10px] font-mono">{d.firmware}</TableCell>
                     <TableCell>
-                      <StatusBadge value={d.liveStatus ?? d.status} className="h-5 text-[9px]" />
+                      <StatusBadge value={d.liveStatus ?? d.status} className="h-5 text-[10px]" />
                     </TableCell>
                     {isAdmin && (
                       <TableCell className="text-right">
@@ -1987,13 +1987,13 @@ function DispensersTab({ sites, isAdmin, numLang }: {
                       </TableCell>
                       <TableCell className="text-xs tabular-nums">{formatNumber(d.nozzleCount, numLang)}</TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="text-[9px]">{d.fuelType}</Badge>
+                        <Badge variant="outline" className="text-[10px]">{d.fuelType}</Badge>
                       </TableCell>
                       <TableCell className="text-xs tabular-nums">
                         {formatNumber(Math.round(totalizer), numLang)} L
                       </TableCell>
                       <TableCell>
-                        <StatusBadge value={d.liveStatus ?? d.status} className="h-5 text-[9px]" />
+                        <StatusBadge value={d.liveStatus ?? d.status} className="h-5 text-[10px]" />
                       </TableCell>
                       {isAdmin && (
                         <TableCell className="text-right">

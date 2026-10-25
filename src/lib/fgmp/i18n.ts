@@ -1453,6 +1453,7 @@ export const DICTIONARY: Dict = {
   /* ===== Auth (Task 31-A) =====
      Used by the LoginDialog, the logout button, and session-expiry toasts.
      Arabic translations follow MSA enterprise-software register. */
+  "auth.roleChanged": { en: "Your role is now {role}. The menu and available actions have been updated.", ar: "أصبح دورك الآن {role}. تم تحديث القائمة والإجراءات المتاحة." },
   "auth.signIn": { en: "Sign in", ar: "تسجيل الدخول" },
   "auth.signOut": { en: "Sign out", ar: "تسجيل الخروج" },
   "auth.returnToAdmin": { en: "Return to Admin", ar: "العودة إلى مدير" },
@@ -2477,6 +2478,8 @@ export const DICTIONARY: Dict = {
   "isolation.denies": { en: "Denies", ar: "يرفض" },
   "isolation.generatedAt": { en: "Report generated at {when} · refreshes pull a fresh report from the server.", ar: "أُنشئ التقرير في {when} · التحديث يجلب تقريراً جديداً من الخادم." },
   "tenants.deleteBody": { en: "You are about to permanently delete {name} ({code}).", ar: "أنت على وشك حذف {name} ({code}) نهائياً." },
+  "common.truncatedList": { en: "Showing {shown} of {total}. Narrow the filters to see the rest.", ar: "يُعرض {shown} من {total}. ضيّق عوامل التصفية لرؤية الباقي." },
+  "common.noneYet": { en: "Nothing here yet.", ar: "لا يوجد شيء بعد." },
   "common.hoursOf": { en: "{a}h / {b}h", ar: "{a} س / {b} س" },
   "dash.fuelK": { en: "{n}k L", ar: "{n} ألف لتر" },
   "assets.batterySpec": { en: "{cap} Ah · {v}V", ar: "{cap} أمبير·ساعة · {v} فولت" },

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { FileText, FileSpreadsheet, FileType2, Calendar } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useApi } from "@/lib/fgmp/use-api";
+import { TruncationNote } from "@/components/fgmp/truncation-note";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { StatusBadge } from "@/components/fgmp/status-badge";
@@ -162,40 +163,44 @@ export function ReportsView() {
                         <TableHeader><TableRow><TableHead>{t("alarms.type")}</TableHead><TableHead>{t("alarms.site")}</TableHead><TableHead className="w-[70px]">{t("alarms.sev")}</TableHead><TableHead className="w-[120px]">{t("reports.when")}</TableHead></TableRow></TableHeader>
                         <TableBody>
                           {data.alarms.slice(0, 50).map((a) => (
-                            <TableRow key={a.id}><TableCell className="text-[11px] font-mono">{alarmTypeLabel(a.type, numLang)}</TableCell><TableCell className="text-xs">{a.site?.name}</TableCell><TableCell><StatusBadge value={a.severity} className="h-5 text-[9px]" /></TableCell><TableCell className="text-[10px] text-muted-foreground">{fmtDateTime(a.createdAt, numLang).slice(5, 16)}</TableCell></TableRow>
+                            <TableRow key={a.id}><TableCell className="text-[11px] font-mono">{alarmTypeLabel(a.type, numLang)}</TableCell><TableCell className="text-xs">{a.site?.name}</TableCell><TableCell><StatusBadge value={a.severity} className="h-5 text-[10px]" /></TableCell><TableCell className="text-[10px] text-muted-foreground">{fmtDateTime(a.createdAt, numLang).slice(5, 16)}</TableCell></TableRow>
                           ))}
                         </TableBody>
                       </Table>
+                      <TruncationNote shown={50} total={data.alarms.length} />
                     </TabsContent>
                     <TabsContent value="deliveries" className="m-0 p-2">
                       <Table>
                         <TableHeader><TableRow><TableHead>{t("reports.do")}</TableHead><TableHead>{t("alarms.site")}</TableHead><TableHead className="w-[80px]">{t("inventory.volume")}</TableHead><TableHead className="w-[90px]">{t("alarms.status")}</TableHead></TableRow></TableHeader>
                         <TableBody>
                           {data.deliveries.slice(0, 50).map((d) => (
-                            <TableRow key={d.id}><TableCell className="font-mono text-[11px]">{d.doNumber}</TableCell><TableCell className="text-xs">{d.site?.name}</TableCell><TableCell className="text-xs tabular-nums">{formatNumber(Math.round(d.volumeDeliveredLitres ?? d.volumeOrderedLitres), numLang)}L</TableCell><TableCell><StatusBadge value={d.status} className="h-5 text-[9px]" /></TableCell></TableRow>
+                            <TableRow key={d.id}><TableCell className="font-mono text-[11px]">{d.doNumber}</TableCell><TableCell className="text-xs">{d.site?.name}</TableCell><TableCell className="text-xs tabular-nums">{formatNumber(Math.round(d.volumeDeliveredLitres ?? d.volumeOrderedLitres), numLang)}L</TableCell><TableCell><StatusBadge value={d.status} className="h-5 text-[10px]" /></TableCell></TableRow>
                           ))}
                         </TableBody>
                       </Table>
+                      <TruncationNote shown={50} total={data.deliveries.length} />
                     </TabsContent>
                     <TabsContent value="tickets" className="m-0 p-2">
                       <Table>
                         <TableHeader><TableRow><TableHead>{t("maintenance.title")}</TableHead><TableHead>{t("alarms.site")}</TableHead><TableHead className="w-[70px]">{t("maintenance.priority")}</TableHead><TableHead className="w-[90px]">{t("alarms.status")}</TableHead></TableRow></TableHeader>
                         <TableBody>
                           {data.tickets.slice(0, 50).map((t) => (
-                            <TableRow key={t.id}><TableCell className="text-xs">{t.title}</TableCell><TableCell className="text-xs">{t.site?.name}</TableCell><TableCell><Badge variant="outline" className="h-5 text-[9px]">{t.priority}</Badge></TableCell><TableCell><StatusBadge value={t.status} className="h-5 text-[9px]" /></TableCell></TableRow>
+                            <TableRow key={t.id}><TableCell className="text-xs">{t.title}</TableCell><TableCell className="text-xs">{t.site?.name}</TableCell><TableCell><Badge variant="outline" className="h-5 text-[10px]">{t.priority}</Badge></TableCell><TableCell><StatusBadge value={t.status} className="h-5 text-[10px]" /></TableCell></TableRow>
                           ))}
                         </TableBody>
                       </Table>
+                      <TruncationNote shown={50} total={data.tickets.length} />
                     </TabsContent>
                     <TabsContent value="commands" className="m-0 p-2">
                       <Table>
                         <TableHeader><TableRow><TableHead>{t("reports.command")}</TableHead><TableHead>{t("reports.generator")}</TableHead><TableHead className="w-[90px]">{t("alarms.status")}</TableHead><TableHead className="w-[120px]">{t("reports.when")}</TableHead></TableRow></TableHeader>
                         <TableBody>
                           {data.commands.slice(0, 50).map((c) => (
-                            <TableRow key={c.id}><TableCell className="text-[11px] font-mono">{commandTypeLabel(c.command, numLang)}</TableCell><TableCell className="text-xs">{c.generator?.label}</TableCell><TableCell><StatusBadge value={c.status} className="h-5 text-[9px]" /></TableCell><TableCell className="text-[10px] text-muted-foreground">{fmtDateTime(c.issuedAt, numLang).slice(5, 16)}</TableCell></TableRow>
+                            <TableRow key={c.id}><TableCell className="text-[11px] font-mono">{commandTypeLabel(c.command, numLang)}</TableCell><TableCell className="text-xs">{c.generator?.label}</TableCell><TableCell><StatusBadge value={c.status} className="h-5 text-[10px]" /></TableCell><TableCell className="text-[10px] text-muted-foreground">{fmtDateTime(c.issuedAt, numLang).slice(5, 16)}</TableCell></TableRow>
                           ))}
                         </TableBody>
                       </Table>
+                      <TruncationNote shown={50} total={data.commands.length} />
                     </TabsContent>
                   </ScrollArea>
                 </Tabs>

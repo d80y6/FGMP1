@@ -5,6 +5,7 @@ import { useShallow } from "zustand/react/shallow";
 import { Cpu, Wifi, Search, RefreshCw, Download, Radio, HardDriveDownload } from "lucide-react";
 import { useFgmp } from "@/lib/fgmp/store";
 import { useApi, apiPatch } from "@/lib/fgmp/use-api";
+import { TruncationNote } from "@/components/fgmp/truncation-note";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { StatusBadge } from "@/components/fgmp/status-badge";
@@ -156,12 +157,12 @@ export function IotView() {
                       <p className="text-[10px] text-muted-foreground">{d.vendor}</p>
                     </TableCell>
                     <TableCell className="hidden md:table-cell text-xs">{d.site?.name}</TableCell>
-                    <TableCell><Badge variant="outline" className="text-[9px]">{iotTypeLabel(d.type, numLang)}</Badge></TableCell>
+                    <TableCell><Badge variant="outline" className="text-[10px]">{iotTypeLabel(d.type, numLang)}</Badge></TableCell>
                     <TableCell className="text-[11px]">{iotProtocolLabel(d.protocol, numLang)}</TableCell>
                     <TableCell className="hidden lg:table-cell text-[10px] text-muted-foreground">{d.ipAddress}{d.modbusUnit ? ` · u${formatNumber(d.modbusUnit, numLang)}` : ""}</TableCell>
                     <TableCell className="hidden lg:table-cell text-[10px]">{d.firmware}</TableCell>
                     <TableCell className="text-[10px] tabular-nums">{formatNumber(d.signalRssi, numLang)}dBm</TableCell>
-                    <TableCell><StatusBadge value={d.liveStatus} className="h-5 text-[9px]" /></TableCell>
+                    <TableCell><StatusBadge value={d.liveStatus} className="h-5 text-[10px]" /></TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
                         <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => { setOta({ id: d.id, name: d.name, current: d.firmware }); setOtaFw(nextFw(d.firmware)); }}>
@@ -175,6 +176,7 @@ export function IotView() {
               </TableBody>
             </Table>
           </div>
+          <TruncationNote shown={100} total={filtered.length} />
         </CardContent>
       </Card>
 

@@ -215,7 +215,7 @@ export function CommandPalette({ open, onOpenChange }: Props) {
                     <span className="truncate text-sm">{s.name}</span>
                     <span className="truncate text-[10px] text-muted-foreground">{s.code} · {s.governorate}, {s.region}</span>
                   </div>
-                  <span className="shrink-0 rounded border px-1.5 py-0.5 text-[9px] font-medium">{s.status}</span>
+                  <span className="shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-medium">{s.status}</span>
                 </CommandItem>
               ))}
             </CommandGroup>
@@ -239,7 +239,7 @@ export function CommandPalette({ open, onOpenChange }: Props) {
                     <span className="truncate text-sm">{e.title}</span>
                     <span className="truncate text-[10px] text-muted-foreground">{e.subtitle}</span>
                   </div>
-                  <span className="shrink-0 text-[9px] font-bold">{e.severity}</span>
+                  <span className="shrink-0 text-[10px] font-bold">{e.severity}</span>
                 </CommandItem>
               ))}
             </CommandGroup>

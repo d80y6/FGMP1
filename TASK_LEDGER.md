@@ -32,7 +32,7 @@ Audit FGMP1's PostgreSQL connection architecture and improve only where evidence
 - [x] Phase 4 — evaluate Hyperdrive; not eligible on verified evidence because no active Cloudflare runtime/binding is established and the locked Cloudflare/Next versions do not establish compatibility.
 - [x] Phase 5 — exercise tenant context, rollback/error recovery, real app role, timeout/recovery, and saturation against isolated PostgreSQL.
 - [x] Phase 6 — run available regressions/typecheck, parse deployment YAML, and record lint/build limitations.
-- [ ] Phase 7 — validate effective production/staging provider configuration and perform a staged rollout/rollback. Blocked: no live provider, Render environment, or authorized metrics scrape is available.
+- [ ] Phase 7 — validate effective production/staging provider configuration and perform a staged rollout/rollback. Blocked: no live provider, **Cloudflare** environment, or authorized metrics scrape is available. *(Amended 2026-10-25: this line said "Render environment"; Render was retired in D-18 and Cloudflare Workers is the only target. The blocker itself is unchanged — no credentials for any provider are available to this audit.)*
 
 **Performance conclusion:** no material improvement. The app's three-connection pool plateaus under concurrency; high-concurrency latency reflects queueing. No cap change is recommended from these results.
 
@@ -835,7 +835,7 @@ workaround, `Low` = polish.
 | D-06 | authenticated views (27) | Not exercised in this sandbox: no Prisma client ⇒ no data ⇒ no session. Their layout, forms, tables and states are **unaudited**, not "fine". | High | **BLOCKED** (sandbox) / **covered by CI** |
 | D-07 | 6 view components + `error-boundary` | Same untranslated-accessible-name class as D-03: `api-keys-view` (Actions), `geography-view` (Edit, Delete), `tenants-view` (More actions, Filter by country), `maintenance-gantt` (Timeline range), `error-boundary` (Error message). | Medium | **FIXED** — six new dictionary keys, both languages; the guard test fails on a regression |
 | D-08 | views | 7 call sites used `window.confirm`/native `confirm` instead of the shared `ConfirmDestructive`. Native confirms block the event loop, cannot be styled or translated, and ignore the app's destructive-action copy. | Medium | **FIXED** — the last one (`shift-handover-panel`) converted to `useDestructiveConfirm`; a source grep for `window.confirm(` now returns only comments |
-| D-09 | whole app | Only 3 `aria-live` regions. Connection loss, a failed refresh and a role change are visible but not announced. | Medium | **PARTIAL** — `role="status"`/`aria-live="polite"` added to the header connection pill and to `system-status-banner`; a role change is still unannounced (it re-renders the whole shell, which the current structure cannot narrate) |
+| D-09 | whole app | Only 3 `aria-live` regions. Connection loss, a failed refresh and a role change are visible but not announced. | Medium | **FIXED, pending sweep** — `role="status"`/`aria-live="polite"` on the header connection pill and `system-status-banner`; **role change** now announced by a new `sr-only` polite, atomic live region in `app-shell.tsx`, driven by a pure rule (`role-announcement.ts`) that stays silent on the first resolution (the sign-in the user just performed), on unchanged polls, and on a transient `null` that would otherwise re-announce a role nobody lost — 6 tests pin those boundaries. Was PARTIAL, and the earlier note that the shell "cannot narrate" a re-render was wrong: the value being announced is the role, not the render |
 | D-14 | 20 components | **The Arabic UI was only partly Arabic.** 145 English strings were JSX text nodes with no `t()` at all — the fuel-delivery timeline, the API-key table, the tenant support dialog, the maintenance toolbar — plus 5 components that never imported the translate hook. In Arabic mode they rendered left-to-right English inside an RTL layout. | High | **FIXED** — 179 keys added in both languages; measured count of English JSX prose in `src/components` is now **0**, enforced by `untranslated-text.test.ts` |
 | D-15 | 15 files | English literals in props that RENDER text: `title`/`placeholder` (the first estimate, 33) but also `label`, `description`, `message`, `submitLabel`, `text`, `hint`, `heading` — `<EmptyState title=…>`, `<KpiCard label=…>`, every geography dialog. 89 in total. | Medium | **FIXED** — 80 keys added; the guard now covers all ten props at ceiling **0** (a value with no run of three lowercase letters is a format example, not language) |
 | D-16 | `geography-view.tsx` | **CRITICAL, latent data loss.** The delete guard was `countLabel.includes("sites") && !countLabel.includes("0 sites")`. `"10 sites"` contains `"0 sites"`, so a governorate with **10 sites** was classified as empty: the warning was hidden and the button — disabled only when that flag is true — was enabled, cascading the delete through its districts and sites. Translating `countLabel` would have broken the guard for **every** count. | Critical | **FIXED** — the target carries `siteCount: number` and the guard compares it; covered by `rendered-text-as-data.test.ts` |
@@ -847,6 +847,11 @@ workaround, `Low` = polish.
 | D-18 | `render.yaml`, docs, `.env.example` | **Three retired platforms were still described as deploy targets.** `render.yaml` (102 lines: web service, migration job, IoT bridge, shared environment group) sat in the tree after the move to Cloudflare, and DEPLOYMENT/ARCHITECTURE/SECURITY/READINESS all pointed at it. A blueprint that looks deployable but is not is what an operator reads when they need to ship. | Medium | **FIXED** — `render.yaml` deleted; DEPLOYMENT.md §4 rewritten around Cloudflare Workers (manifest key-by-key, `wrangler secret put`, the `NEXT_PUBLIC_*` rebuild trap, migrations as operator jobs, per-isolate connection caps, the pooler/RLS caveat, a first-deploy checklist, rollback); DB-CONNECTION-ASSESSMENT marked superseded on the deployment question only; `deployment-target.test.ts` fails if any retired manifest reappears, if the build script stops being OpenNext, if `WORKER_SELF_REFERENCE` stops naming the Worker, or if a doc heading names a retired platform |
 | D-19 | `untranslated-text.test.ts` + 37 components | **The guard against hardcoded English could not see the strings it existed to find.** `>[^<>{}]*<` excludes braces, so every heading shaped `Tank Refuel Forecast ({n})` — and every count-bearing title in the app — was invisible. Three rounds of "0 untranslated strings" were a property of the regex, not the product. Re-parsing the JSX with TypeScript surfaced **37** English strings, including a whole table header in `fuel-forecast-view` and the tenant-delete support text. | High | **FIXED** — guard rewritten as a `ts.createSourceFile`/`isJsxElement` walk that joins the literal children of each element; ~45 keys added in `en`/`ar`; 37 sites converted; ceiling **0**. `patterns.heatmapTitle`, `tenants.deleteHasDependents` etc. now translate |
 | D-20 | `ui/table.tsx`, `ui/scroll-region.tsx`, 30 charts, `dashboard-view`, 4 contrast causes | **Fifteen findings on the third sweep, eleven of them new shapes.** `scrollable-region-focusable` ×2 on fuel-forecast; `nested-interactive` on geography (and **latently** on the dashboard, invisible while the alarm list is empty); `aria-progressbar-name`; `button-name` on unlabelled switches; `svg-img-alt` ×52; `color-contrast` ×30 from four different causes — `opacity-50` dimming, `text-muted-foreground/70`, white text on `*-500` Gantt bars, and a tinted chip inside a muted filter tab. | High | **FIXED, pending sweep.** New `ScrollRegion` primitive joins the tab order only while content overflows (and names itself); 30 chart roots at `tabIndex={-1}`; the dashboard row is a real `<button>` with Ack as a sibling; `Progress.label` and `Select.label` are both compiler-enforced; the four contrast causes corrected at the source, not by nudging one shade. `a11y-guards` is 11 tests and each new one was proven against a deliberately broken probe. **Not VERIFIED** — contrast and focus order need the browser sweep |
+| D-21 | 9 views: `sites` `batteries` `fuel` `generators` `iot` `dispensers` `reports` `audit` `analytics` | **Nine lists were silently capped, and three had no empty state.** `sites` cut at 100 rows, `batteries` and `fuel` at 60, `generators` at 40, `iot` at 100, `dispensers` at 100/200, `reports` at 50 per table, `audit` at 200 — all `slice(0, N)` with no indication. On a tenant with 140 sites, row 100 looks exactly like the last row there is, and an operator who filters for a site sorting past the cap concludes it does not exist: a rendering decision producing a data-integrity impression. Separately `batteries`, `fuel` and `generators` rendered an empty grid under a heading reading `(0)` — on a freshly provisioned tenant, the first thing an operator sees, indistinguishable from a failed load. | Medium | **FIXED** — `TruncationNote` now covers **all 10 capped lists** in the 27 views — the first pass wired 5 and a mechanical check (cap 20+ rows without the import ⇒ fail) caught the other 5. It renders "Showing {shown} of {total}…" and nothing when the list fits (5 views wired); the three empty grids now render "Nothing here yet.". Found by the per-view audit (`docs/UI-UX-AUDIT-VIEWS.md`), which the earlier rounds did not have |
+| D-22 | `bun.lock`, `docs/DEPLOYMENT.md` | **The only deployment target is paired outside its adapter's declared Next range.** `@opennextjs/cloudflare@1.20.13` supports `>=15.5.28 <16 || >=16.4.1`; the lockfile pins Next **16.1.3**. `package.json` (`^16.1.1`) permits a supported version — the lock is what is wrong. Not a cosmetic note: OpenNext is the only way this app reaches production now, and a declared-range mismatch is exactly the class of defect this audit exists to surface before an operator hits it. | High (tracked) | **DOCUMENTED, not fixed.** `opennextjs-cloudflare build` does succeed on 16.1.3 in CI `verify`, and the standalone server boots in `docker` — so this is a *declared-range* mismatch, not a proven runtime failure, and claiming otherwise would be the unverified assertion this audit forbids. Remediation is `bun update next` (stays inside `^16.1.1`). It could not be run here: registry tarball downloads fail in this sandbox (`ConnectionClosed`), and hand-editing `bun.lock` would desynchronise the `@next/swc-*` integrity pins. Written up in DEPLOYMENT.md with the exact commands and the expected diff |
+| D-23 | `scripts/verify/pooler-rls-proof.ts`, CI `rls` job, DEPLOYMENT.md | **The Hyperdrive decision was blocked on a question nobody had an instrument for.** Tenant isolation depends on `SET LOCAL app.tenant_id` inside an explicit transaction; a pooler is safe exactly when it preserves that, and no script in the repository had ever connected through one — `rls-regression.ts` proves the semantics on a *direct* connection. | High (decision unblocked, evidence still external) | **INSTRUMENT ADDED + self-tested.** The proof asserts four properties against whatever URL it is given: `SET LOCAL` visible in its transaction, gone after COMMIT, two concurrently-open transactions each seeing only their own context (the actual bleed), and `ENABLE`+`FORCE` RLS with an unset context returning **0** rows. It writes nothing. A `rls` job step now runs it against the direct endpoint as a **control** — if it fails on a database CI just migrated and seeded, the script is wrong and any operator would get a false verdict. It still cannot prove the operator's pooler: no route, no credentials. The decision stays open until someone runs it there and records the host with the result | **And the control earned its keep immediately:** on its first run it failed — not on the database, but on a bug in the proof itself. PostgreSQL keeps a placeholder once a custom GUC has been SET, so after `COMMIT` the value reverts to `''`, not `NULL`; the assertion demanded `NULL` exactly. Both are safe, so an operator running that version against a healthy pooler would have been told their infrastructure was unsafe. Corrected (`d5459f3`) to require only that the previous tenant is gone. |
+| D-24 | `decorative-chart.tsx`, `maintenance-gantt.tsx`, `tenant-isolation-view.tsx` | **The sweep went 15 → 4, and the four survivors had three distinct causes.** (a) `aria-hidden-focus` on the dashboard and on fuel — the two views with a doughnut — where `aria-hidden` wrapped a Recharts subtree that contains a focusable node whose exact position moves with the chart and the data; (b) one Gantt bar at `bg-amber-700` carrying white 10px text = **4.4:1**, caught on a past-due bar whose rose ring does not lighten the fill; (c) `tenant-isolation`'s two raw `<div className="overflow-x-auto">` tables, which never went through the `Table` component and so never got a `ScrollRegion`. | High | **VERIFIED in CI** — run `40219118625`, job `121247141590`: **14 passed, 0 axe violations across all 30 rendered views**. Sweep trajectory 34 → 19 → 15 → 4 → **0**. **FIXED** by: The hidden wrapper is now three-way — `aria-hidden` for assistive tech, `inert` for the tab order, and an effect that strips a non-negative `tabindex` from any descendant Recharts adds back — because chasing the node inside Recharts' internals would break on the next minor release. Bars moved to `sky-700` / `amber-800` / `violet-700` with the measured ratios written next to them. Both isolation tables now use `ScrollRegion`. Guard 13 tests: DecorativeChart cannot lose `inert` or the sweep |
+| D-25 | `.github/workflows/deploy.yml`, `docs/DEPLOYMENT.md` | **The only deployment target had no CI path at all.** Every deploy was an engineer's laptop: no record of which commit shipped, no check that it had passed CI, no readiness probe afterwards, and nothing preventing two people deploying at once. On a single-environment product, that is a release process held in someone's memory. | Medium | **ADDED.** `workflow_dispatch` only (never on push), requiring: `confirm == DEPLOY`, both Cloudflare secrets present, the commit to already have a **green `CI` run** (checked via the API on the exact SHA), and a non-cancelling concurrency group so a deploy cannot be interrupted into a half-published Worker. It builds with `--frozen-lockfile` — the same graph CI verified — then probes `/api/health/ready`. Migrations stay an operator step on purpose. **Cannot be VERIFIED here**: no Cloudflare credentials, so the job has never executed; the YAML is parsed and its steps asserted, which is not the same thing |
 
 ### 2. What was measured (public surface, Chromium 153, real server)
 
@@ -928,11 +933,11 @@ application image.
 | Route inventory | 27 views + `/` + `/login` alias + 171 API handlers; each view has a `view:*` capability and is filtered by `hasCapability` |
 | Public surface | audited in a browser; **0** defects found; 5 tests green |
 | Shell (nav, header, footer) | 5 defects found (D-01, D-02, D-03, D-04, D-11), all fixed; proven by the CI half of the suite |
-| Authenticated views | Shell, navigation and the dashboard's a11y are **VERIFIED in CI**. The 27 views' individual layouts/forms/tables are **still unaudited** — the suite covers the shell, not every view. |
-| RTL | login surface verified; shell/views only statically |
-| Performance | **not measured** — a dev server with no database cannot produce a meaningful number, and reporting one would be dishonest |
-| i18n | **0** English JSX prose and **0** English `aria-label` literals remain in `src/components`; 179 dictionary keys added; both guarded by `src/lib/fgmp/__tests__/untranslated-text.test.ts` (ceiling 0 for prose and labels, 33 for `title`/`placeholder`) |
-| Remaining defects | D-09 (partial), D-10 (product decision), D-15 (33 literals), D-06 (per-view layouts: still BLOCKED locally, covered by the CI half) |
+| Authenticated views | Shell, navigation and the dashboard's a11y are **VERIFIED in CI**. All 27 views are rendered by the axe sweep (0 page errors, 0 overflow at 1440/390 in the last full run) and were **audited individually** in round 5 — `docs/UI-UX-AUDIT-VIEWS.md`: 9 silently-capped lists and 3 empty grids found and fixed (D-21). |
+| RTL | login surface verified in a browser; every view rendered in the sweep, but the RTL *rendering* of the 27 views is inspected statically (dir/RTL utilities), not exercised at width |
+| Performance | **not measured** — a dev server with no database cannot produce a meaningful number, and reporting one would be dishonest. No view has a measured render cost |
+| i18n | **0** English JSX prose, **0** English `aria-label` literals and **0** English `title`/`placeholder`/`label`/`description` literals remain in `src/components`; the guard is a TypeScript JSX parse, all three ceilings are **0** |
+| Remaining defects | **D-06 closed** (round 5 audits every view). **D-09 closed** (role change announced). **D-10 bounded** (10px floor enforced; 10/11px density is a product decision, deliberately not overridden). **D-15 closed** (ceiling 0). Open and tracked: **D-22** (Next pinned outside the OpenNext range — documented, remediation needs registry egress) and **D-23** (pooler proof passes its CI control run; the operator's own pooler run is still outstanding, because this audit has no route to it). **D-25** is added but has never executed (no Cloudflare credentials) |
 
 ### 6. Round 2 — the bilingual sweep (D-14, D-15) and the last native confirm
 
@@ -1095,6 +1100,88 @@ syntax.
 `a11y-guards` 11/11, `untranslated-text` 3/3 at ceiling 0). It is **not VERIFIED**: that requires the next
 sweep, which renders all 30 views with a seeded database and is the only instrument that can see contrast
 ratios and focus order. Round 4 dispositions are therefore *fixed, pending sweep* — not *done*.
+
+### 6c-bis. The sweep result on #18's merge commit — 15 → 4
+
+Run `40216192291` rendered all 30 surfaces after round 4. It reported **4 problems**, down from 15, and the
+eleven that disappeared are exactly the classes round 4 attacked:
+
+| Rule (round 3 count) | After round 4 |
+|---|---|
+| `button-name` ×3 (unnamed preference switches) | **gone** |
+| `aria-progressbar-name` ×1 | **gone** |
+| `nested-interactive` ×4 (geography) | **gone** |
+| `svg-img-alt` ×52 (analytics scatter) | **gone** |
+| `scrollable-region-focusable` ×2 (fuel-forecast) | **gone** |
+| `color-contrast` ×30 (preferences, maintenance, sites, alarms, analytics, generators) | **1 left** |
+| `aria-hidden-focus` ×2 (dashboard, fuel) | **2 left** |
+| `scrollable-region-focusable` ×1 (tenant-isolation) | **1 left** |
+
+So round 4 is **VERIFIED**, and the four survivors are D-24 — each with a distinct cause that round 4's
+guard could not have caught: a focusable node inside a Recharts subtree whose position moves with the data,
+one Gantt bar at 4.4:1 (amber-700, below the 4.5 threshold by a hair), and two tables in `tenant-isolation`
+that bypassed the `Table` component entirely.
+
+This is the value of running the instrument rather than trusting the guard: three of the four were things a
+static scan cannot see, and one of them (`tenant-isolation`) was created by the same refactor that fixed the
+other tables.
+
+### 6e. The sweep reaches zero — round 6
+
+Run `40219118625`, job `121247141590`:
+
+```
+14 passed (7.1m)
+[chromium-desktop] › tests/e2e/views.e2e.ts took 6.8m
+0 problems across 30 rendered views
+```
+
+**The trajectory of the whole audit is 34 → 19 → 15 → 4 → 0.** Nothing was suppressed, no rule was
+disabled, no view was excluded and no assertion was loosened: the sweep asserts a deep-equal against `[]`,
+and it now receives `[]`.
+
+That closes every accessibility and i18n defect this audit opened:
+
+| | Status |
+|---|---|
+| D-12 dashboard contrast | VERIFIED |
+| D-14 / D-15 / D-19 hardcoded English (145 → 0) | VERIFIED (ceilings 0, three guards) |
+| D-17 button-name, dangling tabs, contrast, prohibited aria | VERIFIED |
+| D-20 scroll regions, nested interactive, chart tab stops, 4 contrast causes | VERIFIED |
+| D-21 capped lists / empty grids | FIXED (not an axe rule — no sweep can see it) |
+| D-24 the last four | VERIFIED |
+
+**What "zero" does not mean.** axe checks rules, not judgement. The sweep cannot see a list silently
+capped at 100 rows (D-21), an empty grid that looks like a failed load, or a 10px label that is *readable*
+but tight. Those were found by reading the code, and they are recorded as FIXED rather than VERIFIED
+because nothing in CI can promote them. Zero violations means no *rule* is broken — that is the ceiling of
+what a linter can promise, and this ledger does not inflate it.
+
+**One more thing the round produced.** The new pooler proof failed its own control run in CI — on a bug in
+the instrument (PostgreSQL reverts a custom GUC to `''`, not `NULL`, after `COMMIT`). An operator would
+have been told their healthy pooler was unsafe. The control run exists precisely to catch that, and did,
+before the script was ever pointed at real infrastructure.
+
+### 6d. Round 5 — the 27 views, audited individually
+
+Rounds 2–4 swept. A sweep renders every view and asks axe whether a *rule* is broken; it cannot see
+whether a view tells the operator what they need in the state they are actually in. Three defects of that
+second kind were found by reading all 27 view files and published as `docs/UI-UX-AUDIT-VIEWS.md`:
+
+* **Nine silently capped lists** (D-21). `sites` stopped at 100 rows with no count anywhere. On a tenant
+  with 140 sites, row 100 is indistinguishable from the last row that exists, so filtering for a site that
+  sorts past the cap returns "no results" for a site that is there. Fixed with `TruncationNote`:
+  "Showing 100 of 140. Narrow the filters to see the rest." It renders nothing when the list fits.
+* **Three empty grids** (D-21). `batteries`, `fuel` and `generators` drew an empty container under a
+  heading reading `(0)`. On a newly provisioned tenant — the first screen a new operator sees — an empty
+  grid is indistinguishable from a failed load. Each now says "Nothing here yet."
+* **D-09 closed.** Role changes are announced. The earlier note that the shell "cannot narrate" the change
+  was wrong: the value worth announcing is the role, not the render.
+
+Two things this round deliberately did **not** do. It did not touch the 682 occurrences of 10px/11px type:
+that density is a product decision about the operator's real screen, and only the unreadable 8px/9px band
+was raised (D-10, now enforced at 10px). And it did not claim a single finding as VERIFIED — every one of
+these is **FIXED**, and the sweep in Chromium remains the only instrument that can promote any of them.
 
 ### 7. Environment note (worth knowing, not a product defect)
 

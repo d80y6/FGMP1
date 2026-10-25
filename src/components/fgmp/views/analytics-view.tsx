@@ -8,6 +8,7 @@ import {
 import { useFgmp } from "@/lib/fgmp/store";
 import { useApi } from "@/lib/fgmp/use-api";
 import { useChartColors } from "@/lib/fgmp/use-chart-colors";
+import { TruncationNote } from "@/components/fgmp/truncation-note";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -181,11 +182,12 @@ export function AnalyticsView() {
               <div className="space-y-1.5">
                 {theftEvents.slice(0, 20).map((e, i: number) => (
                   <div key={i} className="flex items-start gap-2 rounded border border-rose-500/20 bg-rose-500/5 p-2 text-[11px]">
-                    <Badge variant="outline" className="h-4 shrink-0 px-1 text-[8px] border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400">{t("fuel.theft")}</Badge>
+                    <Badge variant="outline" className="h-4 shrink-0 px-1 text-[10px] border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400">{t("fuel.theft")}</Badge>
                     <div className="min-w-0 flex-1"><p className="line-clamp-2">{e.message}</p><p className="text-[10px] text-muted-foreground">{timeAgo(e.ts, numLang)}</p></div>
                   </div>
                 ))}
                 {theftEvents.length === 0 && <p className="py-8 text-center text-xs text-muted-foreground">{t("analytics.noTheftEvents")}</p>}
+                <TruncationNote shown={20} total={theftEvents.length} />
               </div>
             </ScrollArea>
           </CardContent>

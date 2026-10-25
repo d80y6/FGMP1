@@ -21,6 +21,7 @@ import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/s
 import { useTheme } from "next-themes";
 import { useState } from "react";
 import { hasCapability, ROLE_PERMISSIONS } from "@/lib/fgmp/rbac-core";
+import { nextRoleAnnouncement } from "@/lib/fgmp/role-announcement";
 import { PREVIEW_ROLES } from "@/lib/fgmp/role-preview-constants";
 import type { Role } from "@/lib/fgmp/types";
 import dynamic from "next/dynamic";
@@ -197,6 +198,15 @@ export function AppShell() {
   const [helpOpen, setHelpOpen] = useState(false);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ── Announced role changes (D-09) ───────────────────────────────────────
+  // A role change silently rewrites the navigation and every permission-gated
+  // control. A sighted operator notices the menu shrink; a screen-reader user
+  // gets nothing, and the panel they were using may have just vanished
+  // underneath them. The live region below announces it once.
+  const tFmt = useTF();
+  const [roleAnnouncement, setRoleAnnouncement] = useState("");
+  const announcedRoleRef = useRef<string | null>(null);
+
   // i18n hydration (call once near top of client tree).
   useLanguageHydration();
 
@@ -213,6 +223,23 @@ export function AppShell() {
   useEffect(() => {
     if (status === "authenticated" && me) init();
   }, [init, status, me]);
+
+  // Announce a role change, and only a CHANGE. The first resolution of the
+  // identity is the sign-in itself — the operator knows what they just did, and
+  // announcing it would talk over the app's own "signed in" state. Keyed on the
+  // role, not on `me`, so a refetch that returns the same role stays silent.
+  useEffect(() => {
+    const next = nextRoleAnnouncement(announcedRoleRef.current, me?.role);
+    announcedRoleRef.current = next.previous;
+    if (!next.changed || !me?.role) return;
+    const roleKey = `role.${me.role.toLowerCase()}`;
+    const translated = t(roleKey);
+    setRoleAnnouncement(
+      tFmt("auth.roleChanged", {
+        role: translated === roleKey ? me.role.replace(/_/g, " ") : translated,
+      }),
+    );
+  }, [me?.role, t, tFmt]);
 
   // Push the session user into the Zustand store so legacy consumers
   // (command-palette, site-notes-panel, users-view, …) keep reading `me`
@@ -473,6 +500,14 @@ export function AppShell() {
       {/* Skip-to-content link — keyboard a11y (bypasses 27 nav items) */}
       <a href="#main-content" className="skip-link">{t("common.skipToContent")}</a>
 
+      {/* Role-change announcement (D-09). `sr-only`, polite, and empty until a
+          change happens: an always-populated live region is announced on every
+          navigation and trains the user to ignore it. `aria-atomic` makes the
+          reader deliver the whole sentence rather than the diff. */}
+      <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+        {roleAnnouncement}
+      </div>
+
       {/* Platform support access banner. Renders nothing unless a support
           session is open; when one is, it is the only thing on the page that
           cannot be dismissed without ending the session. */}
@@ -516,9 +551,9 @@ export function AppShell() {
               <div className="flex items-center gap-2">
                 <span className="text-sm font-bold tracking-tight">{t("brand.name")}</span>
                 {role === "SUPERADMIN" && (
-                  <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-400 text-[9px]">SUPER</Badge>
+                  <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-400 text-[10px]">SUPER</Badge>
                 )}
-                <Badge variant="secondary" className="hidden h-4 px-1 text-[9px] font-medium md:inline-flex">v2.4</Badge>
+                <Badge variant="secondary" className="hidden h-4 px-1 text-[10px] font-medium md:inline-flex">v2.4</Badge>
               </div>
               <p className="text-[10px] leading-none text-muted-foreground" dir={dir === "rtl" ? "rtl" : undefined}>{t("brand.tagline")}</p>
             </div>
@@ -578,7 +613,7 @@ export function AppShell() {
           >
             <Search className="h-3.5 w-3.5" />
             <span>{t("common.search")}</span>
-            <kbd className="ml-4 inline-flex items-center gap-0.5 rounded border bg-background px-1 py-0.5 text-[9px] font-medium" dir="ltr">
+            <kbd className="ml-4 inline-flex items-center gap-0.5 rounded border bg-background px-1 py-0.5 text-[10px] font-medium" dir="ltr">
               <Command className="h-2.5 w-2.5" />K
             </kbd>
           </button>

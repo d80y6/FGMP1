@@ -7,6 +7,7 @@ import { Zap, Power, AlertOctagon, RotateCcw, Search, Thermometer, Clock, Fuel a
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, YAxis } from "recharts";
 import { useFgmp } from "@/lib/fgmp/store";
 import { useApi } from "@/lib/fgmp/use-api";
+import { TruncationNote } from "@/components/fgmp/truncation-note";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { StatusBadge } from "@/components/fgmp/status-badge";
@@ -91,12 +92,12 @@ export function GeneratorsView() {
                       <p className="truncate text-sm font-medium hover:underline">{g.label}</p>
                       <p className="truncate text-[10px] text-muted-foreground">{g.code} · {g.manufacturer} {g.model}</p>
                     </button>
-                    <StatusBadge value={g.status} className="h-5 text-[9px]" />
+                    <StatusBadge value={g.status} className="h-5 text-[10px]" />
                   </div>
                   <div className="mt-2 grid grid-cols-3 gap-1.5 text-[11px]">
-                    <div className="rounded bg-muted/40 px-1.5 py-1"><p className="text-[9px] text-muted-foreground">{t("generators.load").toUpperCase()}</p><p className="font-semibold tabular-nums">{formatNumber(g.loadKw, numLang)}kW</p></div>
-                    <div className="rounded bg-muted/40 px-1.5 py-1"><p className="text-[9px] text-muted-foreground">{t("generators.temp").toUpperCase()}</p><p className={cn("font-semibold tabular-nums", g.temperatureC > 95 && "text-rose-500")}>{formatNumber(g.temperatureC, numLang)}°C</p></div>
-                    <div className="rounded bg-muted/40 px-1.5 py-1"><p className="text-[9px] text-muted-foreground">{t("generators.runtime").toUpperCase()}</p><p className="font-semibold tabular-nums">{formatNumber(Math.round(g.runtimeHours), numLang)}h</p></div>
+                    <div className="rounded bg-muted/40 px-1.5 py-1"><p className="text-[10px] text-muted-foreground">{t("generators.load").toUpperCase()}</p><p className="font-semibold tabular-nums">{formatNumber(g.loadKw, numLang)}kW</p></div>
+                    <div className="rounded bg-muted/40 px-1.5 py-1"><p className="text-[10px] text-muted-foreground">{t("generators.temp").toUpperCase()}</p><p className={cn("font-semibold tabular-nums", g.temperatureC > 95 && "text-rose-500")}>{formatNumber(g.temperatureC, numLang)}°C</p></div>
+                    <div className="rounded bg-muted/40 px-1.5 py-1"><p className="text-[10px] text-muted-foreground">{t("generators.runtime").toUpperCase()}</p><p className="font-semibold tabular-nums">{formatNumber(Math.round(g.runtimeHours), numLang)}h</p></div>
                   </div>
                   <div className="mt-2 flex items-center gap-1">
                     <Button size="sm" variant="outline" className="h-6 flex-1 text-[10px]" disabled={g.status === "RUNNING"} onClick={() => doControl(g, "START")}>
@@ -114,7 +115,11 @@ export function GeneratorsView() {
                   </div>
                 </div>
               ))}
+              {gens.length === 0 && (
+                <p className="py-6 text-center text-xs text-muted-foreground">{t("common.noneYet")}</p>
+              )}
             </div>
+            <TruncationNote shown={40} total={gens.length} />
           </CardContent>
         </Card>
 
@@ -130,7 +135,7 @@ export function GeneratorsView() {
                     <p className="text-[11px] text-muted-foreground">{detail.site} · {detail.manufacturer} {detail.model} · {formatNumber(detail.ratedPowerKw, numLang)}kW</p>
                   </div>
                   <div className="grid grid-cols-2 gap-2 text-xs">
-                    <DetailRow label={t("common.status")} value={<StatusBadge value={detail.status} className="h-5 text-[9px]" />} />
+                    <DetailRow label={t("common.status")} value={<StatusBadge value={detail.status} className="h-5 text-[10px]" />} />
                     <DetailRow label={t("generators.mode")} value={detail.mode} />
                     <DetailRow label={t("generators.runtime")} value={`${formatNumber(detail.runtimeHours, numLang)} h`} />
                     <DetailRow label={t("generators.temperature")} value={`${formatNumber(detail.temperatureC, numLang)} °C`} tone={detail.temperatureC > 95 ? "danger" : undefined} />
@@ -186,7 +191,7 @@ export function GeneratorsView() {
                 <FuelIcon className="h-3.5 w-3.5 text-amber-500" />
                 <span className="font-medium">{g.label}</span>
                 <span className="text-muted-foreground">{g.site}</span>
-                <Badge variant="outline" className="h-4 px-1 text-[8px]">{tFmt("common.hoursOf", { a: formatNumber(Math.round(g.runtimeHours), numLang), b: formatNumber(Math.round(g.nextMaintenanceHrs), numLang) })}</Badge>
+                <Badge variant="outline" className="h-4 px-1 text-[10px]">{tFmt("common.hoursOf", { a: formatNumber(Math.round(g.runtimeHours), numLang), b: formatNumber(Math.round(g.nextMaintenanceHrs), numLang) })}</Badge>
               </div>
             ))}
             {dueMaint.length === 0 && <p className="py-2 text-xs text-muted-foreground">{t("generators.noMaintenanceDue")}</p>}

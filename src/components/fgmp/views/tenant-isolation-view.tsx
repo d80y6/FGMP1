@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useFgmp } from "@/lib/fgmp/store";
 import { useApi } from "@/lib/fgmp/use-api";
 import { canAccessApi } from "@/lib/fgmp/rbac-core";
+import { ScrollRegion } from "@/components/ui/scroll-region";
 import { useT, useTF } from "@/lib/fgmp/use-language";
 
 // ── Types (mirror the API response) ────────────────────────────────────────
@@ -234,7 +235,7 @@ export function TenantIsolationView() {
           <Card className="p-5">
             <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold">
               <Building2 className="h-5 w-5 text-primary" />{t("isolation.census")}</h2>
-            <div className="overflow-x-auto">
+            <ScrollRegion label={t("isolation.census")} className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b text-left">
@@ -251,7 +252,7 @@ export function TenantIsolationView() {
                       <td className="p-2 font-medium">
                         {tn.tenantName}
                         {tn.tenantCode === "PLATFORM" && (
-                          <Badge className="ml-2 bg-amber-500/15 text-amber-700 dark:text-amber-400 text-[9px]">PLATFORM</Badge>
+                          <Badge className="ml-2 bg-amber-500/15 text-amber-700 dark:text-amber-400 text-[10px]">PLATFORM</Badge>
                         )}
                       </td>
                       <td className="p-2 text-muted-foreground">{tn.tenantCode}</td>
@@ -264,7 +265,7 @@ export function TenantIsolationView() {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </ScrollRegion>
           </Card>
 
           {/* Cross-tenant test results */}
@@ -339,7 +340,7 @@ export function TenantIsolationView() {
             <p className="mb-4 text-sm text-muted-foreground">
               {tFmt("isolation.scopingAuditDesc", { fn1: "tenantWhereOrAll", fn2: "siteTenantWhereOrAll" })}
             </p>
-            <div className="overflow-x-auto">
+            <ScrollRegion label={t("isolation.scopingAudit")} className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b text-left">
@@ -380,7 +381,7 @@ export function TenantIsolationView() {
                   })}
                 </tbody>
               </table>
-            </div>
+            </ScrollRegion>
           </Card>
 
           <div className="text-xs text-muted-foreground">

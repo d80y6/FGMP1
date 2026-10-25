@@ -197,7 +197,7 @@ export function CommandHistoryPanel({ commands }: Props) {
             <p className="text-[10px] text-muted-foreground">{t("cmdHistory.subtitle")}</p>
           </div>
         </div>
-        <Badge variant="outline" className="h-5 px-1.5 text-[9px] tabular-nums">{formatNumber(stats.total, numLang)} {t("cmdHistory.total").toLowerCase()}</Badge>
+        <Badge variant="outline" className="h-5 px-1.5 text-[10px] tabular-nums">{formatNumber(stats.total, numLang)} {t("cmdHistory.total").toLowerCase()}</Badge>
       </CardHeader>
 
       <CardContent className="space-y-3">
@@ -272,7 +272,7 @@ export function CommandHistoryPanel({ commands }: Props) {
                             {genLabel && <span className="text-[10px] text-muted-foreground">· {genLabel}</span>}
                             {siteName && <span className="truncate text-[10px] text-muted-foreground">· {siteName}</span>}
                             {isFailed && (
-                              <span className="inline-flex items-center gap-0.5 text-[9px] font-medium text-rose-700 dark:text-rose-400">
+                              <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-rose-700 dark:text-rose-400">
                                 <AlertTriangle className="h-2.5 w-2.5" /> {t("cmdHistory.failed")}
                               </span>
                             )}
@@ -300,7 +300,7 @@ export function CommandHistoryPanel({ commands }: Props) {
                         <Badge
                           variant="outline"
                           className={cn(
-                            "h-4 shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-semibold",
+                            "h-4 shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
                             STATUS_BADGE[c.uiStatus],
                             isPending && "animate-pulse-soft",
                           )}
@@ -400,7 +400,7 @@ function FilterChip({
       )}
     >
       {label}
-      <span className={cn("ml-1 rounded-full px-1 text-[9px]", active ? "bg-sky-500/20" : "bg-muted/60")}>{count}</span>
+      <span className={cn("ml-1 rounded-full px-1 text-[10px]", active ? "bg-sky-500/20" : "bg-muted/60")}>{count}</span>
     </Button>
   );
 }

@@ -44,6 +44,7 @@ import type { AlarmRow } from "@/lib/fgmp/types";
 import { translate } from "@/lib/fgmp/i18n";
 import { ResourceError } from "@/components/fgmp/resource-error";
 import { DecorativeChart } from "@/components/fgmp/decorative-chart";
+import { TruncationNote } from "@/components/fgmp/truncation-note";
 
 type DashboardRange = "1h" | "24h" | "7d";
 
@@ -220,7 +221,7 @@ export function DashboardView() {
             </Button>
             <Button variant="outline" size="sm" onClick={() => setView("alarms")}>
               <Siren className="mr-1.5 h-4 w-4" /> {t("dash.alarms")}
-              {k.openAlarms > 0 && <Badge className="ml-1.5 h-4 px-1 text-[9px]">{formatNumber(k.openAlarms, numLang)}</Badge>}
+              {k.openAlarms > 0 && <Badge className="ml-1.5 h-4 px-1 text-[10px]">{formatNumber(k.openAlarms, numLang)}</Badge>}
             </Button>
             <ExportButton
               filename={csvFilename("kpi-snapshot")}
@@ -405,8 +406,8 @@ export function DashboardView() {
                       </div>
                       <p className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">{a.message}</p>
                       <div className="mt-1 flex items-center gap-1.5">
-                        <StatusBadge value={a.severity} className="h-4 px-1 text-[9px]" />
-                        <StatusBadge value={a.status} className="h-4 px-1 text-[9px]" />
+                        <StatusBadge value={a.severity} className="h-4 px-1 text-[10px]" />
+                        <StatusBadge value={a.status} className="h-4 px-1 text-[10px]" />
                         <span className="truncate text-[10px] text-muted-foreground">{a.site?.name}</span>
                       </div>
                     </div>
@@ -536,6 +537,8 @@ export function DashboardView() {
           <CardContent className="p-0">
             <ScrollArea className="h-[220px]">
               <div className="space-y-1 px-3 pb-3">
+                {/* The activity feed is the 40 most recent events. Without the
+                    note, the 40th row reads as the oldest event there is. */}
                 {snapshot.events.slice(0, 40).map((e) => (
                   <div key={e.id} className="flex items-start gap-2 border-b py-1.5 text-xs last:border-0">
                     <span className={cn("mt-1 h-1.5 w-1.5 shrink-0 rounded-full",
@@ -556,7 +559,8 @@ export function DashboardView() {
                   />
                 )}
               </div>
-            </ScrollArea>
+            <TruncationNote shown={40} total={snapshot.events.length} />
+              </ScrollArea>
           </CardContent>
         </Card>
       </div>

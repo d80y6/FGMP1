@@ -832,7 +832,7 @@ function QuietHoursTimeline({ start, end, numLang, t }: QuietHoursTimelineProps)
         })}
       </div>
       {/* Tick labels */}
-      <div className="relative h-3 text-[9px] text-muted-foreground" dir="ltr">
+      <div className="relative h-3 text-[10px] text-muted-foreground" dir="ltr">
         {ticks.map((tick) => (
           <span
             key={tick}

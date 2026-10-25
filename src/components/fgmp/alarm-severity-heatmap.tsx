@@ -329,7 +329,7 @@ export function AlarmSeverityHeatmap({
                     >
                       <span className={cn("h-2 w-2 shrink-0 rounded-full", meta.dot)} />
                       <span className="text-[10px] font-medium">{meta.short}</span>
-                      <span className="text-[9px] text-muted-foreground">{t(meta.fullKey)}</span>
+                      <span className="text-[10px] text-muted-foreground">{t(meta.fullKey)}</span>
                       <span className="ml-auto text-[10px] tabular-nums text-muted-foreground">
                         {formatNumber(stats.totals[s], lang)}
                       </span>
@@ -348,11 +348,11 @@ export function AlarmSeverityHeatmap({
                       className="relative flex min-w-[24px] max-w-[32px] flex-1 items-start justify-center"
                     >
                       {i === 23 ? (
-                        <span className="rounded-sm bg-emerald-500/15 px-1 text-[8px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+                        <span className="rounded-sm bg-emerald-500/15 px-1 text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
                           {t("heatmap.now")}
                         </span>
                       ) : LABEL_COLS.has(i) ? (
-                        <span className="text-[9px] tabular-nums text-muted-foreground">
+                        <span className="text-[10px] tabular-nums text-muted-foreground">
                           {formatNumber(hourLabels[i], lang)}
                         </span>
                       ) : null}
@@ -416,7 +416,7 @@ export function AlarmSeverityHeatmap({
                       className="flex min-w-[24px] max-w-[32px] flex-1 items-center justify-center"
                     >
                       {stats.hourTotals[i] > 0 ? (
-                        <span className="text-[9px] tabular-nums text-muted-foreground">
+                        <span className="text-[10px] tabular-nums text-muted-foreground">
                           {formatNumber(stats.hourTotals[i], lang)}
                         </span>
                       ) : null}

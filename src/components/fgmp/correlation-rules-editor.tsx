@@ -270,7 +270,7 @@ export function CorrelationRulesEditor({ open, onOpenChange }: Props) {
                 {triggeredCount > 0 && (
                   <Badge
                     variant="secondary"
-                    className="ml-1.5 h-4 bg-rose-500/20 px-1 text-[9px] text-rose-700 dark:text-rose-400"
+                    className="ml-1.5 h-4 bg-rose-500/20 px-1 text-[10px] text-rose-700 dark:text-rose-400"
                   >
                     {triggeredCount}
                   </Badge>
@@ -410,7 +410,7 @@ function ActiveRuleCard({
             </h4>
             {triggered && <TriggeredBadge />}
             {!rule.enabled && (
-              <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
+              <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                 <Power className="h-2.5 w-2.5" /> {t("rules.disabled")}
               </span>
             )}
@@ -739,7 +739,7 @@ const t = useT();
         <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
           {rule.enabled ? t("common.enabled") : t("common.disabled")}
         </span>
-        <span className="ml-auto font-mono text-[9px] text-muted-foreground/60">
+        <span className="ml-auto font-mono text-[10px] text-muted-foreground/60">
           {rule.id.slice(-8)}
         </span>
       </div>
@@ -981,7 +981,7 @@ export function CorrelationRulesTriggerButton({
       <ShieldAlert className="mr-1.5 h-4 w-4" />
       Rules
       {triggeredCount > 0 && (
-        <span className="ml-1.5 inline-flex items-center gap-1 rounded-full bg-rose-500 px-1.5 text-[9px] font-bold text-white">
+        <span className="ml-1.5 inline-flex items-center gap-1 rounded-full bg-rose-500 px-1.5 text-[10px] font-bold text-white">
           <Zap className="h-2.5 w-2.5" />
           {triggeredCount}
         </span>

@@ -370,7 +370,7 @@ function DetailGrid({ row }: { row: MaintRow }) {
           >
             <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             <div className="min-w-0 flex-1">
-              <p className="text-[9px] uppercase tracking-wide text-muted-foreground">
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
                 {t(it.labelKey)}
               </p>
               <p className="truncate text-[11px] font-medium tabular-nums">{it.value}</p>
@@ -402,7 +402,7 @@ function GeneratorCard({ row }: { row: MaintRow }) {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <p className="truncate text-sm font-medium">{row.label}</p>
-            <Badge variant="outline" className="h-4 px-1 text-[9px] text-muted-foreground">
+            <Badge variant="outline" className="h-4 px-1 text-[10px] text-muted-foreground">
               {row.manufacturer}
             </Badge>
           </div>
@@ -486,7 +486,7 @@ function StatTile({
     <div className="rounded-md border bg-muted/20 px-2.5 py-2">
       <div className="flex items-center gap-1.5">
         <span className={cn("shrink-0", TONE_TEXT[tone ?? "muted"])}>{icon}</span>
-        <p className="text-[9px] uppercase tracking-wide text-muted-foreground">{label}</p>
+        <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
       </div>
       <p className={cn("mt-1 text-base font-bold tabular-nums", TONE_TEXT[tone ?? "muted"])}>
         {value}

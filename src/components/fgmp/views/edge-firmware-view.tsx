@@ -361,7 +361,7 @@ function GatewaysTab({ gateways, loading, numLang }: {
                     </TableCell>
                     <TableCell className="hidden md:table-cell text-xs">{g.siteName}</TableCell>
                     <TableCell>
-                      <Badge variant="outline" className="text-[9px]">
+                      <Badge variant="outline" className="text-[10px]">
                         {g.source === "dispenser" ? "Dispenser" : "IoT"}
                       </Badge>
                     </TableCell>
@@ -369,7 +369,7 @@ function GatewaysTab({ gateways, loading, numLang }: {
                     <TableCell className="text-[10px] font-mono tabular-nums">
                       <span className="text-foreground">@{formatNumber(g.rs485Address, numLang)}</span>
                       <span className="text-muted-foreground"> · {formatNumber(g.rs485Baudrate, numLang)}</span>
-                      <div className="text-[9px] text-muted-foreground">{g.rs485Parity}</div>
+                      <div className="text-[10px] text-muted-foreground">{g.rs485Parity}</div>
                     </TableCell>
                     <TableCell>
                       <RssiBar rssi={g.wifiRssi} numLang={numLang} />
@@ -378,7 +378,7 @@ function GatewaysTab({ gateways, loading, numLang }: {
                       {g.lastCommMs ? timeAgo(new Date(g.lastCommMs).toISOString(), numLang) : "—"}
                     </TableCell>
                     <TableCell>
-                      <StatusBadge value={g.status} className="h-5 text-[9px]" />
+                      <StatusBadge value={g.status} className="h-5 text-[10px]" />
                     </TableCell>
                   </TableRow>
                 ))}
@@ -552,7 +552,7 @@ function FirmwareTab({ gateways, loading, onRefresh }: {
                         </TableCell>
                         <TableCell>
                           {g.otaStatus ? (
-                            <Badge variant="outline" className="text-[9px]">{g.otaStatus}</Badge>
+                            <Badge variant="outline" className="text-[10px]">{g.otaStatus}</Badge>
                           ) : (
                             <span className="text-[10px] text-muted-foreground">—</span>
                           )}
@@ -764,7 +764,7 @@ function Rs485Tab({ gateways, loading, numLang }: {
                       </TableCell>
                       <TableCell className="text-[10px] font-mono">
                         <div className="tabular-nums">{formatNumber(b.baud, numLang)} baud</div>
-                        <div className="text-[9px] text-muted-foreground">{b.parity}</div>
+                        <div className="text-[10px] text-muted-foreground">{b.parity}</div>
                       </TableCell>
                       <TableCell className="text-xs tabular-nums">
                         {formatNumber(b.devices.length, numLang)}
@@ -778,7 +778,7 @@ function Rs485Tab({ gateways, loading, numLang }: {
                                 key={i}
                                 variant="outline"
                                 className={
-                                  "text-[9px] tabular-nums " +
+                                  "text-[10px] tabular-nums " +
                                   (isConflict
                                     ? "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-400"
                                     : "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400")
@@ -815,15 +815,15 @@ function Rs485Tab({ gateways, loading, numLang }: {
                       </TableCell>
                       <TableCell>
                         {b.conflicts.length > 0 ? (
-                          <Badge variant="outline" className="border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-400 text-[9px]">
+                          <Badge variant="outline" className="border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-400 text-[10px]">
                             CONFLICT
                           </Badge>
                         ) : b.signalQuality > 50 ? (
-                          <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-[9px]">
+                          <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-[10px]">
                             HEALTHY
                           </Badge>
                         ) : (
-                          <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[9px]">
+                          <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[10px]">
                             DEGRADED
                           </Badge>
                         )}
@@ -929,7 +929,7 @@ function RebootTab({ gateways, loading, numLang, onReboot, isAdmin }: {
                       {g.lastCommMs ? timeAgo(new Date(g.lastCommMs).toISOString(), numLang) : "—"}
                     </TableCell>
                     <TableCell>
-                      <StatusBadge value={g.status} className="h-5 text-[9px]" />
+                      <StatusBadge value={g.status} className="h-5 text-[10px]" />
                     </TableCell>
                     <TableCell className="text-right">
                       <Button

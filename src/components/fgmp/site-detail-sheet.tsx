@@ -116,7 +116,7 @@ export function SiteDetailSheet({ siteId, open, onOpenChange }: { siteId: string
                                 <div className="flex items-center gap-2">
                                   <Droplet className="h-4 w-4 text-sky-500" />
                                   <span className="text-sm font-medium">{tk.label}</span>
-                                  <StatusBadge value={tk.status} className="h-5 text-[9px]" />
+                                  <StatusBadge value={tk.status} className="h-5 text-[10px]" />
                                   {canEditThresholds && (
                                     <TankThresholdEditor
                                       tankId={tk.id}
@@ -147,7 +147,7 @@ export function SiteDetailSheet({ siteId, open, onOpenChange }: { siteId: string
                               <div className="flex items-center gap-2">
                                 <Zap className="h-4 w-4 text-amber-500" />
                                 <span className="text-sm font-medium">{g.label}</span>
-                                <StatusBadge value={g.status} className="h-5 text-[9px]" />
+                                <StatusBadge value={g.status} className="h-5 text-[10px]" />
                                 <span className="text-[10px] text-muted-foreground">{g.manufacturer} {g.model}</span>
                               </div>
                               <span className="text-xs tabular-nums">{g.ratedPowerKw} kW</span>
@@ -193,7 +193,7 @@ export function SiteDetailSheet({ siteId, open, onOpenChange }: { siteId: string
                               <div className="flex items-center gap-2">
                                 <BatteryCharging className="h-4 w-4 text-emerald-500" />
                                 <span className="text-sm font-medium">{b.label}</span>
-                                <StatusBadge value={b.status} className="h-5 text-[9px]" />
+                                <StatusBadge value={b.status} className="h-5 text-[10px]" />
                               </div>
                               <span className="text-xs">{b.chemistry} · {b.nominalVoltage}V</span>
                             </div>
@@ -220,7 +220,7 @@ export function SiteDetailSheet({ siteId, open, onOpenChange }: { siteId: string
                           </div>
                           <div className="flex items-center gap-2">
                             <span className="text-[10px] text-muted-foreground">{d.ipAddress}</span>
-                            <StatusBadge value={d.status} className="h-5 text-[9px]" />
+                            <StatusBadge value={d.status} className="h-5 text-[10px]" />
                           </div>
                         </div>
                       ))}
@@ -234,7 +234,7 @@ export function SiteDetailSheet({ siteId, open, onOpenChange }: { siteId: string
                       {(data?.deliveries ?? []).slice(0, 5).map((d) => (
                         <div key={d.id} className="flex items-center justify-between rounded border p-2 text-[11px]">
                           <span>{fmtDateTime(d.scheduledAt, numLang)} · {formatNumber(Math.round(d.volumeOrderedLitres), numLang)}L</span>
-                          <StatusBadge value={d.status} className="h-5 text-[9px]" />
+                          <StatusBadge value={d.status} className="h-5 text-[10px]" />
                         </div>
                       ))}
                       <div className="mb-2 mt-3 flex items-center gap-2 text-xs">
@@ -347,7 +347,7 @@ function Stat({ label, value, tone }: { label: string; value: React.ReactNode; t
 function Metric({ label, value, tone }: { label: string; value: string; tone?: "danger" | "warn" }) {
   return (
     <div className="rounded bg-muted/40 px-2 py-1">
-      <p className="text-[9px] uppercase text-muted-foreground">{label}</p>
+      <p className="text-[10px] uppercase text-muted-foreground">{label}</p>
       <p className={cn("font-semibold tabular-nums", tone === "danger" && "text-rose-500", tone === "warn" && "text-amber-500")}>{value}</p>
     </div>
   );

@@ -146,10 +146,11 @@ migrations are applied). Both are unauthenticated by design; the detailed
 | Document | Contents |
 |---|---|
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Request path, engine/telemetry clock, tenancy, protocols, realtime |
-| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Compose/Render deployment, migrations, backup and restore |
+| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Cloudflare Workers deployment (OpenNext), migrations, backup and restore |
 | [`docs/SECURITY.md`](docs/SECURITY.md) | Auth, RBAC, RLS, MFA, secrets, residual risks |
 | [`docs/OPERATIONS.md`](docs/OPERATIONS.md) | Health, metrics, scheduler, MQTT, incident checks |
 | [`docs/TESTING.md`](docs/TESTING.md) | Browser verification and automated suites |
+| [`docs/UI-UX-AUDIT-VIEWS.md`](docs/UI-UX-AUDIT-VIEWS.md) | Per-view UI/UX audit: all 27 views measured, what was found and what it could not do |
 | [`docs/READINESS.md`](docs/READINESS.md) | Production-readiness audit: what was fixed and what is still external |
 | [`docs/MFA.md`](docs/MFA.md) | MFA design, recovery model and operational notes |
 | [`docs/CONSOLIDATION.md`](docs/CONSOLIDATION.md) | What was removed, merged or moved in the October 2026 cleanup |

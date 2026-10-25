@@ -103,7 +103,7 @@ export function SiteHealthCard({
         ))}
       </div>
 
-      <p className="mt-2 text-[9px] leading-relaxed text-muted-foreground">
+      <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">
         {t("detail.healthLive")}
       </p>
     </div>

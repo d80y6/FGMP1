@@ -13,6 +13,7 @@ import {
 } from "recharts";
 import { useFgmp } from "@/lib/fgmp/store";
 import { useApi, apiPost, apiPatch, apiDelete } from "@/lib/fgmp/use-api";
+import { TruncationNote } from "@/components/fgmp/truncation-note";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { StatusBadge } from "@/components/fgmp/status-badge";
@@ -495,8 +496,8 @@ export function DispensersView() {
                             <TableCell className="hidden lg:table-cell">
                               <Badge variant="outline" className={
                                 d.fuelType === "DIESEL"
-                                  ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[9px]"
-                                  : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-[9px]"
+                                  ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[10px]"
+                                  : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-[10px]"
                               }>{fuelTypeLabel(d.fuelType, numLang)}</Badge>
                             </TableCell>
                             <TableCell className="hidden xl:table-cell text-[10px] tabular-nums text-muted-foreground" dir="ltr">
@@ -529,11 +530,11 @@ export function DispensersView() {
                                   {timeAgo(d.liveLastCommAt ?? Date.now(), numLang)}
                                 </span>
                               </div>
-                              <div className="text-[9px] text-muted-foreground tabular-nums" dir="ltr">{formatNumber(d.liveWifiRssi, numLang)} dBm</div>
+                              <div className="text-[10px] text-muted-foreground tabular-nums" dir="ltr">{formatNumber(d.liveWifiRssi, numLang)} dBm</div>
                             </TableCell>
                             <TableCell>
-                              <StatusBadge value={status} className="h-5 text-[9px]" />
-                              <div className="text-[9px] text-muted-foreground mt-0.5">{modeLabel(d.liveMode, numLang)}</div>
+                              <StatusBadge value={status} className="h-5 text-[10px]" />
+                              <div className="text-[10px] text-muted-foreground mt-0.5">{modeLabel(d.liveMode, numLang)}</div>
                             </TableCell>
                             <TableCell className="text-right">
                               {/* The ten control commands of proposal feature
@@ -611,6 +612,7 @@ export function DispensersView() {
                       })}
                     </TableBody>
                   </Table>
+                  <TruncationNote shown={100} total={filtered.length} />
                 </div>
               )}
             </CardContent>
@@ -677,7 +679,7 @@ export function DispensersView() {
                             <TableCell>
                               <div className="flex flex-col">
                                 <span className="text-xs font-medium">{tx.dispenser?.label ?? "—"}</span>
-                                <span className="font-mono text-[9px] text-muted-foreground" dir="ltr">{tx.dispenser?.espDeviceId ?? ""}</span>
+                                <span className="font-mono text-[10px] text-muted-foreground" dir="ltr">{tx.dispenser?.espDeviceId ?? ""}</span>
                               </div>
                             </TableCell>
                             <TableCell className="hidden md:table-cell text-xs">{tx.site?.name ?? "—"}</TableCell>
@@ -697,10 +699,10 @@ export function DispensersView() {
                             <TableCell className="text-right text-xs tabular-nums">{formatYer(tx.amountYer, numLang)}</TableCell>
                             <TableCell>
                               <Badge variant="outline" className={
-                                tx.status === "COMPLETED" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-[9px]" :
-                                tx.status === "IN_PROGRESS" ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[9px]" :
-                                tx.status === "CANCELLED" ? "border-slate-500/30 bg-slate-500/10 text-slate-500 text-[9px]" :
-                                "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400 text-[9px]"
+                                tx.status === "COMPLETED" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-[10px]" :
+                                tx.status === "IN_PROGRESS" ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[10px]" :
+                                tx.status === "CANCELLED" ? "border-slate-500/30 bg-slate-500/10 text-slate-500 text-[10px]" :
+                                "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400 text-[10px]"
                               }>{txnStatusLabel(tx.status, numLang)}</Badge>
                             </TableCell>
                           </TableRow>
@@ -708,6 +710,7 @@ export function DispensersView() {
                       })}
                     </TableBody>
                   </Table>
+                  <TruncationNote shown={200} total={filteredTxns.length} />
                 </div>
               )}
             </CardContent>
@@ -882,7 +885,7 @@ export function DispensersView() {
                     <TableBody>
                       {volumeByStatus.map((v) => (
                         <TableRow key={v.status}>
-                          <TableCell><Badge variant="outline" className="h-5 text-[9px]">{txnStatusLabel(v.status, numLang)}</Badge></TableCell>
+                          <TableCell><Badge variant="outline" className="h-5 text-[10px]">{txnStatusLabel(v.status, numLang)}</Badge></TableCell>
                           <TableCell className="text-right text-xs tabular-nums">{formatNumber(v.txns, numLang)}</TableCell>
                           <TableCell className="text-right text-xs tabular-nums">{formatNumber(Math.round(v.volume * 10) / 10, numLang)} L</TableCell>
                         </TableRow>
