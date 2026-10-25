@@ -437,6 +437,18 @@ jobs:
           AXE_PATH="$PW_HOME/node_modules/axe-core/axe.min.js" \
           node "$PW_HOME/node_modules/@playwright/test/cli.js" test --reporter=list 2>&1 | tee /tmp/ui.log
 
+      # The per-view sweep writes a table of what every screen did (axe, HTTP,
+      # overflow, tiny-text count). It is published whether the run passed or
+      # failed: on a pass it is the evidence, on a failure it is the diagnosis,
+      # and reading it from the job log alone means re-running to see it again.
+      - name: Upload the per-view sweep report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: views-report
+          path: test-results/views-report.md
+          if-no-files-found: warn
+
       - name: Publish failure diagnostics
         if: always()
         env:
