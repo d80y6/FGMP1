@@ -3,7 +3,12 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { hasMfaEnabled, consumeLoginProof } from "./fgmp/mfa/service";
 import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
-import { resolveSessionConfig } from "@/lib/auth-session";
+import {
+  DEFAULT_SESSION_MAX_AGE_MS,
+  DEFAULT_SESSION_UPDATE_AGE_MS,
+  resolveSessionConfig,
+} from "@/lib/auth-session";
+import { noteConfigProblem } from "@/lib/fgmp/config-health";
 import { evaluateDemoCredential } from "./fgmp/demo-credentials";
 import {
   findUserByEmail,
@@ -172,11 +177,38 @@ declare module "next-auth/jwt" {
  * ── WHERE THE VALUES COME FROM ───────────────────────────────────────────────
  * `resolveSessionConfig()` in `src/lib/auth-session.ts` — the defaults, the
  * env overrides and the validation all live there, next to the tests that pin
- * them. It throws on a nonsensical configuration, and this module calls it at
- * load time, so a bad value stops the process at boot rather than at the first
- * login.
+ * them.
+ *
+ * ── WHY THE THROW IS CAUGHT HERE ────────────────────────────────────────────
+ * `resolveSessionConfig()` throws on a nonsensical value, and this module is
+ * evaluated at MODULE SCOPE by every route that imports the auth helper. On
+ * Cloudflare Workers (the production target) an uncaught throw there is not a
+ * boot failure: workerd answers every request to every such route with a bare
+ * `500`, keeps serving, and caches the failed evaluation. A typo in
+ * `FGMP_SESSION_MAX_AGE_MS=` therefore took the whole API down with no reason
+ * on the wire. See src/lib/fgmp/config-health.ts.
+ *
+ * The fallback is the DOCUMENTED DEFAULT, not an unbounded session: 8h absolute
+ * / 1h refresh are the safe values this setting exists to guarantee, so a
+ * mistyped override degrades to the intended bound instead of to "no bound".
+ * The problem is recorded, and `requireAuth()` answers 503 SESSION_CONFIG_INVALID
+ * for every request until it is fixed — the deployment still refuses to serve,
+ * it just says why.
  */
-const SESSION_CONFIG = resolveSessionConfig();
+const SESSION_CONFIG = (() => {
+  try {
+    return resolveSessionConfig();
+  } catch (err) {
+    noteConfigProblem({
+      code: "SESSION_CONFIG_INVALID",
+      detail: err instanceof Error ? err.message : String(err),
+    });
+    return {
+      maxAge: DEFAULT_SESSION_MAX_AGE_MS,
+      updateAge: DEFAULT_SESSION_UPDATE_AGE_MS,
+    };
+  }
+})();
 
 export const authOptions: NextAuthOptions = {
   session: {

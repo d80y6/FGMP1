@@ -13,6 +13,7 @@ import type { Role } from "@/lib/fgmp/types";
 import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { PREVIEW_COOKIE, verifyPreviewToken } from "@/lib/fgmp/role-preview";
 import { getSessionState } from "@/lib/auth-identity";
+import { firstConfigProblem } from "@/lib/fgmp/config-health";
 import { evaluatePendingSession } from "@/lib/fgmp/mfa/guard";
 
 /**
@@ -64,6 +65,30 @@ export async function requireAuth(_request?: Request): Promise<AuthResult> {
       };
     }
   }
+  // ── Configuration gate ───────────────────────────────────────────────────
+  // The checks that used to THROW at module scope (a database role that bypasses
+  // RLS, a nonsense session lifetime) are evaluated once per isolate by
+  // src/lib/fgmp/config-health.ts. Answering 503 here keeps the fail-closed
+  // property — no handler runs, no query is issued — while giving the operator a
+  // code instead of the bare `500` a module-scope throw produces on Workers,
+  // where every /api/fgmp route shares this import.
+  //
+  // `detail` carries variable NAMES and the already-redacted RLS verdict, never
+  // a value; the unauthenticated readiness probe publishes the code only.
+  const configProblem = firstConfigProblem();
+  if (configProblem) {
+    return {
+      error: NextResponse.json(
+        {
+          error: "The server is not configured correctly.",
+          code: configProblem.code,
+          detail: configProblem.detail,
+        },
+        { status: 503 },
+      ),
+    };
+  }
+
   const session = await getServerSession(authOptions);
   if (!session?.user) {
     return {

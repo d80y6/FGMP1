@@ -54,10 +54,25 @@ Two unauthenticated probes now exist:
 | `/api/health/live` | is the process serving HTTP (no database) | always 200 while alive |
 | `/api/health/ready` | can it reach PostgreSQL **and** has the schema been migrated | 200 / 503 with a coarse reason |
 
-The readiness body carries only `{status, reason}`. It is wired into the
-Dockerfile `HEALTHCHECK`, the compose healthcheck, the CI container boot test
-(which asserts `"status":"ready"`), and the Cloudflare first-deploy checklist
-in [DEPLOYMENT.md](DEPLOYMENT.md) §4.
+The readiness body carries `{status, reason}` plus, when the deployment's own
+configuration is wrong, a stable `code` (`RLS_NOT_ENFORCED`, `ENV_INVALID`,
+`SESSION_CONFIG_INVALID`). It is wired into the Dockerfile `HEALTHCHECK`, the
+compose healthcheck, the CI container boot test (which asserts
+`"status":"ready"`), and the Cloudflare first-deploy checklist in
+[DEPLOYMENT.md](DEPLOYMENT.md) §4.
+
+**`reason` values, and why there are more of them than when this section was
+written.** The probe used to answer `db_unreachable` for everything that was not
+`ok`, `schema_missing` or `timeout` — including the case where the database layer
+could not be *loaded* at all, which is a different operator action ("the bundle is
+wrong, redeploy") from an unreachable database ("the network or the credential is
+wrong"). It also used to fail to load ITSELF in that case, because it statically
+imported the Prisma client; a probe that cannot outlive the dependency it probes
+is not a probe. The current reasons are `ok`, `config_invalid` (with a `code`),
+`runtime_unavailable`, `db_unreachable`, `schema_missing` and `timeout`; the
+database import is dynamic and guarded, so the probe answers instead of dying.
+Interpretation table: [DEPLOYMENT.md](DEPLOYMENT.md) §4 "When every
+`/api/fgmp/*` route answers 500".
 
 **Verified:** against a real standalone server — `live` 200,
 `ready` 503 `db_unreachable` with no database, `fgmp/health` 401 unauthenticated.
@@ -273,7 +288,7 @@ PostgreSQL rather than read off the migration text.
 | Request | Result |
 |---|---|
 | `/api/health/live` | `200 {"status":"live","uptimeSeconds":…}` |
-| `/api/health/ready` | `503 {"status":"not_ready","reason":"db_unreachable"}` — correct here, the engine is missing (§8) |
+| `/api/health/ready` | `503 {"status":"not_ready","reason":"runtime_unavailable"}` — correct here, the generated engine is missing (§8) |
 | `/` | `200`, with CSP, HSTS, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy` |
 | every `/api/fgmp/*` route | `401 {"error":"Unauthorized"}` without a session |
 

@@ -116,11 +116,21 @@ TOTP with encrypted-at-rest secrets and single-use recovery codes. See
 
 ## 5. Boot-time validation
 
-The server refuses to start on an invalid environment (`src/lib/env.ts`,
-`FGMP_REQUIRE_RLS=0` in production, short secrets, partial realtime
-credentials) and exits non-zero rather than serving a half-configured platform.
-`bun run check:env` applies the same rules before a deploy. Problem reports name
-variables, never values.
+On a Node/Bun container the server refuses to start on an invalid environment
+(`src/lib/env.ts`, `FGMP_REQUIRE_RLS=0` in production, short secrets, partial
+realtime credentials) and exits non-zero rather than serving a half-configured
+platform. `bun run check:env` applies the same rules before a deploy. Problem
+reports name variables, never values.
+
+On Cloudflare Workers — the production target — there is no process to kill:
+`src/instrumentation.ts` documents that throwing out of `register()` leaves the
+runtime serving. The same verdicts are therefore evaluated once per isolate by
+`src/lib/fgmp/config-health.ts` and enforced on the request path, where
+`requireAuth()` answers `503` with a stable code (`ENV_INVALID`,
+`RLS_NOT_ENFORCED`, `SESSION_CONFIG_INVALID`) before any handler runs.
+Enforcement is identical — nothing serves — but the failure is readable rather
+than a platform-wide bare `500`, which is what a module-scope throw produces
+there. `GET /api/health/ready` reports the code anonymously.
 
 ## 6. Secrets
 
@@ -204,7 +214,7 @@ trigger, download or restore a dump over HTTP.
 
 | Gap | Impact | Mitigation |
 |---|---|---|
-| A Worker deployment may be given an owner-role `DATABASE_URL` | RLS cannot be enforced | Create `fgmp_app`, keep `FGMP_REQUIRE_RLS=1` in the Worker secrets; the app refuses to start otherwise |
+| A Worker deployment may be given an owner-role `DATABASE_URL` | RLS cannot be enforced | Create `fgmp_app`, keep `FGMP_REQUIRE_RLS=1` in the Worker secrets. The app then refuses every `/api/fgmp/*` request with `503 RLS_NOT_ENFORCED` (and `/api/health/ready` reports it) instead of querying unscoped |
 | `SensorReading` has no retention policy | Dumps and tables grow without bound | Plan a TimescaleDB retention policy |
 | Recovery-code + password policy is configurable, not prescribed | Weak operator choices | Documented defaults; review in code review |
 | Audit log is append-only in the app, not in the database | A compromised app role could rewrite it | Restrict `fgmp_app` to INSERT/SELECT on `AuditLog`; export logs off-box |
