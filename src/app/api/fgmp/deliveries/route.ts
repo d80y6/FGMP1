@@ -13,7 +13,7 @@ import {
   READ_LIMIT,
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse, ApiError } from "@/lib/fgmp/api-error";
-import { requireAuth, requireRole, ROLES, assertSiteTenantOwned, siteTenantWhereOrAll } from "@/lib/fgmp/auth-helpers";
+import { requireAuth, requireRole, ROLES, can, assertSiteTenantOwned, siteTenantWhereOrAll } from "@/lib/fgmp/auth-helpers";
 import { decimalsToJson } from "@/lib/fgmp/decimal";
 
 export const dynamic = "force-dynamic";
@@ -108,6 +108,25 @@ export async function POST(req: NextRequest) {
     const data = r.data;
 
     if (data.action === "verify") {
+      // ── The action's own capability, not just the endpoint's ─────────────
+      // `delivery:verify` is declared in the matrix (ADMIN, NOC_OPERATOR,
+      // REGIONAL_MANAGER, FIELD_ENGINEER) and until now it gated NOTHING: the
+      // endpoint is admitted by ROLES.DELIVERY and its path policy requires
+      // `delivery:manage`, so a role could hold the capability, be shown it in
+      // the Roles matrix, and still be refused — or, worse, hold neither and pass
+      // on the path rule alone. Verifying a delivery is the step that writes
+      // delivered volumes against a tank, so it is worth the check.
+      //
+      // Checked AFTER validation (so a malformed body is a 400, not a 403) and
+      // BEFORE any read: three of the four holders above are in ROLES.DELIVERY,
+      // so this changes no current outcome — it makes the declared capability
+      // true, which is what lets the client gate a Verify button on it.
+      if (!can(me, "delivery:verify")) {
+        return NextResponse.json(
+          { error: "Forbidden", code: "INSUFFICIENT_CAPABILITY" },
+          { status: 403 },
+        );
+      }
       // Phase 3: the guard, the conditional write and the read-back run in ONE
       // transaction. Previously each was a separate unscoped `db` statement, so
       // the check-and-set was not atomic and nothing was tenant-scoped.

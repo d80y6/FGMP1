@@ -6,6 +6,7 @@ import { asTenant, asTenantForAnotherTenant, resolveTenantScope } from "@/lib/fg
 import {
   requireRole,
   ROLES,
+  can,
   isSuperAdminUser,
   requireTenantId,
 } from "@/lib/fgmp/auth-helpers";
@@ -194,8 +195,17 @@ export async function POST(req: NextRequest) {
   }
   const { name, email, role, phone, password, tenantId: clientTenantId } = parsed.data;
 
-  // Tenant-admins cannot grant the platform super-admin role.
-  if (!superAdmin && role === "SUPERADMIN") {
+  // Granting the platform role is a CAPABILITY, not a role-name comparison.
+  //
+  // `user:grant-superadmin` is declared in `SUPERADMIN_ONLY_CAPABILITIES`
+  // (rbac-core.ts) — only SUPERADMIN holds it, through the `*` wildcard — and
+  // `__tests__/platform-tier-parity.test.ts` fails if any other role is given
+  // it. Until this check existed the capability was declared and enforced
+  // NOWHERE: the guard below compared the caller's role string to "SUPERADMIN"
+  // in three separate places (here, `users/[id]` and `grant-guards.ts`), so the
+  // matrix could have been edited to grant the key to a new platform role and
+  // nothing would have changed. One declared capability, one enforced check.
+  if (role === "SUPERADMIN" && !can(me, "user:grant-superadmin")) {
     return NextResponse.json(
       { error: "Only super-admins can grant the super-admin role", code: "CANNOT_ASSIGN_SUPERADMIN" },
       { status: 403 },

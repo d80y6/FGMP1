@@ -462,11 +462,27 @@ function CreateUserDialog({
 }) {
   const t = useT();
   const [submitting, setSubmitting] = useState(false);
-  const isSuperAdmin = meRole === "SUPERADMIN";
+  // ── Capabilities, not role names ───────────────────────────────────────────
+  // Three different questions were all answered with `meRole === "SUPERADMIN"`:
+  //
+  //   may the caller OFFER the platform role?   → user:grant-superadmin
+  //   may the caller NAME another tenant?       → view:tenants (the dropdown is
+  //                                               fed by GET /api/fgmp/tenants,
+  //                                               which requires exactly that)
+  //   is the caller a super-admin?              → only for copy/hints
+  //
+  // They coincide today, which is why the difference never showed — but the
+  // server now refuses a platform-role grant on the capability, `useApi` already
+  // refuses to call a route the caller has no capability for, and a role-string
+  // comparison in the view silently contradicts both if the matrix changes.
+  // Same rule as the nav: what the UI offers comes from the same declaration the
+  // API enforces.
+  const canGrantSuperAdmin = hasCapability(meRole, "user:grant-superadmin");
+  const canNameTenant = hasCapability(meRole, "view:tenants");
   // Super-admin picks the tenant from a dropdown; tenant-admin is fixed to
   // their own tenant (the API ignores the field and forces own-tenant).
   const { data: tenants } = useApi<TenantRow[]>(
-    isSuperAdmin ? "/api/fgmp/tenants" : null,
+    canNameTenant ? "/api/fgmp/tenants" : null,
     { interval: 60000 },
   );
   const ownTenantName = useMemo(() => tenants?.[0]?.name ?? meTenantId, [tenants, meTenantId]);
@@ -491,7 +507,7 @@ function CreateUserDialog({
     // Super-admin must explicitly pick a tenant (unless they are creating
     // another super-admin, which is tenant-agnostic and the backend will
     // default to the platform tenant).
-    if (isSuperAdmin && values.role !== "SUPERADMIN" && !values.tenantId) {
+    if (canNameTenant && values.role !== "SUPERADMIN" && !values.tenantId) {
       form.setError("tenantId", { message: t("users.tenantRequired") });
       toast.error(t("users.tenantRequired"));
       return;
@@ -505,7 +521,7 @@ function CreateUserDialog({
         phone: values.phone || null,
         password: values.password,
       };
-      if (isSuperAdmin && values.tenantId) body.tenantId = values.tenantId;
+      if (canNameTenant && values.tenantId) body.tenantId = values.tenantId;
       const res = await apiPost("/api/fgmp/users", body);
       if (res.ok) {
         toast.success(t("users.createSuccess"));
@@ -572,7 +588,7 @@ function CreateUserDialog({
             />
             {/* Tenant selector — visible to super-admin only. Tenant-admins are
                 fixed to their own tenant; show a small read-only badge. */}
-            {isSuperAdmin ? (
+            {canNameTenant ? (
               <FormField
                 control={form.control}
                 name="tenantId"
@@ -627,11 +643,11 @@ function CreateUserDialog({
                       value={field.value}
                       onChange={field.onChange}
                       lang={lang}
-                      excludeSuperAdmin={!isSuperAdmin}
+                      excludeSuperAdmin={!canGrantSuperAdmin}
                     />
                   </FormControl>
                   <FormDescription className="text-[11px]">
-                    {isSuperAdmin ? t("users.superadminScopeHint") : t("users.tenantAdminScopeHint")}
+                    {canGrantSuperAdmin ? t("users.superadminScopeHint") : t("users.tenantAdminScopeHint")}
                   </FormDescription>
                   <FormMessage className="text-xs" />
                 </FormItem>
@@ -707,7 +723,14 @@ function EditUserDialog({
 }) {
   const t = useT();
   const [submitting, setSubmitting] = useState(false);
-  const isSuperAdmin = meRole === "SUPERADMIN";
+  // Two independent conditions, and they must BOTH hold:
+  //   the caller may grant the platform role  → user:grant-superadmin
+  //   the target already lives in the platform tenant → placement
+  // The second is not a permission: promotion does not move an account, so
+  // offering SUPERADMIN for a customer-tenant row would create permanent
+  // standing access to that customer. The server refuses it
+  // (superAdminPromotionRefusal); the dialog must not invite it.
+  const canGrantSuperAdmin = hasCapability(meRole, "user:grant-superadmin");
   // The role list offers SUPERADMIN only when the SERVER would accept the
   // promotion: the target must already live in the platform tenant. Promotion
   // does not move the account, so promoting a customer-tenant user would give
@@ -716,7 +739,7 @@ function EditUserDialog({
   // refuses it (`superAdminPromotionRefusal`); this hides the option instead of
   // inviting a 400.
   const canHoldSuperAdmin =
-    isSuperAdmin && platformTenantId !== null && target?.tenantId === platformTenantId;
+    canGrantSuperAdmin && platformTenantId !== null && target?.tenantId === platformTenantId;
 
   const form = useForm<EditForm>({
     resolver: zodResolver(editSchema),
@@ -802,7 +825,7 @@ function EditUserDialog({
                   <FormDescription className="text-[11px]">
                     {canHoldSuperAdmin
                       ? t("users.superadminScopeHint")
-                      : isSuperAdmin
+                      : canGrantSuperAdmin
                         ? t("users.superadminPlatformOnly")
                         : t("users.tenantAdminScopeHint")}
                   </FormDescription>
