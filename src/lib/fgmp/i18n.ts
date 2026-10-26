@@ -47,6 +47,7 @@ export const DICTIONARY: Dict = {
   "common.noResults": { en: "No results found.", ar: "لا توجد نتائج." },
   "common.toggleTheme": { en: "Toggle theme", ar: "تبديل السمة" },
   "common.switchRole": { en: "Switch role", ar: "تبديل الدور" },
+  "common.readOnly": { en: "Read only", ar: "قراءة فقط" },
   "common.skipToContent": { en: "Skip to main content", ar: "تخطَّ إلى المحتوى الرئيسي" },
   "common.openNavigation": { en: "Open navigation", ar: "فتح قائمة التنقل" },
   "common.closeNavigation": { en: "Close navigation", ar: "إغلاق قائمة التنقل" },

@@ -115,7 +115,22 @@ export function EdgeFirmwareView() {
   // gate, two different answers. Deriving both from `dispenser:control` is the
   // only version that can agree with the API.
   const canControlDispensers = me ? hasCapability(me.role, "dispenser:control") : false;
-  const canOta = canControlDispensers;
+  // OTA is NOT `dispenser:control`, whatever the reboot endpoint is: the deploy
+  // button posts to one of two endpoints depending on where the gateway record
+  // came from, and NEITHER of them is the reboot one.
+  //
+  //   dispenser-sourced row → PATCH /api/fgmp/dispensers/:id  → asset:manage
+  //   iot-sourced row       → PATCH /api/fgmp/iot             → edge:manage
+  //
+  // The button was rendered for anyone holding `dispenser:control` — which is
+  // NOC_OPERATOR and FIELD_ENGINEER — and both of them lack `asset:manage` and
+  // `edge:manage`, so for them the deploy was a guaranteed local 403. It was
+  // `disabled` rather than hidden, which is the same lie in a quieter font (and
+  // its tooltip was hard-coded English).
+  const canPatchDispensers = me ? hasCapability(me.role, "asset:manage") : false;
+  const canPatchIot = me ? hasCapability(me.role, "edge:manage") : false;
+  const canOtaFor = (source: EspGateway["source"]) =>
+    source === "iot" ? canPatchIot : canPatchDispensers;
   const [tab, setTab] = useState<"gateways" | "firmware" | "rs485" | "reboot">("gateways");
 
   const { data: dispensers, loading: dispLoading } = useApi<DispenserRow[]>(
@@ -265,7 +280,7 @@ export function EdgeFirmwareView() {
             loading={loading}
             numLang={numLang}
             onRefresh={tick}
-            canOta={canOta}
+            canOtaFor={canOtaFor}
           />
         </TabsContent>
         <TabsContent value="rs485" className="mt-4">
@@ -412,14 +427,14 @@ function GatewaysTab({ gateways, loading, numLang }: {
  * Tab 2: ESP Firmware
  * ──────────────────────────────────────────────────────────────────────── */
 
-function FirmwareTab({ gateways, loading, onRefresh, canOta }: {
+function FirmwareTab({ gateways, loading, onRefresh, canOtaFor }: {
   gateways: EspGateway[];
   loading: boolean;
   numLang: Language;
   onRefresh: (delayMs?: number) => void;
-  /** False when the viewer lacks `dispenser:control` (the deploy endpoint's
-   *  gate), so the OTA button cannot be pressed into a 403. */
-  canOta: boolean;
+  /** Per-ROW, because the two sources post to endpoints with different
+   *  capabilities (`asset:manage` vs `edge:manage`). */
+  canOtaFor: (source: EspGateway["source"]) => boolean;
 }) {
   const t = useT();
   const cc = useChartColors();
@@ -578,19 +593,19 @@ function FirmwareTab({ gateways, loading, onRefresh, canOta }: {
                           )}
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button
-                            size="sm" variant="outline"
-                            className="h-6 px-2 text-[10px]"
-                            disabled={!canOta}
-                            title={canOta ? undefined : "Requires dispenser control capability"}
-                            onClick={() => {
-                              setOtaTarget(g);
-                              setOtaFw(nextFw(g.firmware, latestFw));
-                            }}
-                          >
-                            <HardDriveDownload className="mr-1 h-3 w-3" />
-                            OTA
-                          </Button>
+                          {canOtaFor(g.source) && (
+                            <Button
+                              size="sm" variant="outline"
+                              className="h-6 px-2 text-[10px]"
+                              onClick={() => {
+                                setOtaTarget(g);
+                                setOtaFw(nextFw(g.firmware, latestFw));
+                              }}
+                            >
+                              <HardDriveDownload className="mr-1 h-3 w-3" />
+                              {t("iot.ota")}
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}

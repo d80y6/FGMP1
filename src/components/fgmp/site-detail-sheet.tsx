@@ -56,11 +56,23 @@ export function SiteDetailSheet({ siteId, open, onOpenChange }: { siteId: string
   const site = data?.site;
   const role = me?.role ?? "READONLY";
   const notesReadOnly = role === "READONLY";
-  // Threshold editing follows `settings:manage` — the capability PATCH
-  // /api/fgmp/interlocks/thresholds/[id] enforces — rather than the ADMIN role
-  // literal, which also hid it from SUPERADMIN (wildcard holder, and admitted
-  // by the route).
-  const canEditThresholds = hasCapability(role, "settings:manage");
+  // Threshold editing follows the capability of the endpoint the editors
+  // actually call, which is `asset:manage`:
+  //   TankThresholdEditor   → PATCH /api/fgmp/tanks/:id
+  //   GenMaintenanceEditor  → PATCH /api/fgmp/generators/:id
+  // The gate used to name `settings:manage` (the capability of
+  // /api/fgmp/interlocks/thresholds, which is a different screen and never
+  // called from here). The two sets of holders coincide today, so nothing broke
+  // — which is precisely why the wrong name survived: the next widening of
+  // either capability would have made the gate wrong in one direction or the
+  // other.
+  const canEditThresholds = hasCapability(role, "asset:manage");
+  // Generator commands from this sheet post to
+  // `POST /api/fgmp/generators/:id/control` (`gen:control`). The sheet is
+  // reachable from the dashboard and the sites view, both of which many roles
+  // can open, so the four buttons here were a row of 403s for anyone who could
+  // read a site but not command its generator.
+  const canControlGenerators = hasCapability(role, "gen:control");
 
   // The region crumb links to Geography, which only ADMIN and SUPERADMIN hold.
   // Without the capability the region is still named — as text, not a link —
@@ -187,6 +199,7 @@ export function SiteDetailSheet({ siteId, open, onOpenChange }: { siteId: string
                               <Metric label={t("detail.fuelRate")} value={`${g.fuelRateLph} L/h`} />
                             </div>
                             <div className="mt-2 flex flex-wrap gap-1.5">
+                              {canControlGenerators && (<>
                               <Button size="sm" variant="outline" className="h-7 text-[11px]" disabled={g.status === "RUNNING"} onClick={() => setCtrl({ id: g.id, label: g.label, cmd: "START" })}>
                                 <Power className="mr-1 h-3 w-3 text-emerald-500" />{t("detail.start")}
                               </Button>
@@ -199,6 +212,7 @@ export function SiteDetailSheet({ siteId, open, onOpenChange }: { siteId: string
                               <Button size="sm" variant="outline" className="h-7 text-[11px] border-rose-500/40 text-rose-700 dark:text-rose-400 hover:bg-rose-500/10" onClick={() => setCtrl({ id: g.id, label: g.label, cmd: "EMERGENCY_STOP" })}>
                                 <AlertOctagon className="mr-1 h-3 w-3" />{t("detail.eStop")}
                               </Button>
+                              </>)}
                               <span className="ml-auto self-center text-[10px] text-muted-foreground">{t("detail.nextMaint")}: {Math.round(g.nextMaintenanceHrs)} h</span>
                               {canEditThresholds && (
                                 <GenMaintenanceEditor

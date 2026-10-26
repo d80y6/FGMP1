@@ -201,6 +201,13 @@ export function SystemSettingsView() {
 
 function SettingsSection({ category, numLang }: { category: Category; numLang: Language }) {
   const meta = CATEGORY_META[category];
+  // Save and Reset both `PATCH /api/fgmp/settings`, which the policy gates on
+  // `settings:manage` — WIDER than `view:system-settings`, which is only what
+  // opens the screen. Deriving the buttons from the write capability instead of
+  // from "the viewer got past the page gate" is what keeps a read-only settings
+  // role from being handed two buttons that both 403.
+  const meRole = useFgmp((s) => s.me?.role ?? null);
+  const canEditSettings = meRole !== null && hasCapability(meRole, "settings:manage");
   const t = useT();
   const fields = FIELDS[category];
   const Icon = meta.icon;
@@ -333,29 +340,38 @@ function SettingsSection({ category, numLang }: { category: Category; numLang: L
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {isDirty && (
+            {!canEditSettings && (
+              <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                {t("common.readOnly")}
+              </Badge>
+            )}
+            {canEditSettings && isDirty && (
               <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[10px]">
                 {t("settings.unsavedChanges")}
               </Badge>
             )}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleResetDefaults}
-              disabled={loading || saving}
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">{t("rules.resetToDefaults")}</span>
-              <span className="sm:hidden">Reset</span>
-            </Button>
-            <Button
-              size="sm"
-              onClick={handleSave}
-              disabled={!isDirty || saving || loading}
-            >
-              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-              {t("systemSettings.saveChanges")}
-            </Button>
+            {canEditSettings && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleResetDefaults}
+                  disabled={loading || saving}
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">{t("rules.resetToDefaults")}</span>
+                  <span className="sm:hidden">Reset</span>
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleSave}
+                  disabled={!isDirty || saving || loading}
+                >
+                  {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                  {t("systemSettings.saveChanges")}
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </CardHeader>

@@ -115,6 +115,34 @@ boundary.
 | `useCap` / `useCan` / `useCanView` | `use-access.ts` | one resolver for the effective role; `null` (unresolved) grants nothing |
 | `identityKey(me)` | `store.ts` | binds cached payloads to `user\|role\|tenant` |
 
+### 2.0 A control is tied to its ENDPOINT, not to its screen
+
+The view capability decides whether a screen exists for a role. It says nothing
+about what the role may *do* once there, and the two are different sets for
+eleven of the twenty-two `view:*` capabilities. The rule the client follows:
+
+> A control is rendered only if the role holds the capability its endpoint
+> requires — `apiRequestCapabilities(method, url)` — never because the role
+> reached the screen that hosts it.
+
+`rbac-mutation-gates.test.ts` enforces it mechanically: for every component that
+calls `apiPost/apiPatch/apiPut/apiDelete` with a literal URL, it asks the policy
+core which capabilities that exact method+URL needs and fails if the component
+never mentions one of them. It exists because the hand-written table in
+`rbac-ui-gates.test.ts` caught only the screens somebody had written down, and
+three live defects of exactly this shape survived it:
+
+| Screen | Control | Needs | Was shown to |
+|---|---|---|---|
+| Dashboard | Ack an alarm | `alarm:ack` | FIELD_ENGINEER, EXECUTIVE, READONLY |
+| IoT Devices | OTA / reboot | `edge:manage` | five roles without it |
+| Edge & Firmware | OTA | `asset:manage` (dispenser row) or `edge:manage` (iot row) | NOC_OPERATOR, FIELD_ENGINEER |
+
+Each was a button whose only possible outcome was a "denied" toast. The scan
+skips template-built URLs (`/api/fgmp/tanks/${id}`) because the static prefix is
+a different endpoint; those files are listed explicitly in the scan and covered
+by `ACTION_GATES` instead, and the list is asserted so it cannot grow silently.
+
 ### 2.1 Why payloads are keyed by identity
 
 `/api/fgmp/state` returns one tenant's data — or, for SUPERADMIN, every tenant's.

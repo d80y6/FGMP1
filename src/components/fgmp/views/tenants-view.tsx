@@ -113,6 +113,15 @@ export function TenantsView() {
     };
   }, [tenants]);
 
+  // Two different questions, deliberately kept apart:
+  //   view:tenants  — may open this screen (grants the whole tenant registry)
+  //   tenant:manage / user:manage — may create, edit, delete a tenant, mint its
+  //   first admin, or reseed it. Both are SUPERADMIN-only today, so the row menu
+  //   was effectively safe — but "the view capability happens to imply the write
+  //   capability" is the coupling that turned into a live defect everywhere else
+  //   in this file's audit, so the controls name the write capability directly.
+  const canManageTenants = me ? hasCapability(me.role, "tenant:manage") : false;
+  const canManageUsers = me ? hasCapability(me.role, "user:manage") : false;
   // Access control: `view:tenants` — granted only through SUPERADMIN's
   // wildcard, so this is the matrix's answer rather than a second copy of it.
   if (me && !hasCapability(me.role, "view:tenants")) {
@@ -135,10 +144,12 @@ export function TenantsView() {
         icon={<Building2 className="h-5 w-5" />}
         tone="emerald"
         actions={
-          <Button onClick={() => setCreateOpen(true)} size="sm">
-            <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">{t("tenants.add")}</span>
-          </Button>
+          canManageTenants ? (
+            <Button onClick={() => setCreateOpen(true)} size="sm">
+              <Plus className="h-4 w-4" />
+              <span className="hidden sm:inline">{t("tenants.add")}</span>
+            </Button>
+          ) : undefined
         }
       />
 
@@ -236,26 +247,36 @@ export function TenantsView() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="w-40">
-                            <DropdownMenuItem onClick={() => setEditTarget(tnt)}>
-                              <Pencil className="mr-2 h-3.5 w-3.5" />
-                              {t("common.edit")}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => setCreateAdminTarget(tnt)}>
-                              <UserPlus className="mr-2 h-3.5 w-3.5" />
-                              {t("tenants.createAdmin")}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => setSupportTarget(tnt)}>
-                              <ShieldAlert className="mr-2 h-3.5 w-3.5" />
-                              {t("tenants.supportAccess")}
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              className="text-rose-700 dark:text-rose-400 focus:text-rose-700"
-                              onClick={() => setDeleteTarget(tnt)}
-                            >
-                              <Trash2 className="mr-2 h-3.5 w-3.5" />
-                              {t("common.delete")}
-                            </DropdownMenuItem>
+                            {canManageTenants && (
+                              <DropdownMenuItem onClick={() => setEditTarget(tnt)}>
+                                <Pencil className="mr-2 h-3.5 w-3.5" />
+                                {t("common.edit")}
+                              </DropdownMenuItem>
+                            )}
+                            {canManageUsers && (
+                              <DropdownMenuItem onClick={() => setCreateAdminTarget(tnt)}>
+                                <UserPlus className="mr-2 h-3.5 w-3.5" />
+                                {t("tenants.createAdmin")}
+                              </DropdownMenuItem>
+                            )}
+                            {canManageTenants && (
+                              <DropdownMenuItem onClick={() => setSupportTarget(tnt)}>
+                                <ShieldAlert className="mr-2 h-3.5 w-3.5" />
+                                {t("tenants.supportAccess")}
+                              </DropdownMenuItem>
+                            )}
+                            {canManageTenants && (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  className="text-rose-700 dark:text-rose-400 focus:text-rose-700"
+                                  onClick={() => setDeleteTarget(tnt)}
+                                >
+                                  <Trash2 className="mr-2 h-3.5 w-3.5" />
+                                  {t("common.delete")}
+                                </DropdownMenuItem>
+                              </>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>

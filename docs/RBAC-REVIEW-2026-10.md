@@ -587,6 +587,22 @@ the review does not have to be re-derived to know whether an item is still real.
 | B9 | `SECURITY.md` §2 names the `?tenant=` exception, its SUPERADMIN-only rule, its no-enumeration property, and which of its operations are audited | `platform-tenant-boundary.test.ts` — behavioural, over `resolveTenantScope` |
 | drift in the navigation surface | one `NAV_ENTRIES` table (`src/lib/fgmp/navigation.ts`); the sidebar and the command palette both render from it, so a capability can no longer exist on one surface and not the other | `rbac-nav-single-source.test.ts` |
 
+**Second pass — controls tied to their endpoint.** The first pass tied *views*
+to capabilities. Three live defects showed that was only half the rule, because a
+view capability is not a write capability for eleven of the twenty-two `view:*`
+keys: the dashboard offered *Ack* (needs `alarm:ack`) to FIELD_ENGINEER,
+EXECUTIVE and READONLY; IoT Devices offered *OTA* and *reboot* (needs
+`edge:manage`) to five roles without it; and Edge & Firmware derived its OTA
+button from `dispenser:control` while the deploy posts to endpoints that need
+`asset:manage` or `edge:manage` — so the two roles the button was *for* were the
+two it refused. All three are closed, and the rule is now enforced by
+`rbac-mutation-gates.test.ts`, which derives the answer from the policy core
+instead of a hand-written table: for every component that mutates a literal URL,
+the capability that URL requires must be named in the component. Eight other
+screens had the same coupling in a latent form (create/revoke/save/menu controls
+gated only by the view capability, which happens to imply the write capability
+today); they now name the write capability directly.
+
 **Still open, deliberately:**
 
 - **F10** — the site-notes question is a product decision, not a gate.

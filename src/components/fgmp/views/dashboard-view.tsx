@@ -14,7 +14,7 @@ import { useFgmp } from "@/lib/fgmp/store";
 import { useFavorites } from "@/lib/fgmp/use-favorites";
 import { useApi, apiPost } from "@/lib/fgmp/use-api";
 import { useChartColors } from "@/lib/fgmp/use-chart-colors";
-import { useCanView } from "@/lib/fgmp/use-access";
+import { useCan, useCanView } from "@/lib/fgmp/use-access";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { NationalMap } from "@/components/fgmp/national-map";
 import { SectionHeader } from "@/components/fgmp/section-header";
@@ -67,6 +67,14 @@ export function DashboardView() {
   // view the role lacks. A link is a promise; only offer the ones that can be
   // kept.
   const canView = useCanView();
+  // The Ack button posts `{ action: "acknowledge" }` to /api/fgmp/alarms, which
+  // the policy allows for any-of `alarm:ack` | `alarm:resolve` and the handler
+  // then narrows to `alarm:ack`. Gating on the VIEW (`view:alarms`) was wrong in
+  // the one direction that matters here: FIELD_ENGINEER, EXECUTIVE and READONLY
+  // may open the dashboard and read alarms, so they were offered an Ack button
+  // whose only possible outcome was a local 403 toast.
+  const can = useCan();
+  const canAck = can("alarm:ack");
   const t = useT();
   const tFmt = useTF();
   const useArabicNums = useArabicNumerals();
@@ -334,6 +342,7 @@ export function DashboardView() {
                       </span>
                     </div>
                   </button>
+                  {canAck && (
                   <Button
                     size="sm"
                     variant="outline"
@@ -352,6 +361,7 @@ export function DashboardView() {
                   >
                     <CheckCircle2 className="mr-1 h-3.5 w-3.5" /> {t("dash.ackAlarmShort")}
                   </Button>
+                  )}
                 </div>
               ))}
             </div>
