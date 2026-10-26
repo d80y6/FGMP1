@@ -347,6 +347,50 @@ the result. The workflow does not touch the database, by design.
    inside the free tier). Turn `logs.enabled` on temporarily while debugging, and
    never log a connection string, cookie or token.
 
+### When every `/api/fgmp/*` route answers 500
+
+A uniform 500 across unrelated handlers — `/me`, `/state`, `/alarms`, `/users`,
+`/iot`, `/settings`, a password reset — is never a route bug. Every one of them
+imports the same auth helper, so the failure is shared. There is exactly one
+probe to run first, and it is unauthenticated on purpose:
+
+```bash
+curl -s "$WORKER_URL/api/health/ready"; echo
+# {"status":"not_ready","reason":"…","code":"…"}   (503)
+```
+
+`reason`/`code` name the cause. Interpret them literally:
+
+| `reason` | `code` | What it means | Fix |
+|---|---|---|---|
+| `config_invalid` | `RLS_NOT_ENFORCED` | `FGMP_REQUIRE_RLS=1` and `DATABASE_URL` does not authenticate as `fgmp_app`. The table owner bypasses Row Level Security, so the app refuses to serve rather than serve unscoped queries. | Point `DATABASE_URL` at the `fgmp_app` role (the pooler-style `fgmp_app.<project-ref>` username is accepted), **or** set `FGMP_REQUIRE_RLS=0` and accept that RLS is not enforced. |
+| `config_invalid` | `ENV_INVALID` | A variable that makes serving impossible is missing or malformed — `DATABASE_URL`, `NEXTAUTH_SECRET` (≥32 chars), or `FGMP_REQUIRE_RLS=0` in production. `detail` on an authenticated route lists the NAMES. | Set it. Note what does **not** block a request: a missing `FGMP_OPS_DATABASE_URL` breaks sign-in (401s) but still serves an existing session, so it is a startup error and this table's `detail`, not a request refusal. |
+| `config_invalid` | `SESSION_CONFIG_INVALID` | `FGMP_SESSION_MAX_AGE_MS` / `FGMP_SESSION_UPDATE_AGE_MS` is not a positive number — an empty value counts, because `Number("")` is `0`. | Unset it, or give it a number of milliseconds. |
+| `runtime_unavailable` | — | `src/lib/db.ts` could not be loaded at all: the Prisma client was not generated into the bundle, or the PostgreSQL driver cannot be resolved in `workerd`. | Redeploy with `prisma generate` in the build (the deploy workflow runs it; `bun run deploy` does not). Check the Next/OpenNext pairing below. |
+| `db_unreachable` | — | The worker got as far as a connection and it failed. | Confirm the endpoint accepts TCP/TLS from Cloudflare on the configured port, and that the credential is current. |
+| `schema_missing` | — | Connected, but `public."Tenant"` does not exist. | `prisma migrate deploy` (operator step, §4). |
+| `timeout` | — | No answer within 3s. | Treat as unreachable. |
+
+If `/api/health/ready` itself answers **500**, the route module could not load.
+That is now a signal in its own right: the database layer is imported
+*dynamically* by the readiness check precisely so a broken bundle answers
+`runtime_unavailable` instead of failing to load. A 500 from that URL means the
+failure is in the route's own imports, and the next step is
+`bunx wrangler tail fgmp1` — it stream-traces the live Worker and does not need
+`observability.logs` (which is off to stay inside the free tier).
+
+**Why these used to be indistinguishable.** Two configuration checks
+(`assertRlsEnforced()` in `src/lib/db.ts` and `resolveSessionConfig()` in
+`src/lib/auth.ts`) ran at *module scope*, i.e. while the first route module was
+being evaluated. On a Node container that is a boot failure with a printed
+reason. On Workers there is no process to kill: workerd answered every
+`/api/fgmp/*` request with a bare `500`, kept serving, and cached the failed
+evaluation for the life of the isolate. A database-role typo therefore looked
+exactly like a platform-wide code bug. Both checks now run once per isolate in
+`src/lib/fgmp/config-health.ts`, and `requireAuth()` turns a failure into
+`503 { code }` *before* any handler runs. Fail-closed is unchanged; the reason is
+now readable. Do not re-introduce a module-scope throw in either module.
+
 ### Rollback
 
 `bunx wrangler rollback` returns to the previous Worker version. Migrations are

@@ -905,7 +905,19 @@ function SidebarContent({ grouped, view, navigate, me, canSeeSites }: {
   grouped: Record<string, ShellNavEntry[]>;
   view: ViewKey;
   navigate: (v: ViewKey) => void;
-  me: { name: string; role: string } | null;
+  /**
+   * The signed-in operator, for the sidebar footer avatar.
+   *
+   * Every field is OPTIONAL on purpose. This used to be
+   * `{ name: string; role: string }` — a promise the runtime does not keep: the
+   * object is the store envelope, assembled from the NextAuth JWT and then
+   * replaced by `GET /api/fgmp/me`, and either can arrive without a `name`.
+   * `me.name.split(" ")` on such a value threw "Cannot read properties of
+   * undefined (reading 'split')", and because this component sits inside the App
+   * Shell segment the route-error boundary replaced the ENTIRE screen — a
+   * missing initial took out an authenticated dashboard.
+   */
+  me: { name?: string | null; email?: string | null; role?: string | null } | null;
   /** `view:sites` — the pinned-sites list is a list of links into that view. */
   canSeeSites: boolean;
 }) {
@@ -977,15 +989,25 @@ function SidebarContent({ grouped, view, navigate, me, canSeeSites }: {
         <div className="border-t p-3">
           <div className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-slate-500 to-slate-700 text-xs font-bold text-white">
-              {me.name.split(" ").map((n) => n[0]).slice(0, 2).join("")}
+              {/* `me.name` is typed as a required string, but the value is
+                  assembled from a session (JWT claim) and from /api/fgmp/me, and
+                  a user row whose name is empty — or a session envelope that
+                  arrives without one — made this line a render crash:
+                  "Cannot read properties of undefined (reading 'split')" took
+                  out the whole AppShell segment (route-error boundary), so a
+                  cosmetic avatar initial removed every screen. Fall back to the
+                  local part of the email, then to a literal, and never assume
+                  the string exists. */}
+              {(me.name || me.email || "?").split(/\s+/).filter(Boolean).map((n) => n[0]).slice(0, 2).join("").toUpperCase()}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-medium">{me.name}</p>
+              <p className="truncate text-xs font-medium">{me.name || me.email}</p>
               <p className="truncate text-[10px] text-muted-foreground">
                 {(() => {
-                  const roleKey = `role.${me.role.toLowerCase()}`;
+                  const sidebarRole = me.role ?? "READONLY";
+                  const roleKey = `role.${sidebarRole.toLowerCase()}`;
                   const roleTr = t(roleKey);
-                  return roleTr === roleKey ? me.role.replace(/_/g, " ") : roleTr;
+                  return roleTr === roleKey ? sidebarRole.replace(/_/g, " ") : roleTr;
                 })()}
               </p>
             </div>
