@@ -36,7 +36,13 @@ which is why the geography by-id routes (the Phase 0 IDOR) also scope their
 No role bypasses tenant isolation. `SUPERADMIN` is a capability, not a tenant
 context: every tenant-scoped route — including one serving a super-admin — runs
 inside `withTenant()`, and a super-admin's own session is scoped to the platform
-tenant like anybody else's. Cross-tenant *content* requires an explicit,
+tenant like anybody else's. That last clause is a structural invariant, not a
+convention: `src/lib/fgmp/platform-identity.ts` refuses to create a super-admin
+account in a customer tenant and refuses to promote a customer-tenant user in
+place (`SUPERADMIN_TENANT_FIXED`), because such an account's ordinary session
+would read that customer's data permanently, with no support session and nothing
+in the customer's audit log. Both user routes call it, and
+`platform-tier-parity.test.ts` asserts the call sites as well as the rule. Cross-tenant *content* requires an explicit,
 time-boxed support session that names one tenant, records a reason, and is
 visible in that tenant's audit log (`docs/SUPERADMIN.md`). Cross-tenant *numbers*
 (counts on the health endpoint) are read on the ops connection and never joined

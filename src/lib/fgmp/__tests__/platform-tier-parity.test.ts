@@ -60,6 +60,12 @@ import {
   hasCapability,
 } from "../rbac-core";
 import { NAV_ENTRIES } from "../navigation";
+import {
+  PLATFORM_TENANT_ID,
+  platformTenantIdFor,
+  superAdminPlacement,
+  superAdminPromotionRefusal,
+} from "../platform-identity";
 
 const ROOT = process.cwd();
 const API_ROOT = join(ROOT, "src", "app", "api", "fgmp");
@@ -316,4 +322,79 @@ describe("platform tier — the view behind the nav entry gates itself", () => {
       expect({ view: entry.key, gates }).toEqual({ view: entry.key, gates: true });
     });
   }
+});
+
+describe("platform tier — a super-admin account lives in the platform tenant", () => {
+  // The whole support-session design rests on one structural assumption:
+  // a super-admin's session is scoped to the platform tenant, so it never
+  // points at a customer's data. Nothing in the schema enforces that — only the
+  // tenant on the SUPERADMIN `User` row — so these are the rules that keep the
+  // assumption true. The defect they close existed in the shipped UI: promoting
+  // a customer-tenant user to SUPERADMIN in place gave that account a permanent,
+  // unaudited read of that customer, with no support session and no expiry.
+
+  test("a new super-admin is placed in the platform tenant by default", () => {
+    expect(superAdminPlacement()).toEqual({ ok: true, tenantId: PLATFORM_TENANT_ID });
+    expect(superAdminPlacement(null)).toEqual({ ok: true, tenantId: PLATFORM_TENANT_ID });
+    expect(superAdminPlacement("  ")).toEqual({ ok: true, tenantId: PLATFORM_TENANT_ID });
+  });
+
+  test("naming the platform tenant explicitly is accepted", () => {
+    expect(superAdminPlacement(PLATFORM_TENANT_ID)).toEqual({
+      ok: true,
+      tenantId: PLATFORM_TENANT_ID,
+    });
+  });
+
+  test("a super-admin cannot be created in a customer tenant", () => {
+    const placement = superAdminPlacement("t-default");
+    // Refused, not silently relocated: a caller who asked for t-default must
+    // learn that the account is not going to be there.
+    expect(placement.ok).toBe(false);
+    if (!placement.ok) {
+      expect(placement.code).toBe("SUPERADMIN_TENANT_FIXED");
+      expect(placement.status).toBe(400);
+      expect(placement.error).toContain(PLATFORM_TENANT_ID);
+    }
+  });
+
+  test("promotion is allowed only for an account already in the platform tenant", () => {
+    expect(superAdminPromotionRefusal(PLATFORM_TENANT_ID)).toBeNull();
+  });
+
+  test("promotion in a customer tenant is refused", () => {
+    const refusal = superAdminPromotionRefusal("t-default");
+    expect(refusal).not.toBeNull();
+    expect(refusal?.code).toBe("SUPERADMIN_TENANT_FIXED");
+    expect(refusal?.status).toBe(400);
+  });
+
+  test("the placement rule is not exposed to a caller who cannot act on it", () => {
+    expect(platformTenantIdFor(false)).toBeNull();
+    expect(platformTenantIdFor(true)).toBe(PLATFORM_TENANT_ID);
+  });
+
+  test("both user routes enforce the rule through this module", () => {
+    // A test of a pure function proves the RULE; it does not prove the rule has
+    // a caller. `mfa/guard.ts` was complete, documented and tested while no
+    // route called it, so the call sites are asserted too.
+    const create = readFileSync(join(ROOT, "src/app/api/fgmp/users/route.ts"), "utf8");
+    const update = readFileSync(join(ROOT, "src/app/api/fgmp/users/[id]/route.ts"), "utf8");
+    expect(create).toContain("superAdminPlacement(");
+    expect(update).toContain("superAdminPromotionRefusal(");
+    // Neither may keep a private copy of the constant: two definitions of "the
+    // platform tenant" is how the placement rule drifts.
+    expect(create.includes('const PLATFORM_TENANT_ID = "')).toBe(false);
+    expect(update.includes('const PLATFORM_TENANT_ID = "')).toBe(false);
+  });
+
+  test("the client hides the option the server would refuse", () => {
+    const source = readFileSync(join(ROOT, "src/components/fgmp/views/users-view.tsx"), "utf8");
+    // The edit dialog must compare the TARGET's tenant against the platform
+    // tenant before offering the role. `me.tenantId` is not that comparison: a
+    // super-admin's own tenant is the platform tenant only by convention, which
+    // is the convention this whole module exists to enforce.
+    expect(source).toContain("platformTenantId");
+    expect(source).toContain("target?.tenantId === platformTenantId");
+  });
 });

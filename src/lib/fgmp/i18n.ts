@@ -1281,6 +1281,10 @@ export const DICTIONARY: Dict = {
   "users.cannotAssignSuperadmin": { en: "Only super-admins can grant the super-admin role", ar: "فقط المدير الأعلى يمكنه منح دور المدير الأعلى" },
   "users.superadminScopeHint": { en: "As super-admin you can create users in any tenant and assign any role.", ar: "بصفتك المدير الأعلى يمكنك إنشاء مستخدمين في أي مؤسسة وتعيين أي دور." },
   "users.tenantAdminScopeHint": { en: "As a tenant administrator you can create users in your own tenant only.", ar: "بصفتك مدير المؤسسة يمكنك إنشاء مستخدمين في مؤسستك فقط." },
+  // The super-admin role is platform-wide; the account must live in the
+  // platform tenant, because its session is scoped to whatever tenant its row
+  // names. Shown instead of the scope hint when the editor hides that option.
+  "users.superadminPlatformOnly": { en: "Super-admin accounts live in the platform tenant, so this user cannot be promoted in place.", ar: "حسابات المدير الأعلى تكون في مؤسسة المنصة، لذلك لا يمكن ترقية هذا المستخدم في مكانه." },
   "tenants.createAdmin": { en: "Create Admin", ar: "إنشاء مدير" },
   "tenants.createAdminTitle": { en: "Create Tenant Administrator", ar: "إنشاء مدير المؤسسة" },
   "tenants.createAdminDesc": { en: "Provision an administrator account for this tenant. The new admin will be able to create other users within the tenant.", ar: "إنشاء حساب مدير لهذه المؤسسة. سيتمكن المدير الجديد من إنشاء مستخدمين آخرين داخل المؤسسة." },

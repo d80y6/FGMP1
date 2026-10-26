@@ -380,6 +380,7 @@ export function UsersView() {
         onSaved={() => { refetch(); setEditTarget(null); }}
         lang={numLang}
         meRole={me?.role ?? "READONLY"}
+        platformTenantId={me?.platformTenantId ?? null}
       />
 
       {/* Reset password dialog */}
@@ -516,6 +517,12 @@ function CreateUserDialog({
         if (code === "CANNOT_ASSIGN_SUPERADMIN" || err === "CANNOT_ASSIGN_SUPERADMIN") {
           toast.error(t("users.cannotAssignSuperadmin"));
           form.setError("role", { message: t("users.cannotAssignSuperadmin") });
+        } else if (code === "SUPERADMIN_TENANT_FIXED") {
+          // The server refused to place a super-admin in a customer tenant (see
+          // lib/fgmp/platform-identity.ts). Say which rule was hit instead of
+          // echoing "Invalid input" at an operator who picked a tenant.
+          toast.error(t("users.superadminPlatformOnly"));
+          form.setError("tenantId", { message: t("users.superadminPlatformOnly") });
         } else if (err === "Email already in use") {
           toast.error(t("users.emailTaken"));
           form.setError("email", { message: t("users.emailTaken") });
@@ -687,17 +694,29 @@ function CreateUserDialog({
 }
 
 function EditUserDialog({
-  target, onOpenChange, onSaved, lang, meRole,
+  target, onOpenChange, onSaved, lang, meRole, platformTenantId,
 }: {
   target: UserRow | null;
   onOpenChange: (o: boolean) => void;
   onSaved: () => void;
   lang: Language;
   meRole: Role;
+  /** The tenant a super-admin account must belong to, or null when this caller
+   *  may not answer that question (see lib/fgmp/platform-identity.ts). */
+  platformTenantId: string | null;
 }) {
   const t = useT();
   const [submitting, setSubmitting] = useState(false);
   const isSuperAdmin = meRole === "SUPERADMIN";
+  // The role list offers SUPERADMIN only when the SERVER would accept the
+  // promotion: the target must already live in the platform tenant. Promotion
+  // does not move the account, so promoting a customer-tenant user would give
+  // it permanent access to that customer's data from its ordinary session — the
+  // standing access the support-session model exists to avoid. The server
+  // refuses it (`superAdminPromotionRefusal`); this hides the option instead of
+  // inviting a 400.
+  const canHoldSuperAdmin =
+    isSuperAdmin && platformTenantId !== null && target?.tenantId === platformTenantId;
 
   const form = useForm<EditForm>({
     resolver: zodResolver(editSchema),
@@ -733,6 +752,8 @@ function EditUserDialog({
           toast.error(t("users.cannotEditSuperadmin"));
         } else if (code === "CANNOT_ASSIGN_SUPERADMIN" || err === "CANNOT_ASSIGN_SUPERADMIN") {
           toast.error(t("users.cannotAssignSuperadmin"));
+        } else if (code === "SUPERADMIN_TENANT_FIXED") {
+          toast.error(t("users.superadminPlatformOnly"));
         } else {
           toast.error(err ?? `HTTP ${res.status}`);
         }
@@ -775,11 +796,15 @@ function EditUserDialog({
                       value={field.value}
                       onChange={field.onChange}
                       lang={lang}
-                      excludeSuperAdmin={!isSuperAdmin}
+                      excludeSuperAdmin={!canHoldSuperAdmin}
                     />
                   </FormControl>
                   <FormDescription className="text-[11px]">
-                    {isSuperAdmin ? t("users.superadminScopeHint") : t("users.tenantAdminScopeHint")}
+                    {canHoldSuperAdmin
+                      ? t("users.superadminScopeHint")
+                      : isSuperAdmin
+                        ? t("users.superadminPlatformOnly")
+                        : t("users.tenantAdminScopeHint")}
                   </FormDescription>
                   <FormMessage className="text-xs" />
                 </FormItem>

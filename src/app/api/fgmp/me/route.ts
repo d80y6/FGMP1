@@ -5,6 +5,8 @@ import { requireRole } from "@/lib/fgmp/auth-helpers";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { rateLimitByUser, applyRateLimitHeaders, READ_LIMIT } from "@/lib/fgmp/rate-limit";
 import { PREVIEW_ROLES } from "@/lib/fgmp/role-preview";
+import { platformTenantIdFor } from "@/lib/fgmp/platform-identity";
+import { isSuperAdmin } from "@/lib/fgmp/rbac-core";
 import type { Role } from "@/lib/fgmp/types";
 
 export const dynamic = "force-dynamic";
@@ -50,6 +52,13 @@ export async function GET(req: NextRequest) {
       permanentRole,
       previewRole,
       tenantId: dbUser.tenantId,
+      // Which tenant a super-admin account may live in, for callers that may
+      // act on that question at all — the user editor hides the SUPERADMIN role
+      // for a user outside it, so the client offers exactly what the server
+      // would accept. `null` for every other role: the field is not a hint
+      // about anyone's data, it is the placement rule from
+      // lib/fgmp/platform-identity.ts, and only the platform role can use it.
+      platformTenantId: platformTenantIdFor(isSuperAdmin(effectiveRole)),
       roles: permanentRole === "ADMIN" || permanentRole === "SUPERADMIN"
         ? PREVIEW_ROLES
         : [permanentRole],

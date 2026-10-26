@@ -609,3 +609,85 @@ today); they now name the write capability directly.
 - A per-role click-through of a live, seeded stack (§6, item 7). Everything
   mechanical is green: `tsc` diff against the base commit is empty, `eslint` is
   clean, and all 33 suites pass locally.
+
+---
+
+## 10. Follow-up 3 — the platform tier (`e1367bd` onward)
+
+§9 audited the **tenant** role family. This section covers the other one:
+`SUPERADMIN` and the surfaces that describe platform authority — the tenant
+registry, the platform audit trail, the grant inventory, the support-session
+control plane and the global firmware catalogue.
+
+### 10.1 What was verified, and is correct
+
+* Every one of those routes is guarded on the platform role
+  (`requireSuperAdmin()` or `requireRole(…, ROLES.SUPERADMIN_ONLY)`), including
+  the two global-firmware mutations — which is the point, because
+  `EspFirmwareRelease` has no `tenantId` and a tenant ADMIN publishing to it
+  would reach every tenant.
+* The client's question and the server's question give the same answer for every
+  platform path, for all seven roles. `SUPERADMIN_ONLY_CAPABILITIES` is the
+  declaration, and exactly one role holds each key.
+* `tenantWhereOrAll()` and `siteTenantWhereOrAll()` never widen — not even for
+  SUPERADMIN, whose `/api/fgmp/state` is scoped to `t-platform` like any other
+  session's.
+* Cross-tenant customer content has one route
+  (`platform/support/[tenant]/summary`), one gate (an open, ticketed session
+  whose tenant the URL must match) and one shape (RLS-scoped reads inside
+  `withTenant`). The support cookie is path-limited to `/api/fgmp/platform`, so
+  it cannot be replayed against the ~80 tenant routes.
+* `?tenant=` on the user routes is registry administration, funnelled through
+  `resolveTenantScope` → `asTenantForAnotherTenant()`, which re-checks the role
+  inside; everyone else's `?tenant=` is ignored rather than refused, so it
+  cannot be used to probe for tenant ids.
+
+### 10.2 P-1 — a super-admin could be created, or promoted, in a customer tenant
+
+The support-session design rests on a structural assumption that nothing in the
+schema enforces: **a super-admin account lives in the platform tenant.** Its
+session context is `User.tenantId`, so a SUPERADMIN row in a customer tenant
+reads that customer's operational data permanently — `/api/fgmp/state`, every
+list route, every detail route — with no session, no stated reason, no expiry,
+and nothing in that customer's audit log. That is exactly the standing
+cross-tenant access `support-session.ts` rejects as option "A".
+
+Two paths produced it:
+
+| Path | Before | Why it survived review |
+|---|---|---|
+| `POST /api/fgmp/users` with `role: "SUPERADMIN"` and a customer `tenantId` | `clientTenantId \|\| PLATFORM_TENANT_ID` — the client value won | The UI never sends it (the picker is disabled for that role), so only a hand-built request reached it |
+| `PUT /api/fgmp/users/[id]` with `role: "SUPERADMIN"` | no tenant check at all; the row stays where it is | **This one was reachable from the shipped UI**: the edit dialog offered the role for any user |
+
+**Closed** by `src/lib/fgmp/platform-identity.ts`, a pure module both routes call:
+create is placed in `t-platform` (a conflicting `tenantId` is refused with
+`SUPERADMIN_TENANT_FIXED`, not silently relocated), and promotion is refused when
+the target is outside it. `GET /api/fgmp/me` now carries `platformTenantId` for
+callers who may act on the question, so the edit dialog hides the option instead
+of inviting the refusal. Behavioural tests plus call-site assertions live in
+`platform-tier-parity.test.ts`; the call-site half matters because a correct rule
+with no caller is the shape of B7.
+
+Refusing was chosen over relocating the account: moving a user between tenants as
+a side effect of a role dropdown is a tenant reassignment performed by nobody and
+reported by nothing.
+
+### 10.3 The guard that keeps the tier honest
+
+`platform-tier-parity.test.ts` derives the platform surface from the route tree
+on disk and fails on four shapes, each mutation-tested: a platform capability
+held by a tenant role; a route whose policy is platform-only but whose handler
+is not guarded (checked per exported method — the first version missed exactly
+this); a policy rule mixing a platform capability with an ordinary one, which
+`canAccessApi`'s any-of matching turns into a key for every holder; and a
+platform route with no policy row, which exists on the server and is uncallable
+from the browser for everyone.
+
+### 10.4 Still open
+
+* `GET /api/fgmp/platform/audit`, `GET /api/fgmp/platform/grants` (and its CSV
+  export), `POST`/`DELETE /api/fgmp/edge/firmware` and
+  `platform/support/[tenant]/summary` have no view consuming them. That is a
+  product gap, not a policy gap; `docs/AUTHZ.md` §1.6 records the constraints any
+  new view inherits.
+* The per-role click-through in §6 item 7 remains unrun.

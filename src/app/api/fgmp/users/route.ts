@@ -18,11 +18,9 @@ import {
   parseIntParam,
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
+import { PLATFORM_TENANT_ID, superAdminPlacement } from "@/lib/fgmp/platform-identity";
 
 export const dynamic = "force-dynamic";
-
-// Platform tenant that owns SUPERADMIN accounts (see seed.ts).
-const PLATFORM_TENANT_ID = "t-platform";
 
 const VALID_ROLES = [
   "SUPERADMIN",
@@ -225,7 +223,21 @@ export async function POST(req: NextRequest) {
   let tenantId: string;
   if (superAdmin) {
     if (role === "SUPERADMIN") {
-      tenantId = clientTenantId || PLATFORM_TENANT_ID;
+      // A super-admin account lives in the platform tenant — always. This used
+      // to be `clientTenantId || PLATFORM_TENANT_ID`, which quietly honoured a
+      // customer tenant id: the resulting account's ordinary session would then
+      // be scoped to that customer, i.e. standing access to its operational
+      // data with no support session, no reason and no expiry. The placement
+      // rule (and why it refuses rather than relocates) is in
+      // lib/fgmp/platform-identity.ts.
+      const placement = superAdminPlacement(clientTenantId);
+      if (!placement.ok) {
+        return NextResponse.json(
+          { error: placement.error, code: placement.code },
+          { status: placement.status },
+        );
+      }
+      tenantId = placement.tenantId;
     } else if (!clientTenantId) {
       return NextResponse.json(
         { error: "tenantId is required when creating users as super-admin" },
