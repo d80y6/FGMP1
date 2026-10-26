@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { useFgmp } from "@/lib/fgmp/store";
 import { useApi, apiPost, apiPatch } from "@/lib/fgmp/use-api";
+import { hasCapability } from "@/lib/fgmp/rbac-core";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -194,8 +195,10 @@ export function ApiKeysView() {
     }
   }, [revokeTarget, refetch]);
 
-  // Access control — admin only.
-  if (me && me.role !== "ADMIN") {
+  // Access control — `view:api-keys`, the capability both the nav filter and
+  // GET /api/fgmp/api-keys require. A role literal here also locked out
+  // SUPERADMIN, whose tenant key manager this is (the route is SUPER_OR_ADMIN).
+  if (me && !hasCapability(me.role, "view:api-keys")) {
     return (
       <div className="mx-auto max-w-2xl py-10">
         <Alert variant="destructive">

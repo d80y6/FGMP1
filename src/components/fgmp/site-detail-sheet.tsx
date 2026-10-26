@@ -22,6 +22,7 @@ import { RemoteControlDialog } from "@/components/fgmp/remote-control-dialog";
 import { SiteHealthCard } from "@/components/fgmp/site-health-card";
 import { Building2, Droplet, Zap, BatteryCharging, Siren, Truck, MapPin, Cpu, RotateCcw, AlertOctagon, Power, TrendingUp, Pin, PinOff, StickyNote, Pencil } from "lucide-react";
 import { useApi, apiPatch } from "@/lib/fgmp/use-api";
+import { hasCapability } from "@/lib/fgmp/rbac-core";
 import { useFgmp } from "@/lib/fgmp/store";
 import { useFavorites, useFavoritesHydration, useIsFavorite } from "@/lib/fgmp/use-favorites";
 import { SiteNotesPanel } from "@/components/fgmp/site-notes-panel";
@@ -50,8 +51,11 @@ export function SiteDetailSheet({ siteId, open, onOpenChange }: { siteId: string
   const site = data?.site;
   const role = me?.role ?? "READONLY";
   const notesReadOnly = role === "READONLY";
-  // Threshold editing is ADMIN-only (matches the PATCH route guard).
-  const canEditThresholds = role === "ADMIN";
+  // Threshold editing follows `settings:manage` — the capability PATCH
+  // /api/fgmp/interlocks/thresholds/[id] enforces — rather than the ADMIN role
+  // literal, which also hid it from SUPERADMIN (wildcard holder, and admitted
+  // by the route).
+  const canEditThresholds = hasCapability(role, "settings:manage");
 
   return (
     <>

@@ -324,9 +324,25 @@ export function apiReadCapabilities(url: string | URL): readonly string[] | null
     return ["gen:control"];
   }
 
-  const rule = API_READ_RULES.find(({ prefix }) =>
-    pathname === prefix || pathname.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`),
-  );
+  // Longest-prefix-first, matching API_WRITE_RULES — NOT the first array entry
+  // that happens to fit.
+  //
+  // The rules are currently listed specific-before-general (`/correlation/rules`
+  // before `/correlation`, `/iot/ingest` before `/iot`) so `.find()` resolves
+  // every existing path identically; that was verified against all 107 route
+  // paths before this change. But "the array is in the right order" is an
+  // invariant nobody can see at the point of edit, and its failure mode is
+  // fail-OPEN: inserting a broad rule such as
+  // `{ prefix: "/api/fgmp/platform", capabilities: ["view:dashboard"] }` above
+  // the existing platform rules would silently hand the audit, grants and
+  // support-session surfaces to every dashboard reader. Sorting makes the
+  // outcome independent of list order, which is what docs/AUTHZ.md §1.3 already
+  // claims, and what the write rules already do.
+  const rule = API_READ_RULES
+    .filter(({ prefix }) =>
+      pathname === prefix || pathname.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`),
+    )
+    .sort((a, b) => b.prefix.length - a.prefix.length)[0];
   return rule?.capabilities ?? null;
 }
 

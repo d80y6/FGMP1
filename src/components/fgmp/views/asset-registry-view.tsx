@@ -124,7 +124,11 @@ export function AssetRegistryView() {
   const numLang: Language = useArabicNums ? "ar" : "en";
   const { snapshot, me } = useFgmp(useShallow((s) => ({ snapshot: s.snapshot, me: s.me })));
   const [tab, setTab] = useState<Tab>("tanks");
-  const isAdmin = me?.role === "ADMIN";
+  // `asset:manage` — the capability every asset write in this view needs.
+  // (The prop is still called `isAdmin` in the tab components for minimal
+  // churn; it means "may write assets", not "is the ADMIN role", and is now
+  // derived from the matrix instead of a role literal so SUPERADMIN gets it.)
+  const isAdmin = me ? hasCapability(me.role, "asset:manage") : false;
 
   // Belt-and-suspenders guard for direct /?view=asset-registry deep links.
   //

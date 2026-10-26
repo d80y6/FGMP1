@@ -14,6 +14,7 @@ import {
 import { useFgmp } from "@/lib/fgmp/store";
 import { useNow } from "@/lib/fgmp/use-now";
 import { useApi, apiPost, apiPatch, apiDelete } from "@/lib/fgmp/use-api";
+import { hasCapability } from "@/lib/fgmp/rbac-core";
 import { TruncationNote } from "@/components/fgmp/truncation-note";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
@@ -174,8 +175,11 @@ export function DispensersView() {
   // must advance while the screen is open (D-34).
   const now = useNow();
 
-  const isAdmin = me?.role === "ADMIN";
-  const canControl = me?.role === "ADMIN" || me?.role === "NOC_OPERATOR" || me?.role === "FIELD_ENGINEER";
+  // Two capabilities, not two role lists:
+  //   asset:manage      — create / edit / delete the dispenser record
+  //   dispenser:control — issue a live command (POST …/[id]/control)
+  const isAdmin = me ? hasCapability(me.role, "asset:manage") : false;
+  const canControl = me ? hasCapability(me.role, "dispenser:control") : false;
 
   const [tab, setTab] = useState<"registry" | "transactions" | "reports">("registry");
   const [q, setQ] = useState("");

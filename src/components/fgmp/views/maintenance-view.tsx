@@ -5,6 +5,7 @@ import { useShallow } from "zustand/react/shallow";
 import { Wrench, Plus, CheckCircle2, Calendar, User, Flag, X, Download } from "lucide-react";
 import { useFgmp } from "@/lib/fgmp/store";
 import { useApi, apiPost } from "@/lib/fgmp/use-api";
+import { hasCapability } from "@/lib/fgmp/rbac-core";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { StatusBadge } from "@/components/fgmp/status-badge";
@@ -76,10 +77,16 @@ const STATUS_BADGE_DETAIL: Record<string, string> = {
 };
 
 export function MaintenanceView() {
-  const { snapshot, tick } = useFgmp(useShallow((s) => ({ snapshot: s.snapshot, tick: s.tick })));
+  const { snapshot, tick, me } = useFgmp(useShallow((s) => ({ snapshot: s.snapshot, tick: s.tick, me: s.me })));
   const t = useT();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
+  // Write affordances follow the capability POST /api/fgmp/maintenance enforces
+  // (`ticket:manage`), not the user's guess from the role name. Every role that
+  // can *view* tickets is not able to change them — READONLY and EXECUTIVE can
+  // read this view and used to be shown Create/Complete buttons that always
+  // returned 403.
+  const canManageTickets = me ? hasCapability(me.role, "ticket:manage") : false;
   const [status, setStatus] = useState("OPEN,SCHEDULED,IN_PROGRESS");
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
@@ -174,7 +181,9 @@ export function MaintenanceView() {
             >
               <Download className="mr-1.5 h-4 w-4" /> {t("common.export")}
             </Button>
-            <CreateTicketDialog open={createOpen} onOpenChange={setCreateOpen} sites={snapshot.sites} generators={snapshot.generators} onCreated={() => { refetch(); setCreateOpen(false); }} />
+            {canManageTickets && (
+              <CreateTicketDialog open={createOpen} onOpenChange={setCreateOpen} sites={snapshot.sites} generators={snapshot.generators} onCreated={() => { refetch(); setCreateOpen(false); }} />
+            )}
           </>
         }
       />
@@ -234,7 +243,7 @@ export function MaintenanceView() {
                       <TableCell><StatusBadge value={tk.status} className="h-5 text-[10px]" /></TableCell>
                       <TableCell className="hidden md:table-cell text-[10px] text-muted-foreground">{tk.scheduledFor ? timeAgo(tk.scheduledFor, numLang) : "—"}</TableCell>
                       <TableCell className="text-right">
-                        {tk.status !== "DONE" && (
+                        {canManageTickets && tk.status !== "DONE" && (
                           <Button size="sm" variant="outline" className="h-6 px-2 text-[10px] text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10" onClick={() => complete(tk.id)}>
                             <CheckCircle2 className="mr-1 h-3 w-3" />{t("maintenance.complete")}
                           </Button>

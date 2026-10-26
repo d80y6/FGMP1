@@ -20,7 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useTheme } from "next-themes";
 import { useState } from "react";
-import { hasCapability, ROLE_PERMISSIONS } from "@/lib/fgmp/rbac-core";
+import { hasCapability, isSuperAdmin, ROLE_PERMISSIONS } from "@/lib/fgmp/rbac-core";
 import { nextRoleAnnouncement } from "@/lib/fgmp/role-announcement";
 import { PREVIEW_ROLES } from "@/lib/fgmp/role-preview-constants";
 import type { Role } from "@/lib/fgmp/types";
@@ -261,11 +261,12 @@ export function AppShell() {
       // matches no rows — leave it unset and let the guard refuse the request.
       // The client is redirected to the challenge anyway.
       ...(sessionUser.tenantId ? { tenantId: sessionUser.tenantId } : { tenantId: undefined as unknown as string }),
-      // ADMIN and SUPERADMIN can preview the six tenant roles of
-      // the proposal's switcher (§8.16). For everyone else we
-      // expose just their own role so the switcher renders as a
-      // read-only badge rather than a misleading dropdown.
-      roles: (role === "ADMIN" || role === "SUPERADMIN") ? PREVIEW_ROLES : [role],
+      // Whoever holds `role:preview` can preview the six tenant roles of
+      // the proposal's switcher (§8.16) — the same capability POST
+      // /api/fgmp/me/preview-role enforces. For everyone else we expose just
+      // their own role so the switcher renders as a read-only badge rather than
+      // a dropdown whose every option the server would refuse.
+      roles: hasCapability(role, "role:preview") ? PREVIEW_ROLES : [role],
       permissions: ROLE_PERMISSIONS[role],
     };
     setMe(derivedMe);
@@ -411,11 +412,12 @@ export function AppShell() {
   });
 
   // Tenant registry and isolation views are platform-level surfaces; the
-  // capability matrix grants them only through SUPERADMIN's wildcard.
+  // capability matrix grants `view:tenants` / `view:tenant-isolation` only
+  // through SUPERADMIN's wildcard, so the capability filter alone is the
+  // policy. It used to be restated here as a second role check — two copies of
+  // one rule, which is how a nav entry and its view drift apart.
   const visibleNav = useMemo(
-    () => NAV.filter((n) => hasCapability(role, n.cap))
-      .filter((n) => n.key !== "tenants" || role === "SUPERADMIN")
-      .filter((n) => n.key !== "tenant-isolation" || role === "SUPERADMIN"),
+    () => NAV.filter((n) => hasCapability(role, n.cap)),
     [role],
   );
   const grouped = useMemo(() => {
@@ -551,7 +553,10 @@ export function AppShell() {
             <div className="hidden md:block">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-bold tracking-tight">{t("brand.name")}</span>
-                {role === "SUPERADMIN" && (
+                {/* Identity badge, not an access gate: it says which role the
+                    session holds, so a literal comparison is the correct test
+                    here (via the shared helper rather than a bare string). */}
+                {isSuperAdmin(role) && (
                   <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-400 text-[10px]">SUPER</Badge>
                 )}
                 <Badge variant="secondary" className="hidden h-4 px-1 text-[10px] font-medium md:inline-flex">v2.4</Badge>
@@ -633,10 +638,12 @@ export function AppShell() {
           <HeaderClock />
 
           {/* Live System Health mini-indicator (Task 33-B)
-              ADMIN-only — non-admins can't access /api/fgmp/health, so the
-              widget would show "Checking…" forever for them. Renders a
-              pulsing dot + status label; click → system-health view. */}
-          {role === "ADMIN" && (
+              `view:system-health` only — a role without that capability cannot
+              read /api/fgmp/health, so the widget would show "Checking…"
+              forever for them. Gated on the capability rather than on the ADMIN
+              role literal, which used to hide it from SUPERADMIN (the wildcard
+              holder) while still offering the nav entry. */}
+          {hasCapability(role, "view:system-health") && (
             <div className="hidden 2xl:block">
               <SystemHealthIndicator onClick={() => navigate("system-health")} />
             </div>
@@ -699,7 +706,11 @@ export function AppShell() {
               <div className="hidden items-center 2xl:flex">
               <Select label={t("users.role")}
                 value={role}
-                disabled={role !== "ADMIN" && role !== "SUPERADMIN" && !me.previewRole}
+                // `role:preview` is the capability POST /api/fgmp/me/preview-role
+                // enforces. While a preview is active the effective role is the
+                // previewed one (which may lack it), so the switcher must stay
+                // enabled for the operator to switch again or leave.
+                disabled={!hasCapability(role, "role:preview") && !me.previewRole}
                 onValueChange={(v) => {
                   switchRole(v as typeof role).catch(() => {
                     toast.error(t("auth.invalidCredentials"));

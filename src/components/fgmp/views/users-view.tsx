@@ -29,7 +29,7 @@ import { fmtDateTime, fmtDateTimeShort, timeAgo } from "@/lib/fgmp/format";
 import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 import { roleLabel } from "@/lib/fgmp/labels";
-import { ALL_ROLES } from "@/lib/fgmp/rbac-core";
+import { ALL_ROLES, hasCapability } from "@/lib/fgmp/rbac-core";
 import type { Role } from "@/lib/fgmp/types";
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -140,7 +140,7 @@ export function UsersView() {
   }, [users]);
 
   // Access control: only ADMIN and SUPERADMIN may use this view.
-  if (me && me.role !== "ADMIN" && me.role !== "SUPERADMIN") {
+  if (me && !hasCapability(me.role, "view:users")) {
     return (
       <div className="mx-auto max-w-2xl py-10">
         <Alert variant="destructive">

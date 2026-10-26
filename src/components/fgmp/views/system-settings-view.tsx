@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import { useFgmp } from "@/lib/fgmp/store";
 import { useApi, apiPatch } from "@/lib/fgmp/use-api";
+import { hasCapability } from "@/lib/fgmp/rbac-core";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import {
@@ -135,10 +136,12 @@ export function SystemSettingsView() {
     [],
   );
 
-  // Access control — the rbac matrix only grants these views to ADMIN (via
-  // the "*" wildcard). Non-admins who somehow navigate here get a clean
-  // 403-style banner instead of a noisy page.
-  if (me && me.role !== "ADMIN") {
+  // Access control — the same `view:system-settings` capability the nav filter
+  // and GET /api/fgmp/settings enforce. A role without it gets a clean
+  // 403-style banner instead of a noisy page. (This was `role !== "ADMIN"`,
+  // which additionally locked out SUPERADMIN — the one role that holds the
+  // wildcard and is the only role allowed to write BRANDING/PLATFORM keys.)
+  if (me && !hasCapability(me.role, "view:system-settings")) {
     return (
       <div className="mx-auto max-w-2xl py-10">
         <Alert variant="destructive">

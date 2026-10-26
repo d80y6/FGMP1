@@ -34,6 +34,7 @@ import { Badge } from "@/components/ui/badge";
 import { useApi } from "@/lib/fgmp/use-api";
 import { useFgmp } from "@/lib/fgmp/store";
 import { useT, useTF } from "@/lib/fgmp/use-language";
+import { isSuperAdmin } from "@/lib/fgmp/rbac-core";
 
 interface ActiveSupport {
   id: string;
@@ -58,9 +59,16 @@ export function SupportSessionBanner() {
   const tFmt = useTF();
   const { data: session } = useSession();
   const role = (session?.user as { role?: string } | undefined)?.role;
-  const isSuper = role === "SUPERADMIN";
   const effectiveRole = useFgmp((s) => s.me?.role ?? null);
-  const canManageSupport = isSuper && effectiveRole === "SUPERADMIN";
+  // Platform support sessions are super-admin-only at the API
+  // (`requireSuperAdmin`), and that is the one place a role identity — not a
+  // capability — is the right test: the overlay exists precisely so a
+  // super-admin can act AS another role, so a capability derived from the
+  // effective role would be false during the very session the banner reports.
+  // Both the session role and the effective role must be super-admin, and the
+  // shared helper keeps this literal in one place.
+  const isSuper = isSuperAdmin(role);
+  const canManageSupport = isSuper && isSuperAdmin(effectiveRole);
 
   const { data, refetch } = useApi<{ active: ActiveSupport | null }>(
     canManageSupport ? "/api/fgmp/platform/support-sessions/current" : null,

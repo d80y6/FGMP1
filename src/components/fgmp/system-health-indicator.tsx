@@ -10,10 +10,13 @@
  * Polling strategy:
  *   - Fetches `/api/fgmp/health` every 30s (lighter than the full view's
  *     10s cadence — this widget only needs a coarse-grained status).
- *   - On 401/403/network error: shows the gray "Checking…" state. Non-
- *     admin users see this forever, which is fine (they can't access the
- *     health API anyway, so the indicator is hidden for them at the app-
- *     shell level via the `me?.role === "ADMIN"` gate).
+ *   - On 401/403/network error: shows the gray "Checking…" state, which is
+ *     what a role without `view:system-health` would see forever — so the
+ *     widget does not poll at all for them. It gates ITSELF on the capability
+ *     (`useApi(..., null)` issues no request) rather than trusting the parent's
+ *     render condition; the app shell also hides it, but a widget whose only
+ *     protection is a caller's good intentions is one refactor away from
+ *     polling a 403 endpoint every 30 seconds.
  *
  * Status computation is delegated to `computeHealthStatus()` in
  * @/lib/fgmp/compute-health — a pure function with no React deps, so it
@@ -32,6 +35,8 @@
 import { useEffect, useRef } from "react";
 import { Activity } from "lucide-react";
 import { useApi } from "@/lib/fgmp/use-api";
+import { useFgmp } from "@/lib/fgmp/store";
+import { hasCapability } from "@/lib/fgmp/rbac-core";
 import {
   useT,
   useDir,
@@ -92,6 +97,12 @@ interface SystemHealthIndicatorProps {
 }
 
 export function SystemHealthIndicator({ onClick }: SystemHealthIndicatorProps) {
+  // `view:system-health` is what GET /api/fgmp/health requires (see
+  // API_READ_RULES). A role without it gets `null` as the URL, so `useApi`
+  // makes no request and no polling timer is armed.
+  const role = useFgmp((s) => s.me?.role ?? null);
+  const canReadHealth = role ? hasCapability(role, "view:system-health") : false;
+
   const t = useT();
   const dir = useDir();
   const useArabicNums = useArabicNumerals();
@@ -103,7 +114,7 @@ export function SystemHealthIndicator({ onClick }: SystemHealthIndicatorProps) {
   // is attached automatically. On 401/403/network failure, `data` stays
   // null and `error` gets a string — both map to the "unknown" status.
   const { data, loading, error } = useApi<HealthSnapshot>(
-    "/api/fgmp/health",
+    canReadHealth ? "/api/fgmp/health" : null,
     { interval: POLL_INTERVAL_MS },
   );
 

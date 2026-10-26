@@ -12,6 +12,7 @@ import {
 } from "recharts";
 import { useFgmp } from "@/lib/fgmp/store";
 import { useApi, apiPatch, apiPost } from "@/lib/fgmp/use-api";
+import { hasCapability } from "@/lib/fgmp/rbac-core";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { StatusBadge } from "@/components/fgmp/status-badge";
@@ -100,6 +101,21 @@ export function EdgeFirmwareView() {
   const numLang: Language = useArabicNums ? "ar" : "en";
   const cc = useChartColors();
   const { snapshot, me, tick } = useFgmp(useShallow((s) => ({ snapshot: s.snapshot, me: s.me, tick: s.tick })));
+  // Hardware actions are capabilities, not role names.
+  //
+  // `dispenser:control` covers BOTH hardware actions on this screen, because
+  // both endpoints are gated on it:
+  //   POST /api/fgmp/edge/esp/[dispenserId]/reboot  → ROLES.DISPENSER_CONTROL
+  //   POST /api/fgmp/edge/firmware/deploy           → ROLES.DISPENSER_CONTROL
+  // and the capability rule for that prefix is `dispenser:control` (ADMIN,
+  // NOC_OPERATOR, FIELD_ENGINEER).
+  //
+  // The OTA button was previously bound to `role === "ADMIN" || role ===
+  // "NOC_OPERATOR"` while the deploy endpoint accepted FIELD_ENGINEER — one
+  // gate, two different answers. Deriving both from `dispenser:control` is the
+  // only version that can agree with the API.
+  const canControlDispensers = me ? hasCapability(me.role, "dispenser:control") : false;
+  const canOta = canControlDispensers;
   const [tab, setTab] = useState<"gateways" | "firmware" | "rs485" | "reboot">("gateways");
 
   const { data: dispensers, loading: dispLoading } = useApi<DispenserRow[]>(
@@ -249,6 +265,7 @@ export function EdgeFirmwareView() {
             loading={loading}
             numLang={numLang}
             onRefresh={tick}
+            canOta={canOta}
           />
         </TabsContent>
         <TabsContent value="rs485" className="mt-4">
@@ -260,7 +277,7 @@ export function EdgeFirmwareView() {
             loading={loading}
             numLang={numLang}
             onReboot={tick}
-            isAdmin={me?.role === "ADMIN" || me?.role === "NOC_OPERATOR"}
+            canReboot={canControlDispensers}
           />
         </TabsContent>
       </Tabs>
@@ -395,11 +412,14 @@ function GatewaysTab({ gateways, loading, numLang }: {
  * Tab 2: ESP Firmware
  * ──────────────────────────────────────────────────────────────────────── */
 
-function FirmwareTab({ gateways, loading, onRefresh }: {
+function FirmwareTab({ gateways, loading, onRefresh, canOta }: {
   gateways: EspGateway[];
   loading: boolean;
   numLang: Language;
   onRefresh: (delayMs?: number) => void;
+  /** False when the viewer lacks `dispenser:control` (the deploy endpoint's
+   *  gate), so the OTA button cannot be pressed into a 403. */
+  canOta: boolean;
 }) {
   const t = useT();
   const cc = useChartColors();
@@ -561,6 +581,8 @@ function FirmwareTab({ gateways, loading, onRefresh }: {
                           <Button
                             size="sm" variant="outline"
                             className="h-6 px-2 text-[10px]"
+                            disabled={!canOta}
+                            title={canOta ? undefined : "Requires dispenser control capability"}
                             onClick={() => {
                               setOtaTarget(g);
                               setOtaFw(nextFw(g.firmware, latestFw));
@@ -844,12 +866,13 @@ function Rs485Tab({ gateways, loading, numLang }: {
  * Tab 4: ESP Reboot
  * ──────────────────────────────────────────────────────────────────────── */
 
-function RebootTab({ gateways, loading, numLang, onReboot, isAdmin }: {
+function RebootTab({ gateways, loading, numLang, onReboot, canReboot }: {
   gateways: EspGateway[];
   loading: boolean;
   numLang: Language;
   onReboot: (delayMs?: number) => void;
-  isAdmin: boolean;
+  /** `dispenser:control` — same capability POST /api/fgmp/edge/esp/[id]/reboot needs. */
+  canReboot: boolean;
 }) {
   const t = useT();
   const [confirmTarget, setConfirmTarget] = useState<EspGateway | null>(null);
@@ -935,7 +958,7 @@ function RebootTab({ gateways, loading, numLang, onReboot, isAdmin }: {
                       <Button
                         size="sm" variant="outline"
                         className="h-7 px-2 text-[10px]"
-                        disabled={!isAdmin}
+                        disabled={!canReboot}
                         onClick={() => setConfirmTarget(g)}
                       >
                         <RefreshCw className="mr-1 h-3 w-3" />
