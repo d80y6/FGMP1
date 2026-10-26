@@ -18,9 +18,13 @@
  *
  * Auto-refreshes every 30s so countdowns stay fresh without manual F5.
  *
- * RBAC: the view itself is reachable by anyone with `view:suppressions`
- * (ADMIN, NOC_OPERATOR, REGIONAL_MANAGER). The create / extend / cancel
- * actions call ROLES.ALARM_OPS-guarded endpoints; DELETE is ADMIN-only.
+ * RBAC: the view itself is reachable by anyone holding `view:suppressions`,
+ * which the matrix grants to ADMIN, NOC_OPERATOR, REGIONAL_MANAGER,
+ * FIELD_ENGINEER and READONLY (a field engineer who cannot see what is
+ * suppressed investigates an alarm an operator deliberately muted). The
+ * create / extend / cancel actions need `alarm:suppress`; DELETE needs
+ * `settings:manage`. Both are read off the capability matrix rather than a
+ * role list, so this view cannot drift from the API it calls.
  */
 
 import { useState, useEffect, useMemo } from "react";
@@ -33,6 +37,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useFgmp } from "@/lib/fgmp/store";
+import { hasCapability } from "@/lib/fgmp/rbac-core";
 import { useApi, apiPost, apiPatch, apiDelete } from "@/lib/fgmp/use-api";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { useLiveNow } from "@/lib/fgmp/use-now";
@@ -90,8 +95,6 @@ const ALARM_TYPES = [
   "COMM_LOSS",
 ] as const;
 
-const ROLE_OK = new Set(["ADMIN", "NOC_OPERATOR", "REGIONAL_MANAGER"]);
-
 /* ────────────────────────────────────────────────────────────────────────
  * Helpers
  * ──────────────────────────────────────────────────────────────────────── */
@@ -147,6 +150,13 @@ export function SuppressionsView() {
   const dir = useDir();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
+  // Read from the capability matrix, never from a role list: the matrix is what
+  // `requireAuth` enforces on /api/fgmp/suppressions. A hand-written role set
+  // here previously refused FIELD_ENGINEER and READONLY, who hold
+  // `view:suppressions` and whose nav entry was therefore visible.
+  const canViewSuppressions = me ? hasCapability(me.role, "view:suppressions") : true;
+  const canSuppress = me ? hasCapability(me.role, "alarm:suppress") : false;
+  const canDeleteSuppression = me ? hasCapability(me.role, "settings:manage") : false;
   const [createOpen, setCreateOpen] = useState(false);
 
   // Phase 5 task 4 — confirm dialog state.
@@ -194,12 +204,10 @@ export function SuppressionsView() {
     };
   }, [active, suppressions, now]);
 
-  // RBAC gate — only the three roles listed in the spec may manage
-  // suppressions. Other authenticated users (e.g. FIELD_ENGINEER /
-  // EXECUTIVE / READONLY) see an access-denied notice. The nav itself
-  // is already hidden from them via the capability matrix, but this is
-  // a defense-in-depth check in case the view is opened via URL.
-  if (me && !ROLE_OK.has(me.role)) {
+  // RBAC gate — the same `view:suppressions` capability the nav filter and
+  // GET /api/fgmp/suppressions use. Defence in depth for a view opened via a
+  // hand-edited URL; the API remains authoritative.
+  if (me && !canViewSuppressions) {
     return (
       <div className="mx-auto max-w-2xl py-10">
         <Alert variant="destructive">
@@ -276,10 +284,12 @@ export function SuppressionsView() {
         icon={<ShieldOff className="h-5 w-5" />}
         tone="amber"
         actions={
-          <Button onClick={() => setCreateOpen(true)} size="sm">
-            <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">{t("suppressions.create")}</span>
-          </Button>
+          canSuppress ? (
+            <Button onClick={() => setCreateOpen(true)} size="sm">
+              <Plus className="h-4 w-4" />
+              <span className="hidden sm:inline">{t("suppressions.create")}</span>
+            </Button>
+          ) : null
         }
       />
 
@@ -333,10 +343,10 @@ export function SuppressionsView() {
                   key={s.id}
                   row={s}
                   lang={numLang}
-                  onExtend={() => handleExtend(s.id)}
-                  onCancel={() => handleCancel(s.id)}
+                  onExtend={canSuppress ? () => handleExtend(s.id) : undefined}
+                  onCancel={canSuppress ? () => handleCancel(s.id) : undefined}
                   onDelete={() => askDelete(s.id)}
-                  canDelete={me?.role === "ADMIN"}
+                  canDelete={canDeleteSuppression}
                 />
               ))}
             </div>
@@ -399,7 +409,7 @@ export function SuppressionsView() {
                               {s.user?.name ?? "—"}
                             </TableCell>
                             <TableCell className="text-right">
-                              {me?.role === "ADMIN" && (
+                              {canDeleteSuppression && (
                                 <Button
                                   variant="ghost"
                                   size="icon"
@@ -467,8 +477,9 @@ function ActiveSkeleton() {
 interface ActiveCardProps {
   row: SuppressionRow;
   lang: Language;
-  onExtend: () => void;
-  onCancel: () => void;
+  /** Absent when the viewer holds no `alarm:suppress` capability (read-only). */
+  onExtend?: () => void;
+  onCancel?: () => void;
   onDelete: () => void;
   canDelete: boolean;
 }
@@ -575,7 +586,7 @@ function ActiveCard({ row, lang, onExtend, onCancel, onDelete, canDelete }: Acti
           variant="outline"
           className="h-7 px-2 text-[11px]"
           onClick={onExtend}
-          disabled={now > end}
+          disabled={!onExtend || now > end}
         >
           <Clock className="mr-1 h-3 w-3" />
           {t("suppressions.extend")} +1h
@@ -585,6 +596,7 @@ function ActiveCard({ row, lang, onExtend, onCancel, onDelete, canDelete }: Acti
           variant="outline"
           className="h-7 px-2 text-[11px] text-rose-700 dark:text-rose-400 hover:bg-rose-500/10"
           onClick={onCancel}
+          disabled={!onCancel}
         >
           <X className="mr-1 h-3 w-3" />
           {t("suppressions.cancel")}

@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useFgmp } from "@/lib/fgmp/store";
 import { useApi } from "@/lib/fgmp/use-api";
-import { canAccessApi } from "@/lib/fgmp/rbac-core";
+import { canAccessApi, hasCapability } from "@/lib/fgmp/rbac-core";
 import { ScrollRegion } from "@/components/ui/scroll-region";
 import { useT, useTF } from "@/lib/fgmp/use-language";
 
@@ -121,8 +121,9 @@ export function TenantIsolationView() {
     }
   }, [me?.role]);
 
-  // Access guard — only SUPERADMIN
-  if (me && me.role !== "SUPERADMIN") {
+  // Access guard — `view:tenant-isolation`, a SUPERADMIN-only capability (held
+  // through the wildcard). Same capability the nav filter and the API use.
+  if (me && !hasCapability(me.role, "view:tenant-isolation")) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center p-6">
         <Card className="max-w-md p-8 text-center">

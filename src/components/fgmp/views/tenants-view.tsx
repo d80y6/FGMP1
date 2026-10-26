@@ -9,6 +9,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useFgmp } from "@/lib/fgmp/store";
+import { hasCapability } from "@/lib/fgmp/rbac-core";
 import { useApi, apiPost, apiPatch, apiDelete } from "@/lib/fgmp/use-api";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
@@ -111,8 +112,9 @@ export function TenantsView() {
     };
   }, [tenants]);
 
-  // Access control: only SUPERADMIN may use this view (Task 49).
-  if (me && !isSuperAdmin) {
+  // Access control: `view:tenants` — granted only through SUPERADMIN's
+  // wildcard, so this is the matrix's answer rather than a second copy of it.
+  if (me && !hasCapability(me.role, "view:tenants")) {
     return (
       <div className="mx-auto max-w-2xl py-10">
         <Alert variant="destructive">

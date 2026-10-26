@@ -25,6 +25,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { hasCapability } from "@/lib/fgmp/rbac-core";
 import { useT, useDir, useLanguage, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 import type { Kpis, Role } from "@/lib/fgmp/types";
@@ -89,7 +90,9 @@ export function HeaderOverflowMenu({
   const numLang: Language = useArabicNums ? "ar" : "en";
   const mounted = useSyncExternalStore(subscribeNoop, getClientSnapshot, getServerSnapshot);
 
-  const canSwitchRole = !!role && (role === "ADMIN" || role === "SUPERADMIN");
+  // `role:preview` — the capability the preview endpoint enforces, instead of a
+  // second copy of the ADMIN/SUPERADMIN list.
+  const canSwitchRole = !!role && hasCapability(role, "role:preview");
   const themeOptions = [
     { value: "system" as const, label: t("common.themeSystem"), icon: Monitor },
     { value: "light" as const, label: t("common.themeLight"), icon: Sun },

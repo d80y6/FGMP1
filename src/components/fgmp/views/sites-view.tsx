@@ -6,6 +6,7 @@ import { Building2, Search, MapPin, Filter, Star, Plus, Pencil, Trash2, MoreHori
 import { useFgmp } from "@/lib/fgmp/store";
 import { useFavorites, useFavoritesHydration, useIsFavorite } from "@/lib/fgmp/use-favorites";
 import { apiDelete } from "@/lib/fgmp/use-api";
+import { hasCapability } from "@/lib/fgmp/rbac-core";
 import { TruncationNote } from "@/components/fgmp/truncation-note";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { NationalMap } from "@/components/fgmp/national-map";
@@ -54,7 +55,10 @@ export function SitesView() {
   // ── Site CRUD state ────────────────────────────────────────────────────
   // `formSite` = null → create mode; = SiteState → edit mode.
   // `deleteTarget` = the site pending deletion confirmation.
-  const isAdmin = me?.role === "ADMIN";
+  // Site CRUD is `asset:manage` (POST/PATCH/DELETE /api/fgmp/sites). Derived
+  // from the matrix, so a SUPERADMIN — whom the route admits through the
+  // wildcard — is offered the same controls as the tenant admin.
+  const canManageSites = me ? hasCapability(me.role, "asset:manage") : false;
   const [formOpen, setFormOpen] = useState(false);
   const [formSite, setFormSite] = useState<SiteState | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<SiteState | null>(null);
@@ -193,7 +197,7 @@ export function SitesView() {
           </SelectContent>
         </Select>
         <span className="text-xs text-muted-foreground">{formatNumber(filtered.length, numLang)} {t("common.of")} {formatNumber(snapshot?.sites.length ?? 0, numLang)} {t("sites.sitesCount")}</span>
-        {isAdmin && (
+        {canManageSites && (
           <Button onClick={openCreate} size="sm" className="h-9 ms-auto">
             <Plus className="mr-1.5 h-4 w-4" />
             {t("sites.add")}
@@ -275,13 +279,13 @@ export function SitesView() {
                 <TableHead className="w-[80px]">{t("sites.health")}</TableHead>
                 <TableHead>{t("sites.status")}</TableHead>
                 <TableHead className="hidden md:table-cell text-right">{t("sites.load")}</TableHead>
-                {isAdmin && <TableHead className="w-[60px] text-right">{t("sites.actions")}</TableHead>}
+                {canManageSites && <TableHead className="w-[60px] text-right">{t("sites.actions")}</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
               {filtered.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={isAdmin ? 10 : 9} className="p-0">
+                  <TableCell colSpan={canManageSites ? 10 : 9} className="p-0">
                     <EmptyState
                       icon={Building2}
                       title={t("common.noResultsTitle")}
@@ -357,7 +361,7 @@ export function SitesView() {
                     </TableCell>
                     <TableCell><StatusBadge value={s.status} className="h-5 text-[10px]" /></TableCell>
                     <TableCell className="hidden md:table-cell text-right text-xs tabular-nums">{formatNumber(s.loadKw, numLang)} kW</TableCell>
-                    {isAdmin && (
+                    {canManageSites && (
                       <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>

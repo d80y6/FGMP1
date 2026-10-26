@@ -3,13 +3,15 @@
 /**
  * FGMP First-run Onboarding Checklist (#9)
  * ─────────────────────────────────────────────────────────────────────────
- * A dismissible setup card shown to ADMIN users on the dashboard when the
- * platform has "empty" data — i.e., the operator has just installed FGMP
+ * A dismissible setup card shown to users who can administer the tenant
+ * (`view:users` — the capability behind the user list it needs) on the
+ * dashboard when the platform has "empty" data — i.e., the operator has just installed FGMP
  * and hasn't yet added sites, generators, tanks, team members, or alarm
  * thresholds.
  *
  * Show conditions (all must be true):
- *  - `me.role === "ADMIN"` (only admins see the setup prompt)
+ *  - the role holds `view:users` (only tenant administrators see the setup
+ *    prompt; a role that cannot read the user list cannot finish item 4)
  *  - `snapshot` has loaded
  *  - The platform is "empty": < 3 sites, OR < 1 generator, OR < 1 tank,
  *    OR ≤ 1 user (i.e., only the admin themselves)
@@ -82,6 +84,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useFgmp, type ViewKey } from "@/lib/fgmp/store";
+import { hasCapability } from "@/lib/fgmp/rbac-core";
 import { useApi } from "@/lib/fgmp/use-api";
 import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
@@ -189,20 +192,25 @@ export function OnboardingChecklist() {
     }
   }, [viewsRaw]);
 
-  // Fetch the user list only for the ADMIN role that can see this checklist.
-  // Hooks remain unconditional, but non-admins pass null so they do not make a
-  // request that the server correctly rejects with 403.
+  // The checklist is a setup prompt for whoever can administer the tenant —
+  // `view:users`, the capability that reads /api/fgmp/users. Hooks remain
+  // unconditional; a role without it passes null rather than issuing a request
+  // the server would refuse.
+  // `me` is null until the session envelope arrives, so `role` is
+  // `Role | undefined` here — no session must mean "no user administration",
+  // not a capability lookup on undefined.
+  const canAdministerUsers = role ? hasCapability(role, "view:users") : false;
   const { data: users } = useApi<unknown[]>(
-    role === "ADMIN" ? "/api/fgmp/users" : null,
+    canAdministerUsers ? "/api/fgmp/users" : null,
     { interval: 30000 },
   );
   // Fetch a single alarm to check the "threshold configured" proxy. Using
   // limit=1 keeps the payload tiny.
   const { data: alarmsSample } = useApi<unknown[]>("/api/fgmp/alarms?limit=1", { interval: 30000 });
 
-  // Show only for ADMINs with a loaded snapshot. We don't early-return before
-  // the hooks above — hooks must run unconditionally.
-  if (role !== "ADMIN" || !snapshot) return null;
+  // Show only to tenant administrators, and only with a loaded snapshot. We
+  // don't early-return before the hooks above — hooks must run unconditionally.
+  if (!canAdministerUsers || !snapshot) return null;
 
   const userCount = users?.length ?? 0;
   const alarmCount = alarmsSample?.length ?? 0;
