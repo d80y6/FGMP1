@@ -65,7 +65,7 @@ export function LanguageSwitcher() {
           {mounted && (
             <span
               className={cn(
-                "absolute -bottom-1 -right-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-0.5 text-[10px] font-bold tabular-nums",
+                "absolute -bottom-1 -end-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-0.5 text-[10px] font-bold tabular-nums",
                 // 700, not 500: the badge is 8px, so it needs 4.5:1 against
                 // white text — emerald-500 measured 2.3:1 in the axe run.
                 lang === "ar"
@@ -78,7 +78,7 @@ export function LanguageSwitcher() {
           )}
           {/* Subtle chevron hint when open */}
           {open && (
-            <ChevronDown className="absolute -top-1 -right-1 h-3 w-3 rotate-180 text-muted-foreground transition-transform" />
+            <ChevronDown className="absolute -top-1 -end-1 h-3 w-3 rotate-180 text-muted-foreground transition-transform" />
           )}
         </Button>
       </DropdownMenuTrigger>

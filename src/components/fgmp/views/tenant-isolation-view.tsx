@@ -152,9 +152,9 @@ export function TenantIsolationView() {
         </div>
         <Button onClick={runTest} disabled={running || loading} size="lg" className="shrink-0">
           {running || loading ? (
-            <><RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Running...</>
+            <><RefreshCw className="me-2 h-4 w-4 animate-spin" /> Running...</>
           ) : (
-            <><Play className="mr-2 h-4 w-4" /> {t("isolation.runTest")}</>
+            <><Play className="me-2 h-4 w-4" /> {t("isolation.runTest")}</>
           )}
         </Button>
       </div>
@@ -239,11 +239,11 @@ export function TenantIsolationView() {
             <ScrollRegion label={t("isolation.census")} className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b text-left">
+                  <tr className="border-b text-start">
                     <th className="p-2 font-medium">Tenant</th>
                     <th className="p-2 font-medium">Code</th>
                     {Object.entries(COUNT_LABELS).map(([k, label]) => (
-                      <th key={k} className="p-2 text-right font-medium">{label}</th>
+                      <th key={k} className="p-2 text-end font-medium">{label}</th>
                     ))}
                   </tr>
                 </thead>
@@ -253,12 +253,12 @@ export function TenantIsolationView() {
                       <td className="p-2 font-medium">
                         {tn.tenantName}
                         {tn.tenantCode === "PLATFORM" && (
-                          <Badge className="ml-2 bg-amber-500/15 text-amber-700 dark:text-amber-400 text-[10px]">PLATFORM</Badge>
+                          <Badge className="ms-2 bg-amber-500/15 text-amber-700 dark:text-amber-400 text-[10px]">PLATFORM</Badge>
                         )}
                       </td>
                       <td className="p-2 text-muted-foreground">{tn.tenantCode}</td>
                       {Object.keys(COUNT_LABELS).map((k) => (
-                        <td key={k} className="p-2 text-right tabular-nums">
+                        <td key={k} className="p-2 text-end tabular-nums">
                           {tn.counts[k] ?? 0}
                         </td>
                       ))}
@@ -284,7 +284,7 @@ export function TenantIsolationView() {
                 <div key={i} className="rounded-lg border">
                   <div className="border-b bg-muted/30 px-4 py-2 text-sm font-medium">
                     {group.sourceTenant} → {group.targetTenant}
-                    <span className="ml-2 text-xs text-muted-foreground">
+                    <span className="ms-2 text-xs text-muted-foreground">
                       {tFmt("isolation.groupSummary", {
                         passed: group.tests.filter((x) => x.recordFound && x.pass).length,
                         failed: group.tests.filter((x) => x.recordFound && !x.pass).length,
@@ -344,15 +344,15 @@ export function TenantIsolationView() {
             <ScrollRegion label={t("isolation.scopingAudit")} className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b text-left">
+                  <tr className="border-b text-start">
                     <th className="p-2 font-medium">Tenant</th>
-                    <th className="p-2 text-right font-medium">Sites (list)</th>
-                    <th className="p-2 text-right font-medium">Sites (census)</th>
-                    <th className="p-2 text-right font-medium">Alarms (list)</th>
-                    <th className="p-2 text-right font-medium">Alarms (census)</th>
-                    <th className="p-2 text-right font-medium">Gens (list)</th>
-                    <th className="p-2 text-right font-medium">Gens (census)</th>
-                    <th className="p-2 text-right font-medium">Status</th>
+                    <th className="p-2 text-end font-medium">Sites (list)</th>
+                    <th className="p-2 text-end font-medium">Sites (census)</th>
+                    <th className="p-2 text-end font-medium">Alarms (list)</th>
+                    <th className="p-2 text-end font-medium">Alarms (census)</th>
+                    <th className="p-2 text-end font-medium">Gens (list)</th>
+                    <th className="p-2 text-end font-medium">Gens (census)</th>
+                    <th className="p-2 text-end font-medium">Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -364,12 +364,12 @@ export function TenantIsolationView() {
                     return (
                       <tr key={tn.tenantId} className="border-b last:border-0 hover:bg-muted/50">
                         <td className="p-2 font-medium">{tn.tenantName}</td>
-                        <td className="p-2 text-right tabular-nums">{tn.listScoped.sitesList}</td>
-                        <td className="p-2 text-right tabular-nums text-muted-foreground">{tn.counts.sites}</td>
-                        <td className="p-2 text-right tabular-nums">{tn.listScoped.alarmsList}</td>
-                        <td className="p-2 text-right tabular-nums text-muted-foreground">{tn.counts.alarms}</td>
-                        <td className="p-2 text-right tabular-nums">{tn.listScoped.generatorsList}</td>
-                        <td className="p-2 text-right tabular-nums text-muted-foreground">{tn.counts.generators}</td>
+                        <td className="p-2 text-end tabular-nums">{tn.listScoped.sitesList}</td>
+                        <td className="p-2 text-end tabular-nums text-muted-foreground">{tn.counts.sites}</td>
+                        <td className="p-2 text-end tabular-nums">{tn.listScoped.alarmsList}</td>
+                        <td className="p-2 text-end tabular-nums text-muted-foreground">{tn.counts.alarms}</td>
+                        <td className="p-2 text-end tabular-nums">{tn.listScoped.generatorsList}</td>
+                        <td className="p-2 text-end tabular-nums text-muted-foreground">{tn.counts.generators}</td>
                         <td className="p-2 text-center">
                           {allMatch ? (
                             <CheckCircle2 className="mx-auto h-4 w-4 text-emerald-500" />
@@ -399,7 +399,7 @@ export function TenantIsolationView() {
             {t("isolation.noReportHint")}
           </p>
           <Button onClick={runTest}>
-            <Play className="mr-2 h-4 w-4" /> {t("isolation.run")}
+            <Play className="me-2 h-4 w-4" /> {t("isolation.run")}
           </Button>
         </Card>
       )}

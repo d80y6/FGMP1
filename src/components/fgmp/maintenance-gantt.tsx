@@ -289,7 +289,7 @@ export function MaintenanceGantt({ tickets, defaultRange = 30, onTicketClick }: 
         <div className="flex items-stretch gap-2 rounded-md border border-dashed border-muted-foreground/20 bg-muted/20 px-2 py-1.5">
           <div className="flex w-[168px] shrink-0 items-center">
             <span className="text-[11px] font-medium text-muted-foreground">Unscheduled</span>
-            <Badge variant="outline" className="ml-1.5 h-4 px-1 text-[10px]">
+            <Badge variant="outline" className="ms-1.5 h-4 px-1 text-[10px]">
               {unscheduled.length}
             </Badge>
           </div>
@@ -315,16 +315,25 @@ export function MaintenanceGantt({ tickets, defaultRange = 30, onTicketClick }: 
         </div>
       )}
 
-      {/* Gantt chart */}
+      {/* Gantt chart.
+          `dir="ltr"` is deliberate: a time axis runs left-to-right in every
+          locale, and this grid is built from physical offsets — `style={{ left }}`
+          bars, `-translate-x-1/2` ticks, a `sticky left-0` label column. Inside an
+          Arabic page the inherited `dir="rtl"` reverses the row (label column to
+          the right) while the absolute positions stay physical, so the axis and
+          its labels disagree. Pinning the *grid* (not the page) keeps the two
+          consistent; every logical utility inside it then resolves LTR, so the
+          component looks identical in both directions. */}
       <ScrollArea className="w-full pb-2">
         <div
+          dir="ltr"
           className="min-w-[600px]"
           style={{ width: LABEL_WIDTH + timelineWidth, minWidth }}
         >
           {/* Header: X-axis */}
           <div className="flex border-b border-border/60">
             <div
-              className="sticky left-0 z-20 shrink-0 border-r border-border/60 bg-card px-3 py-1.5"
+              className="sticky left-0 z-20 shrink-0 border-e border-border/60 bg-card px-3 py-1.5"
               style={{ width: LABEL_WIDTH }}
             >
               <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -348,7 +357,7 @@ export function MaintenanceGantt({ tickets, defaultRange = 30, onTicketClick }: 
               {dayLabels.map((d) => (
                 <div
                   key={d.day}
-                  className="absolute bottom-0 flex h-5 flex-col justify-end border-l border-border/40 pl-1"
+                  className="absolute bottom-0 flex h-5 flex-col justify-end border-s border-border/40 ps-1"
                   style={{ left: d.day * dayWidth }}
                 >
                   <span className="text-[10px] font-semibold leading-none text-foreground">
@@ -372,7 +381,7 @@ export function MaintenanceGantt({ tickets, defaultRange = 30, onTicketClick }: 
               <div key={row.siteId} className="flex items-stretch border-b border-border/30">
                 {/* Y-axis: site label (sticky so it stays visible while scrolling) */}
                 <div
-                  className="sticky left-0 z-20 shrink-0 border-r border-border/60 bg-card px-3 py-1"
+                  className="sticky left-0 z-20 shrink-0 border-e border-border/60 bg-card px-3 py-1"
                   style={{ width: LABEL_WIDTH }}
                 >
                   <p className="truncate text-[11px] font-medium leading-tight" title={row.name}>
@@ -388,7 +397,7 @@ export function MaintenanceGantt({ tickets, defaultRange = 30, onTicketClick }: 
                   {dayLabels.map((d) => (
                     <div
                       key={d.day}
-                      className="pointer-events-none absolute top-0 bottom-0 border-l border-border/20"
+                      className="pointer-events-none absolute top-0 bottom-0 border-s border-border/20"
                       style={{ left: d.day * dayWidth }}
                     />
                   ))}
@@ -439,7 +448,7 @@ export function MaintenanceGantt({ tickets, defaultRange = 30, onTicketClick }: 
             {hiddenSitesCount > 0 && (
               <div className="flex items-center border-b border-border/30">
                 <div
-                  className="sticky left-0 z-20 shrink-0 border-r border-border/60 bg-card px-3 py-1.5"
+                  className="sticky left-0 z-20 shrink-0 border-e border-border/60 bg-card px-3 py-1.5"
                   style={{ width: LABEL_WIDTH }}
                 >
                   <span className="text-[10px] text-muted-foreground">
@@ -547,7 +556,7 @@ function HeaderToolbar({
           </div>
         );
       })}
-      <div className="ml-auto flex items-center gap-3">
+      <div className="ms-auto flex items-center gap-3">
         <span className="text-[10px] text-muted-foreground">
           {tFmt("maintenance.showingCount", { visible: visibleCount, total: totalCount })}
         </span>

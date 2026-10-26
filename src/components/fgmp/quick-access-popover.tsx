@@ -96,7 +96,7 @@ export function QuickAccessPopover() {
             <Badge
               key={pinnedCount}
               variant="secondary"
-              className="absolute -right-1 -top-1 h-4 min-w-4 animate-pin-pop bg-amber-500 px-1 text-[10px] font-bold leading-none text-white"
+              className="absolute -end-1 -top-1 h-4 min-w-4 animate-pin-pop bg-amber-500 px-1 text-[10px] font-bold leading-none text-white"
               aria-label={formatNumber(pinnedCount, numLang)}
             >
               {formatNumber(pinnedCount, numLang)}
@@ -123,7 +123,7 @@ export function QuickAccessPopover() {
               {t("nav.pinnedSites")}
             </span>
             {pinnedCount > 0 && (
-              <span className="ml-auto rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-amber-700 dark:text-amber-400">
+              <span className="ms-auto rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-amber-700 dark:text-amber-400">
                 {formatNumber(pinnedCount, numLang)}
               </span>
             )}
@@ -144,7 +144,7 @@ export function QuickAccessPopover() {
                     <button
                       type="button"
                       onClick={() => goToSite(s.id)}
-                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                      className="flex min-w-0 flex-1 items-center gap-2 text-start"
                       title={s.name}
                     >
                       <StatusBadge value={s.status} className="h-5 shrink-0 px-1 text-[10px]" showShape={false} />
@@ -184,7 +184,7 @@ export function QuickAccessPopover() {
               {t("nav.recentSites")}
             </span>
             {recentSites.length > 0 && (
-              <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-muted-foreground">
+              <span className="ms-auto rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-muted-foreground">
                 {formatNumber(recentSites.length, numLang)}
               </span>
             )}
@@ -207,7 +207,7 @@ export function QuickAccessPopover() {
                       <button
                         type="button"
                         onClick={() => goToSite(s.id)}
-                        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                        className="flex min-w-0 flex-1 items-center gap-2 text-start"
                         title={s.name}
                       >
                         <StatusBadge value={s.status} className="h-5 shrink-0 px-1 text-[10px]" showShape={false} />

@@ -99,7 +99,7 @@ export function PinnedSitesWidget() {
       <button
         type="button"
         onClick={() => writeCollapsed(!collapsed)}
-        className="flex w-full items-center gap-1.5 rounded px-0.5 py-0.5 text-left transition-colors hover:bg-muted/60"
+        className="flex w-full items-center gap-1.5 rounded px-0.5 py-0.5 text-start transition-colors hover:bg-muted/60"
         aria-expanded={!collapsed}
         aria-label={collapsed ? t("pinned.expand") : t("pinned.collapse")}
       >
@@ -130,7 +130,7 @@ export function PinnedSitesWidget() {
               </p>
             </div>
           ) : (
-            <div className="max-h-48 space-y-0.5 overflow-y-auto pr-0.5">
+            <div className="max-h-48 space-y-0.5 overflow-y-auto pe-0.5">
               {sites.map((s) => (
                 <div
                   key={s.id}
@@ -139,7 +139,7 @@ export function PinnedSitesWidget() {
                   <button
                     type="button"
                     onClick={() => goToSite(s.id)}
-                    className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                    className="flex min-w-0 flex-1 items-center gap-1.5 text-start"
                     title={`Open ${s.name}`}
                   >
                     <span

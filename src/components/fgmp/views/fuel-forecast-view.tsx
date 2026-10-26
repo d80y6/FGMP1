@@ -308,16 +308,16 @@ export function FuelForecastView() {
                 <TableRow>
                   <TableHead className="min-w-[140px]">Site</TableHead>
                   <TableHead className="min-w-[120px]">Tank</TableHead>
-                  <TableHead className="text-right">Current (L)</TableHead>
-                  <TableHead className="text-right">Capacity (L)</TableHead>
-                  <TableHead className="text-right">%</TableHead>
-                  <TableHead className="text-right">Rate (L/h)</TableHead>
-                  <TableHead className="text-right">{t("forecast.hrsToLow")}</TableHead>
-                  <TableHead className="text-right">{t("forecast.hrsToCritical")}</TableHead>
-                  <TableHead className="text-right">{t("forecast.hrsToDry")}</TableHead>
+                  <TableHead className="text-end">Current (L)</TableHead>
+                  <TableHead className="text-end">Capacity (L)</TableHead>
+                  <TableHead className="text-end">%</TableHead>
+                  <TableHead className="text-end">Rate (L/h)</TableHead>
+                  <TableHead className="text-end">{t("forecast.hrsToLow")}</TableHead>
+                  <TableHead className="text-end">{t("forecast.hrsToCritical")}</TableHead>
+                  <TableHead className="text-end">{t("forecast.hrsToDry")}</TableHead>
                   <TableHead className="min-w-[140px]">{t("forecast.dryOutDate")}</TableHead>
                   <TableHead className="text-center">Risk</TableHead>
-                  <TableHead className="text-right">Action</TableHead>
+                  <TableHead className="text-end">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -327,19 +327,19 @@ export function FuelForecastView() {
                     <TableRow key={r.id}>
                       <TableCell className="text-xs">{r.site}</TableCell>
                       <TableCell className="text-xs font-medium">{r.tank}</TableCell>
-                      <TableCell className="text-right text-xs tabular-nums">{fmtLitres(r.current, numLang)}</TableCell>
-                      <TableCell className="text-right text-xs tabular-nums text-muted-foreground">{fmtLitres(r.capacity, numLang)}</TableCell>
-                      <TableCell className="text-right text-xs tabular-nums">
+                      <TableCell className="text-end text-xs tabular-nums">{fmtLitres(r.current, numLang)}</TableCell>
+                      <TableCell className="text-end text-xs tabular-nums text-muted-foreground">{fmtLitres(r.capacity, numLang)}</TableCell>
+                      <TableCell className="text-end text-xs tabular-nums">
                         <span className={r.pct <= 12 ? "text-rose-700 dark:text-rose-400" : r.pct <= 25 ? "text-amber-700 dark:text-amber-400" : ""}>
                           {formatNumber(r.pct.toFixed(1), numLang)}%
                         </span>
                       </TableCell>
-                      <TableCell className="text-right text-xs tabular-nums">
+                      <TableCell className="text-end text-xs tabular-nums">
                         {r.rate > 0 ? formatNumber(r.rate.toFixed(1), numLang) : "—"}
                       </TableCell>
-                      <TableCell className="text-right text-xs tabular-nums">{fmtHours(r.hoursToLow, numLang)}</TableCell>
-                      <TableCell className="text-right text-xs tabular-nums font-medium">{fmtHours(r.hoursToCritical, numLang)}</TableCell>
-                      <TableCell className="text-right text-xs tabular-nums">{fmtHours(r.hoursToDry, numLang)}</TableCell>
+                      <TableCell className="text-end text-xs tabular-nums">{fmtHours(r.hoursToLow, numLang)}</TableCell>
+                      <TableCell className="text-end text-xs tabular-nums font-medium">{fmtHours(r.hoursToCritical, numLang)}</TableCell>
+                      <TableCell className="text-end text-xs tabular-nums">{fmtHours(r.hoursToDry, numLang)}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">
                         {r.dryOutAt ? fmtDateTime(r.dryOutAt, numLang) : "—"}
                       </TableCell>
@@ -348,7 +348,7 @@ export function FuelForecastView() {
                           {r.risk}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-end">
                         {(r.risk === "CRITICAL" || r.risk === "HIGH") && (
                           canView("inventory") && (
                           <Button
@@ -357,7 +357,7 @@ export function FuelForecastView() {
                             className="h-7 text-[11px]"
                             onClick={() => setView("inventory")}
                           >
-                            <PackagePlus className="mr-1 h-3 w-3" /> {t("forecast.createDelivery")}
+                            <PackagePlus className="me-1 h-3 w-3" /> {t("forecast.createDelivery")}
                           </Button>
                           )
                         )}

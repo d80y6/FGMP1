@@ -118,7 +118,7 @@ export function NotificationCenter() {
           title={t("common.notifications")}>
           <Bell className={cn("h-4 w-4 transition-colors", unreadCount > 0 && "text-amber-500")} />
           {unreadCount > 0 && (
-            <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white animate-in zoom-in-50 duration-200">
+            <span className="absolute -end-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white animate-in zoom-in-50 duration-200">
               {unreadCount > 99 ? "99+" : unreadCount}
             </span>
           )}
@@ -138,13 +138,13 @@ export function NotificationCenter() {
           <div className="flex items-center gap-1">
             {unreadCount > 0 && (
               <Button variant="ghost" size="sm" className="h-7 px-2 text-[10px]" onClick={markAllRead}>
-                <CheckCheck className="mr-1 h-3 w-3" />
+                <CheckCheck className="me-1 h-3 w-3" />
                 {t("notifications.markAllRead")}
               </Button>
             )}
             {canDismissNotifications && (
               <Button variant="ghost" size="sm" className="h-7 px-2 text-[10px]" onClick={dismissAll}>
-                <X className="mr-1 h-3 w-3" />
+                <X className="me-1 h-3 w-3" />
                 Clear
               </Button>
             )}
@@ -229,7 +229,7 @@ function NotificationItem({
   return (
     <button
       className={cn(
-        "flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50",
+        "flex w-full items-start gap-3 px-4 py-3 text-start transition-colors hover:bg-muted/50",
         isUnread && "bg-muted/30"
       )}
       onClick={handleClick}

@@ -154,7 +154,7 @@ export function RolesView() {
                       )}
                       onClick={() => setSelectedRole(r)}
                     >
-                      <TableCell className="sticky left-0 bg-card z-10">
+                      <TableCell className="sticky start-0 bg-card z-10">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium">{roleLabel(r, numLang)}</span>
                           {isMine && (
@@ -214,7 +214,7 @@ export function RolesView() {
             <span className="text-muted-foreground/30">—</span>
             {t("roles.notGranted")}
           </span>
-          <span className="ml-auto">
+          <span className="ms-auto">
             Click a row to inspect that role&apos;s full capability list below.
           </span>
         </CardContent>

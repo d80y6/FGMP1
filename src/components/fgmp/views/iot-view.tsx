@@ -129,8 +129,8 @@ export function IotView() {
           <CardTitle className="text-sm">{t("iot.deviceRegistry")} ({formatNumber(filtered.length, numLang)})</CardTitle>
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("iot.search")} className="h-9 w-[200px] pl-8" />
+              <Search className="absolute start-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("iot.search")} className="h-9 w-[200px] ps-8" />
             </div>
             <Select label={t("iot.protocol")} value={protocol} onValueChange={setProtocol}>
               <SelectTrigger className="h-9 w-[140px] text-xs"><SelectValue placeholder={t("iot.protocolPlaceholder")} /></SelectTrigger>
@@ -155,7 +155,7 @@ export function IotView() {
                   <TableHead className="hidden lg:table-cell w-[90px]">{t("iot.firmware")}</TableHead>
                   <TableHead className="w-[70px]">{t("iot.signal")}</TableHead>
                   <TableHead className="w-[80px]">{t("alarms.status")}</TableHead>
-                  <TableHead className="w-[150px] text-right">{t("common.actions")}</TableHead>
+                  <TableHead className="w-[150px] text-end">{t("common.actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -173,7 +173,7 @@ export function IotView() {
                     <TableCell className="hidden lg:table-cell text-[10px]">{d.firmware}</TableCell>
                     <TableCell className="text-[10px] tabular-nums">{formatNumber(d.signalRssi, numLang)}dBm</TableCell>
                     <TableCell><StatusBadge value={d.liveStatus} className="h-5 text-[10px]" /></TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-end">
                       <div className="flex justify-end gap-1">
                         {canManageEdge ? (
                           <>
@@ -209,7 +209,7 @@ export function IotView() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOta(null)}>{t("common.cancel")}</Button>
-            <Button onClick={doOta} className="bg-emerald-500 hover:bg-emerald-600 text-white"><HardDriveDownload className="mr-1.5 h-4 w-4" />{t("iot.deployOta")}</Button>
+            <Button onClick={doOta} className="bg-emerald-500 hover:bg-emerald-600 text-white"><HardDriveDownload className="me-1.5 h-4 w-4" />{t("iot.deployOta")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

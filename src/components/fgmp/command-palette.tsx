@@ -284,7 +284,7 @@ export function CommandPalette({ open, onOpenChange }: Props) {
           <CommandItem onSelect={() => onOpenChange(false)} className="gap-2">
             <Search className="h-4 w-4 text-muted-foreground" />
             <span className="text-muted-foreground">{t("common.openPalette")}</span>
-            <CornerDownLeft className="ml-auto h-3 w-3 text-muted-foreground" />
+            <CornerDownLeft className="ms-auto h-3 w-3 text-muted-foreground" />
           </CommandItem>
         </CommandGroup>
       </CommandList>

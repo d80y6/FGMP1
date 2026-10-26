@@ -744,7 +744,7 @@ function ChannelCard({
                       variant="outline"
                       className={cn("h-5 px-1.5 text-[10px] font-medium", TONE_BADGE[sev.tone])}
                     >
-                      <span className={cn("mr-1 inline-block h-1.5 w-1.5 rounded-full", TONE_DOT[sev.tone])} />
+                      <span className={cn("me-1 inline-block h-1.5 w-1.5 rounded-full", TONE_DOT[sev.tone])} />
                       {t(sev.shortKey)}
                     </Badge>
                   </div>
@@ -821,7 +821,7 @@ function QuietHoursTimeline({ start, end, numLang, t }: QuietHoursTimelineProps)
             <div
               key={h}
               className={cn(
-                "flex-1 border-r border-background last:border-r-0 transition-colors",
+                "flex-1 border-e border-background last:border-e-0 transition-colors",
                 active
                   ? "bg-violet-500/40 dark:bg-violet-500/30"
                   : "bg-emerald-500/10 dark:bg-emerald-500/5",

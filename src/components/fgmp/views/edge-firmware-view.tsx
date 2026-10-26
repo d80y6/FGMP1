@@ -258,17 +258,17 @@ export function EdgeFirmwareView() {
       <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
         <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 h-auto">
           <TabsTrigger value="gateways" className="text-xs">
-            <Router className="mr-1.5 h-3.5 w-3.5" />
+            <Router className="me-1.5 h-3.5 w-3.5" />
             Gateways
           </TabsTrigger>
           <TabsTrigger value="firmware" className="text-xs">
-            <HardDriveDownload className="mr-1.5 h-3.5 w-3.5" />{t("firmware.espFirmware")}</TabsTrigger>
+            <HardDriveDownload className="me-1.5 h-3.5 w-3.5" />{t("firmware.espFirmware")}</TabsTrigger>
           <TabsTrigger value="rs485" className="text-xs">
-            <Radio className="mr-1.5 h-3.5 w-3.5" />
+            <Radio className="me-1.5 h-3.5 w-3.5" />
             RS485 Diagnostics
           </TabsTrigger>
           <TabsTrigger value="reboot" className="text-xs">
-            <RefreshCw className="mr-1.5 h-3.5 w-3.5" />{t("firmware.espReboot")}</TabsTrigger>
+            <RefreshCw className="me-1.5 h-3.5 w-3.5" />{t("firmware.espReboot")}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="gateways" className="mt-4">
@@ -344,11 +344,11 @@ function GatewaysTab({ gateways, loading, numLang }: {
         </CardTitle>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute start-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               value={q} onChange={(e) => setQ(e.target.value)}
               placeholder={t("firmware.searchPlaceholder")}
-              className="h-9 w-[220px] pl-8"
+              className="h-9 w-[220px] ps-8"
             />
           </div>
           <Select label={t("common.status")} value={statusFilter} onValueChange={setStatusFilter}>
@@ -567,7 +567,7 @@ function FirmwareTab({ gateways, loading, onRefresh, canOtaFor }: {
                     <TableHead className="w-[100px]">Current</TableHead>
                     <TableHead className="w-[100px]">Target</TableHead>
                     <TableHead className="w-[120px]">{t("firmware.otaStatus")}</TableHead>
-                    <TableHead className="w-[90px] text-right">Action</TableHead>
+                    <TableHead className="w-[90px] text-end">Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -643,7 +643,7 @@ function FirmwareTab({ gateways, loading, onRefresh, canOtaFor }: {
               {t("common.cancel")}
             </Button>
             <Button onClick={startOta} className="bg-emerald-500 hover:bg-emerald-600 text-white">
-              <HardDriveDownload className="mr-1.5 h-4 w-4" />
+              <HardDriveDownload className="me-1.5 h-4 w-4" />
               {t("iot.deployOta")}
             </Button>
           </DialogFooter>
@@ -821,7 +821,7 @@ function Rs485Tab({ gateways, loading, numLang }: {
                                     : "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400")
                                 }
                               >
-                                {isConflict && <AlertTriangle className="mr-0.5 h-2 w-2" />}
+                                {isConflict && <AlertTriangle className="me-0.5 h-2 w-2" />}
                                 {formatNumber(a, numLang)}
                               </Badge>
                             );
@@ -951,7 +951,7 @@ function RebootTab({ gateways, loading, numLang, onReboot, canReboot }: {
                   <TableHead className="hidden lg:table-cell w-[100px]">{t("iot.firmware")}</TableHead>
                   <TableHead className="w-[120px]">{t("firmware.lastComm")}</TableHead>
                   <TableHead className="w-[100px]">{t("common.status")}</TableHead>
-                  <TableHead className="w-[110px] text-right">Action</TableHead>
+                  <TableHead className="w-[110px] text-end">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -969,14 +969,14 @@ function RebootTab({ gateways, loading, numLang, onReboot, canReboot }: {
                     <TableCell>
                       <StatusBadge value={g.status} className="h-5 text-[10px]" />
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-end">
                       <Button
                         size="sm" variant="outline"
                         className="h-7 px-2 text-[10px]"
                         disabled={!canReboot}
                         onClick={() => setConfirmTarget(g)}
                       >
-                        <RefreshCw className="mr-1 h-3 w-3" />
+                        <RefreshCw className="me-1 h-3 w-3" />
                         Reboot
                       </Button>
                     </TableCell>

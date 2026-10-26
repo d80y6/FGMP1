@@ -226,7 +226,7 @@ export function AnalyticsView() {
               conversion is not performed, so the currency KPIs below show "—".
               Saying so explicitly stops a dash reading as "$0 lost". */}
           {a.fuelCost.currencyAvailable === false ? (
-            <p className="text-xs text-muted-foreground border-l-2 border-amber-500/60 pl-2">
+            <p className="text-xs text-muted-foreground border-s-2 border-amber-500/60 ps-2">
               {t("analytics.noFxRateConfigured")}{" "}
               {/* No opacity: 70% of muted-foreground on the card measures
                   ~2.7:1. The parenthetical is already secondary by wording. */}
@@ -363,7 +363,7 @@ export function AnalyticsView() {
                             </span>
                             <span className="font-medium tabular-nums">
                               ${formatNumber(d.value.toLocaleString(), numLang)}
-                              <span className="ml-1 text-[10px] text-muted-foreground">
+                              <span className="ms-1 text-[10px] text-muted-foreground">
                                 ({formatNumber(((d.value / total) * 100).toFixed(1), numLang)}%)
                               </span>
                             </span>

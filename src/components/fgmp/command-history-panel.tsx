@@ -216,7 +216,7 @@ export function CommandHistoryPanel({ commands }: Props) {
 
             {/* Filter chips */}
             <div className="flex flex-wrap items-center gap-1.5">
-              <Filter className="mr-0.5 h-3 w-3 text-muted-foreground" />
+              <Filter className="me-0.5 h-3 w-3 text-muted-foreground" />
               <FilterChip label={t("cmdHistory.all")} active={activeFilter === "ALL"} onClick={() => setActiveFilter("ALL")} count={items.length} />
               {COMMAND_TYPES.map((tp) => {
                 const count = items.filter((c) => (c.command ?? "").toUpperCase() === tp).length;
@@ -234,7 +234,7 @@ export function CommandHistoryPanel({ commands }: Props) {
             </div>
 
             {/* Timeline list */}
-            <div className="max-h-[320px] space-y-1.5 overflow-y-auto pr-1" tabIndex={0} role="region" aria-label={t("a11y.scrollCommandHistory")}>
+            <div className="max-h-[320px] space-y-1.5 overflow-y-auto pe-1" tabIndex={0} role="region" aria-label={t("a11y.scrollCommandHistory")}>
               {visible.length === 0 ? (
                 <p className="py-6 text-center text-xs text-muted-foreground">{t("cmdHistory.noMatch")}</p>
               ) : (
@@ -342,7 +342,7 @@ export function CommandHistoryPanel({ commands }: Props) {
                         style={{ width: `${b.pct}%` }}
                       />
                     </div>
-                    <span className="w-6 shrink-0 text-right text-[10px] font-semibold tabular-nums">{formatNumber(b.count, numLang)}</span>
+                    <span className="w-6 shrink-0 text-end text-[10px] font-semibold tabular-nums">{formatNumber(b.count, numLang)}</span>
                   </div>
                 ))}
               </div>
@@ -413,7 +413,7 @@ function FilterChip({
       )}
     >
       {label}
-      <span className={cn("ml-1 rounded-full px-1 text-[10px]", active ? "bg-sky-500/20" : "bg-muted/60")}>{count}</span>
+      <span className={cn("ms-1 rounded-full px-1 text-[10px]", active ? "bg-sky-500/20" : "bg-muted/60")}>{count}</span>
     </Button>
   );
 }

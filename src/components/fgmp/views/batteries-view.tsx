@@ -64,8 +64,8 @@ export function BatteriesView() {
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
             <CardTitle className="text-sm">{t("batteries.banks")} ({formatNumber(banks.length, numLang)})</CardTitle>
             <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("batteries.search")} className="h-9 w-[200px] pl-8" />
+              <Search className="absolute start-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("batteries.search")} className="h-9 w-[200px] ps-8" />
             </div>
           </CardHeader>
           <CardContent className="p-0">
@@ -122,7 +122,7 @@ export function BatteriesView() {
                       <p className="truncate text-xs font-medium" title={`${b.label} · ${b.site}`}>{b.label} <span className="text-muted-foreground">· {b.site}</span></p>
                       <div className="mt-1"><BarGauge value={b.stateOfHealth} /></div>
                     </div>
-                    <span className={cn("w-10 text-right text-xs font-bold tabular-nums", b.stateOfHealth < 70 ? "text-rose-500" : b.stateOfHealth < 80 ? "text-amber-500" : "text-emerald-500")}>{formatNumber(b.stateOfHealth, numLang)}%</span>
+                    <span className={cn("w-10 text-end text-xs font-bold tabular-nums", b.stateOfHealth < 70 ? "text-rose-500" : b.stateOfHealth < 80 ? "text-amber-500" : "text-emerald-500")}>{formatNumber(b.stateOfHealth, numLang)}%</span>
                   </div>
                 ))}
               </div>

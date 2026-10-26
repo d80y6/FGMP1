@@ -88,7 +88,7 @@ export function AuditView() {
                   <div className="h-4 flex-1 overflow-hidden rounded bg-muted">
                     <div className="h-full bg-emerald-500/70" style={{ width: `${Math.min(100, (n / (logs?.length || 1)) * 200)}%` }} />
                   </div>
-                  <div className="w-8 text-right text-xs tabular-nums text-muted-foreground">{formatNumber(n, numLang)}</div>
+                  <div className="w-8 text-end text-xs tabular-nums text-muted-foreground">{formatNumber(n, numLang)}</div>
                 </div>
               ))}
               {actionCounts.length === 0 && <p className="py-6 text-center text-xs text-muted-foreground">{t("audit.noEvents")}</p>}
@@ -101,8 +101,8 @@ export function AuditView() {
             <CardTitle className="text-sm">{t("audit.trail")} ({formatNumber(filtered.length, numLang)})</CardTitle>
             <div className="flex items-center gap-2">
               <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("audit.search")} className="h-9 w-[220px] pl-8" />
+                <Search className="absolute start-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("audit.search")} className="h-9 w-[220px] ps-8" />
               </div>
               <Select label={t("audit.action")} value={action} onValueChange={setAction}>
                 <SelectTrigger className="h-9 w-[160px] text-xs"><SelectValue placeholder={t("audit.action")} /></SelectTrigger>

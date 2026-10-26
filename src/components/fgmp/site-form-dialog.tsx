@@ -395,7 +395,7 @@ function SiteForm({
           {t("common.cancel")}
         </Button>
         <Button type="submit" disabled={submitting}>
-          {submitting && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+          {submitting && <Loader2 className="me-1.5 h-4 w-4 animate-spin" />}
           {isEdit ? t("sites.save") : t("sites.create")}
         </Button>
       </DialogFooter>

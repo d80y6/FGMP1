@@ -63,10 +63,10 @@ const PRIORITY_TONE: Record<string, string> = {
 };
 
 const STATUS_BORDER: Record<string, string> = {
-  OPEN: "border-l-2 border-l-sky-500",
-  SCHEDULED: "border-l-2 border-l-amber-500",
-  IN_PROGRESS: "border-l-2 border-l-violet-500",
-  DONE: "border-l-2 border-l-emerald-500",
+  OPEN: "border-s-2 border-l-sky-500",
+  SCHEDULED: "border-s-2 border-l-amber-500",
+  IN_PROGRESS: "border-s-2 border-l-violet-500",
+  DONE: "border-s-2 border-l-emerald-500",
 };
 
 const STATUS_BADGE_DETAIL: Record<string, string> = {
@@ -179,7 +179,7 @@ export function MaintenanceView() {
               data-testid="export-maintenance-csv"
               title={(tickets ?? []).length === 0 ? t("maintenance.noTicketsHint") : `${formatNumber((tickets ?? []).length, numLang)} ${t("alarms.exportAlarms")}`}
             >
-              <Download className="mr-1.5 h-4 w-4" /> {t("common.export")}
+              <Download className="me-1.5 h-4 w-4" /> {t("common.export")}
             </Button>
             {canManageTickets && (
               <CreateTicketDialog open={createOpen} onOpenChange={setCreateOpen} sites={snapshot.sites} generators={snapshot.generators} onCreated={() => { refetch(); setCreateOpen(false); }} />
@@ -227,7 +227,7 @@ export function MaintenanceView() {
                     <TableHead className="hidden lg:table-cell w-[140px]">{t("maintenance.assignee")}</TableHead>
                     <TableHead className="w-[90px]">{t("alarms.status")}</TableHead>
                     <TableHead className="hidden md:table-cell w-[100px]">{t("maintenance.scheduled")}</TableHead>
-                    <TableHead className="w-[90px] text-right">{t("common.actions")}</TableHead>
+                    <TableHead className="w-[90px] text-end">{t("common.actions")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -245,7 +245,7 @@ export function MaintenanceView() {
                       <TableCell className="text-right">
                         {canManageTickets && tk.status !== "DONE" && (
                           <Button size="sm" variant="outline" className="h-6 px-2 text-[10px] text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10" onClick={() => complete(tk.id)}>
-                            <CheckCircle2 className="mr-1 h-3 w-3" />{t("maintenance.complete")}
+                            <CheckCircle2 className="me-1 h-3 w-3" />{t("maintenance.complete")}
                           </Button>
                         )}
                       </TableCell>
@@ -390,7 +390,7 @@ function CreateTicketDialog({ open, onOpenChange, sites, generators, onCreated }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogTrigger asChild><Button size="sm"><Plus className="mr-1.5 h-4 w-4" />{t("maintenance.newTicket")}</Button></DialogTrigger>
+      <DialogTrigger asChild><Button size="sm"><Plus className="me-1.5 h-4 w-4" />{t("maintenance.newTicket")}</Button></DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader><DialogTitle>{t("maintenance.createTicket")}</DialogTitle></DialogHeader>
         <div className="grid grid-cols-2 gap-3">

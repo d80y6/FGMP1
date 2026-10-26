@@ -102,7 +102,7 @@ export function FuelView() {
         icon={<Droplet className="h-5 w-5" />}
         actions={
           <Button variant="outline" size="sm" onClick={() => window.open("/api/fgmp/export?type=tanks", "_blank")}>
-            <Download className="mr-1.5 h-4 w-4" /> {t("common.export")}
+            <Download className="me-1.5 h-4 w-4" /> {t("common.export")}
           </Button>
         }
       />
@@ -212,7 +212,7 @@ export function FuelView() {
                     <p className="truncate text-xs font-medium" title={`${t.site} · ${t.label}`}>{t.site} · {t.label}</p>
                     <div className="mt-1"><BarGauge value={t.pct} /></div>
                   </div>
-                  <div className="text-right text-[11px]">
+                  <div className="text-end text-[11px]">
                     <p className="font-bold tabular-nums">{formatNumber(Math.round(t.pct), numLang)}%</p>
                     <p className="text-muted-foreground">{fmtLitres(t.current, numLang)}</p>
                   </div>
@@ -301,7 +301,7 @@ function ScrollList({ events, empty, tone }: { events: EventItem[]; empty: strin
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
   return (
-    <div className="max-h-64 space-y-1.5 overflow-y-auto pr-1">
+    <div className="max-h-64 space-y-1.5 overflow-y-auto pe-1">
       {events.length === 0 && <p className="py-6 text-center text-xs text-muted-foreground">{empty}</p>}
       {events.map((e, i) => (
         <div key={i} className="flex items-start gap-2 rounded border p-2 text-[11px]">

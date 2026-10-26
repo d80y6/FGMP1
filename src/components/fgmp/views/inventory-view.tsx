@@ -131,7 +131,7 @@ export function InventoryView() {
                     <TableHead className="w-[100px]">{t("inventory.supplier")}</TableHead>
                     <TableHead className="w-[90px]">{t("inventory.scheduledAt")}</TableHead>
                     <TableHead className="w-[90px]">{t("alarms.status")}</TableHead>
-                    <TableHead className="w-[110px] text-right">{t("common.actions")}</TableHead>
+                    <TableHead className="w-[110px] text-end">{t("common.actions")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -187,7 +187,7 @@ export function InventoryView() {
                       <p className="truncate font-medium">{r.site?.name}</p>
                       <p className="text-[10px] text-muted-foreground">{r.doNumber}</p>
                     </div>
-                    <div className="text-right">
+                    <div className="text-end">
                       <p className="font-semibold tabular-nums">{formatNumber(Math.round(r.volumeDeliveredLitres ?? 0), numLang)}L</p>
                       <p className={r.diffPct > 2 ? "text-rose-500" : r.diffPct < -2 ? "text-amber-500" : "text-emerald-500"}>
                         {r.diffPct > 0 ? "+" : ""}{formatNumber(r.diffPct, numLang)}%
@@ -213,7 +213,7 @@ export function InventoryView() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setVerify(null)}>{t("common.cancel")}</Button>
-            <Button onClick={doVerify} className="bg-emerald-500 hover:bg-emerald-600 text-white"><CheckCircle2 className="mr-1.5 h-4 w-4" />{t("inventory.confirmVerification")}</Button>
+            <Button onClick={doVerify} className="bg-emerald-500 hover:bg-emerald-600 text-white"><CheckCircle2 className="me-1.5 h-4 w-4" />{t("inventory.confirmVerification")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -267,7 +267,7 @@ function CreateDeliveryDialog({ open, onOpenChange, onCreated, tanks, sites }: {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger asChild>
-        <Button size="sm"><Plus className="mr-1.5 h-4 w-4" />{t("inventory.scheduleDelivery")}</Button>
+        <Button size="sm"><Plus className="me-1.5 h-4 w-4" />{t("inventory.scheduleDelivery")}</Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader><DialogTitle>{t("inventory.scheduleFuelDelivery")}</DialogTitle></DialogHeader>

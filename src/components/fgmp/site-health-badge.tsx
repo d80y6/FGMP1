@@ -107,8 +107,8 @@ export function SiteHealthBadge({ site, tanks, generators, batteries, compact = 
                     style={{ width: `${f.value}%` }}
                   />
                 </div>
-                <span className="w-8 text-right tabular-nums">{f.value}</span>
-                <span className="w-8 text-right text-muted-foreground">{f.weight}</span>
+                <span className="w-8 text-end tabular-nums">{f.value}</span>
+                <span className="w-8 text-end text-muted-foreground">{f.weight}</span>
               </div>
             ))}
           </div>

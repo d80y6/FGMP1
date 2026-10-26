@@ -82,7 +82,7 @@ export function ThemeSwitcher() {
           ) : (
             <Moon className="h-4 w-4" />
           )}
-          <ChevronDown className="pointer-events-none absolute bottom-0.5 right-0.5 h-2.5 w-2.5 text-muted-foreground" />
+          <ChevronDown className="pointer-events-none absolute bottom-0.5 end-0.5 h-2.5 w-2.5 text-muted-foreground" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-44">

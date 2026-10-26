@@ -462,7 +462,7 @@ function FieldRow({
               )}
             >
               {value === "true" ? (
-                <><CheckCircle2 className="mr-1 h-3 w-3" />Enabled</>
+                <><CheckCircle2 className="me-1 h-3 w-3" />Enabled</>
               ) : (
                 "Disabled"
               )}

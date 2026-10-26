@@ -321,7 +321,7 @@ export function SuppressionsView() {
           <CardTitle className="flex items-center gap-2 text-sm">
             <ShieldOff className="h-4 w-4 text-amber-500" />
             {t("suppressions.active")}
-            <Badge variant="secondary" className="ml-1 h-5 text-[10px]">
+            <Badge variant="secondary" className="ms-1 h-5 text-[10px]">
               {formatNumber(active.length, numLang)}
             </Badge>
           </CardTitle>
@@ -360,7 +360,7 @@ export function SuppressionsView() {
           <CardTitle className="flex items-center gap-2 text-sm">
             <History className="h-4 w-4 text-muted-foreground" />
             {t("suppressions.pastSuppressions")}
-            <Badge variant="outline" className="ml-1 h-5 text-[10px]">
+            <Badge variant="outline" className="ms-1 h-5 text-[10px]">
               {formatNumber(expired.length, numLang)}
             </Badge>
           </CardTitle>
@@ -384,7 +384,7 @@ export function SuppressionsView() {
                           <TableHead className="hidden md:table-cell text-xs">{t("suppressions.reason")}</TableHead>
                           <TableHead className="hidden sm:table-cell text-xs">{t("suppressions.window")}</TableHead>
                           <TableHead className="hidden lg:table-cell text-xs">{t("suppressions.createdBy")}</TableHead>
-                          <TableHead className="w-[60px] text-xs text-right">{t("common.delete")}</TableHead>
+                          <TableHead className="w-[60px] text-xs text-end">{t("common.delete")}</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -393,7 +393,7 @@ export function SuppressionsView() {
                             <TableCell className="text-xs">
                               <span className="font-medium">{s.site?.name ?? t("suppressions.allSites")}</span>
                               {s.site?.code && (
-                                <span className="ml-1 text-[10px] text-muted-foreground">{s.site.code}</span>
+                                <span className="ms-1 text-[10px] text-muted-foreground">{s.site.code}</span>
                               )}
                             </TableCell>
                             <TableCell className="text-xs">
@@ -588,7 +588,7 @@ function ActiveCard({ row, lang, onExtend, onCancel, onDelete, canDelete }: Acti
           onClick={onExtend}
           disabled={!onExtend || now > end}
         >
-          <Clock className="mr-1 h-3 w-3" />
+          <Clock className="me-1 h-3 w-3" />
           {t("suppressions.extend")} +1h
         </Button>
         <Button
@@ -598,14 +598,14 @@ function ActiveCard({ row, lang, onExtend, onCancel, onDelete, canDelete }: Acti
           onClick={onCancel}
           disabled={!onCancel}
         >
-          <X className="mr-1 h-3 w-3" />
+          <X className="me-1 h-3 w-3" />
           {t("suppressions.cancel")}
         </Button>
         {canDelete && (
           <Button
             size="sm"
             variant="ghost"
-            className="ml-auto h-7 w-7 p-0 text-muted-foreground hover:text-rose-700 dark:hover:text-rose-400"
+            className="ms-auto h-7 w-7 p-0 text-muted-foreground hover:text-rose-700 dark:hover:text-rose-400"
             onClick={onDelete}
             aria-label={t("common.delete")}
           >
