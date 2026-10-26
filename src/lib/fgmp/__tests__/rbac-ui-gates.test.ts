@@ -93,6 +93,16 @@ const VIEW_GATES: { view: string; capability: string }[] = [
  * role comparison — which is what regressed.
  */
 const ACTION_GATES: { file: string; capability: string; why: string }[] = [
+  { file: "views/dashboard-view.tsx", capability: "alarm:ack", why: "Ack a critical alarm from the dashboard" },
+  { file: "views/iot-view.tsx", capability: "edge:manage", why: "OTA deploy / reboot an IoT device" },
+  { file: "views/edge-firmware-view.tsx", capability: "asset:manage", why: "OTA for a dispenser-sourced gateway" },
+  { file: "views/edge-firmware-view.tsx", capability: "edge:manage", why: "OTA for an iot-sourced gateway" },
+  { file: "views/api-keys-view.tsx", capability: "api-key:manage", why: "Create / revoke an API key" },
+  { file: "views/system-settings-view.tsx", capability: "settings:manage", why: "Save / reset settings" },
+  { file: "views/users-view.tsx", capability: "user:manage", why: "Create / edit / deactivate / reset a user" },
+  { file: "views/tenants-view.tsx", capability: "tenant:manage", why: "Create / edit / delete a tenant, open support access" },
+  { file: "views/tenants-view.tsx", capability: "user:manage", why: "Mint a tenant's first administrator" },
+  { file: "site-form-dialog.tsx", capability: "asset:manage", why: "Site create / edit dialog" },
   { file: "views/alarms-view.tsx", capability: "alarm:ack", why: "Acknowledge / bulk acknowledge" },
   { file: "views/alarms-view.tsx", capability: "alarm:resolve", why: "Resolve / bulk resolve" },
   { file: "views/maintenance-view.tsx", capability: "ticket:manage", why: "Create / complete ticket" },
@@ -148,8 +158,13 @@ describe("the affordances a view offers follow the capability its endpoint needs
     test(`${file} asks for ${capability} (${why})`, () => {
       const source = read(join(COMPONENTS, file));
       const escape = capability.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      expect({ why, uses: new RegExp(`hasCapability\\([^)]*"${escape}"`).test(source) })
-        .toEqual({ why, uses: true });
+      // Any of the sanctioned spellings: `hasCapability(role, "x")`,
+      // `canAccessApi(role, url, method)` against a literal URL is a different
+      // question, and the client helpers `can("x")` (from `useCan()`) and
+      // `useCap("x")` are the same capability lookup with the role left implicit.
+      // Demanding one spelling would fail a correct gate.
+      const pattern = new RegExp(`(?:hasCapability|useCap)\\([^)]*"${escape}"|\\bcan\\(\\s*"${escape}"`);
+      expect({ why, uses: pattern.test(source) }).toEqual({ why, uses: true });
     });
   }
 });

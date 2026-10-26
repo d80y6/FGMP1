@@ -139,6 +139,14 @@ export function UsersView() {
     };
   }, [users]);
 
+  // Read vs write, named separately: `view:users` opens the roster, and
+  // `user:manage` is what every mutation in the row menu needs (create, edit,
+  // reset password, activate/deactivate — POST/PUT/PATCH
+  // /api/fgmp/users[/:id]). They coincide today, which is why the menu was never
+  // tied to the endpoint, but a roster reader is a plausible future role and one
+  // click would then be a 403.
+  const canManageUsers = me ? hasCapability(me.role, "user:manage") : false;
+
   // Access control: only ADMIN and SUPERADMIN may use this view.
   if (me && !hasCapability(me.role, "view:users")) {
     return (
@@ -160,10 +168,12 @@ export function UsersView() {
         icon={<Users className="h-5 w-5" />}
         tone="primary"
         actions={
-          <Button onClick={() => setCreateOpen(true)} size="sm">
-            <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">{t("users.createUser")}</span>
-          </Button>
+          canManageUsers ? (
+            <Button onClick={() => setCreateOpen(true)} size="sm">
+              <Plus className="h-4 w-4" />
+              <span className="hidden sm:inline">{t("users.createUser")}</span>
+            </Button>
+          ) : undefined
         }
       />
 
@@ -267,6 +277,7 @@ export function UsersView() {
                           )}
                         </TableCell>
                         <TableCell className="text-right">
+                          {canManageUsers && (
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="icon" className="h-7 w-7" aria-label={t("users.moreActions")}>
@@ -333,6 +344,7 @@ export function UsersView() {
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
+                          )}
                         </TableCell>
                       </TableRow>
                     );
