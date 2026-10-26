@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getClientIp, rateLimitByUser, READ_LIMIT } from "@/lib/fgmp/rate-limit";
+import {
+  applyRateLimitHeaders,
+  getClientIp,
+  rateLimitByUser,
+  MUTATION_LIMIT,
+  READ_LIMIT,
+} from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { SUPPORT_COOKIE, endSupportSession } from "@/lib/fgmp/support-session";
 import { getTenantMeta } from "@/lib/fgmp/platform-store";
@@ -56,16 +62,33 @@ export async function GET(req: NextRequest) {
  * succeed at clearing the client's cookie even when the row is already gone —
  * otherwise an operator is stuck with a banner they cannot dismiss.
  */
+/**
+ * DELETE /api/fgmp/platform/support-sessions/current
+ *
+ * Ends the session this browser holds. Rate-limited for the same reason as
+ * `DELETE /platform/support-sessions/[id]`: closing the cross-tenant window must
+ * stay an action the operator can complete, and each call writes an audit row.
+ * The limiter runs before the session lookup so repeated calls cannot be used to
+ * churn the store, and the reply shape stays `{ ok, ended }` in both branches.
+ */
 export async function DELETE(req: NextRequest) {
   const auth = await requireSuperAdmin(req);
   if ("error" in auth) return auth.error;
   const me = auth.user;
+
+  const rl = await rateLimitByUser(req, me.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
+  if (!rl.success) {
+    const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
+    applyRateLimitHeaders(res.headers, rl);
+    return res;
+  }
 
   const active = await currentSupport(me);
   if (!active) {
     // Same shape as the success case so the client has one branch, not two.
     const res = NextResponse.json({ ok: true, ended: null });
     res.cookies.delete({ name: SUPPORT_COOKIE, path: SUPPORT_COOKIE_OPTIONS.path });
+    applyRateLimitHeaders(res.headers, rl);
     return res;
   }
 
@@ -77,6 +100,7 @@ export async function DELETE(req: NextRequest) {
     );
     const res = NextResponse.json({ ok: true, ended: { id: row.id, endedAt: row.endedAt ?? new Date() } });
     res.cookies.delete({ name: SUPPORT_COOKIE, path: SUPPORT_COOKIE_OPTIONS.path });
+    applyRateLimitHeaders(res.headers, rl);
     return res;
   } catch (err) {
     const known = supportErrorResponse(err);

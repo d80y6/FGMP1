@@ -329,7 +329,7 @@ export function FuelDeliveryTracking() {
             type="button"
             onClick={() => setCompletionsOpen((v) => !v)}
             aria-expanded={completionsOpen}
-            className="mb-2 flex min-h-6 w-full items-center justify-between py-0.5 text-left"
+            className="mb-2 flex min-h-6 w-full items-center justify-between py-0.5 text-start"
           >
             <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {completionsOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}

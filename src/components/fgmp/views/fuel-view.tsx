@@ -251,7 +251,7 @@ export function FuelView() {
               {/* The filter row must wrap, not overflow: at 390px a 200px
                   search plus a 186px select ran past the card's right edge and
                   the sort control became unreachable (D-31). */}
-              <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("fuel.searchTanks")} className="h-9 w-[168px] pl-8 sm:w-[200px]" />
+              <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("fuel.searchTanks")} className="h-9 w-[168px] ps-8 sm:w-[200px]" />
             </div>
             <Select label={t("fuel.sortBy")} value={sort} onValueChange={setSort}>
               {/* Width fits the longest option in either language; the title

@@ -691,3 +691,109 @@ from the browser for everyone.
   product gap, not a policy gap; `docs/AUTHZ.md` §1.6 records the constraints any
   new view inherits.
 * The per-role click-through in §6 item 7 remains unrun.
+
+---
+
+## 11. A declared capability must be a real control
+
+§10 closed the platform tier by making capability, endpoint policy and handler
+guard agree for the five platform keys. The same question asked of the whole
+matrix — *does anything read this key?* — found five more capabilities that were
+declared, displayed in the Roles screen, and enforced nowhere:
+
+| Key | Roles that hold it |
+|---|---|
+| `delivery:verify` | ADMIN, NOC_OPERATOR, REGIONAL_MANAGER, FIELD_ENGINEER |
+| `delivery:approve` | ADMIN, REGIONAL_MANAGER |
+| `ticket:create` | ADMIN, NOC_OPERATOR, REGIONAL_MANAGER |
+| `ticket:assign` | ADMIN, REGIONAL_MANAGER |
+| `ticket:complete` | ADMIN, REGIONAL_MANAGER, FIELD_ENGINEER |
+
+All five are real endpoints' worth of intent — `POST /api/fgmp/deliveries` and
+`POST /api/fgmp/maintenance` do have those actions — but every one of those
+endpoints is gated as a whole (`delivery:manage` / `ticket:manage` on the path
+policy, `ROLES.DELIVERY` / `ROLES.MAINTENANCE` on the handler). So an
+administrator reading the matrix is told the platform distinguishes verifying a
+delivery from dispatching one. It does not.
+
+Two such keys were fixed, three-plus-one were not, and the difference is
+deliberate:
+
+* **`delivery:verify` is now enforced** in `POST /api/fgmp/deliveries`
+  (`action: "verify"`). It is the one key of the five where **every**
+  `ROLES.DELIVERY` holder also holds the capability, so the check changes no
+  current outcome — it makes a true statement true, and lets a Verify button be
+  gated on it.
+* **`delivery:approve`, `ticket:create`, `ticket:assign`, `ticket:complete` stay
+  unenforced**, because enforcing them would REMOVE access that exists today:
+  `dispatch` is open to FIELD_ENGINEER (which lacks `delivery:approve`);
+  `ticket:create` would additionally admit NOC_OPERATOR (in the capability list,
+  outside the role set); and `ticket:complete` would take completion away from
+  REGIONAL_MANAGER, which `ROLES.MAINTENANCE` admits but the matrix does not
+  grant. Those are product decisions about who may do the work, not RBAC
+  tidy-ups, and guessing them in a security review would be the same mistake as
+  granting a capability to make a test pass.
+
+**What stops the next one.** `__tests__/capability-reachability.test.ts` requires
+every key in the matrix to be (1) named by an API policy rule, (2) named by a
+non-test file outside `rbac-core.ts` — a route's `can(...)`/`hasCapability(...)`
+or a component's gate — or (3) a `view:*` key, whose surface is the nav entry
+asserted by the nav suites. The four exceptions above live in
+`DECLARED_BUT_INERT`, each with its reason and the condition that retires it, and
+the suite fails both ways: a new decorative key fails "no capability is
+decorative", and an exemption that has since been wired up fails "is now
+ENFORCED — remove it". Mutation-tested by adding a fake `report:forge` to
+READONLY (caught) and removing it.
+
+### 11.1 The same question for mutations: is there a limiter?
+
+Scanning every mutating handler for a limiter found three without one:
+
+* `POST /api/fgmp/platform/support/[tenant]/summary` — the file's `GET` was
+  limited and the `POST` was not, so "does this file rate-limit?" answered yes;
+* `DELETE /api/fgmp/platform/support-sessions/[id]` and
+  `…/support-sessions/current` — no limiter at all.
+
+The pattern is the one this review keeps finding: a control present in one
+handler and silently absent in its sibling. It matters most here, because the
+support-session surface is the audited cross-tenant path: an unbounded caller can
+flood a customer's audit log with operator-attributed rows, or tear the operator's
+session down faster than they can open it. Both are now `MUTATION_LIMIT`, applied
+before the session lookup.
+
+`__tests__/mutation-rate-limits.test.ts` derives the requirement from the route
+tree, so a new mutating handler cannot ship without a decision. Three handlers are
+exempt by design, each with its reason (`POST /api/auth/[...nextauth]` — the login
+limiter runs inside `authorize()`; `POST /api/fgmp/tick` — answers 410 and does no
+work; `POST /api/fgmp/realtime/auth` — constant-time HMAC over the session, where
+a limiter would cause the outage it is meant to prevent), and a stale exemption
+fails the suite.
+
+### 11.2 Capabilities decide, not role names
+
+`user:grant-superadmin` (fixed in §10) was the example; the general defect was
+that the four places deciding "may this actor grant the platform role?" compared
+the role STRING to `"SUPERADMIN"`, so the matrix was not consulted at all. All
+four now ask the capability: `can(me, …)` in `POST /api/fgmp/users` and
+`PUT /api/fgmp/users/[id]`, `hasCapability()` inside
+`lib/fgmp/grant-guards.ts` (one predicate for both the grant and the inbound
+"may you touch this super-admin" direction), and `hasCapability(meRole, …)` in
+both dialogs. The create dialog's tenant picker is gated on `view:tenants`, the
+capability `GET /api/fgmp/tenants` actually requires.
+
+`__tests__/grant-capability.test.ts` asserts the behavioural property over
+`ALL_ROLES` (allowed iff the role holds the capability, for both directions and
+for a forged role string) plus the wiring, so a matrix edit and an enforcement
+edit cannot diverge silently.
+
+### 11.3 Still open
+
+* The four inert capabilities in §11 need a product decision, then either
+  enforcement or removal from the matrix.
+* The platform views listed in §10.4 still do not exist.
+* The per-role click-through in §6 item 7 remains unrun.
+* `rtl-logical-classes.test.ts` fails on `master` (~40 physical `ml-`/`text-right`
+  utilities and two `sticky left-0`). It is not an RBAC defect and not covered by
+  CI's test selection; recorded here because it is the only suite in
+  `src/lib/fgmp/__tests__` that is red for a reason other than the postgres-less
+  sandbox.

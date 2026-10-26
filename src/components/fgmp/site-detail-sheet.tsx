@@ -213,7 +213,7 @@ export function SiteDetailSheet({ siteId, open, onOpenChange }: { siteId: string
                                 <AlertOctagon className="me-1 h-3 w-3" />{t("detail.eStop")}
                               </Button>
                               </>)}
-                              <span className="ml-auto self-center text-[10px] text-muted-foreground">{t("detail.nextMaint")}: {Math.round(g.nextMaintenanceHrs)} h</span>
+                              <span className="ms-auto self-center text-[10px] text-muted-foreground">{t("detail.nextMaint")}: {Math.round(g.nextMaintenanceHrs)} h</span>
                               {canEditThresholds && (
                                 <GenMaintenanceEditor
                                   generatorId={g.id}

@@ -29,6 +29,8 @@
  * than the write it guards.
  */
 
+import { ALL_ROLES, hasCapability, type Role } from "./rbac-core";
+
 export interface GrantRefusal {
   status: number;
   code: string;
@@ -59,7 +61,33 @@ export interface GrantChange {
   otherActiveSuperAdmins: number;
 }
 
-const isSuper = (role: string | undefined) => role === "SUPERADMIN";
+/**
+ * "May this actor hand out the platform role?" — asked of the CAPABILITY, not
+ * of the role name.
+ *
+ * These rules used to compare `role === "SUPERADMIN"` directly. That is the same
+ * answer today (SUPERADMIN holds `*` and no other role holds this key) but it is
+ * the wrong QUESTION, and the difference matters the moment a second platform
+ * role exists: `user:grant-superadmin` is declared in
+ * `SUPERADMIN_ONLY_CAPABILITIES` precisely so that "who may grant the platform
+ * role" has ONE answer, in ONE place. A string comparison here would silently
+ * ignore a matrix edit, and
+ * `__tests__/platform-tier-parity.test.ts` deliberately fails when the declared
+ * capability and the enforced behaviour disagree. Asking the matrix means the
+ * matrix is the source of truth, which is the property that test exists to keep.
+ *
+ * `Role` is a closed union, so an unknown string (a forged or stale role) is
+ * normalised to READONLY — the deny-everything end of the union — rather than
+ * being looked up in a record that would return `undefined`.
+ */
+const ROLE_UNION: readonly Role[] = ALL_ROLES;
+
+function actorMayGrantPlatformRole(role: string | undefined): boolean {
+  const known = ROLE_UNION.find((r) => r === role);
+  return known ? hasCapability(known, "user:grant-superadmin") : false;
+}
+
+const isSuper = actorMayGrantPlatformRole;
 
 /**
  * Decide whether a privilege/state change may proceed.

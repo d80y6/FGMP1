@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { getClientIp, rateLimitByUser, READ_LIMIT } from "@/lib/fgmp/rate-limit";
+import {
+  applyRateLimitHeaders,
+  getClientIp,
+  rateLimitByUser,
+  MUTATION_LIMIT,
+  READ_LIMIT,
+} from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { createSupportNote, getTenantMeta, tenantSummary } from "@/lib/fgmp/platform-store";
 import {
@@ -46,7 +52,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ tenant: str
 
   const rl = await rateLimitByUser(req, me.id, READ_LIMIT.limit, READ_LIMIT.windowMs);
   if (!rl.success) {
-    return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+    const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
+    applyRateLimitHeaders(res.headers, rl);
+    return res;
   }
 
   const session = await currentSupport(me);
@@ -110,12 +118,31 @@ const noteSchema = z.object({
  *
  * Requires `mode: "WRITE"`. A read-only session gets 403 SUPPORT_READ_ONLY —
  * read-only is the default and write access is a separate, ticketed grant.
+ *
+ * ── RATE LIMIT (added 2026-10) ──────────────────────────────────────────────
+ * This handler had none. Its GET sibling did, which is how the gap survived
+ * review: the file "had a limiter in it". A write to a customer's audit log is
+ * the one support action that lands where the customer must be able to trust it,
+ * so an unbounded loop here can flood that tenant's audit trail — and every row
+ * it writes is attributed to the platform operator, which is precisely the record
+ * a dispute would be settled with. `MUTATION_LIMIT` is the same per-user budget
+ * every other mutation in the API uses. The limit is applied BEFORE the session
+ * and body checks so it also throttles probes for a valid support session.
+ * `__tests__/mutation-rate-limits.test.ts` now derives this for every mutating
+ * handler on disk, so the next one cannot ship without a decision.
  */
 export async function POST(req: NextRequest, ctx: { params: Promise<{ tenant: string }> }) {
   const auth = await requireSuperAdmin(req);
   if ("error" in auth) return auth.error;
   const me = auth.user;
   const { tenant } = await ctx.params;
+
+  const rl = await rateLimitByUser(req, me.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
+  if (!rl.success) {
+    const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
+    applyRateLimitHeaders(res.headers, rl);
+    return res;
+  }
 
   const session = await currentSupport(me);
   if (!session) return noSupportSession();
@@ -148,7 +175,12 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ tenant: st
       note: parsed.data.note,
       ip: getClientIp(req),
     });
-    return NextResponse.json({ ok: true, auditLogId: row.id, createdAt: row.createdAt }, { status: 201 });
+    const res = NextResponse.json(
+      { ok: true, auditLogId: row.id, createdAt: row.createdAt },
+      { status: 201 },
+    );
+    applyRateLimitHeaders(res.headers, rl);
+    return res;
   } catch (err) {
     return errorResponse(err);
   }

@@ -278,8 +278,8 @@ export function SitesView() {
                 <TableHead className="hidden sm:table-cell">{t("sites.criticality")}</TableHead>
                 <TableHead className="w-[80px]">{t("sites.health")}</TableHead>
                 <TableHead>{t("sites.status")}</TableHead>
-                <TableHead className="hidden md:table-cell text-right">{t("sites.load")}</TableHead>
-                {canManageSites && <TableHead className="w-[60px] text-right">{t("sites.actions")}</TableHead>}
+                <TableHead className="hidden md:table-cell text-end">{t("sites.load")}</TableHead>
+                {canManageSites && <TableHead className="w-[60px] text-end">{t("sites.actions")}</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -360,9 +360,9 @@ export function SitesView() {
                       />
                     </TableCell>
                     <TableCell><StatusBadge value={s.status} className="h-5 text-[10px]" /></TableCell>
-                    <TableCell className="hidden md:table-cell text-right text-xs tabular-nums">{formatNumber(s.loadKw, numLang)} kW</TableCell>
+                    <TableCell className="hidden md:table-cell text-end text-xs tabular-nums">{formatNumber(s.loadKw, numLang)} kW</TableCell>
                     {canManageSites && (
-                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                      <TableCell className="text-end" onClick={(e) => e.stopPropagation()}>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon" className="h-7 w-7" aria-label={t("sites.actions")}>

@@ -146,7 +146,7 @@ export function InventoryView() {
                       <TableCell className="text-[11px] text-muted-foreground">{supplierLabel(d.supplier, numLang)}</TableCell>
                       <TableCell className="text-[10px] text-muted-foreground">{fmtDate(d.scheduledAt, numLang)}</TableCell>
                       <TableCell><StatusBadge value={d.status} className="h-5 text-[10px]" /></TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-end">
                         {canManageDeliveries && d.status === "SCHEDULED" && <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => dispatch(d.id)}>{t("inventory.dispatch")}</Button>}
                         {canManageDeliveries && d.status === "DELIVERED" && <Button size="sm" variant="outline" className="h-6 px-2 text-[10px] text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10" onClick={() => setVerify({ id: d.id, vol: d.volumeOrderedLitres })}>{t("inventory.verify")}</Button>}
                         {(d.status === "VERIFIED" || d.status === "IN_TRANSIT") && <span className="text-[10px] text-muted-foreground">—</span>}

@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getClientIp } from "@/lib/fgmp/rate-limit";
+import {
+  applyRateLimitHeaders,
+  getClientIp,
+  rateLimitByUser,
+  MUTATION_LIMIT,
+  READ_LIMIT,
+} from "@/lib/fgmp/rate-limit";
 import { getSupportSession } from "@/lib/fgmp/platform-store";
 import { errorResponse } from "@/lib/fgmp/api-error";
 import { SUPPORT_COOKIE, endSupportSession } from "@/lib/fgmp/support-session";
@@ -23,12 +29,28 @@ export const dynamic = "force-dynamic";
  * The cookie is cleared only when the ended session is the one this browser
  * holds; ending an older session must not silently drop the operator out of the
  * session they are actually using.
+ *
+ * ── RATE LIMIT ──────────────────────────────────────────────────────────────
+ * Ending a support session is the control an operator uses to CLOSE a cross-tenant
+ * window, so the risk here is the mirror image of the usual one: an unbounded
+ * caller could tear down an operator's sessions faster than they can open them,
+ * which is a denial of the support path. The route also writes an audit row per
+ * call. `MUTATION_LIMIT` covers both; `GET` uses `READ_LIMIT`.
+ * `__tests__/mutation-rate-limits.test.ts` derives this requirement from the
+ * route tree rather than trusting a reviewer to notice.
  */
 export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const auth = await requireSuperAdmin(req);
   if ("error" in auth) return auth.error;
   const me = auth.user;
   const { id } = await ctx.params;
+
+  const rl = await rateLimitByUser(req, me.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
+  if (!rl.success) {
+    const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
+    applyRateLimitHeaders(res.headers, rl);
+    return res;
+  }
 
   try {
     const row = await endSupportSession(
@@ -42,6 +64,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
       ended: { id: row.id, tenantId: row.tenantId, endedAt: row.endedAt, endReason: row.endReason },
     });
     if (!active) res.cookies.delete({ name: SUPPORT_COOKIE, path: SUPPORT_COOKIE_OPTIONS.path });
+    applyRateLimitHeaders(res.headers, rl);
     return res;
   } catch (err) {
     const known = supportErrorResponse(err);
@@ -64,6 +87,13 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   const me = auth.user;
   const { id } = await ctx.params;
 
+  const rl = await rateLimitByUser(req, me.id, READ_LIMIT.limit, READ_LIMIT.windowMs);
+  if (!rl.success) {
+    const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });
+    applyRateLimitHeaders(res.headers, rl);
+    return res;
+  }
+
   try {
     const row = await getSupportSession(id);
     if (!row || row.actorUserId !== me.id) {
@@ -72,7 +102,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
         { status: 404 },
       );
     }
-    return NextResponse.json(row);
+    const res = NextResponse.json(row);
+    applyRateLimitHeaders(res.headers, rl);
+    return res;
   } catch (err) {
     return errorResponse(err);
   }

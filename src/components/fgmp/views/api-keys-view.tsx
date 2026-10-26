@@ -337,7 +337,7 @@ export function ApiKeysView() {
                           {fmtDate(k.createdAt, numLang)}
                         </TableCell>
                         <TableCell><StatusBadge status={status} /></TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-end">
                           {canManageKeys && (
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
@@ -351,7 +351,7 @@ export function ApiKeysView() {
                                   onClick={() => setRevokeTarget(k)}
                                   className="text-rose-700 dark:text-rose-400 focus:text-rose-700 dark:focus:text-rose-400 focus:bg-rose-500/10"
                                 >
-                                  <Ban className="mr-2 h-3.5 w-3.5" />
+                                  <Ban className="me-2 h-3.5 w-3.5" />
                                   {t("common.revoke")}
                                 </DropdownMenuItem>
                               </DropdownMenuContent>

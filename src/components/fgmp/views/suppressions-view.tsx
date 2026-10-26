@@ -408,7 +408,7 @@ export function SuppressionsView() {
                             <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">
                               {s.user?.name ?? "—"}
                             </TableCell>
-                            <TableCell className="text-right">
+                            <TableCell className="text-end">
                               {canDeleteSuppression && (
                                 <Button
                                   variant="ghost"

@@ -595,15 +595,15 @@ export function AlarmsView() {
                   <CheckCheck className="h-3.5 w-3.5 text-sky-500" />
                   <span>{formatNumber(selectedCount, numLang)} {t("common.selected")}</span>
                 </div>
-                <div className="ml-auto flex flex-wrap items-center gap-2">
+                <div className="ms-auto flex flex-wrap items-center gap-2">
                   {canAcknowledge && <Button
                     size="sm"
                     variant="outline"
                     className="h-7 border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-400 hover:bg-sky-500/20 hover:text-sky-700"
                     onClick={bulkAck}
                   >
-                    <CheckCheck className="mr-1.5 h-3.5 w-3.5" />{t("alarms.bulkAck")}
-                    <kbd className="ml-2 hidden items-center rounded border bg-background/80 px-1.5 py-0.5 font-mono text-[10px] sm:inline-flex">A</kbd>
+                    <CheckCheck className="me-1.5 h-3.5 w-3.5" />{t("alarms.bulkAck")}
+                    <kbd className="ms-2 hidden items-center rounded border bg-background/80 px-1.5 py-0.5 font-mono text-[10px] sm:inline-flex">A</kbd>
                   </Button>}
                   {canResolve && <Button
                     size="sm"
@@ -611,8 +611,8 @@ export function AlarmsView() {
                     className="h-7 border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/20 hover:text-emerald-700"
                     onClick={bulkResolve}
                   >
-                    <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />{t("alarms.bulkResolve")}
-                    <kbd className="ml-2 hidden items-center rounded border bg-background/80 px-1.5 py-0.5 font-mono text-[10px] sm:inline-flex">R</kbd>
+                    <CheckCircle2 className="me-1.5 h-3.5 w-3.5" />{t("alarms.bulkResolve")}
+                    <kbd className="ms-2 hidden items-center rounded border bg-background/80 px-1.5 py-0.5 font-mono text-[10px] sm:inline-flex">R</kbd>
                   </Button>}
                   <Button size="sm" variant="ghost" className="h-7" onClick={clearSelection}>
                     <X className="me-1.5 h-3.5 w-3.5" />{t("alarms.clear")}
@@ -628,7 +628,7 @@ export function AlarmsView() {
               <Table>
                 <TableHeader className="sticky top-0 bg-card">
                   <TableRow>
-                    <TableHead className="w-[40px] pr-0">
+                    <TableHead className="w-[40px] pe-0">
                       {canAct ? (
                         <Checkbox
                           checked={allSelected ? true : someSelected ? "indeterminate" : false}
@@ -660,7 +660,7 @@ export function AlarmsView() {
                         // the ack/resolve mutation is in flight (#20).
                         isSaving && "opacity-50",
                       )} onClick={() => setSelected(a.id)}>
-                        <TableCell className="pr-0" onClick={(e) => e.stopPropagation()}>
+                        <TableCell className="pe-0" onClick={(e) => e.stopPropagation()}>
                           {actionable && canAct ? (
                             <Checkbox
                               checked={validSelectedIds.has(a.id)}

@@ -12,6 +12,7 @@ import {
   requireRole,
   ROLES,
   assertTenantOwned,
+  can,
   isSuperAdminUser,
 } from "@/lib/fgmp/auth-helpers";
 import { audit } from "@/lib/fgmp/audit";
@@ -178,8 +179,12 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
     );
   }
 
-  // Tenant-admins cannot promote a user to SUPERADMIN.
-  if (!isSuperAdminUser(me) && parsed.data.role === "SUPERADMIN") {
+  // Promoting to the platform role requires `user:grant-superadmin` — the
+  // capability declared for exactly this action, held only by SUPERADMIN via the
+  // `*` wildcard. See the longer note in POST /api/fgmp/users: the decision used
+  // to be a role-name comparison in three places, which left the declared
+  // capability unenforced everywhere.
+  if (parsed.data.role === "SUPERADMIN" && !can(me, "user:grant-superadmin")) {
     return NextResponse.json(
       { error: "Only super-admins can grant the super-admin role", code: "CANNOT_ASSIGN_SUPERADMIN" },
       { status: 403 },
