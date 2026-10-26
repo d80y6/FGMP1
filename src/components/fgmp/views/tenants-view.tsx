@@ -194,7 +194,7 @@ export function TenantsView() {
                     <TableHead className="w-[80px] text-center">{t("common.users")}</TableHead>
                     <TableHead className="w-[80px] text-center">{t("common.sites")}</TableHead>
                     <TableHead className="hidden lg:table-cell w-[150px]">{t("common.created")}</TableHead>
-                    <TableHead className="w-[60px] text-right">{t("users.actions")}</TableHead>
+                    <TableHead className="w-[60px] text-end">{t("users.actions")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -249,19 +249,19 @@ export function TenantsView() {
                           <DropdownMenuContent align="end" className="w-40">
                             {canManageTenants && (
                               <DropdownMenuItem onClick={() => setEditTarget(tnt)}>
-                                <Pencil className="mr-2 h-3.5 w-3.5" />
+                                <Pencil className="me-2 h-3.5 w-3.5" />
                                 {t("common.edit")}
                               </DropdownMenuItem>
                             )}
                             {canManageUsers && (
                               <DropdownMenuItem onClick={() => setCreateAdminTarget(tnt)}>
-                                <UserPlus className="mr-2 h-3.5 w-3.5" />
+                                <UserPlus className="me-2 h-3.5 w-3.5" />
                                 {t("tenants.createAdmin")}
                               </DropdownMenuItem>
                             )}
                             {canManageTenants && (
                               <DropdownMenuItem onClick={() => setSupportTarget(tnt)}>
-                                <ShieldAlert className="mr-2 h-3.5 w-3.5" />
+                                <ShieldAlert className="me-2 h-3.5 w-3.5" />
                                 {t("tenants.supportAccess")}
                               </DropdownMenuItem>
                             )}
@@ -272,7 +272,7 @@ export function TenantsView() {
                                   className="text-rose-700 dark:text-rose-400 focus:text-rose-700"
                                   onClick={() => setDeleteTarget(tnt)}
                                 >
-                                  <Trash2 className="mr-2 h-3.5 w-3.5" />
+                                  <Trash2 className="me-2 h-3.5 w-3.5" />
                                   {t("common.delete")}
                                 </DropdownMenuItem>
                               </>

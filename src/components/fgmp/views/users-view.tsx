@@ -240,7 +240,7 @@ export function UsersView() {
                       <TableRow key={u.id} className={cn("transition-colors hover:bg-muted/30", u.active ? "" : "opacity-60")}>
                         <TableCell>
                           <div className="flex flex-col">
-                            <span className="text-sm font-medium">{u.name}{isSelf && <Badge variant="outline" className="ml-2 h-4 px-1 text-[10px]">{t("common.you")}</Badge>}</span>
+                            <span className="text-sm font-medium">{u.name}{isSelf && <Badge variant="outline" className="ms-2 h-4 px-1 text-[10px]">{t("common.you")}</Badge>}</span>
                             <span className="text-[11px] text-muted-foreground">{u.email}</span>
                           </div>
                         </TableCell>
@@ -276,7 +276,7 @@ export function UsersView() {
                             <span>{t("users.lastLoginNever")}</span>
                           )}
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-end">
                           {canManageUsers && (
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>

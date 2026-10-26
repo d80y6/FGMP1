@@ -242,7 +242,7 @@ export function MaintenanceView() {
                       <TableCell className="hidden lg:table-cell text-[11px] text-muted-foreground">{tk.assignedTo?.name ?? "—"}</TableCell>
                       <TableCell><StatusBadge value={tk.status} className="h-5 text-[10px]" /></TableCell>
                       <TableCell className="hidden md:table-cell text-[10px] text-muted-foreground">{tk.scheduledFor ? timeAgo(tk.scheduledFor, numLang) : "—"}</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-end">
                         {canManageTickets && tk.status !== "DONE" && (
                           <Button size="sm" variant="outline" className="h-6 px-2 text-[10px] text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10" onClick={() => complete(tk.id)}>
                             <CheckCircle2 className="me-1 h-3 w-3" />{t("maintenance.complete")}

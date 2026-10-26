@@ -178,7 +178,7 @@ export function IotView() {
                         {canManageEdge ? (
                           <>
                             <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => { setOta({ id: d.id, name: d.name, current: d.firmware }); setOtaFw(nextFw(d.firmware)); }}>
-                              <HardDriveDownload className="mr-1 h-3 w-3" />{t("iot.ota")}
+                              <HardDriveDownload className="me-1 h-3 w-3" />{t("iot.ota")}
                             </Button>
                             <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => reboot(d.id, d.name)} aria-label={t("iot.rebootDevice")} title={t("iot.rebootDevice")}><RefreshCw className="h-3 w-3" /></Button>
                           </>

@@ -585,7 +585,7 @@ export function AppShell() {
           </div>
 
           {/* Live status + KPI chips */}
-          <div className="ml-2 hidden min-w-0 items-center gap-2 lg:flex">
+          <div className="ms-2 hidden min-w-0 items-center gap-2 lg:flex">
             <div
               // Connection state is the one status an operator needs while
               // looking somewhere else on the page: "LIVE" silently becoming
@@ -797,7 +797,7 @@ export function AppShell() {
 
       {/* Body: sidebar + content */}
       <div className="flex flex-1">
-        <aside className="sticky top-14 hidden h-[calc(100vh-3.5rem)] w-60 shrink-0 border-r bg-card/40 lg:block">
+        <aside className="sticky top-14 hidden h-[calc(100vh-3.5rem)] w-60 shrink-0 border-e bg-card/40 lg:block">
           <SidebarContent
             grouped={grouped}
             view={view}

@@ -234,13 +234,13 @@ export function DashboardView() {
           <>
             {canView("analytics") && (
               <Button variant="outline" size="sm" onClick={() => setView("analytics")}>
-                <TrendingUp className="mr-1.5 h-4 w-4" /> {t("dash.analytics")}
+                <TrendingUp className="me-1.5 h-4 w-4" /> {t("dash.analytics")}
               </Button>
             )}
             {canView("alarms") && (
               <Button variant="outline" size="sm" onClick={() => setView("alarms")}>
-                <Siren className="mr-1.5 h-4 w-4" /> {t("dash.alarms")}
-                {k.openAlarms > 0 && <Badge className="ml-1.5 h-4 px-1 text-[10px]">{formatNumber(k.openAlarms, numLang)}</Badge>}
+                <Siren className="me-1.5 h-4 w-4" /> {t("dash.alarms")}
+                {k.openAlarms > 0 && <Badge className="ms-1.5 h-4 px-1 text-[10px]">{formatNumber(k.openAlarms, numLang)}</Badge>}
               </Button>
             )}
             <ExportButton
@@ -316,7 +316,7 @@ export function DashboardView() {
                   <button
                       type="button"
                       onClick={() => { if (canView("alarms")) setView("alarms"); }}
-                      className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
+                      className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 px-4 py-2.5 text-start transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
                     >
                     {/* Left-border accent coloured by severity (L3=rose, L2=amber, L1=slate).
                         Absolute-positioned so it spans the row height. */}

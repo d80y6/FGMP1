@@ -592,7 +592,7 @@ function FirmwareTab({ gateways, loading, onRefresh, canOtaFor }: {
                             <span className="text-[10px] text-muted-foreground">—</span>
                           )}
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-end">
                           {canOtaFor(g.source) && (
                             <Button
                               size="sm" variant="outline"
@@ -602,7 +602,7 @@ function FirmwareTab({ gateways, loading, onRefresh, canOtaFor }: {
                                 setOtaFw(nextFw(g.firmware, latestFw));
                               }}
                             >
-                              <HardDriveDownload className="mr-1 h-3 w-3" />
+                              <HardDriveDownload className="me-1 h-3 w-3" />
                               {t("iot.ota")}
                             </Button>
                           )}

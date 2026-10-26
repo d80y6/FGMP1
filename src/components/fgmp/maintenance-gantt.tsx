@@ -433,7 +433,7 @@ export function MaintenanceGantt({ tickets, defaultRange = 30, onTicketClick }: 
                             className="pointer-events-none absolute inset-0 rounded-md ring-2 ring-rose-500 animate-pulse motion-reduce:animate-none"
                           />
                         )}
-                        <span className="pointer-events-none block truncate pr-2 leading-[20px]">
+                        <span className="pointer-events-none block truncate pe-2 leading-[20px]">
                           {t.title}
                         </span>
                         <ChevronRight className="absolute right-0.5 top-1/2 -translate-y-1/2 h-2.5 w-2.5 text-white/70 opacity-0 group-hover:opacity-100 transition-opacity" />
