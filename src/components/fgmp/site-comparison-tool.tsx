@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { GitCompare, X, Trophy, TrendingUp, Zap, Droplet, Battery, Activity, Download, Printer, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useFgmp } from "@/lib/fgmp/store";
+import { useCanView } from "@/lib/fgmp/use-access";
 import { toast } from "sonner";
 import type { SiteState, TankState, GenState, BattState } from "@/lib/fgmp/types";
 import { siteStatusTextClass } from "@/lib/fgmp/status";
@@ -231,8 +232,10 @@ export function SiteComparisonTool() {
     }
   };
 
+  const canView = useCanView();
+
   const handleViewLeaderInSites = () => {
-    if (!leaderSite) return;
+    if (!leaderSite || !canView("sites")) return;
     selectSite(leaderSite.id);
     setView("sites");
   };

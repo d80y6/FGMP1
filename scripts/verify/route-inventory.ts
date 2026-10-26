@@ -42,6 +42,7 @@ import {
   AUTH_ONLY_API_RULES,
   ROLE_PERMISSIONS,
   apiRequestCapabilities,
+  EXPORT_TYPE_CAPABILITIES,
   canAccessApi,
 } from "../../src/lib/fgmp/rbac-core";
 
@@ -310,13 +311,61 @@ export function findUnknownRoles(roleSets: Record<string, string[]>): string[] {
   return bad;
 }
 
-/** Every capability referenced anywhere must exist in at least one role's list. */
+/**
+ * Every capability the POLICY can name must exist in at least one role's list.
+ *
+ * This was a stub that built `known` and returned `[]` — it asserted nothing and
+ * was never called, so a typo in a rule (`"alarm:supress"`) would deny that
+ * endpoint to every non-superadmin, forever, silently: `hasCapability` fails
+ * closed, so the symptom is a 403 that looks like a permission decision rather
+ * than a misspelling.
+ *
+ * "Exists" means present in some role's list OR the SUPERADMIN wildcard, because
+ * a handful of capabilities (`view:tenants`, `view:tenant-isolation`,
+ * `tenant:manage`, `platform:firmware`, `user:grant-superadmin`) are reachable
+ * only through `"*"` and are documented as such.
+ *
+ * Checked: every capability the route table asks for, plus every capability the
+ * auth helpers name in a ROLES set, plus the export-type table.
+ */
 export function findUnknownCapabilities(): string[] {
   const known = new Set<string>();
+  let wildcard = false;
   for (const entry of Object.values(ROLE_PERMISSIONS)) {
-    for (const cap of entry.capabilities) known.add(cap);
+    for (const cap of entry.capabilities) {
+      if (cap === "*") wildcard = true;
+      known.add(cap);
+    }
   }
-  return []; // placeholder: capability existence is asserted by the matrix test
+  const bad: string[] = [];
+
+  const handlers = analyzeRoutes();
+  const seen = new Set<string>();
+  for (const h of handlers) {
+    for (const cap of h.requiredCapabilities ?? []) {
+      const key = `${cap}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (!known.has(cap) && !wildcard) {
+        bad.push(
+          `policy requires "${cap}" (${h.method} ${h.matchPath}) but no role holds it — ` +
+            "a typo here denies the endpoint to everyone",
+        );
+      }
+    }
+  }
+
+  // The same test for the export table, whose entries are read by
+  // `apiReadCapabilities()` only after the `type` parameter is matched.
+  for (const [type, caps] of Object.entries(EXPORT_TYPE_CAPABILITIES)) {
+    for (const cap of caps) {
+      if (!known.has(cap) && !wildcard) {
+        bad.push(`export type "${type}" requires "${cap}" but no role holds it`);
+      }
+    }
+  }
+
+  return bad;
 }
 
 // ── CLI ─────────────────────────────────────────────────────────────────────
@@ -326,7 +375,7 @@ if (import.meta.main) {
   const handlers = analyzeRoutes();
   const violations = findViolations(handlers);
   const roleSets = parseRoleSets(readFileSync(AUTH_HELPERS, "utf8"));
-  const unknownRoles = findUnknownRoles(roleSets);
+  const unknownRoles = [...findUnknownRoles(roleSets), ...findUnknownCapabilities()];
 
   console.log("| Endpoint | Guard | Policy capabilities | Roles passing BOTH |");
   console.log("|---|---|---|---|");

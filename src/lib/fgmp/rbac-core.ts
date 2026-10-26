@@ -276,6 +276,31 @@ const API_READ_RULES: readonly { prefix: string; capabilities: readonly string[]
   { prefix: "/api/fgmp/users", capabilities: ["view:users"] },
 ];
 
+/**
+ * The datasets `GET /api/fgmp/export?type=` can actually produce, and who may
+ * read each one.
+ *
+ * One table, two consumers: `apiReadCapabilities()` authorises against it and
+ * the route validates its `type` parameter against it. It used to be two — the
+ * policy listed `alarms` and `deliveries`, which the handler never implemented,
+ * and the handler's `else` branch answered every unrecognised type with a
+ * **sites** export. So `?type=alarms` asked the policy one question and returned
+ * another dataset, under a filename that said `alarms`. Neither the policy nor
+ * the payload was wrong on its own; the gap between them was.
+ *
+ * `view:iot` and `view:inventory` are deliberately absent from `sites`: the two
+ * screens that used to trigger that grant (IoT, Inventory) were exporting site
+ * records from screens that are not about sites, and every role that holds
+ * either capability also holds `view:sites` — so the grant bought nothing and
+ * permitted an inventory-only role to read site coordinates.
+ */
+export const EXPORT_TYPE_CAPABILITIES: Readonly<Record<string, readonly string[]>> = {
+  sites: ["view:sites", "view:reports"],
+  tanks: ["view:fuel", "view:reports"],
+  generators: ["view:generators", "view:reports"],
+  batteries: ["view:batteries", "view:reports"],
+};
+
 /** Return the any-of capabilities required to read an FGMP API URL. */
 export function apiReadCapabilities(url: string | URL): readonly string[] | null {
   let parsed: URL;
@@ -307,15 +332,7 @@ export function apiReadCapabilities(url: string | URL): readonly string[] | null
   }
 
   if (pathname === "/api/fgmp/export") {
-    const exportViews: Record<string, readonly string[]> = {
-      sites: ["view:sites", "view:reports", "view:iot", "view:inventory"],
-      tanks: ["view:fuel", "view:reports"],
-      generators: ["view:generators", "view:reports"],
-      batteries: ["view:batteries", "view:reports"],
-      alarms: ["view:alarms", "view:reports"],
-      deliveries: ["view:inventory", "view:reports"],
-    };
-    return exportViews[parsed.searchParams.get("type") ?? "sites"] ?? ["view:reports"];
+    return EXPORT_TYPE_CAPABILITIES[parsed.searchParams.get("type") ?? "sites"] ?? ["view:reports"];
   }
 
   // Read access to control-command history is restricted to the same operators

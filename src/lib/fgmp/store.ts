@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import type { Snapshot } from "@/lib/fgmp/types";
 import type { Role } from "@/lib/fgmp/types";
-import { canAccessApi } from "@/lib/fgmp/rbac-core";
+import { canAccessApi, hasCapability } from "@/lib/fgmp/rbac-core";
 
 export interface Me {
   id: string;
@@ -198,7 +198,29 @@ export const useFgmp = create<FgmpState>((set, get) => ({
     if (!get().error) set({ lastTickAt: Date.now() });
   },
 
-  setView: (v) => set({ view: v, selectedSiteId: null }),
+  /**
+   * Switch the rendered view — but only to one the effective role may open.
+   *
+   * The refusal is silent at this layer on purpose. Every caller that offers a
+   * *link* hides it first (see `useCanView`), so reaching this guard means
+   * either a deep link the shell already refuses to mount, or a caller that
+   * forgot its own check. In the second case the useful behaviour is "nothing
+   * happens": the store must not hold a view the role cannot see, because
+   * `view` also feeds the URL, the breadcrumbs and `safeView` — a stale
+   * unauthorized value is how an "access denied" panel outlives the role that
+   * caused it.
+   *
+   * `me === null` is allowed. It is the one-frame window before the session
+   * envelope resolves, during which the shell renders a spinner instead of any
+   * view, so there is nothing to protect yet and refusing here would fight the
+   * URL-restore effect that runs at the same moment.
+   */
+  setView: (v) =>
+    set((s) => {
+      const role = s.me?.role;
+      if (role && !hasCapability(role, `view:${v}`)) return {};
+      return { view: v, selectedSiteId: null };
+    }),
   selectSite: (id) => set({ selectedSiteId: id }),
   setRegionFilter: (id) => set({ regionFilter: id }),
   setSearch: (s) => set({ search: s }),

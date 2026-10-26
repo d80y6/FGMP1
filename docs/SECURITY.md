@@ -43,9 +43,32 @@ visible in that tenant's audit log (`docs/SUPERADMIN.md`). Cross-tenant *numbers
 into a row set.
 
 Everywhere else the tenant comes from the session, never from the request body
-or query. The one exception is a super-admin naming a tenant explicitly on the
-user-administration routes (`?tenant=`), which goes through
-`asTenantForAnotherTenant()` — a named, runtime-checked capability.
+or query. There is exactly one named exception, and it is worth stating
+precisely because it is the only place a request can act on a tenant other than
+the caller's without a support session:
+
+**Cross-tenant user administration (`?tenant=`).** On
+`GET/POST /api/fgmp/users` and `/api/fgmp/users/[id]`, a **SUPERADMIN** may name
+a tenant in the query string; the request then runs inside that tenant's context
+(`withTenant()`, so FORCE RLS applies) rather than the caller's platform tenant.
+The rules the code enforces, in `src/lib/fgmp/route-tenant.ts`:
+
+- Only a SUPERADMIN. For every other role a `?tenant=` is **silently ignored**,
+  not refused: the answer is that role's own scope regardless of whether the
+  named tenant exists, so the parameter cannot be used to probe for tenant ids.
+- `asTenantForAnotherTenant()` re-checks SUPERADMIN *inside* the call, so
+  reaching that line with a hand-built object still throws.
+- Writes (`USER_CREATE`, `USER_UPDATE`, `USER_ACTIVATE`, `USER_DEACTIVATE`) are
+  audited with the **target** tenant id, so they appear in that tenant's log.
+- Reads (`GET /api/fgmp/users`, `GET /api/fgmp/users/[id]`) are not individually
+  audited. They are no wider than what a SUPERADMIN already receives from
+  `/api/fgmp/state` (the cross-tenant snapshot), and the roster is the surface
+  used to administer another tenant — but it is a read outside a support
+  session, so it is named here rather than left implied.
+
+Nothing else crosses the boundary. `docs/RBAC-REVIEW-2026-10.md` §B9 records the
+same exception; before this paragraph, `SECURITY.md` claimed cross-tenant
+*content* required a support session without naming it.
 
 ## 3. Tenant isolation (RLS)
 

@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { Truck, Plus, CheckCircle2, Package, TrendingUp, Download, FileCheck } from "lucide-react";
+import { Truck, Plus, CheckCircle2, Package, TrendingUp, FileCheck } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Cell } from "recharts";
 import { useFgmp } from "@/lib/fgmp/store";
 import { useApi, apiPost } from "@/lib/fgmp/use-api";
@@ -96,7 +96,9 @@ export function InventoryView() {
         icon={<Truck className="h-5 w-5" />}
         actions={
           <>
-            <Button variant="outline" size="sm" onClick={() => window.open("/api/fgmp/export?type=sites", "_blank")}><Download className="mr-1.5 h-4 w-4" /> {t("common.exportShort")}</Button>
+            {/* No export button: `/api/fgmp/export` has no deliveries dataset,
+                and this screen used to download SITE records. An export control
+                that returns a different dataset is worse than no control. */}
             {canManageDeliveries && (
               <CreateDeliveryDialog open={createOpen} onOpenChange={setCreateOpen} onCreated={() => { refetch(); setCreateOpen(false); }} tanks={snapshot.tanks} sites={snapshot.sites} />
             )}

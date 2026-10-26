@@ -17,8 +17,9 @@ NextAuth session (JWT)
         │
         │  requireAuth(req)                        src/lib/fgmp/auth-helpers.ts
         ├─ 1. re-read the account from the DB     getSessionState()
-        ├─ 2. apply the signed preview cookie     role-preview.ts
-        ├─ 3. endpoint capability policy          rbac-core.ts canAccessApi()
+        ├─ 2. refuse an MFA-pending session       mfa/guard.ts evaluatePendingSession()
+        ├─ 3. apply the signed preview cookie     role-preview.ts
+        ├─ 4. endpoint capability policy          rbac-core.ts canAccessApi()
         ▼
     requireRole(req, ROLES.X)                     the route's own allow-list
         ▼
@@ -36,6 +37,24 @@ sufficient to authorize.
 not the token's. A JWT is a claim about the past: without this, a demoted,
 deactivated or password-reset account keeps its old authority until the token
 expires. `sessionEpoch` provides explicit revocation.
+
+### 1.1.1 An MFA-pending session reaches nothing but the challenge
+
+A session that has passed the password but not the second factor carries
+`mfaPending` and **no role and no tenant**. `requireAuth` evaluates
+`evaluatePendingSession(pathname)` (`src/lib/fgmp/mfa/guard.ts`) before it looks
+at any capability, and the answer is an **allowlist**: only
+`/api/fgmp/mfa/*` and `/api/auth/*` are reachable. A route added tomorrow is
+refused for such a session by default.
+
+The allowlist is what makes this fail closed. The earlier arrangement relied on
+the *absence* of a role: `canAccessApi` denies an undefined role, which covers
+every capability-checked route but not the `AUTH_ONLY_API_RULES` ones
+(`GET /api/fgmp/me`, `/api/fgmp/preferences`, `/api/fgmp/proposal`). Those were
+readable by a half-authenticated session. The decision is asserted against the
+call site — `requireAuth` must contain the check, before `canAccessApi` — not
+just against the guard, because the original defect was precisely that a correct
+guard had no caller.
 
 ### 1.2 Layer 1 — role → capability
 
@@ -91,7 +110,9 @@ boundary.
 | `canAccessApi(role, url, method)` | `rbac-core.ts`, shared with the server | one definition of who may call what |
 | `useApi(url)` | `use-api.ts` | will not fetch without the capability; drops and clears data when the identity changes |
 | `apiPost/apiPatch/apiPut/apiDelete` | `use-api.ts` | refuse locally with a 403 envelope, so no request leaves the tab |
-| `hasCapability(role, "view:x")` | `app-shell.tsx` | navigation and view mounting |
+| `NAV_ENTRIES` + `hasCapability(role, entry.cap)` | `navigation.ts`, `app-shell.tsx`, `command-palette.tsx` | **one** nav table; an entry exists on every surface or on none |
+| `setView(view)` | `store.ts` | refuses a view the role cannot open, so a missed call site cannot mount a screen |
+| `useCap` / `useCan` / `useCanView` | `use-access.ts` | one resolver for the effective role; `null` (unresolved) grants nothing |
 | `identityKey(me)` | `store.ts` | binds cached payloads to `user\|role\|tenant` |
 
 ### 2.1 Why payloads are keyed by identity
@@ -105,14 +126,19 @@ superseded identity, and `AppShell` renders no view until `me` resolves.
 ### 2.2 Adding a view
 
 1. Add a `ViewKey` and a `view:<key>` capability to the roles that may see it.
-2. Add the nav entry to `NAV` with `cap: "view:<key>"`.
+2. Add the nav entry to `NAV_ENTRIES` in `src/lib/fgmp/navigation.ts` with
+   `cap: "view:<key>"`, and an icon in both `NAV_ICONS` (sidebar) and `ICONS`
+   (palette). `rbac-nav-single-source.test.ts` fails if an entry is missing from
+   either surface, if a `cap` is not exactly `view:<key>`, or if either component
+   keeps a private list again.
 3. Load data with `useApi` (never a raw `fetch`) and make sure the endpoint is in
    the policy map.
 4. Gate every action with `hasCapability(role, "<action>")` **and** route the
    call through `apiPost/apiPatch/apiPut/apiDelete`.
 5. Run `bun test` — the contract test fails if the endpoint is unmapped, if the
    route's allow-list disagrees with the policy, or if a guard is called without
-   the request.
+   the request. `rbac-link-surfaces.test.ts` additionally fails any component
+   that navigates without first asking whether the role may go there.
 
 ---
 

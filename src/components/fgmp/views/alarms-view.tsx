@@ -59,6 +59,7 @@ export function AlarmsView() {
   // Acknowledge and resolve are separate capabilities (POST/PATCH
   // /api/fgmp/alarms accepts either). Both are checked so a READONLY or
   // EXECUTIVE viewer is not shown a button whose only outcome is a 403.
+  const canViewSites = hasCapability(role, "view:sites");
   const canAcknowledge = hasCapability(role, "alarm:ack");
   const canResolve = hasCapability(role, "alarm:resolve");
   const canAct = canAcknowledge || canResolve;
@@ -737,7 +738,18 @@ export function AlarmsView() {
       </div>
 
       {/* Alarm Correlation Analysis */}
-      <AlarmCorrelationPanel alarms={mergedAlarms ?? []} onSelectSite={(siteId) => { selectSite(siteId); setView("sites"); }} />
+      {/* The panel correlates alarms; its rows link into Sites, so the link is
+          passed only when `view:sites` is present. Omit the callback rather
+          than pass one that silently does nothing: `onSelectSite` is optional
+          precisely so a correlation panel can be read-only. */}
+      <AlarmCorrelationPanel
+        alarms={mergedAlarms ?? []}
+        onSelectSite={
+          canViewSites
+            ? (siteId) => { selectSite(siteId); setView("sites"); }
+            : undefined
+        }
+      />
 
       {/* Selected alarm detail */}
       {selectedAlarm && (

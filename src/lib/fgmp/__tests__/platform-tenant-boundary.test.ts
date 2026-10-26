@@ -9,6 +9,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync, readdirSync } from "node:fs";
 import { DICTIONARY } from "@/lib/fgmp/i18n";
+import { asTenantForAnotherTenant, resolveTenantScope } from "@/lib/fgmp/route-tenant";
 
 const source = (path: string) => readFileSync(path, "utf8");
 
@@ -157,5 +158,53 @@ describe("global state and service credentials", () => {
     expect(DICTIONARY["isolation.notMeasured"]?.en).toBe("Not measured — no sample row");
     expect(DICTIONARY["isolation.notMeasured"]?.ar).toBeTruthy();
     expect(view).toContain("Sampled Helper Check Incomplete");
+  });
+});
+
+describe("the ?tenant= exception is SUPERADMIN-only and cannot be enumerated", () => {
+  // B9: `users/route.ts` and `users/[id]/route.ts` resolve an explicit tenant
+  // instead of the session's. SECURITY.md names this as the one exception to
+  // "the tenant comes from the session"; these assertions pin the two
+  // properties that make the exception safe. `run` is never invoked here, so no
+  // database is touched: the decision is made before the transaction opens.
+  const ADMIN = { tenantId: "t-admin", role: "ADMIN" as const };
+  const SUPER = { tenantId: "t-platform", role: "SUPERADMIN" as const };
+
+  test("a tenant administrator's ?tenant= is ignored, not refused", () => {
+    for (const requested of ["t-other", "t-admin", "", "   ", null, undefined]) {
+      const scope = resolveTenantScope(ADMIN, requested);
+      expect(scope.tenantId).toBe("t-admin");
+      expect(scope.crossTenant).toBe(false);
+    }
+  });
+
+  test("ignoring is not an oracle: every non-superadmin answer is identical", () => {
+    // The response must not vary with whether the named tenant exists, or the
+    // 404-vs-200 difference becomes an enumeration channel.
+    const a = resolveTenantScope(ADMIN, "t-exists");
+    const b = resolveTenantScope(ADMIN, "t-does-not-exist");
+    expect(a.crossTenant).toBe(b.crossTenant);
+    expect(a.tenantId).toBe(b.tenantId);
+  });
+
+  test("only a superadmin naming a different tenant gets a cross-tenant scope", () => {
+    const named = resolveTenantScope(SUPER, "t-other");
+    expect(named.tenantId).toBe("t-other");
+    expect(named.crossTenant).toBe(true);
+    // Naming its own tenant is not cross-tenant, and neither is naming none.
+    expect(resolveTenantScope(SUPER, "t-platform").crossTenant).toBe(false);
+    expect(resolveTenantScope(SUPER, null).crossTenant).toBe(false);
+  });
+
+  test("the underlying helper re-checks SUPERADMIN and throws synchronously", () => {
+    expect(() => asTenantForAnotherTenant(ADMIN, "t-other", async () => 1)).toThrow(/SUPERADMIN/);
+  });
+
+  test("other roles cannot reach either path", () => {
+    for (const role of ["NOC_OPERATOR", "REGIONAL_MANAGER", "FIELD_ENGINEER", "EXECUTIVE", "READONLY", "TECHNICIAN"]) {
+      const scope = resolveTenantScope({ tenantId: "t-own", role: role as never }, "t-other");
+      expect(scope.crossTenant).toBe(false);
+      expect(scope.tenantId).toBe("t-own");
+    }
   });
 });

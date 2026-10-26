@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { BarGauge } from "@/components/fgmp/gauge";
 import { Breadcrumbs } from "@/components/fgmp/breadcrumbs";
+import { useCanView } from "@/lib/fgmp/use-access";
 import { StatusBadge, severityDot } from "@/components/fgmp/status-badge";
 import { Sparkline } from "@/components/fgmp/sparkline";
 import { RemoteControlDialog } from "@/components/fgmp/remote-control-dialog";
@@ -46,6 +47,10 @@ export function SiteDetailSheet({ siteId, open, onOpenChange }: { siteId: string
   const { data, loading, refetch } = useApi<SiteDetailPayload>(siteId ? `/api/fgmp/sites/${siteId}` : null, { interval: 6000, deps: [siteId] });
   const { tick, me } = useFgmp(useShallow((s) => ({ tick: s.tick, me: s.me })));
   const [ctrl, setCtrl] = useState<{ id: string; label: string; cmd: GenCommand } | null>(null);
+  // Hooks run before the `!siteId` early return below. `useCanView` must sit
+  // here rather than next to the values that read it, or the hook order changes
+  // the moment the sheet is opened with no site selected.
+  const canView = useCanView();
 
   if (!siteId) return null;
   const site = data?.site;
@@ -57,6 +62,15 @@ export function SiteDetailSheet({ siteId, open, onOpenChange }: { siteId: string
   // by the route).
   const canEditThresholds = hasCapability(role, "settings:manage");
 
+  // The region crumb links to Geography, which only ADMIN and SUPERADMIN hold.
+  // Without the capability the region is still named — as text, not a link —
+  // because the information is useful and the dead end is not.
+  const regionCrumb = !site
+    ? []
+    : canView("geography")
+      ? [{ label: site.region, href: "/?view=geography" }]
+      : [{ label: site.region }];
+
   return (
     <>
       <Sheet open={open} onOpenChange={onOpenChange}>
@@ -65,8 +79,18 @@ export function SiteDetailSheet({ siteId, open, onOpenChange }: { siteId: string
             {/* Breadcrumbs (#11) — Fleet → Region → Site (current) */}
             <Breadcrumbs
               items={[
-                { label: t("common.fleet"), href: "/?view=dashboard" },
-                ...(site ? [{ label: site.region, href: "/?view=geography" }] : []),
+                // A breadcrumb that cannot be followed is a dead end, so each
+                // crumb is offered only when the role may open its target.
+                // `geography` is the narrow one: only ADMIN and SUPERADMIN hold
+                // `view:geography`, while this sheet opens from Sites — which
+                // every role can see — so the crumb would otherwise be a link
+                // into a view the shell refuses to mount for five of the seven
+                // roles. When it is not offered, the region is still named, as
+                // plain text: the information is useful, the dead end is not.
+                ...(canView("dashboard")
+                  ? [{ label: t("common.fleet"), href: "/?view=dashboard" }]
+                  : []),
+                ...regionCrumb,
                 ...(site ? [{ label: site.name }] : []),
               ]}
               className="mb-1"
