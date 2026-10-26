@@ -13,6 +13,7 @@ import { apiPost } from "@/lib/fgmp/use-api";
 import { toast } from "sonner";
 import type { GenCommand } from "@/lib/fgmp/types";
 import { useT, useTF } from "@/lib/fgmp/use-language";
+import { useCap } from "@/lib/fgmp/use-access";
 
 interface Props {
   open: boolean;
@@ -34,11 +35,18 @@ const CMD_META: Record<GenCommand, { title: string; icon: typeof Zap; tone: stri
 export function RemoteControlDialog({ open, onOpenChange, generatorId, generatorLabel, siteName, command, onDone }: Props) {
   const t = useT();
   const tFmt = useTF();
+  // `POST /api/fgmp/generators/:id/control` is gated on `gen:control`, and this
+  // dialog exists for nothing else. Both callers gate their buttons, but the
+  // dialog is the reusable part — it is the one that must not be openable by a
+  // role that cannot issue the command. Hooks stay above the early return.
+  const canControlGenerator = useCap("gen:control");
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const meta = CMD_META[command];
   const Icon = meta.icon;
   const isEmergency = command === "EMERGENCY_STOP";
+
+  if (!open || !canControlGenerator) return null;
 
   const submit = async () => {
     if (!generatorId) return;

@@ -15,6 +15,7 @@ import { RemoteControlDialog } from "@/components/fgmp/remote-control-dialog";
 import { CommandHistoryPanel, type CommandHistoryItem } from "@/components/fgmp/command-history-panel";
 import { MaintenancePredictionPanel } from "@/components/fgmp/maintenance-prediction-panel";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useCan } from "@/lib/fgmp/use-access";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -34,6 +35,15 @@ export function GeneratorsView() {
   const [q, setQ] = useState("");
   const [ctrl, setCtrl] = useState<{ id: string; label: string; site: string; cmd: GenCommand } | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
+  // START / STOP / RESET / E-STOP all post to
+  // `POST /api/fgmp/generators/:id/control`, gated on `gen:control`. The row of
+  // buttons used to be rendered for every role that could open the view —
+  // REGIONAL_MANAGER, FIELD_ENGINEER, EXECUTIVE and READONLY among them — so for
+  // four of the five non-admin roles the generator controls were a row of 403s.
+  // A remote E-STOP that silently fails is the worst possible version of this
+  // defect, which is why the gate names the capability rather than the role.
+  const can = useCan();
+  const canControlGenerators = can("gen:control");
   const { data: commands } = useApi<{ commands: CommandHistoryItem[] }>("/api/fgmp/reports?period=daily", { interval: 20000 });
 
   const gens = useMemo(() => {
@@ -100,6 +110,7 @@ export function GeneratorsView() {
                     <div className="rounded bg-muted/40 px-1.5 py-1"><p className="text-[10px] text-muted-foreground">{t("generators.runtime").toUpperCase()}</p><p className="font-semibold tabular-nums">{formatNumber(Math.round(g.runtimeHours), numLang)}h</p></div>
                   </div>
                   <div className="mt-2 flex items-center gap-1">
+                    {canControlGenerators && (<>
                     <Button size="sm" variant="outline" className="h-6 flex-1 text-[10px]" disabled={g.status === "RUNNING"} onClick={() => doControl(g, "START")}>
                       <Power className="mr-1 h-3 w-3 text-emerald-500" />{t("generators.start")}
                     </Button>
@@ -112,6 +123,7 @@ export function GeneratorsView() {
                     <Button size="sm" variant="outline" className="h-6 flex-1 text-[10px] border-rose-500/40 text-rose-700 dark:text-rose-400 hover:bg-rose-500/10" onClick={() => doControl(g, "EMERGENCY_STOP")}>
                       <AlertOctagon className="mr-1 h-3 w-3" />{t("generators.eStop")}
                     </Button>
+                    </>)}
                   </div>
                 </div>
               ))}

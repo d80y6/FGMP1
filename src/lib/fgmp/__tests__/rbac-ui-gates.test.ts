@@ -112,7 +112,14 @@ const ACTION_GATES: { file: string; capability: string; why: string }[] = [
   { file: "views/dispensers-view.tsx", capability: "asset:manage", why: "Dispenser CRUD" },
   { file: "views/dispensers-view.tsx", capability: "dispenser:control", why: "Live dispenser command" },
   { file: "correlation-rules-editor.tsx", capability: "alarm:configure", why: "Correlation-rule authoring" },
-  { file: "site-detail-sheet.tsx", capability: "settings:manage", why: "Interlock threshold editing" },
+  // The editors in this sheet PATCH /api/fgmp/tanks/:id and
+  // /api/fgmp/generators/:id — `asset:manage`. The gate named
+  // `settings:manage` (a different screen's capability) until the endpoint rule
+  // was checked against it; same holders, wrong name.
+  { file: "site-detail-sheet.tsx", capability: "asset:manage", why: "Fuel threshold / maintenance-hours editing" },
+  { file: "site-detail-sheet.tsx", capability: "gen:control", why: "Start / stop / reset / E-stop a generator" },
+  { file: "views/generators-view.tsx", capability: "gen:control", why: "Start / stop / reset / E-stop from the fleet grid" },
+  { file: "remote-control-dialog.tsx", capability: "gen:control", why: "The dialog that actually issues the command" },
   { file: "header-overflow-menu.tsx", capability: "role:preview", why: "Role switcher" },
   { file: "shift-handover-panel.tsx", capability: "settings:manage", why: "Delete a handover note" },
 ];

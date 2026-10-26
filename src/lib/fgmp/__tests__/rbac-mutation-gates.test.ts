@@ -169,6 +169,15 @@ describe("the template-URL blind spot is a known, bounded list", () => {
    * one is instead covered by an entry in `ACTION_GATES`
    * (`rbac-ui-gates.test.ts`). Listed explicitly so adding an ungated one is a
    * reminder rather than an invisible gap.
+   *
+   * This blind spot is not theoretical. `remote-control-dialog` is here, and the
+   * two screens that open it — `views/generators-view` and `site-detail-sheet` —
+   * rendered START / STOP / RESET / E-STOP to four roles that do not hold
+   * `gen:control` (REGIONAL_MANAGER, FIELD_ENGINEER, EXECUTIVE, READONLY). A
+   * remote emergency stop that is silently refused is the worst instance of this
+   * defect class, and it is why every one of those three files now has an
+   * `ACTION_GATES` entry: the derived scan cannot see template URLs, so the
+   * hand-written table must.
    */
   const TEMPLATE_ONLY = [
     "src/components/fgmp/remote-control-dialog.tsx",
