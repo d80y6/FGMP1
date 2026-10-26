@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { Cpu, Wifi, Search, RefreshCw, Download, Radio, HardDriveDownload } from "lucide-react";
+import { Cpu, Wifi, Search, RefreshCw, Radio, HardDriveDownload } from "lucide-react";
 import { useFgmp } from "@/lib/fgmp/store";
 import { useApi, apiPatch } from "@/lib/fgmp/use-api";
 import { TruncationNote } from "@/components/fgmp/truncation-note";
@@ -83,7 +83,10 @@ export function IotView() {
         title={t("nav.iot")}
         description={t("desc.iot")}
         icon={<Cpu className="h-5 w-5" />}
-        actions={<Button variant="outline" size="sm" onClick={() => window.open("/api/fgmp/export?type=sites", "_blank")}><Download className="mr-1.5 h-4 w-4" /> {t("common.exportShort")}</Button>}
+        /* No export button: `GET /api/fgmp/export` has no IoT dataset, and this
+           screen used to download SITE records under an export label. The
+           `view:iot` grant that made that possible is gone from the export rule
+           too (rbac-core.ts EXPORT_TYPE_CAPABILITIES). */
       />
 
       <ResourceError error={devicesError} onRetry={refetch} />

@@ -85,6 +85,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useFgmp, type ViewKey } from "@/lib/fgmp/store";
 import { hasCapability } from "@/lib/fgmp/rbac-core";
+import { useCanView } from "@/lib/fgmp/use-access";
 import { useApi } from "@/lib/fgmp/use-api";
 import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
@@ -200,6 +201,12 @@ export function OnboardingChecklist() {
   // `Role | undefined` here — no session must mean "no user administration",
   // not a capability lookup on undefined.
   const canAdministerUsers = role ? hasCapability(role, "view:users") : false;
+  // Each checklist row ends in a "Go" button that opens another view, so the
+  // list is filtered to the destinations this role can actually reach. Today
+  // every viewer holds all six (the card is `view:users`-gated), which is
+  // exactly why the coupling went unnoticed — the next capability change would
+  // have left a row pointing at a view the shell refuses to mount.
+  const canView = useCanView();
   const { data: users } = useApi<unknown[]>(
     canAdministerUsers ? "/api/fgmp/users" : null,
     { interval: 30000 },
@@ -231,7 +238,7 @@ export function OnboardingChecklist() {
   if (!platformIsEmpty) return null;
   if (dismissedRaw === "true") return null;
 
-  const items: ChecklistItem[] = [
+  const allItems: ChecklistItem[] = [
     {
       key: "site",
       label: t("onboarding.addItemSite"),
@@ -275,6 +282,10 @@ export function OnboardingChecklist() {
       complete: visitedViews.length >= 3,
     },
   ];
+  // `filter` on a typed array keeps `ChecklistItem`; annotating before the
+  // filter is what makes that true (an annotated array literal that is then
+  // filtered widens to the literal's inferred element type).
+  const items: ChecklistItem[] = allItems.filter((i) => canView(i.href));
 
   const completedCount = items.filter((i) => i.complete).length;
   const totalCount = items.length;
@@ -283,6 +294,7 @@ export function OnboardingChecklist() {
   // Navigate to a view — mirrors AppShell's `navigate()` so the URL updates
   // and the live snapshot state is preserved (no full page reload).
   const go = (v: ViewKey) => {
+    if (!canView(v)) return;
     const params = new URLSearchParams(searchParams.toString());
     params.set("view", v);
     router.replace(`/?${params.toString()}`, { scroll: false });

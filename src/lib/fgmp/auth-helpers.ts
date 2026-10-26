@@ -13,6 +13,7 @@ import type { Role } from "@/lib/fgmp/types";
 import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { PREVIEW_COOKIE, verifyPreviewToken } from "@/lib/fgmp/role-preview";
 import { getSessionState } from "@/lib/auth-identity";
+import { evaluatePendingSession } from "@/lib/fgmp/mfa/guard";
 
 /**
  * Server-side auth helpers (Task 31-A)
@@ -138,6 +139,27 @@ export async function requireAuth(_request?: Request): Promise<AuthResult> {
         role: state.role,
         tenantId: state.tenantId,
       };
+
+  // ── MFA gate (B7) ────────────────────────────────────────────────────────
+  // A session that passed the password but NOT the second factor carries
+  // `mfaPending` and no role. Until this block existed, nothing consulted that
+  // flag: `src/lib/fgmp/mfa/guard.ts` was written, documented, and tested in
+  // isolation, and no route ever called it. A pending session was then stopped
+  // only by luck — `canAccessApi` denies an undefined role, which covers the
+  // capability-checked routes but not the AUTH_ONLY ones (`GET /api/fgmp/me`,
+  // `/api/fgmp/preferences`, `/api/fgmp/proposal`), which a half-authenticated
+  // session could read. `requireAuth` is the one function every protected
+  // handler calls, so the guard belongs here, and it is an allowlist: a route
+  // added tomorrow is refused by default rather than silently open.
+  if (revalidated.mfaPending) {
+    const pathname = _request ? new URL(_request.url).pathname : "/";
+    const decision = evaluatePendingSession(pathname, { mfaPending: true });
+    if (decision.blocked) {
+      return {
+        error: NextResponse.json(decision.body, { status: decision.status }),
+      };
+    }
+  }
 
   // ── Role preview overlay (proposal §8.16) ──────────────────────
   // A valid preview token temporarily overlays the session role.

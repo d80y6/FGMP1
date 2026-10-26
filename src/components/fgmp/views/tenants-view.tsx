@@ -81,9 +81,10 @@ export function TenantsView() {
 
   const { data: tenants, loading, refetch } = useApi<TenantRow[]>("/api/fgmp/tenants", { interval: 30000 });
 
-  // Task 49 — tenants are now platform-level: only SUPERADMIN can manage
-  // them. ADMIN loses access to this view entirely.
-  const isSuperAdmin = me?.role === "SUPERADMIN";
+  // Task 49 — tenants are platform-level: only SUPERADMIN can manage them, and
+  // ADMIN loses access to this view entirely. That decision is the capability
+  // gate further down (`view:tenants`), not a role literal here — a second copy
+  // is how the view and its nav entry drift apart.
 
   const countries = useMemo(() => {
     const set = new Set<string>();

@@ -14,6 +14,7 @@ import { useFgmp } from "@/lib/fgmp/store";
 import { useFavorites } from "@/lib/fgmp/use-favorites";
 import { useApi, apiPost } from "@/lib/fgmp/use-api";
 import { useChartColors } from "@/lib/fgmp/use-chart-colors";
+import { useCanView } from "@/lib/fgmp/use-access";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { NationalMap } from "@/components/fgmp/national-map";
 import { SectionHeader } from "@/components/fgmp/section-header";
@@ -60,6 +61,12 @@ export function DashboardView() {
   const tick = useFgmp((s) => s.tick);
 
   const addRecent = useFavorites((s) => s.addRecent);
+  // The dashboard is a hub of links into other views, and those links used to
+  // be unconditional: a NOC operator (no `view:analytics`) was offered an
+  // "Analytics" button that went nowhere, because the shell refuses to mount a
+  // view the role lacks. A link is a promise; only offer the ones that can be
+  // kept.
+  const canView = useCanView();
   const t = useT();
   const tFmt = useTF();
   const useArabicNums = useArabicNumerals();
@@ -217,13 +224,17 @@ export function DashboardView() {
         icon={<Activity className="h-5 w-5" />}
         actions={
           <>
-            <Button variant="outline" size="sm" onClick={() => setView("analytics")}>
-              <TrendingUp className="mr-1.5 h-4 w-4" /> {t("dash.analytics")}
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setView("alarms")}>
-              <Siren className="mr-1.5 h-4 w-4" /> {t("dash.alarms")}
-              {k.openAlarms > 0 && <Badge className="ml-1.5 h-4 px-1 text-[10px]">{formatNumber(k.openAlarms, numLang)}</Badge>}
-            </Button>
+            {canView("analytics") && (
+              <Button variant="outline" size="sm" onClick={() => setView("analytics")}>
+                <TrendingUp className="mr-1.5 h-4 w-4" /> {t("dash.analytics")}
+              </Button>
+            )}
+            {canView("alarms") && (
+              <Button variant="outline" size="sm" onClick={() => setView("alarms")}>
+                <Siren className="mr-1.5 h-4 w-4" /> {t("dash.alarms")}
+                {k.openAlarms > 0 && <Badge className="ml-1.5 h-4 px-1 text-[10px]">{formatNumber(k.openAlarms, numLang)}</Badge>}
+              </Button>
+            )}
             <ExportButton
               filename={csvFilename("kpi-snapshot")}
               rows={kpiSnapshotRows}
@@ -263,7 +274,9 @@ export function DashboardView() {
             <CardTitle className="flex items-center gap-2 text-base"><Siren className="h-4 w-4 text-rose-500" /> {t("dash.topCriticalAlarms")}</CardTitle>
             <span className="hidden truncate text-[11px] text-muted-foreground sm:inline">{t("dash.criticalAlarmsHint")}</span>
           </div>
-          <Button variant="ghost" size="sm" className="h-7 shrink-0 text-xs" onClick={() => setView("alarms")}>{t("common.viewAll")}</Button>
+          {canView("alarms") && (
+            <Button variant="ghost" size="sm" className="h-7 shrink-0 text-xs" onClick={() => setView("alarms")}>{t("common.viewAll")}</Button>
+          )}
         </CardHeader>
         <CardContent className="p-0">
           {topCriticalAlarms.length === 0 ? (
@@ -294,7 +307,7 @@ export function DashboardView() {
                 >
                   <button
                       type="button"
-                      onClick={() => setView("alarms")}
+                      onClick={() => { if (canView("alarms")) setView("alarms"); }}
                       className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
                     >
                     {/* Left-border accent coloured by severity (L3=rose, L2=amber, L1=slate).
@@ -330,7 +343,7 @@ export function DashboardView() {
                       // #18 — Ack also opens the site detail sheet so operators
                       // can triage the underlying asset immediately, and tracks
                       // the visit in the Quick Access recent-sites list.
-                      if (a.siteId) {
+                      if (a.siteId && canView("sites")) {
                         selectSite(a.siteId);
                         setView("sites");
                         addRecent(a.siteId);
@@ -366,7 +379,16 @@ export function DashboardView() {
           </CardHeader>
           <CardContent className="p-2 pt-0">
             <div className="aspect-[16/10] w-full overflow-hidden rounded-lg border bg-muted/30">
-              <NationalMap sites={snapshot.sites} selectedSiteId={selectedSiteId} onSelectSite={(id) => { selectSite(id); setView("sites"); addRecent(id); }} />
+              <NationalMap
+                sites={snapshot.sites}
+                selectedSiteId={selectedSiteId}
+                onSelectSite={(id) => {
+                  if (!canView("sites")) return;
+                  selectSite(id);
+                  setView("sites");
+                  addRecent(id);
+                }}
+              />
             </div>
           </CardContent>
         </Card>
@@ -374,7 +396,9 @@ export function DashboardView() {
         <Card className="flex flex-col">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="flex items-center gap-2 text-base"><Siren className="h-4 w-4 text-rose-500" /> {t("dash.liveAlarmFeed")}</CardTitle>
-            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setView("alarms")}>{t("common.viewAll")}</Button>
+            {canView("alarms") && (
+              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setView("alarms")}>{t("common.viewAll")}</Button>
+            )}
           </CardHeader>
           <CardContent className="flex-1 p-0">
             <ScrollArea className="h-[420px]">
@@ -391,7 +415,12 @@ export function DashboardView() {
                 {(alarms ?? []).map((a) => (
                   <button
                     key={a.id}
-                    onClick={() => { selectSite(a.siteId); setView("sites"); addRecent(a.siteId); }}
+                    onClick={() => {
+                      if (!canView("sites")) return;
+                      selectSite(a.siteId);
+                      setView("sites");
+                      addRecent(a.siteId);
+                    }}
                     className={cn(
                       "flex w-full items-start gap-2.5 rounded-lg border p-2.5 text-left transition-all duration-200 hover:bg-muted/50 hover:shadow-sm motion-reduce:transition-none",
                       a.severity === "L3" && "border-rose-500/20 bg-rose-500/[0.03]",

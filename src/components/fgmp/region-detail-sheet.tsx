@@ -35,6 +35,7 @@ import type { Language } from "@/lib/fgmp/i18n";
 import type { AlarmRow } from "@/lib/fgmp/types";
 import { alarmTypeLabel } from "@/lib/fgmp/labels";
 import { DecorativeChart } from "@/components/fgmp/decorative-chart";
+import { useCanView } from "@/lib/fgmp/use-access";
 
 
 /* ------------------------------------------------------------------ */
@@ -214,6 +215,10 @@ export function RegionDetailSheet({ region, onOpenChange }: RegionDetailSheetPro
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
   const { snapshot, selectSite, setView } = useFgmp(useShallow((s) => ({ snapshot: s.snapshot, selectSite: s.selectSite, setView: s.setView })));
+  // This sheet is reachable from the dashboard, so its outbound links cannot
+  // assume the viewer holds the capabilities of the screen it was opened from.
+  // `sites` and `alarms` are separate views with their own gates.
+  const canView = useCanView();
   const cc = useChartColors();
   // Fetch open/ack/escalated alarms for the region drilldown. Reuse the same
   // endpoint pattern as dashboard-view's live alarm feed.
@@ -324,6 +329,7 @@ export function RegionDetailSheet({ region, onOpenChange }: RegionDetailSheetPro
   }, [snapshot, region, alarms, cc.rose, cc.amber, cc.sky, cc.emerald]);
 
   const handleSiteClick = (siteId: string) => {
+    if (!canView("sites")) return;
     selectSite(siteId);
     setView("sites");
     onOpenChange(false);
@@ -576,7 +582,7 @@ export function RegionDetailSheet({ region, onOpenChange }: RegionDetailSheetPro
                       variant="ghost"
                       size="sm"
                       className="mt-2 h-7 w-full text-xs"
-                      onClick={() => { setView("sites"); onOpenChange(false); }}
+                      onClick={() => { if (canView("sites")) { setView("sites"); onOpenChange(false); } }}
                     >
                       {t("region.viewAllSites")} {data.total} {t("region.sites")}
                       <ChevronRight className="ml-1 h-3 w-3" />
@@ -636,7 +642,7 @@ export function RegionDetailSheet({ region, onOpenChange }: RegionDetailSheetPro
                     variant="ghost"
                     size="sm"
                     className="mt-2 h-7 w-full text-xs"
-                    onClick={() => { setView("alarms"); onOpenChange(false); }}
+                    onClick={() => { if (canView("alarms")) { setView("alarms"); onOpenChange(false); } }}
                   >
                     {t("region.viewAllAlarms")}
                     <ChevronRight className="ml-1 h-3 w-3" />

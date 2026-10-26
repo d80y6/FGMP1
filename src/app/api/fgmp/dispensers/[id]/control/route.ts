@@ -25,10 +25,18 @@ export const dynamic = "force-dynamic";
  *   - LOCK       → mode LOCKED, status STOPPED (no new txns possible)
  *   - UNLOCK     → mode AUTO, status IDLE
  *
- * Roles: ADMIN, NOC_OPERATOR (ROLES.CONTROL — same as generator control).
+ * Roles: ADMIN, NOC_OPERATOR, FIELD_ENGINEER — `ROLES.DISPENSER_CONTROL`, which
+ * is exactly the holder set of the `dispenser:control` capability this path is
+ * mapped to in rbac-core.ts. It used to be `ROLES.CONTROL` (the generator set:
+ * ADMIN + NOC), so a field engineer — who holds `dispenser:control`, whose two
+ * sibling hardware routes (edge reboot, firmware deploy) already used
+ * DISPENSER_CONTROL, and whom the client therefore offers the control — was
+ * refused here. The comment said "same as generator control"; a dispenser is
+ * hardware a field engineer stands in front of, a generator is plant equipment
+ * driven remotely by the NOC, so the two sets were never the same thing.
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireRole(req, ROLES.CONTROL);
+  const auth = await requireRole(req, ROLES.DISPENSER_CONTROL);
   if ("error" in auth) return auth.error;
   const me = auth.user;
   try {

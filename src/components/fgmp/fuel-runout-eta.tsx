@@ -14,6 +14,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { useCanView } from "@/lib/fgmp/use-access";
 
 /**
  * Fuel Runout ETA predictor widget (#41-A)
@@ -105,6 +106,9 @@ function pctBadgeClass(pct: number): string {
 export function FuelRunoutEta() {
   const t = useT();
   const setView = useFgmp((s) => s.setView);
+  // Both the "view all" control and each row open the Fuel view; a role that
+  // cannot read it must not be offered the trip.
+  const canView = useCanView();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
 
@@ -137,14 +141,16 @@ export function FuelRunoutEta() {
             </TooltipContent>
           </Tooltip>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 shrink-0 text-xs"
-          onClick={() => setView("fuel")}
-        >
-          {t("dash.runoutEtaViewAll")}
-        </Button>
+        {canView("fuel") && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 shrink-0 text-xs"
+            onClick={() => setView("fuel")}
+          >
+            {t("dash.runoutEtaViewAll")}
+          </Button>
+        )}
       </CardHeader>
 
       <CardContent className="p-0">
@@ -177,7 +183,7 @@ export function FuelRunoutEta() {
               <button
                 key={tk.tankId}
                 type="button"
-                onClick={() => setView("fuel")}
+                onClick={() => { if (canView("fuel")) setView("fuel"); }}
                 className={cn(
                   "flex w-full cursor-pointer items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none",
                   URGENCY_TINT[tk.urgency],

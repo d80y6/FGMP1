@@ -22,6 +22,7 @@ import { useTheme } from "next-themes";
 import { useState } from "react";
 import { hasCapability, isSuperAdmin, ROLE_PERMISSIONS } from "@/lib/fgmp/rbac-core";
 import { nextRoleAnnouncement } from "@/lib/fgmp/role-announcement";
+import { NAV_ENTRIES, NAV_GROUPS, type NavEntry, type NavGroupId } from "@/lib/fgmp/navigation";
 import { PREVIEW_ROLES } from "@/lib/fgmp/role-preview-constants";
 import type { Role } from "@/lib/fgmp/types";
 import dynamic from "next/dynamic";
@@ -91,42 +92,53 @@ import { useRealtime } from "@/lib/fgmp/use-realtime";
 import { useT, useTF, useLanguageHydration, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 
-// Nav items use i18n keys; the `label` is a fallback (English) for SSR before hydration.
-// The actual rendered label is `t(`nav.${key}`)` in SidebarContent.
-const NAV: { key: ViewKey; tKey: string; icon: typeof LayoutDashboard; cap: string; group: string; groupTKey: string }[] = [
-  { key: "dashboard", tKey: "nav.dashboard", icon: LayoutDashboard, cap: "view:dashboard", group: "Operations", groupTKey: "nav.group.operations" },
-  { key: "sites", tKey: "nav.sites", icon: Building2, cap: "view:sites", group: "Operations", groupTKey: "nav.group.operations" },
-  { key: "fuel", tKey: "nav.fuel", icon: Droplet, cap: "view:fuel", group: "Monitoring", groupTKey: "nav.group.monitoring" },
-  { key: "dispensers", tKey: "nav.dispensers", icon: Fuel, cap: "view:dispensers", group: "Monitoring", groupTKey: "nav.group.monitoring" },
-  { key: "edge-firmware", tKey: "nav.edge-firmware", icon: HardDrive, cap: "view:edge-firmware", group: "Monitoring", groupTKey: "nav.group.monitoring" },
-  { key: "generators", tKey: "nav.generators", icon: Zap, cap: "view:generators", group: "Monitoring", groupTKey: "nav.group.monitoring" },
-  { key: "batteries", tKey: "nav.batteries", icon: BatteryCharging, cap: "view:batteries", group: "Monitoring", groupTKey: "nav.group.monitoring" },
-  { key: "alarms", tKey: "nav.alarms", icon: Siren, cap: "view:alarms", group: "Monitoring", groupTKey: "nav.group.monitoring" },
-  { key: "suppressions", tKey: "nav.suppressions", icon: ShieldOff, cap: "view:suppressions", group: "Monitoring", groupTKey: "nav.group.monitoring" },
-  { key: "asset-registry", tKey: "nav.asset-registry", icon: Layers, cap: "view:asset-registry", group: "Logistics", groupTKey: "nav.group.logistics" },
-  { key: "inventory", tKey: "nav.inventory", icon: Truck, cap: "view:inventory", group: "Logistics", groupTKey: "nav.group.logistics" },
-  { key: "iot", tKey: "nav.iot", icon: Cpu, cap: "view:iot", group: "Logistics", groupTKey: "nav.group.logistics" },
-  { key: "maintenance", tKey: "nav.maintenance", icon: Wrench, cap: "view:maintenance", group: "Logistics", groupTKey: "nav.group.logistics" },
-  { key: "analytics", tKey: "nav.analytics", icon: TrendingUp, cap: "view:analytics", group: "Insights", groupTKey: "nav.group.insights" },
-  { key: "fuel-forecast", tKey: "nav.fuel-forecast", icon: GitBranch, cap: "view:fuel-forecast", group: "Insights", groupTKey: "nav.group.insights" },
-  { key: "consumption-patterns", tKey: "nav.consumption-patterns", icon: BarChart3, cap: "view:consumption-patterns", group: "Insights", groupTKey: "nav.group.insights" },
-  { key: "reports", tKey: "nav.reports", icon: FileText, cap: "view:reports", group: "Insights", groupTKey: "nav.group.insights" },
-  { key: "audit", tKey: "nav.audit", icon: ScrollText, cap: "view:audit", group: "Administration", groupTKey: "nav.group.administration" },
-  { key: "users", tKey: "nav.users", icon: Users, cap: "view:users", group: "Administration", groupTKey: "nav.group.administration" },
-  { key: "tenants", tKey: "nav.tenants", icon: Building2, cap: "view:tenants", group: "Administration", groupTKey: "nav.group.administration" },
-  { key: "geography", tKey: "nav.geography", icon: Map, cap: "view:geography", group: "Administration", groupTKey: "nav.group.administration" },
-  { key: "roles", tKey: "nav.roles", icon: ShieldCheck, cap: "view:roles", group: "Administration", groupTKey: "nav.group.administration" },
-  { key: "system-settings", tKey: "nav.system-settings", icon: Settings, cap: "view:system-settings", group: "Administration", groupTKey: "nav.group.administration" },
-  { key: "api-keys", tKey: "nav.api-keys", icon: KeyRound, cap: "view:api-keys", group: "Administration", groupTKey: "nav.group.administration" },
-  { key: "system-health", tKey: "nav.systemHealth", icon: Activity, cap: "view:system-health", group: "Administration", groupTKey: "nav.group.administration" },
-  // Tenant Isolation testing — SUPERADMIN-only. The cap `view:tenant-isolation`
-  // is granted to SUPERADMIN via the `*` wildcard. The nav filter below
-  // further hides it for non-SUPERADMIN roles.
-  { key: "tenant-isolation", tKey: "nav.tenantIsolation", icon: ShieldCheck, cap: "view:tenant-isolation", group: "Administration", groupTKey: "nav.group.administration" },
-  // Account section — personal settings. Visible to every authenticated
-  // user (every role gets the `view:preferences` capability in rbac.ts).
-  { key: "preferences", tKey: "nav.preferences", icon: Bell, cap: "view:preferences", group: "Account", groupTKey: "nav.group.account" },
-];
+// Nav items use i18n keys; the label rendered is `t(tKey)`. The LIST itself is
+// not defined here — it lives in `@/lib/fgmp/navigation`, because the command
+// palette carried a second, shorter copy of it and the two had drifted apart
+// (28 entries here, 22 there: suppressions, users, system-health,
+// tenant-isolation and preferences were unreachable from the palette). Icons
+// stay in this file: they are presentation, not policy.
+const NAV_ICONS: Record<ViewKey, typeof LayoutDashboard> = {
+  dashboard: LayoutDashboard,
+  sites: Building2,
+  fuel: Droplet,
+  dispensers: Fuel,
+  "edge-firmware": HardDrive,
+  generators: Zap,
+  batteries: BatteryCharging,
+  alarms: Siren,
+  suppressions: ShieldOff,
+  "asset-registry": Layers,
+  inventory: Truck,
+  iot: Cpu,
+  maintenance: Wrench,
+  analytics: TrendingUp,
+  "fuel-forecast": GitBranch,
+  "consumption-patterns": BarChart3,
+  reports: FileText,
+  audit: ScrollText,
+  users: Users,
+  tenants: Building2,
+  geography: Map,
+  roles: ShieldCheck,
+  "system-settings": Settings,
+  "api-keys": KeyRound,
+  "system-health": Activity,
+  "tenant-isolation": ShieldCheck,
+  preferences: Bell,
+};
+
+const GROUP_TKEYS: Record<NavGroupId, string> = Object.fromEntries(
+  NAV_GROUPS.map((g) => [g.id, g.tKey]),
+) as Record<NavGroupId, string>;
+
+type ShellNavEntry = NavEntry & { icon: typeof LayoutDashboard; groupTKey: string };
+
+const NAV: ShellNavEntry[] = NAV_ENTRIES.map((e) => ({
+  ...e,
+  icon: NAV_ICONS[e.key],
+  groupTKey: GROUP_TKEYS[e.group],
+}));
 
 // `dyn()` returns `ComponentType` (next/dynamic with ssr:false), which under
 // React 19 types returns ReactNode rather than ReactElement — so the previous
@@ -421,7 +433,7 @@ export function AppShell() {
     [role],
   );
   const grouped = useMemo(() => {
-    const m: Record<string, typeof NAV> = {};
+    const m: Record<string, ShellNavEntry[]> = {};
     for (const n of visibleNav) (m[n.group] ??= []).push(n);
     return m;
   }, [visibleNav]);
@@ -541,7 +553,13 @@ export function AppShell() {
                   is a dialog, so the mobile navigation was announced as just
                   "dialog". Visually hidden, not omitted. */}
               <SheetTitle className="sr-only">{t("nav.primary")}</SheetTitle>
-              <SidebarContent grouped={grouped} view={view} navigate={navigate} me={me} />
+              <SidebarContent
+                grouped={grouped}
+                view={view}
+                navigate={navigate}
+                me={me}
+                canSeeSites={hasCapability(role, "view:sites")}
+              />
             </SheetContent>
           </Sheet>
 
@@ -629,10 +647,13 @@ export function AppShell() {
 
           {/* Quick Access popover (#18) — pinned + recently-visited sites one
               click away. Mounted right after the global search so it reads as
-              a "site jump" shortcut next to the cmd-K palette. */}
-          <div className="hidden sm:flex">
-            <QuickAccessPopover />
-          </div>
+              a "site jump" shortcut next to the cmd-K palette.
+              `view:sites` only: every row in it opens a site. */}
+          {hasCapability(role, "view:sites") && (
+            <div className="hidden sm:flex">
+              <QuickAccessPopover />
+            </div>
+          )}
 
           {/* Clock — self-contained so its 1Hz state never re-renders AppShell */}
           <HeaderClock />
@@ -776,7 +797,13 @@ export function AppShell() {
       {/* Body: sidebar + content */}
       <div className="flex flex-1">
         <aside className="sticky top-14 hidden h-[calc(100vh-3.5rem)] w-60 shrink-0 border-r bg-card/40 lg:block">
-          <SidebarContent grouped={grouped} view={view} navigate={navigate} me={me} />
+          <SidebarContent
+            grouped={grouped}
+            view={view}
+            navigate={navigate}
+            me={me}
+            canSeeSites={hasCapability(role, "view:sites")}
+          />
         </aside>
 
         <main id="main-content" className="flex min-w-0 flex-1 flex-col" tabIndex={-1}>
@@ -873,11 +900,13 @@ function AccessDeniedPanel({ view, role, onBack }: { view: ViewKey; role: string
   );
 }
 
-function SidebarContent({ grouped, view, navigate, me }: {
-  grouped: Record<string, typeof NAV>;
+function SidebarContent({ grouped, view, navigate, me, canSeeSites }: {
+  grouped: Record<string, ShellNavEntry[]>;
   view: ViewKey;
   navigate: (v: ViewKey) => void;
   me: { name: string; role: string } | null;
+  /** `view:sites` — the pinned-sites list is a list of links into that view. */
+  canSeeSites: boolean;
 }) {
   const t = useT();
   const dir = useDir();
@@ -936,9 +965,13 @@ function SidebarContent({ grouped, view, navigate, me }: {
           </div>
         ))}
       </nav>
-      <div className="border-t px-2 py-2">
-        <PinnedSitesWidget />
-      </div>
+      {/* Same rule as the header popover: a pinned-sites list is a list of
+          links into the Sites view. */}
+      {canSeeSites && (
+        <div className="border-t px-2 py-2">
+          <PinnedSitesWidget />
+        </div>
+      )}
       {me && (
         <div className="border-t p-3">
           <div className="flex items-center gap-2.5">

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { useFgmp, type ViewKey } from "@/lib/fgmp/store";
+import { NAV_ENTRIES } from "@/lib/fgmp/navigation";
 
 interface ShortcutConfig {
   onNavigate: (view: ViewKey) => void;
@@ -10,20 +11,27 @@ interface ShortcutConfig {
   onToggleTheme: () => void;
 }
 
-const NAV_SHORTCUTS: Record<string, ViewKey> = {
-  d: "dashboard",
-  s: "sites",
-  f: "fuel",
-  g: "generators",
-  b: "batteries",
-  a: "alarms",
-  i: "inventory",
-  o: "iot",
-  m: "maintenance",
-  n: "analytics",
-  r: "reports",
-  u: "audit",
-};
+/**
+ * `G <letter>` → view, derived from the shared nav table.
+ *
+ * This used to be a hand-written map covering 12 views while the command
+ * palette ADVERTISED shortcuts for 21 — G P (dispensers), G E (edge), G C
+ * (forecast), G X (patterns), G T (tenants), G Y (geography), G L (roles) and
+ * G K (api keys) were printed next to the menu item and bound to nothing, and
+ * `G R` was printed twice (asset registry and reports) with only one of the two
+ * implemented. Deriving both the binding and the printed hint from
+ * `NAV_ENTRIES` makes "the key is shown" and "the key works" the same fact.
+ *
+ * Two entries legitimately have no shortcut (users, system-settings and the
+ * no-letter surfaces); they simply do not appear in the help dialog either.
+ */
+const NAV_SHORTCUTS: Record<string, ViewKey> = Object.fromEntries(
+  NAV_ENTRIES.filter((e) => /^G [A-Z]$/.test(e.shortcut ?? "")).map((e) => [
+    // Lower-case key: `handler` compares `e.key.toLowerCase()`.
+    (e.shortcut as string).slice(2).toLowerCase(),
+    e.key,
+  ]),
+) as Record<string, ViewKey>;
 
 /**
  * Global keyboard shortcuts hook for FGMP.
@@ -128,22 +136,40 @@ export function useKeyboardShortcuts(config: ShortcutConfig) {
 /**
  * Keyboard help data — used by the command palette and a help dialog.
  */
-export const KEYBOARD_SHORTCUTS = [
-  { keys: "G D", description: "Go to NOC Dashboard", category: "Navigation" },
-  { keys: "G S", description: "Go to Site Management", category: "Navigation" },
-  { keys: "G F", description: "Go to Fuel Monitoring", category: "Navigation" },
-  { keys: "G G", description: "Go to Generators", category: "Navigation" },
-  { keys: "G B", description: "Go to Batteries", category: "Navigation" },
-  { keys: "G A", description: "Go to Alarm Management", category: "Navigation" },
-  { keys: "G I", description: "Go to Inventory & Supply", category: "Navigation" },
-  { keys: "G O", description: "Go to IoT Devices", category: "Navigation" },
-  { keys: "G M", description: "Go to Maintenance", category: "Navigation" },
-  { keys: "G N", description: "Go to Analytics", category: "Navigation" },
-  { keys: "G R", description: "Go to Reports", category: "Navigation" },
-  { keys: "G U", description: "Go to Audit Log", category: "Navigation" },
-  { keys: "?", description: "Open command palette", category: "Actions" },
-  { keys: "L", description: "Toggle live/pause telemetry feed", category: "Actions" },
-  { keys: "T", description: "Cycle theme (System → Light → Dark)", category: "Actions" },
-  { keys: "⌘K", description: "Open command palette (anywhere)", category: "Actions" },
-  { keys: "Esc", description: "Close dialog or sheet", category: "Actions" },
+/**
+ * Keyboard help data — used by the command palette and the help dialog.
+ *
+ * `cap` is the capability the shortcut acts through. A navigation shortcut is
+ * only usable by a role that may open the view it names, and the shell's
+ * `navigate()` refuses the rest — so listing "G N — Analytics" to a NOC
+ * operator (no `view:analytics`) documents a key that does nothing. The help
+ * dialog filters on this field; the keys themselves are already gated where
+ * they are bound.
+ */
+export const KEYBOARD_SHORTCUTS: {
+  keys: string;
+  /** Literal text for the few non-view rows. */
+  description?: string;
+  /** i18n key, used by the navigation rows (their label is the nav entry's). */
+  descKey?: string;
+  category: string;
+  categoryKey?: string;
+  cap?: string;
+}[] = [
+  // Navigation rows come from the nav table, so the help dialog can only list a
+  // key that is actually bound (see NAV_SHORTCUTS above) and can only list it to
+  // a role that may open the view (`cap`). A hand-written copy here would be the
+  // fourth place a view's name, key and capability had to agree.
+  ...NAV_ENTRIES.filter((e) => /^G [A-Z]$/.test(e.shortcut ?? "")).map((e) => ({
+    keys: e.shortcut as string,
+    descKey: e.tKey,
+    category: "Navigation",
+    categoryKey: "keyboard.category.navigation",
+    cap: e.cap,
+  })),
+  { keys: "?", descKey: "keyboard.action.openPalette", category: "Actions", categoryKey: "keyboard.category.actions" },
+  { keys: "L", descKey: "keyboard.action.toggleLive", category: "Actions", categoryKey: "keyboard.category.actions" },
+  { keys: "T", descKey: "keyboard.action.cycleTheme", category: "Actions", categoryKey: "keyboard.category.actions" },
+  { keys: "⌘K", descKey: "keyboard.action.openPaletteAnywhere", category: "Actions", categoryKey: "keyboard.category.actions" },
+  { keys: "Esc", descKey: "keyboard.action.closeDialog", category: "Actions", categoryKey: "keyboard.category.actions" },
 ];

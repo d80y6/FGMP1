@@ -16,34 +16,46 @@ import {
 } from "@/components/ui/command";
 import { useFgmp, type ViewKey } from "@/lib/fgmp/store";
 import { hasCapability } from "@/lib/fgmp/rbac-core";
+import { useCanView, useCan } from "@/lib/fgmp/use-access";
+import { NAV_ENTRIES } from "@/lib/fgmp/navigation";
 import { useTheme } from "next-themes";
-import { useT } from "@/lib/fgmp/use-language";
+import { useT, useTF } from "@/lib/fgmp/use-language";
 import { toast } from "sonner";
 
-const NAV_ITEMS: { key: ViewKey; label: string; icon: LucideIcon; cap: string; group: string; shortcut?: string }[] = [
-  { key: "dashboard", label: "NOC Dashboard", icon: LayoutDashboard, cap: "view:dashboard", group: "Operations", shortcut: "G D" },
-  { key: "sites", label: "Site Management", icon: Building2, cap: "view:sites", group: "Operations", shortcut: "G S" },
-  { key: "fuel", label: "Fuel Monitoring", icon: Droplet, cap: "view:fuel", group: "Monitoring", shortcut: "G F" },
-  { key: "generators", label: "Generators", icon: Zap, cap: "view:generators", group: "Monitoring", shortcut: "G G" },
-  { key: "batteries", label: "Batteries", icon: BatteryCharging, cap: "view:batteries", group: "Monitoring", shortcut: "G B" },
-  { key: "alarms", label: "Alarm Management", icon: Siren, cap: "view:alarms", group: "Monitoring", shortcut: "G A" },
-  { key: "inventory", label: "Inventory & Supply", icon: Truck, cap: "view:inventory", group: "Logistics", shortcut: "G I" },
-  { key: "iot", label: "IoT Devices", icon: Cpu, cap: "view:iot", group: "Logistics", shortcut: "G O" },
-  { key: "maintenance", label: "Maintenance", icon: Wrench, cap: "view:maintenance", group: "Logistics", shortcut: "G M" },
-  { key: "dispensers", label: "Fuel Dispensers", icon: Fuel, cap: "view:dispensers", group: "Monitoring", shortcut: "G P" },
-  { key: "edge-firmware", label: "Edge & Firmware", icon: HardDrive, cap: "view:edge-firmware", group: "Monitoring", shortcut: "G E" },
-  { key: "asset-registry", label: "Asset Registry", icon: Layers, cap: "view:asset-registry", group: "Logistics", shortcut: "G R" },
-  { key: "analytics", label: "Analytics", icon: TrendingUp, cap: "view:analytics", group: "Insights", shortcut: "G N" },
-  { key: "fuel-forecast", label: "Fuel Forecast", icon: GitBranch, cap: "view:fuel-forecast", group: "Insights", shortcut: "G C" },
-  { key: "consumption-patterns", label: "Consumption Patterns", icon: BarChart3, cap: "view:consumption-patterns", group: "Insights", shortcut: "G X" },
-  { key: "reports", label: "Reports", icon: FileText, cap: "view:reports", group: "Insights", shortcut: "G R" },
-  { key: "tenants", label: "Tenants", icon: Building2, cap: "view:tenants", group: "Administration", shortcut: "G T" },
-  { key: "geography", label: "Geography", icon: Map, cap: "view:geography", group: "Administration", shortcut: "G Y" },
-  { key: "roles", label: "Roles & Permissions", icon: ShieldCheck, cap: "view:roles", group: "Administration", shortcut: "G L" },
-  { key: "system-settings", label: "System Settings", icon: Settings, cap: "view:system-settings", group: "Administration", shortcut: "G ," },
-  { key: "api-keys", label: "API Keys", icon: KeyRound, cap: "view:api-keys", group: "Administration", shortcut: "G K" },
-  { key: "audit", label: "Audit Log", icon: ScrollText, cap: "view:audit", group: "Insights", shortcut: "G U" },
-];
+// Icons stay here; the ENTRIES come from the shared table. The palette used to
+// keep a private list of 22 views while the sidebar listed 28, so five screens
+// (suppressions, users, system-health, tenant-isolation, preferences) could not
+// be reached from the palette at all, and a capability added to one list was
+// silently missing from the other.
+const ICONS: Record<ViewKey, LucideIcon> = {
+  dashboard: LayoutDashboard,
+  sites: Building2,
+  fuel: Droplet,
+  dispensers: Fuel,
+  "edge-firmware": HardDrive,
+  generators: Zap,
+  batteries: BatteryCharging,
+  alarms: Siren,
+  suppressions: ShieldCheck,
+  "asset-registry": Layers,
+  inventory: Truck,
+  iot: Cpu,
+  maintenance: Wrench,
+  analytics: TrendingUp,
+  "fuel-forecast": GitBranch,
+  "consumption-patterns": BarChart3,
+  reports: FileText,
+  audit: ScrollText,
+  users: ShieldCheck,
+  tenants: Building2,
+  geography: Map,
+  roles: ShieldCheck,
+  "system-settings": Settings,
+  "api-keys": KeyRound,
+  "system-health": HardDrive,
+  "tenant-isolation": ShieldCheck,
+  preferences: ShieldCheck,
+};
 
 interface Props {
   open: boolean;
@@ -56,19 +68,34 @@ export function CommandPalette({ open, onOpenChange }: Props) {
   const { snapshot, me, view, setView, livePaused, toggleLive, switchRole } = useFgmp(useShallow((s) => ({ snapshot: s.snapshot, me: s.me, view: s.view, setView: s.setView, livePaused: s.livePaused, toggleLive: s.toggleLive, switchRole: s.switchRole })));
   const { resolvedTheme, setTheme } = useTheme();
   const t = useT();
+  const tFmt = useTF();
   const [query, setQuery] = useState("");
 
   const role = me?.role ?? "READONLY";
-  const visibleNav = useMemo(() => NAV_ITEMS.filter((n) => hasCapability(role, n.cap)), [role]);
+  const can = useCan();
+  // Filter on `role` only: labels are rendered through `t()` at paint time, so a
+  // language switch re-renders them without invalidating the memo (and `useT()`
+  // returns a fresh function on every render, so depending on it would defeat
+  // the memo entirely).
+  const visibleNav = useMemo(
+    () => NAV_ENTRIES.filter((n) => hasCapability(role, n.cap)),
+    [role],
+  );
+  // The palette has three kinds of result — views, sites and alarms — and only
+  // the first was capability-filtered. The other two navigated to views the
+  // role may not open, and because the shell refuses to mount a view the role
+  // lacks, pressing such a row did nothing at all: a listed site that cannot
+  // be opened. Each group is now gated on the view it navigates to.
+  const canView = useCanView();
 
   const navigate = useCallback((v: ViewKey) => {
-    if (!hasCapability(role, `view:${v}`)) return;
+    if (!canView(v)) return;
     setView(v);
     const params = new URLSearchParams(searchParams.toString());
     params.set("view", v);
     router.replace(`/?${params.toString()}`, { scroll: false });
     onOpenChange(false);
-  }, [router, searchParams, setView, onOpenChange, role]);
+  }, [router, searchParams, setView, onOpenChange, canView]);
 
   // Reset query when closed
   useEffect(() => {
@@ -144,7 +171,7 @@ export function CommandPalette({ open, onOpenChange }: Props) {
         <CommandGroup heading={t("cmdpal.quickActions")}>
           <CommandItem onSelect={() => { toggleLive(); onOpenChange(false); }} className="gap-2">
             {livePaused ? <Play className="h-4 w-4 text-emerald-500" /> : <Pause className="h-4 w-4 text-amber-500" />}
-            <span>{livePaused ? "Resume live telemetry feed" : "Pause live telemetry feed"}</span>
+            <span>{livePaused ? t("cmdpal.resumeLive") : t("cmdpal.pauseLive")}</span>
             <CommandShortcut>Space</CommandShortcut>
           </CommandItem>
           <CommandItem onSelect={() => { setTheme(resolvedTheme === "dark" ? "light" : "dark"); onOpenChange(false); }} className="gap-2">
@@ -152,7 +179,11 @@ export function CommandPalette({ open, onOpenChange }: Props) {
             <span>{t("common.toggleTheme")} {resolvedTheme === "dark" ? "light" : "dark"}</span>
             <CommandShortcut>⌘ J</CommandShortcut>
           </CommandItem>
-          {me && Array.isArray(me.roles) && me.roles.length > 1 && (
+          {/* Previewing a role is POST /api/fgmp/me/preview-role, which requires
+              `role:preview` (and, server-side, a permanent ADMIN). The list used
+              to render for anyone whose `me.roles` had two entries; every press
+              then 403'd. A control that cannot succeed is not rendered. */}
+          {me && can("role:preview") && Array.isArray(me.roles) && me.roles.length > 1 && (
             <>
               <CommandSeparator />
               {me.roles.map((r) => (
@@ -168,7 +199,7 @@ export function CommandPalette({ open, onOpenChange }: Props) {
                 >
                   <ArrowRight className="h-4 w-4 text-muted-foreground" />
                   <span>{t("common.switchRole")} {r.replace(/_/g, " ")}</span>
-                  {r === role && <CommandShortcut>current</CommandShortcut>}
+                  {r === role && <CommandShortcut>{t("cmdpal.current")}</CommandShortcut>}
                 </CommandItem>
               ))}
             </>
@@ -180,29 +211,31 @@ export function CommandPalette({ open, onOpenChange }: Props) {
         {/* Navigation */}
         <CommandGroup heading={t("cmdpal.navigate")}>
           {visibleNav.map((item) => {
-            const Icon = item.icon;
+            const Icon = ICONS[item.key];
             const active = view === item.key;
+            const label = t(item.tKey);
             return (
               <CommandItem
                 key={item.key}
-                value={`go ${item.label}`}
+                value={`go ${label}`}
                 onSelect={() => navigate(item.key)}
                 className="gap-2"
               >
                 <Icon className={`h-4 w-4 ${active ? "text-primary" : "text-muted-foreground"}`} />
-                <span>{t("common.goTo")} {item.label}</span>
-                {active && <CommandShortcut>current</CommandShortcut>}
+                <span>{t("common.goTo")} {label}</span>
+                {active && <CommandShortcut>{t("cmdpal.current")}</CommandShortcut>}
                 {!active && item.shortcut && <CommandShortcut>{item.shortcut}</CommandShortcut>}
               </CommandItem>
             );
           })}
         </CommandGroup>
 
-        {/* Site search */}
-        {filteredSites.length > 0 && (
+        {/* Site search — every row navigates to the Sites view, so it is shown
+            only to a role that may open Sites. */}
+        {canView("sites") && filteredSites.length > 0 && (
           <>
             <CommandSeparator />
-            <CommandGroup heading={query.trim() ? `Sites matching "${query}"` : "Sites"}>
+            <CommandGroup heading={query.trim() ? tFmt("cmdpal.sitesMatching", { q: query }) : t("cmdpal.sites")}>
               {filteredSites.map((s) => (
                 <CommandItem
                   key={s.id}
@@ -222,8 +255,8 @@ export function CommandPalette({ open, onOpenChange }: Props) {
           </>
         )}
 
-        {/* Recent alarms */}
-        {recentAlarms.length > 0 && (
+        {/* Recent alarms — same rule: the row exists to open the Alarms view. */}
+        {canView("alarms") && recentAlarms.length > 0 && (
           <>
             <CommandSeparator />
             <CommandGroup heading={t("cmdpal.recentAlarms")}>

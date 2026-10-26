@@ -22,12 +22,16 @@ server is *not*. The clearest examples:
 
 | # | Drift | Effect | Status |
 |---|---|---|---|
-| B1 | `POST /api/fgmp/dispensers/[id]/control` uses `ROLES.CONTROL` (ADMIN, NOC) while its capability rule is `dispenser:control` (ADMIN, NOC, **FIELD_ENGINEER**) | FIELD_ENGINEER sees "issue command" and is refused | open — one-line decision |
-| B2 | `POST /api/fgmp/alarms` gates acknowledge **and** resolve on `ROLES.ALARM_OPS`, but the matrix gives `alarm:resolve` to ADMIN + NOC only | REGIONAL_MANAGER can resolve via the API; the UI now hides the button | open — decide which side is right |
+| B1 | `POST /api/fgmp/dispensers/[id]/control` uses `ROLES.CONTROL` (ADMIN, NOC) while its capability rule is `dispenser:control` (ADMIN, NOC, **FIELD_ENGINEER**) | FIELD_ENGINEER sees "issue command" and is refused | fixed — route now uses `ROLES.DISPENSER_CONTROL` |
+| B2 | `POST /api/fgmp/alarms` gates acknowledge **and** resolve on `ROLES.ALARM_OPS`, but the matrix gives `alarm:resolve` to ADMIN + NOC only | REGIONAL_MANAGER can resolve via the API; the UI now hides the button | fixed — `alarm:resolve` is ADMIN/NOC only, enforced per action in the handler and the client |
 | F1 | `suppressions-view` gated on a 3-role literal while `view:suppressions` is held by all 7 roles | nav offered the view to FIELD_ENGINEER and READONLY; the view refused them | fixed |
 | F2 | four views gated on `role === "ADMIN"` | SUPERADMIN — the wildcard holder — was shown "access denied" on System Health, System Settings, API Keys and Geography | fixed |
 | F3 | a dozen mutating controls gated on nothing (or on the view capability) | READONLY / EXECUTIVE were offered a toolbar whose every action is a 403 | fixed |
 | B3 | read rules matched by array order, write rules by longest prefix | fail-open if a broad rule is ever inserted above a narrow one | fixed (hardened) |
+| B4 | `export?type=` accepted any known view capability | `view:iot` / `view:inventory` could fetch the site dataset under another name | fixed — one `EXPORT_TYPE_CAPABILITIES` table |
+| B7 | `mfa/guard.ts` written, tested, and never called | a half-authenticated session reached the AUTH_ONLY routes | fixed — evaluated inside `requireAuth`, allowlist unchanged |
+| B8 | `findUnknownCapabilities()` returned `[]` | a typo'd capability could deny an endpoint silently forever | fixed — implemented and wired into the verifier's exit code |
+| B9 | cross-tenant user administration is a second exception to "tenant from the session" | `SECURITY.md` described only the support-session path | fixed — named in `SECURITY.md` §2 with its exact rules |
 
 The full list, with evidence and severity, is in §3 (backend) and §4
 (frontend). §7 states exactly what changed in the working tree.
@@ -562,3 +566,30 @@ reproduced with an equivalent script during the review.
 | 5 | **B7** — wire or delete `mfa/guard.ts` and fix the three comments | small |
 | 6 | **F10 / B5 / B9** — decide the site-notes question; document platform-settings reads and the user-administration cross-tenant exception in `SECURITY.md` | docs |
 | 7 | A per-role click-through of the changed controls, then `authz-live.ts` against a seeded stack. (`tsc`, `eslint` and the five suites already pass, §6.) | manual |
+
+---
+
+## 9. Status after the follow-up branch
+
+The findings above are recorded against `cf624d2`. This section states what the
+follow-up branch (`arena/591ce077-fgmp1`, base `6f95554`) actually closed, so
+the review does not have to be re-derived to know whether an item is still real.
+
+**Closed:**
+
+| Finding | What changed | Guard |
+|---|---|---|
+| B1 | `dispensers/[id]/control` uses `ROLES.DISPENSER_CONTROL` on all three verbs | `rbac-server-conformance.test.ts` |
+| B2 | `alarm:ack` and `alarm:resolve` are separate decisions in the handler and in the client | same |
+| B4 | `export?type=` is validated against `EXPORT_TYPE_CAPABILITIES`; `alarms` and `deliveries` removed from the surface they did not belong to | same |
+| B7 | `evaluatePendingSession` is called from `requireAuth`, before `canAccessApi`, for every protected route | same — asserts the *call site*, not just the guard |
+| B8 | `findUnknownCapabilities()` implemented; the verifier exits non-zero on an unknown capability | `scripts/verify/route-inventory.ts` |
+| B9 | `SECURITY.md` §2 names the `?tenant=` exception, its SUPERADMIN-only rule, its no-enumeration property, and which of its operations are audited | `platform-tenant-boundary.test.ts` — behavioural, over `resolveTenantScope` |
+| drift in the navigation surface | one `NAV_ENTRIES` table (`src/lib/fgmp/navigation.ts`); the sidebar and the command palette both render from it, so a capability can no longer exist on one surface and not the other | `rbac-nav-single-source.test.ts` |
+
+**Still open, deliberately:**
+
+- **F10** — the site-notes question is a product decision, not a gate.
+- A per-role click-through of a live, seeded stack (§6, item 7). Everything
+  mechanical is green: `tsc` diff against the base commit is empty, `eslint` is
+  clean, and all 33 suites pass locally.
