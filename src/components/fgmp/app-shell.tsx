@@ -495,8 +495,9 @@ export function AppShell() {
   // mean this component knows the EFFECTIVE identity: `me` is populated by the
   // effect above, which runs after this render. Without this gate the shell
   // paints one frame with `role = "READONLY"` over whatever `snapshot` the
-  // previous identity left in the store — one tenant's data (or, for a former
-  // SUPERADMIN, every tenant's) shown to the account that just signed in.
+  // previous identity left in the store — another tenant's operational data
+  // shown to the account that just signed in (the payload is tenant-scoped for
+  // every role, SUPERADMIN included).
   //
   // `me?.role ?? "READONLY"` below is still the right fallback for a RESOLVED
   // identity whose role is somehow absent; it is not a stand-in for "not

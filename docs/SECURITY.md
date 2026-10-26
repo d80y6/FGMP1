@@ -61,10 +61,14 @@ The rules the code enforces, in `src/lib/fgmp/route-tenant.ts`:
 - Writes (`USER_CREATE`, `USER_UPDATE`, `USER_ACTIVATE`, `USER_DEACTIVATE`) are
   audited with the **target** tenant id, so they appear in that tenant's log.
 - Reads (`GET /api/fgmp/users`, `GET /api/fgmp/users/[id]`) are not individually
-  audited. They are no wider than what a SUPERADMIN already receives from
-  `/api/fgmp/state` (the cross-tenant snapshot), and the roster is the surface
-  used to administer another tenant — but it is a read outside a support
-  session, so it is named here rather than left implied.
+  audited. They are a read outside a support session, and a super-admin receives
+  no cross-tenant data from anywhere else — `/api/fgmp/state` is scoped to the
+  caller's own tenant for EVERY role, `t-platform` included (an earlier version
+  of this paragraph justified the silence by calling that endpoint "the
+  cross-tenant snapshot", which the code does not do). The roster is the surface
+  used to administer another tenant's accounts, so it is named here rather than
+  left implied; the account/role content it exposes is registry metadata, not a
+  customer's operational rows.
 
 Nothing else crosses the boundary. `docs/RBAC-REVIEW-2026-10.md` §B9 records the
 same exception; before this paragraph, `SECURITY.md` claimed cross-tenant

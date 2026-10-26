@@ -83,10 +83,12 @@ describe("identityKey", () => {
     expect(identityKey(me({ id: "u-1" }))).not.toBe(identityKey(me({ id: "u-2" })));
   });
 
-  test("changes when ONLY the role changes — the payload is role-dependent", () => {
-    // /api/fgmp/state returns the GLOBAL snapshot to SUPERADMIN and one tenant's
-    // to everyone else. Keying on the user id alone would survive a demotion and
-    // keep showing a demoted user every tenant's data.
+  test("changes when ONLY the role changes — the cache is keyed by authority", () => {
+    // The payload's SCOPE is the tenant (`/api/fgmp/state` is tenant-scoped for
+    // every role, SUPERADMIN included); the role is in the key so the cache
+    // belongs to the authority that fetched it. Keying on the user id alone
+    // would survive a demotion and leave a demoted user's shell holding data —
+    // and, the moment any per-role projection is added, data it may not see.
     expect(identityKey(me({ role: "SUPERADMIN" as Role }))).not.toBe(
       identityKey(me({ role: "ADMIN" as Role })),
     );
@@ -128,13 +130,13 @@ describe("D-1 — cached snapshot is bound to one identity", () => {
     expect(useFgmp.getState().snapshot).toBeNull();
   });
 
-  test("a SUPERADMIN demoted to ADMIN loses the cross-tenant snapshot immediately", async () => {
+  test("a SUPERADMIN demoted to ADMIN loses the snapshot immediately", async () => {
     useFgmp.getState().setMe(me({ role: "SUPERADMIN" as Role, tenantId: "t-platform" }));
     await useFgmp.getState().init();
     expect(useFgmp.getState().snapshotOwner).toBe(identityKey(useFgmp.getState().me));
 
-    // Same user id, same tenant, LOWER role. The payload was computed for the
-    // platform-wide role and contains every tenant's data.
+    // Same user id, same tenant, LOWER role. The data itself does not change —
+    // the authority that fetched it does, which is what the cache records.
     useFgmp.getState().setMe(me({ role: "ADMIN" as Role, tenantId: "t-platform" }));
     expect(useFgmp.getState().snapshot).toBeNull();
   });
@@ -142,10 +144,10 @@ describe("D-1 — cached snapshot is bound to one identity", () => {
 
 describe("the preview actions invalidate the payload too", () => {
   test("returnToPermanentRole drops the snapshot when the role changes", async () => {
-    // A previewed role and the permanent role can have different VISIBILITY, not
-    // just different permissions — SUPERADMIN previewing ADMIN must stop seeing
-    // the cross-tenant snapshot. Both preview actions therefore go through
-    // setMe() rather than writing `me` directly.
+    // A previewed role and the permanent role have different VISIBILITY as well
+    // as different permissions, and the cached payload is keyed by the authority
+    // that fetched it. Both preview actions therefore go through setMe() rather
+    // than writing `me` directly.
     useFgmp.getState().setMe(me({ role: "ADMIN" as Role }));
     await useFgmp.getState().init();
     expect(useFgmp.getState().snapshot).not.toBeNull();

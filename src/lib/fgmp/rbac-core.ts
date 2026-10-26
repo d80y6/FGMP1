@@ -41,10 +41,13 @@ export interface Permission {
 //   • src/components/fgmp/views/roles-view.tsx — display only
 //   • src/app/api/fgmp/me/route.ts — display only
 // The two UI filters treat a missing capability as "hide the nav item", and
-// app-shell.tsx ALREADY hides `tenants` + `tenant-isolation` for non-SUPERADMIN
-// with an extra role check. So dropping those two caps from ADMIN removes the
-// duplicate command-palette entry for Tenants (whose only mutating route is
-// SUPERADMIN_ONLY) without hiding anything an admin could legitimately use.
+// that filter is now the WHOLE navigation policy: the `role === "SUPERADMIN"`
+// check that used to sit beside it in app-shell.tsx has been removed, so
+// `tenants` and `tenant-isolation` are absent for every tenant role because
+// the capability is absent from its list — one rule, stated once. (While both
+// checks existed, dropping the capability hid nothing and the duplicate
+// command-palette entry for Tenants survived; two copies disagree the day
+// either one changes, which is why the capability is the survivor.)
 //
 // Every other `view:*` key the sidebar renders is retained below, because
 // ADMIN's routes really do permit those surfaces (settings PUT = ADMIN_ONLY,
@@ -519,6 +522,21 @@ export function canAccessApi(role: Role | string | undefined | null, url: string
  * have no `tenantId` column at all — see prisma/schema.prisma). Only
  * SUPERADMIN holds them (via the `*` wildcard), which is why ADMIN's explicit
  * list in ROLE_PERMISSIONS above omits them.
+ *
+ * ── THE INVARIANT THIS LIST DEFINES ────────────────────────────────────────
+ * A platform surface is described three times — this list (what the client
+ * shows), the `API_*_RULES` capability for its path (what `canAccessApi`
+ * answers, in the browser and on the server), and `ROLES.SUPERADMIN_ONLY` (what
+ * the handler enforces). This list is the declaration the other two are checked
+ * against: `__tests__/platform-tier-parity.test.ts` walks the route tree on disk
+ * and fails when a route guarded on the platform role has no policy row, when a
+ * policy rule mixes one of these keys with an ordinary capability
+ * (`canAccessApi` is any-of, so that shape fail-OPENS), or when any role other
+ * than SUPERADMIN holds one of them.
+ *
+ * Adding a key here is therefore a claim that no tenant role may ever hold it.
+ * Granting one to ADMIN is what makes the sidebar offer a screen its own API
+ * refuses — the failure the RBAC review exists to prevent.
  */
 export const SUPERADMIN_ONLY_CAPABILITIES = [
   "tenant:manage",

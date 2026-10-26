@@ -97,6 +97,88 @@ not 403** — no existence disclosure.
 ordinary request processing. `resolveOwnerDbUrl()` falls back **downward** to
 `DATABASE_URL` (the least-privileged role), never upward.
 
+### 1.6 The platform tier — the second role family
+
+FGMP1 is a multi-tenant SaaS, so there are two role families and they must be
+read separately:
+
+| Family | Roles | What they are scoped to |
+|---|---|---|
+| Tenant | `ADMIN`, `NOC_OPERATOR`, `REGIONAL_MANAGER`, `FIELD_ENGINEER`, `EXECUTIVE`, `READONLY` | one tenant, enforced by RLS on every query |
+| Platform | `SUPERADMIN` | the tenant **registry** and platform tables — not a tenant's rows |
+
+`SUPERADMIN` is the only member of the platform family, and it is **not** a
+tenant role with extra keys: its session carries a tenant like any other
+(`t-platform`), every tenant-scoped query it makes is scoped to that tenant, and
+`tenantWhereOrAll()` / `siteTenantWhereOrAll()` deliberately do **not** widen for
+it. `docs/SUPERADMIN.md` describes the support-session path that grants
+time-boxed access to one customer tenant at a time.
+
+A platform surface is described in three places, and they must be one fact:
+
+| Layer | Where | Question it answers |
+|---|---|---|
+| Matrix | `SUPERADMIN_ONLY_CAPABILITIES` in `rbac-core.ts` | may the client **show** the surface? |
+| Policy | `API_READ_RULES` / `API_WRITE_RULES` | may `canAccessApi(role, url, method)` **issue** the request? |
+| Handler | `requireSuperAdmin()` or `requireRole(…, ROLES.SUPERADMIN_ONLY)` | may the server **execute** it? |
+
+Every platform route the repository serves is in this table, and each row's three
+descriptions agree:
+
+| Route | Policy capability | Handler |
+|---|---|---|
+| `GET /api/fgmp/tenants` | `view:tenants` | `requireAuth` + own-tenant branch |
+| `POST /api/fgmp/tenants` | `tenant:manage` | `ROLES.SUPERADMIN_ONLY` |
+| `PATCH`/`DELETE /api/fgmp/tenants/[id]` | `tenant:manage` | `ROLES.SUPERADMIN_ONLY` |
+| `GET /api/fgmp/platform/audit` | `view:tenants` | `requireSuperAdmin` |
+| `GET /api/fgmp/platform/grants` | `view:tenants` | `requireSuperAdmin` |
+| `GET`/`POST /api/fgmp/platform/support-sessions` | `view:tenants` / `tenant:manage` | `requireSuperAdmin` |
+| `GET`/`DELETE …/support-sessions/current`, `GET`/`DELETE …/[id]` | `view:tenants` / `tenant:manage` | `requireSuperAdmin` |
+| `GET`/`POST /api/fgmp/platform/support/[tenant]/summary` | `view:tenants` / `tenant:manage` | `requireSuperAdmin` + an open session |
+| `GET /api/fgmp/admin/tenant-isolation-test` | `view:tenant-isolation` | `requireAuth` + `isSuperAdminUser` |
+| `POST /api/fgmp/edge/firmware`, `DELETE …/firmware/[id]` | `platform:firmware` | `ROLES.SUPERADMIN_ONLY` |
+
+`platform-tier-parity.test.ts` derives this from the route tree on disk (it does
+not trust a list), and fails on each of the four ways the triangle can break:
+
+1. a platform capability held by any role other than `SUPERADMIN` — which is
+   how the sidebar comes to offer a screen its own API refuses;
+2. a route whose policy resolves to a platform capability but whose handler does
+   not enforce the platform role (checked **per exported method**: one guarded
+   sibling handler in the same file is not evidence);
+3. a policy rule that mixes a platform capability with an ordinary one —
+   `canAccessApi` is *any-of*, so `["view:tenants", "view:dashboard"]` would hand
+   the registry, the audit trail and the support control plane to every dashboard
+   reader. No such rule exists, and none may;
+4. a platform route with no policy row, which would exist on the server and be
+   unreachable from the browser for every role including `SUPERADMIN`.
+
+**Cross-tenant access has exactly two shapes, and RBAC widens neither.**
+
+* **Customer content** — only through an open, ticketed support session, on
+  `/api/fgmp/platform/support/[tenant]/summary`, where the tenant in the URL is a
+  claim the session must already match (`assertSupportTenant`). Reads run inside
+  `withTenant(session.tenantId)`, so RLS still applies; writes additionally need
+  `mode: "WRITE"`. The support cookie is path-limited to `/api/fgmp/platform`, so
+  it cannot be replayed against the ~80 tenant routes.
+* **User administration** — `GET/PUT/DELETE /api/fgmp/users[/:id]?tenant=…`
+  resolves the target through `resolveTenantScope`, which refuses to leave the
+  caller's own tenant for anyone but `SUPERADMIN` and, for `SUPERADMIN`, routes
+  through `asTenantForAnotherTenant()` (which re-checks the role inside). This is
+  registry administration — accounts and roles — not a read of a customer's
+  operational data.
+
+**Surfaces that are API-only today.** `GET /api/fgmp/platform/audit`,
+`GET /api/fgmp/platform/grants` (its `?format=csv` form is an access-review
+export), `POST`/`DELETE /api/fgmp/edge/firmware` (the global firmware catalogue)
+and `GET /api/fgmp/platform/support/[tenant]/summary` have no view consuming them;
+`tenants-view.tsx` opens and lists support sessions (`…/support-sessions`) but
+does not yet render a tenant summary or a support note. That is a product gap,
+not a policy gap — nothing is exposed to a role that may not see it. If a view is
+added, it inherits two constraints: it gates on the same capability
+(`view:tenants` / `tenant:manage`), and any tenant data it shows comes from
+`…/support/[tenant]/summary` under an open session, never from a tenant route.
+
 ---
 
 ## 2. Client side
@@ -145,11 +227,21 @@ by `ACTION_GATES` instead, and the list is asserted so it cannot grow silently.
 
 ### 2.1 Why payloads are keyed by identity
 
-`/api/fgmp/state` returns one tenant's data — or, for SUPERADMIN, every tenant's.
+`/api/fgmp/state` returns **one tenant's** data, for every role. It calls
+`engine.snapshotForTenant(tenantIdOrThrow(me.tenantId))`, and a SUPERADMIN
+session's tenant is the platform tenant (`t-platform`), so a platform operator
+sees the platform tenant's operational data like anyone else. Cross-tenant
+customer content exists in exactly one place — the audited support-session
+surface (§1.6) — and never as an ambient property of a role.
+
 The same tab can change identity without unloading: logout, account switch, role
 preview, demotion. So the cached snapshot carries `snapshotOwner`, is cleared the
 moment `identityKey(me)` changes, is discarded when a response arrives for a
-superseded identity, and `AppShell` renders no view until `me` resolves.
+superseded identity, and `AppShell` renders no view until `me` resolves. The key
+includes the role as well as the tenant: today the payload is built from the
+tenant alone, so the role is defence in depth — the cache belongs to the
+authority that fetched it, and no future per-role projection can be served to a
+narrower identity by surviving a role change.
 
 ### 2.2 Adding a view
 
@@ -178,6 +270,8 @@ superseded identity, and `AppShell` renders no view until `me` resolves.
 | Inventory | `bun run scripts/verify/route-inventory.ts` | human-readable table; exits 1 on any violation | no |
 | Client gating | `bun test src/lib/fgmp/__tests__/store-identity.test.ts` | no request without an identity/permission; no cross-identity payload reuse | no |
 | Matrix | `bun test src/lib/fgmp/__tests__/rbac-api-access.test.ts` | per-endpoint policy expectations | no |
+| Platform tier | `bun test src/lib/fgmp/__tests__/platform-tier-parity.test.ts` | matrix, policy and handler agree for every platform route, derived from the route tree on disk (§1.6) | no |
+| Platform surface | `bun test src/lib/fgmp/__tests__/platform-surface.test.ts` | every `/platform/` route calls `requireSuperAdmin`, imports no raw Prisma, and reads tenant data only through `currentSupport()` | no |
 | **Live matrix** | `bun run scripts/verify/authz-live.ts` | real sessions, real HTTP, real rows: 7 roles × 37 probes, plus an anonymous baseline | **yes** |
 | RLS | `bun run test:rls` | policies bind for `fgmp_app`; cross-tenant reads/writes fail | **yes** |
 
