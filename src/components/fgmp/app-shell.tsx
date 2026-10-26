@@ -20,8 +20,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useTheme } from "next-themes";
 import { useState } from "react";
-import { hasCapability, ROLE_PERMISSIONS } from "@/lib/fgmp/rbac-core";
+import { hasCapability, isSuperAdmin, ROLE_PERMISSIONS } from "@/lib/fgmp/rbac-core";
 import { nextRoleAnnouncement } from "@/lib/fgmp/role-announcement";
+import { NAV_ENTRIES, NAV_GROUPS, type NavEntry, type NavGroupId } from "@/lib/fgmp/navigation";
 import { PREVIEW_ROLES } from "@/lib/fgmp/role-preview-constants";
 import type { Role } from "@/lib/fgmp/types";
 import dynamic from "next/dynamic";
@@ -82,6 +83,7 @@ import { MiniStatusIndicator } from "@/components/fgmp/mini-status-indicator";
 import { SystemHealthIndicator } from "@/components/fgmp/system-health-indicator";
 import { PinnedSitesWidget } from "@/components/fgmp/pinned-sites-widget";
 import { QuickAccessPopover } from "@/components/fgmp/quick-access-popover";
+import { HeaderOverflowMenu } from "@/components/fgmp/header-overflow-menu";
 import { ThemeSwitcher } from "@/components/fgmp/theme-switcher";
 import { LanguageSwitcher } from "@/components/fgmp/language-switcher";
 import { SupportSessionBanner } from "@/components/fgmp/support-session-banner";
@@ -90,42 +92,53 @@ import { useRealtime } from "@/lib/fgmp/use-realtime";
 import { useT, useTF, useLanguageHydration, useDir, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 
-// Nav items use i18n keys; the `label` is a fallback (English) for SSR before hydration.
-// The actual rendered label is `t(`nav.${key}`)` in SidebarContent.
-const NAV: { key: ViewKey; tKey: string; icon: typeof LayoutDashboard; cap: string; group: string; groupTKey: string }[] = [
-  { key: "dashboard", tKey: "nav.dashboard", icon: LayoutDashboard, cap: "view:dashboard", group: "Operations", groupTKey: "nav.group.operations" },
-  { key: "sites", tKey: "nav.sites", icon: Building2, cap: "view:sites", group: "Operations", groupTKey: "nav.group.operations" },
-  { key: "fuel", tKey: "nav.fuel", icon: Droplet, cap: "view:fuel", group: "Monitoring", groupTKey: "nav.group.monitoring" },
-  { key: "dispensers", tKey: "nav.dispensers", icon: Fuel, cap: "view:dispensers", group: "Monitoring", groupTKey: "nav.group.monitoring" },
-  { key: "edge-firmware", tKey: "nav.edge-firmware", icon: HardDrive, cap: "view:edge-firmware", group: "Monitoring", groupTKey: "nav.group.monitoring" },
-  { key: "generators", tKey: "nav.generators", icon: Zap, cap: "view:generators", group: "Monitoring", groupTKey: "nav.group.monitoring" },
-  { key: "batteries", tKey: "nav.batteries", icon: BatteryCharging, cap: "view:batteries", group: "Monitoring", groupTKey: "nav.group.monitoring" },
-  { key: "alarms", tKey: "nav.alarms", icon: Siren, cap: "view:alarms", group: "Monitoring", groupTKey: "nav.group.monitoring" },
-  { key: "suppressions", tKey: "nav.suppressions", icon: ShieldOff, cap: "view:suppressions", group: "Monitoring", groupTKey: "nav.group.monitoring" },
-  { key: "asset-registry", tKey: "nav.asset-registry", icon: Layers, cap: "view:asset-registry", group: "Logistics", groupTKey: "nav.group.logistics" },
-  { key: "inventory", tKey: "nav.inventory", icon: Truck, cap: "view:inventory", group: "Logistics", groupTKey: "nav.group.logistics" },
-  { key: "iot", tKey: "nav.iot", icon: Cpu, cap: "view:iot", group: "Logistics", groupTKey: "nav.group.logistics" },
-  { key: "maintenance", tKey: "nav.maintenance", icon: Wrench, cap: "view:maintenance", group: "Logistics", groupTKey: "nav.group.logistics" },
-  { key: "analytics", tKey: "nav.analytics", icon: TrendingUp, cap: "view:analytics", group: "Insights", groupTKey: "nav.group.insights" },
-  { key: "fuel-forecast", tKey: "nav.fuel-forecast", icon: GitBranch, cap: "view:fuel-forecast", group: "Insights", groupTKey: "nav.group.insights" },
-  { key: "consumption-patterns", tKey: "nav.consumption-patterns", icon: BarChart3, cap: "view:consumption-patterns", group: "Insights", groupTKey: "nav.group.insights" },
-  { key: "reports", tKey: "nav.reports", icon: FileText, cap: "view:reports", group: "Insights", groupTKey: "nav.group.insights" },
-  { key: "audit", tKey: "nav.audit", icon: ScrollText, cap: "view:audit", group: "Administration", groupTKey: "nav.group.administration" },
-  { key: "users", tKey: "nav.users", icon: Users, cap: "view:users", group: "Administration", groupTKey: "nav.group.administration" },
-  { key: "tenants", tKey: "nav.tenants", icon: Building2, cap: "view:tenants", group: "Administration", groupTKey: "nav.group.administration" },
-  { key: "geography", tKey: "nav.geography", icon: Map, cap: "view:geography", group: "Administration", groupTKey: "nav.group.administration" },
-  { key: "roles", tKey: "nav.roles", icon: ShieldCheck, cap: "view:roles", group: "Administration", groupTKey: "nav.group.administration" },
-  { key: "system-settings", tKey: "nav.system-settings", icon: Settings, cap: "view:system-settings", group: "Administration", groupTKey: "nav.group.administration" },
-  { key: "api-keys", tKey: "nav.api-keys", icon: KeyRound, cap: "view:api-keys", group: "Administration", groupTKey: "nav.group.administration" },
-  { key: "system-health", tKey: "nav.systemHealth", icon: Activity, cap: "view:system-health", group: "Administration", groupTKey: "nav.group.administration" },
-  // Tenant Isolation testing — SUPERADMIN-only. The cap `view:tenant-isolation`
-  // is granted to SUPERADMIN via the `*` wildcard. The nav filter below
-  // further hides it for non-SUPERADMIN roles.
-  { key: "tenant-isolation", tKey: "nav.tenantIsolation", icon: ShieldCheck, cap: "view:tenant-isolation", group: "Administration", groupTKey: "nav.group.administration" },
-  // Account section — personal settings. Visible to every authenticated
-  // user (every role gets the `view:preferences` capability in rbac.ts).
-  { key: "preferences", tKey: "nav.preferences", icon: Bell, cap: "view:preferences", group: "Account", groupTKey: "nav.group.account" },
-];
+// Nav items use i18n keys; the label rendered is `t(tKey)`. The LIST itself is
+// not defined here — it lives in `@/lib/fgmp/navigation`, because the command
+// palette carried a second, shorter copy of it and the two had drifted apart
+// (28 entries here, 22 there: suppressions, users, system-health,
+// tenant-isolation and preferences were unreachable from the palette). Icons
+// stay in this file: they are presentation, not policy.
+const NAV_ICONS: Record<ViewKey, typeof LayoutDashboard> = {
+  dashboard: LayoutDashboard,
+  sites: Building2,
+  fuel: Droplet,
+  dispensers: Fuel,
+  "edge-firmware": HardDrive,
+  generators: Zap,
+  batteries: BatteryCharging,
+  alarms: Siren,
+  suppressions: ShieldOff,
+  "asset-registry": Layers,
+  inventory: Truck,
+  iot: Cpu,
+  maintenance: Wrench,
+  analytics: TrendingUp,
+  "fuel-forecast": GitBranch,
+  "consumption-patterns": BarChart3,
+  reports: FileText,
+  audit: ScrollText,
+  users: Users,
+  tenants: Building2,
+  geography: Map,
+  roles: ShieldCheck,
+  "system-settings": Settings,
+  "api-keys": KeyRound,
+  "system-health": Activity,
+  "tenant-isolation": ShieldCheck,
+  preferences: Bell,
+};
+
+const GROUP_TKEYS: Record<NavGroupId, string> = Object.fromEntries(
+  NAV_GROUPS.map((g) => [g.id, g.tKey]),
+) as Record<NavGroupId, string>;
+
+type ShellNavEntry = NavEntry & { icon: typeof LayoutDashboard; groupTKey: string };
+
+const NAV: ShellNavEntry[] = NAV_ENTRIES.map((e) => ({
+  ...e,
+  icon: NAV_ICONS[e.key],
+  groupTKey: GROUP_TKEYS[e.group],
+}));
 
 // `dyn()` returns `ComponentType` (next/dynamic with ssr:false), which under
 // React 19 types returns ReactNode rather than ReactElement — so the previous
@@ -260,11 +273,12 @@ export function AppShell() {
       // matches no rows — leave it unset and let the guard refuse the request.
       // The client is redirected to the challenge anyway.
       ...(sessionUser.tenantId ? { tenantId: sessionUser.tenantId } : { tenantId: undefined as unknown as string }),
-      // ADMIN and SUPERADMIN can preview the six tenant roles of
-      // the proposal's switcher (§8.16). For everyone else we
-      // expose just their own role so the switcher renders as a
-      // read-only badge rather than a misleading dropdown.
-      roles: (role === "ADMIN" || role === "SUPERADMIN") ? PREVIEW_ROLES : [role],
+      // Whoever holds `role:preview` can preview the six tenant roles of
+      // the proposal's switcher (§8.16) — the same capability POST
+      // /api/fgmp/me/preview-role enforces. For everyone else we expose just
+      // their own role so the switcher renders as a read-only badge rather than
+      // a dropdown whose every option the server would refuse.
+      roles: hasCapability(role, "role:preview") ? PREVIEW_ROLES : [role],
       permissions: ROLE_PERMISSIONS[role],
     };
     setMe(derivedMe);
@@ -410,15 +424,16 @@ export function AppShell() {
   });
 
   // Tenant registry and isolation views are platform-level surfaces; the
-  // capability matrix grants them only through SUPERADMIN's wildcard.
+  // capability matrix grants `view:tenants` / `view:tenant-isolation` only
+  // through SUPERADMIN's wildcard, so the capability filter alone is the
+  // policy. It used to be restated here as a second role check — two copies of
+  // one rule, which is how a nav entry and its view drift apart.
   const visibleNav = useMemo(
-    () => NAV.filter((n) => hasCapability(role, n.cap))
-      .filter((n) => n.key !== "tenants" || role === "SUPERADMIN")
-      .filter((n) => n.key !== "tenant-isolation" || role === "SUPERADMIN"),
+    () => NAV.filter((n) => hasCapability(role, n.cap)),
     [role],
   );
   const grouped = useMemo(() => {
-    const m: Record<string, typeof NAV> = {};
+    const m: Record<string, ShellNavEntry[]> = {};
     for (const n of visibleNav) (m[n.group] ??= []).push(n);
     return m;
   }, [visibleNav]);
@@ -480,8 +495,9 @@ export function AppShell() {
   // mean this component knows the EFFECTIVE identity: `me` is populated by the
   // effect above, which runs after this render. Without this gate the shell
   // paints one frame with `role = "READONLY"` over whatever `snapshot` the
-  // previous identity left in the store — one tenant's data (or, for a former
-  // SUPERADMIN, every tenant's) shown to the account that just signed in.
+  // previous identity left in the store — another tenant's operational data
+  // shown to the account that just signed in (the payload is tenant-scoped for
+  // every role, SUPERADMIN included).
   //
   // `me?.role ?? "READONLY"` below is still the right fallback for a RESOLVED
   // identity whose role is somehow absent; it is not a stand-in for "not
@@ -515,7 +531,7 @@ export function AppShell() {
 
       {/* Top header */}
       <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="flex h-14 items-center gap-3 px-3 sm:px-4">
+        <div className="flex h-14 min-w-0 items-center gap-2 px-3 sm:px-4">
           {/* Mobile nav trigger */}
           <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
             <SheetTrigger asChild>
@@ -538,7 +554,13 @@ export function AppShell() {
                   is a dialog, so the mobile navigation was announced as just
                   "dialog". Visually hidden, not omitted. */}
               <SheetTitle className="sr-only">{t("nav.primary")}</SheetTitle>
-              <SidebarContent grouped={grouped} view={view} navigate={navigate} me={me} />
+              <SidebarContent
+                grouped={grouped}
+                view={view}
+                navigate={navigate}
+                me={me}
+                canSeeSites={hasCapability(role, "view:sites")}
+              />
             </SheetContent>
           </Sheet>
 
@@ -547,10 +569,13 @@ export function AppShell() {
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-sm">
               <Fuel className="h-5 w-5" />
             </div>
-            <div className="hidden sm:block">
+            <div className="hidden md:block">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-bold tracking-tight">{t("brand.name")}</span>
-                {role === "SUPERADMIN" && (
+                {/* Identity badge, not an access gate: it says which role the
+                    session holds, so a literal comparison is the correct test
+                    here (via the shared helper rather than a bare string). */}
+                {isSuperAdmin(role) && (
                   <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-400 text-[10px]">SUPER</Badge>
                 )}
                 <Badge variant="secondary" className="hidden h-4 px-1 text-[10px] font-medium md:inline-flex">v2.4</Badge>
@@ -560,7 +585,7 @@ export function AppShell() {
           </div>
 
           {/* Live status + KPI chips */}
-          <div className="ms-2 hidden items-center gap-2 md:flex">
+          <div className="ml-2 hidden min-w-0 items-center gap-2 lg:flex">
             <div
               // Connection state is the one status an operator needs while
               // looking somewhere else on the page: "LIVE" silently becoming
@@ -593,12 +618,12 @@ export function AppShell() {
             </div>
             {k && <MiniStatusIndicator kpis={k} />}
             {k && (
-              <>
+              <div className="hidden items-center gap-2 xl:flex">
                 <KpiChip label={t("kpi.sites")} value={`${formatNumber(k.onlineSites, numLang)}/${formatNumber(k.totalSites, numLang)}`} tone="good" />
                 <KpiChip label={t("kpi.alarms")} value={formatNumber(k.openAlarms, numLang)} tone={k.openAlarms > 0 ? "danger" : "good"} />
                 <KpiChip label={t("kpi.fuel")} value={`${formatNumber(k.fuelPct, numLang)}%`} tone={k.fuelPct < 25 ? "danger" : "info"} />
                 <KpiChip label={t("kpi.gens")} value={`${formatNumber(k.generatorsRunning, numLang)}/${formatNumber(k.generatorsTotal, numLang)}`} tone="info" />
-              </>
+              </div>
             )}
           </div>
 
@@ -607,7 +632,7 @@ export function AppShell() {
           {/* Command palette trigger */}
           <button
             onClick={() => setCmdOpen(true)}
-            className="hidden items-center gap-2 rounded-md border bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted md:flex"
+            className="hidden items-center gap-2 rounded-md border bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted lg:flex"
             title={t("common.search")}
             aria-label={t("common.search")}
           >
@@ -617,24 +642,33 @@ export function AppShell() {
               <Command className="h-2.5 w-2.5" />K
             </kbd>
           </button>
-          <Button variant="outline" size="icon" className="md:hidden" onClick={() => setCmdOpen(true)} aria-label={t("common.search")} title={t("common.search")}>
+          <Button variant="outline" size="icon" className="lg:hidden" onClick={() => setCmdOpen(true)} aria-label={t("common.search")} title={t("common.search")}>
             <Search className="h-4 w-4" />
           </Button>
 
           {/* Quick Access popover (#18) — pinned + recently-visited sites one
               click away. Mounted right after the global search so it reads as
-              a "site jump" shortcut next to the cmd-K palette. */}
-          <QuickAccessPopover />
+              a "site jump" shortcut next to the cmd-K palette.
+              `view:sites` only: every row in it opens a site. */}
+          {hasCapability(role, "view:sites") && (
+            <div className="hidden sm:flex">
+              <QuickAccessPopover />
+            </div>
+          )}
 
           {/* Clock — self-contained so its 1Hz state never re-renders AppShell */}
           <HeaderClock />
 
           {/* Live System Health mini-indicator (Task 33-B)
-              ADMIN-only — non-admins can't access /api/fgmp/health, so the
-              widget would show "Checking…" forever for them. Renders a
-              pulsing dot + status label; click → system-health view. */}
-          {role === "ADMIN" && (
-            <SystemHealthIndicator onClick={() => navigate("system-health")} />
+              `view:system-health` only — a role without that capability cannot
+              read /api/fgmp/health, so the widget would show "Checking…"
+              forever for them. Gated on the capability rather than on the ADMIN
+              role literal, which used to hide it from SUPERADMIN (the wildcard
+              holder) while still offering the nav entry. */}
+          {hasCapability(role, "view:system-health") && (
+            <div className="hidden 2xl:block">
+              <SystemHealthIndicator onClick={() => navigate("system-health")} />
+            </div>
           )}
 
           {/* Notification center */}
@@ -642,18 +676,22 @@ export function AppShell() {
 
           {/* Live toggle — label from the same t() keys the adjacent status badge
               uses, so it stays correct in the Arabic locale. */}
-          <Button variant="outline" size="icon" onClick={toggleLive} aria-label={liveToggleLabel} title={liveToggleLabel}>
+          <Button variant="outline" size="icon" className="hidden lg:inline-flex" onClick={toggleLive} aria-label={liveToggleLabel} title={liveToggleLabel}>
             {livePaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
           </Button>
 
           {/* Theme switcher (System / Light / Dark) */}
-          <ThemeSwitcher />
+          <div className="hidden lg:block">
+            <ThemeSwitcher />
+          </div>
 
           {/* Language switcher (EN / AR) */}
-          <LanguageSwitcher />
+          <div className="hidden lg:block">
+            <LanguageSwitcher />
+          </div>
 
           {/* Keyboard shortcuts help */}
-          <Button variant="outline" size="icon" onClick={() => setHelpOpen(true)} aria-label={t("common.keyboardShortcuts")} title={`${t("common.keyboardShortcuts")} (?)`}>
+          <Button variant="outline" size="icon" className="hidden 2xl:inline-flex" onClick={() => setHelpOpen(true)} aria-label={t("common.keyboardShortcuts")} title={`${t("common.keyboardShortcuts")} (?)`}>
             <Keyboard className="h-4 w-4" />
           </Button>
 
@@ -687,9 +725,14 @@ export function AppShell() {
                   {t("auth.returnToAdmin")}
                 </Button>
               )}
+              <div className="hidden items-center 2xl:flex">
               <Select label={t("users.role")}
                 value={role}
-                disabled={role !== "ADMIN" && role !== "SUPERADMIN" && !me.previewRole}
+                // `role:preview` is the capability POST /api/fgmp/me/preview-role
+                // enforces. While a preview is active the effective role is the
+                // previewed one (which may lack it), so the switcher must stay
+                // enabled for the operator to switch again or leave.
+                disabled={!hasCapability(role, "role:preview") && !me.previewRole}
                 onValueChange={(v) => {
                   switchRole(v as typeof role).catch(() => {
                     toast.error(t("auth.invalidCredentials"));
@@ -715,8 +758,26 @@ export function AppShell() {
                   })}
                 </SelectContent>
               </Select>
+              </div>
             </>
           )}
+
+          {/* Overflow: the same actions as named items wherever the inline
+              control above is hidden by a breakpoint (D-26). */}
+          <HeaderOverflowMenu
+            kpis={k ?? null}
+            livePaused={livePaused}
+            onToggleLive={toggleLive}
+            onOpenShortcuts={() => setHelpOpen(true)}
+            onOpenSystemHealth={() => navigate("system-health")}
+            role={role}
+            roles={Array.isArray(me?.roles) && me.roles.length > 0 ? me.roles : role ? [role] : []}
+            onSwitchRole={(next) => {
+              switchRole(next).catch(() => {
+                toast.error(t("auth.invalidCredentials"));
+              });
+            }}
+          />
 
           {/* Sign out (Task 31-A) */}
           <Button
@@ -736,8 +797,14 @@ export function AppShell() {
 
       {/* Body: sidebar + content */}
       <div className="flex flex-1">
-        <aside className="sticky top-14 hidden h-[calc(100vh-3.5rem)] w-60 shrink-0 border-e bg-card/40 lg:block">
-          <SidebarContent grouped={grouped} view={view} navigate={navigate} me={me} />
+        <aside className="sticky top-14 hidden h-[calc(100vh-3.5rem)] w-60 shrink-0 border-r bg-card/40 lg:block">
+          <SidebarContent
+            grouped={grouped}
+            view={view}
+            navigate={navigate}
+            me={me}
+            canSeeSites={hasCapability(role, "view:sites")}
+          />
         </aside>
 
         <main id="main-content" className="flex min-w-0 flex-1 flex-col" tabIndex={-1}>
@@ -834,11 +901,25 @@ function AccessDeniedPanel({ view, role, onBack }: { view: ViewKey; role: string
   );
 }
 
-function SidebarContent({ grouped, view, navigate, me }: {
-  grouped: Record<string, typeof NAV>;
+function SidebarContent({ grouped, view, navigate, me, canSeeSites }: {
+  grouped: Record<string, ShellNavEntry[]>;
   view: ViewKey;
   navigate: (v: ViewKey) => void;
-  me: { name: string; role: string } | null;
+  /**
+   * The signed-in operator, for the sidebar footer avatar.
+   *
+   * Every field is OPTIONAL on purpose. This used to be
+   * `{ name: string; role: string }` — a promise the runtime does not keep: the
+   * object is the store envelope, assembled from the NextAuth JWT and then
+   * replaced by `GET /api/fgmp/me`, and either can arrive without a `name`.
+   * `me.name.split(" ")` on such a value threw "Cannot read properties of
+   * undefined (reading 'split')", and because this component sits inside the App
+   * Shell segment the route-error boundary replaced the ENTIRE screen — a
+   * missing initial took out an authenticated dashboard.
+   */
+  me: { name?: string | null; email?: string | null; role?: string | null } | null;
+  /** `view:sites` — the pinned-sites list is a list of links into that view. */
+  canSeeSites: boolean;
 }) {
   const t = useT();
   const dir = useDir();
@@ -897,22 +978,36 @@ function SidebarContent({ grouped, view, navigate, me }: {
           </div>
         ))}
       </nav>
-      <div className="border-t px-2 py-2">
-        <PinnedSitesWidget />
-      </div>
+      {/* Same rule as the header popover: a pinned-sites list is a list of
+          links into the Sites view. */}
+      {canSeeSites && (
+        <div className="border-t px-2 py-2">
+          <PinnedSitesWidget />
+        </div>
+      )}
       {me && (
         <div className="border-t p-3">
           <div className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-slate-500 to-slate-700 text-xs font-bold text-white">
-              {me.name.split(" ").map((n) => n[0]).slice(0, 2).join("")}
+              {/* `me.name` is typed as a required string, but the value is
+                  assembled from a session (JWT claim) and from /api/fgmp/me, and
+                  a user row whose name is empty — or a session envelope that
+                  arrives without one — made this line a render crash:
+                  "Cannot read properties of undefined (reading 'split')" took
+                  out the whole AppShell segment (route-error boundary), so a
+                  cosmetic avatar initial removed every screen. Fall back to the
+                  local part of the email, then to a literal, and never assume
+                  the string exists. */}
+              {(me.name || me.email || "?").split(/\s+/).filter(Boolean).map((n) => n[0]).slice(0, 2).join("").toUpperCase()}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-medium">{me.name}</p>
+              <p className="truncate text-xs font-medium">{me.name || me.email}</p>
               <p className="truncate text-[10px] text-muted-foreground">
                 {(() => {
-                  const roleKey = `role.${me.role.toLowerCase()}`;
+                  const sidebarRole = me.role ?? "READONLY";
+                  const roleKey = `role.${sidebarRole.toLowerCase()}`;
                   const roleTr = t(roleKey);
-                  return roleTr === roleKey ? me.role.replace(/_/g, " ") : roleTr;
+                  return roleTr === roleKey ? sidebarRole.replace(/_/g, " ") : roleTr;
                 })()}
               </p>
             </div>
@@ -990,7 +1085,9 @@ function HeaderClock() {
     return () => clearInterval(i);
   }, []);
   return (
-    <div className="hidden items-center gap-1.5 font-mono text-xs text-muted-foreground lg:flex">
+    // Peripheral: it has no place in the budget until the header is wide
+    // (D-26). The overflow menu carries nothing that depends on it.
+    <div className="hidden items-center gap-1.5 font-mono text-xs text-muted-foreground 2xl:flex">
       <Activity className="h-3.5 w-3.5" />
       <span className="tabular-nums">{clock}</span>
     </div>

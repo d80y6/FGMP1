@@ -15,6 +15,7 @@ import {
   isSuperAdminUser,
 } from "@/lib/fgmp/auth-helpers";
 import { audit } from "@/lib/fgmp/audit";
+import { superAdminPromotionRefusal } from "@/lib/fgmp/platform-identity";
 import {
   rateLimitByUser,
   applyRateLimitHeaders,
@@ -195,6 +196,27 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
   if (denied) return denied;
   const guarded = guardSuperAdminTarget(existing, me);
   if (guarded) return guarded;
+
+  // Promotion changes AUTHORITY, not location: the row stays in the tenant it
+  // was read from. A super-admin row that lives in a customer tenant is not a
+  // cosmetic inconsistency — its ordinary session is scoped to that tenant, so
+  // it reads that customer's operational data permanently, with no support
+  // session and nothing in the customer's audit log. The edit dialog offered
+  // exactly this option for any user before the rule existed, so it was
+  // reachable from the UI, not only from a hand-built request.
+  if (existing && parsed.data.role === "SUPERADMIN") {
+    // The row was read with `where: { id, tenantId: scope.tenantId }`, so the
+    // tenant it lives in IS the scope's — naming the scope keeps the rule
+    // independent of the generated Prisma row types, which do not exist in this
+    // repository's sandbox.
+    const refusal = superAdminPromotionRefusal(scope.tenantId);
+    if (refusal) {
+      return NextResponse.json(
+        { error: refusal.error, code: refusal.code },
+        { status: refusal.status },
+      );
+    }
+  }
 
   if (id === me.id && parsed.data.active === false) {
     return NextResponse.json(

@@ -16,12 +16,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { BarGauge } from "@/components/fgmp/gauge";
 import { Breadcrumbs } from "@/components/fgmp/breadcrumbs";
+import { useCanView } from "@/lib/fgmp/use-access";
 import { StatusBadge, severityDot } from "@/components/fgmp/status-badge";
 import { Sparkline } from "@/components/fgmp/sparkline";
 import { RemoteControlDialog } from "@/components/fgmp/remote-control-dialog";
 import { SiteHealthCard } from "@/components/fgmp/site-health-card";
 import { Building2, Droplet, Zap, BatteryCharging, Siren, Truck, MapPin, Cpu, RotateCcw, AlertOctagon, Power, TrendingUp, Pin, PinOff, StickyNote, Pencil } from "lucide-react";
 import { useApi, apiPatch } from "@/lib/fgmp/use-api";
+import { hasCapability } from "@/lib/fgmp/rbac-core";
 import { useFgmp } from "@/lib/fgmp/store";
 import { useFavorites, useFavoritesHydration, useIsFavorite } from "@/lib/fgmp/use-favorites";
 import { SiteNotesPanel } from "@/components/fgmp/site-notes-panel";
@@ -45,13 +47,41 @@ export function SiteDetailSheet({ siteId, open, onOpenChange }: { siteId: string
   const { data, loading, refetch } = useApi<SiteDetailPayload>(siteId ? `/api/fgmp/sites/${siteId}` : null, { interval: 6000, deps: [siteId] });
   const { tick, me } = useFgmp(useShallow((s) => ({ tick: s.tick, me: s.me })));
   const [ctrl, setCtrl] = useState<{ id: string; label: string; cmd: GenCommand } | null>(null);
+  // Hooks run before the `!siteId` early return below. `useCanView` must sit
+  // here rather than next to the values that read it, or the hook order changes
+  // the moment the sheet is opened with no site selected.
+  const canView = useCanView();
 
   if (!siteId) return null;
   const site = data?.site;
   const role = me?.role ?? "READONLY";
   const notesReadOnly = role === "READONLY";
-  // Threshold editing is ADMIN-only (matches the PATCH route guard).
-  const canEditThresholds = role === "ADMIN";
+  // Threshold editing follows the capability of the endpoint the editors
+  // actually call, which is `asset:manage`:
+  //   TankThresholdEditor   → PATCH /api/fgmp/tanks/:id
+  //   GenMaintenanceEditor  → PATCH /api/fgmp/generators/:id
+  // The gate used to name `settings:manage` (the capability of
+  // /api/fgmp/interlocks/thresholds, which is a different screen and never
+  // called from here). The two sets of holders coincide today, so nothing broke
+  // — which is precisely why the wrong name survived: the next widening of
+  // either capability would have made the gate wrong in one direction or the
+  // other.
+  const canEditThresholds = hasCapability(role, "asset:manage");
+  // Generator commands from this sheet post to
+  // `POST /api/fgmp/generators/:id/control` (`gen:control`). The sheet is
+  // reachable from the dashboard and the sites view, both of which many roles
+  // can open, so the four buttons here were a row of 403s for anyone who could
+  // read a site but not command its generator.
+  const canControlGenerators = hasCapability(role, "gen:control");
+
+  // The region crumb links to Geography, which only ADMIN and SUPERADMIN hold.
+  // Without the capability the region is still named — as text, not a link —
+  // because the information is useful and the dead end is not.
+  const regionCrumb = !site
+    ? []
+    : canView("geography")
+      ? [{ label: site.region, href: "/?view=geography" }]
+      : [{ label: site.region }];
 
   return (
     <>
@@ -61,8 +91,18 @@ export function SiteDetailSheet({ siteId, open, onOpenChange }: { siteId: string
             {/* Breadcrumbs (#11) — Fleet → Region → Site (current) */}
             <Breadcrumbs
               items={[
-                { label: t("common.fleet"), href: "/?view=dashboard" },
-                ...(site ? [{ label: site.region, href: "/?view=geography" }] : []),
+                // A breadcrumb that cannot be followed is a dead end, so each
+                // crumb is offered only when the role may open its target.
+                // `geography` is the narrow one: only ADMIN and SUPERADMIN hold
+                // `view:geography`, while this sheet opens from Sites — which
+                // every role can see — so the crumb would otherwise be a link
+                // into a view the shell refuses to mount for five of the seven
+                // roles. When it is not offered, the region is still named, as
+                // plain text: the information is useful, the dead end is not.
+                ...(canView("dashboard")
+                  ? [{ label: t("common.fleet"), href: "/?view=dashboard" }]
+                  : []),
+                ...regionCrumb,
                 ...(site ? [{ label: site.name }] : []),
               ]}
               className="mb-1"
@@ -159,6 +199,7 @@ export function SiteDetailSheet({ siteId, open, onOpenChange }: { siteId: string
                               <Metric label={t("detail.fuelRate")} value={`${g.fuelRateLph} L/h`} />
                             </div>
                             <div className="mt-2 flex flex-wrap gap-1.5">
+                              {canControlGenerators && (<>
                               <Button size="sm" variant="outline" className="h-7 text-[11px]" disabled={g.status === "RUNNING"} onClick={() => setCtrl({ id: g.id, label: g.label, cmd: "START" })}>
                                 <Power className="me-1 h-3 w-3 text-emerald-500" />{t("detail.start")}
                               </Button>
@@ -171,7 +212,8 @@ export function SiteDetailSheet({ siteId, open, onOpenChange }: { siteId: string
                               <Button size="sm" variant="outline" className="h-7 text-[11px] border-rose-500/40 text-rose-700 dark:text-rose-400 hover:bg-rose-500/10" onClick={() => setCtrl({ id: g.id, label: g.label, cmd: "EMERGENCY_STOP" })}>
                                 <AlertOctagon className="me-1 h-3 w-3" />{t("detail.eStop")}
                               </Button>
-                              <span className="ms-auto self-center text-[10px] text-muted-foreground">{t("detail.nextMaint")}: {Math.round(g.nextMaintenanceHrs)} h</span>
+                              </>)}
+                              <span className="ml-auto self-center text-[10px] text-muted-foreground">{t("detail.nextMaint")}: {Math.round(g.nextMaintenanceHrs)} h</span>
                               {canEditThresholds && (
                                 <GenMaintenanceEditor
                                   generatorId={g.id}

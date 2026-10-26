@@ -44,6 +44,7 @@ import { toast } from "sonner";
 import { ConfirmDestructive } from "@/components/fgmp/confirm-destructive";
 import { cn } from "@/lib/utils";
 import { useFgmp } from "@/lib/fgmp/store";
+import { hasCapability } from "@/lib/fgmp/rbac-core";
 import {
   useCorrelationRules,
   useCorrelationRulesList,
@@ -94,11 +95,20 @@ const SCOPES: RuleScope[] = ["SITE", "REGION", "GOVERNORATE", "NATIONAL"];
 function useRulePermissions(): { canEdit: boolean; canToggle: boolean; canView: boolean } {
   const me = useFgmp((s) => s.me);
   const role = me?.role ?? "READONLY";
-  return {
-    canView: role === "ADMIN" || role === "REGIONAL_MANAGER",
-    canEdit: role === "ADMIN",
-    canToggle: role === "ADMIN" || role === "REGIONAL_MANAGER",
-  };
+  // One capability, read from the matrix, for all three questions.
+  //
+  // The API's rule is `alarm:configure` on GET/POST /api/fgmp/correlation/rules,
+  // PATCH/DELETE /api/fgmp/correlation/rules/[id] and POST
+  // /api/fgmp/correlation/evaluate (with ROLES.ALARM_RULES — ADMIN and
+  // REGIONAL_MANAGER — as the route allow-list). Writing the roles out here
+  // instead produced two drifts at once: SUPERADMIN (the wildcard holder, and
+  // the role the API always admits) could not open the editor at all, and the
+  // UI implied a regional manager could not edit a rule the server lets them
+  // author. Route allow-lists may be narrower than the capability; the editor
+  // should not restate the narrowing, because the server already refuses what
+  // it refuses.
+  const canConfigure = hasCapability(role, "alarm:configure");
+  return { canView: canConfigure, canEdit: canConfigure, canToggle: canConfigure };
 }
 
 const ALARM_TYPE_TONE: Record<string, string> = {

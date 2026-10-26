@@ -401,12 +401,15 @@ function GeneratorCard({ row }: { row: MaintRow }) {
         {/* Left: identity */}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <p className="truncate text-sm font-medium">{row.label}</p>
+            <p className="truncate text-sm font-medium" title={row.label}>{row.label}</p>
             <Badge variant="outline" className="h-4 px-1 text-[10px] text-muted-foreground">
               {row.manufacturer}
             </Badge>
           </div>
-          <p className="truncate text-[11px] text-muted-foreground">
+          <p
+            className="truncate text-[11px] text-muted-foreground"
+            title={`${row.siteCode ? `${row.siteCode} · ` : ""}${row.siteName}`}
+          >
             {row.siteCode ? `${row.siteCode} · ` : ""}
             {row.siteName}
           </p>

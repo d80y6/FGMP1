@@ -3,6 +3,11 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useFgmp } from "@/lib/fgmp/store";
 import { canAccessApi } from "@/lib/fgmp/rbac-core";
+import {
+  shouldJoinInFlight,
+  shouldReleaseInFlight,
+  type InFlightEntry,
+} from "@/lib/fgmp/in-flight";
 
 interface UseApiState<T> {
   data: T | null;
@@ -47,7 +52,13 @@ export function useApi<T>(
   const [nonce, setNonce] = useState(0);
   const refetch = useCallback(() => setNonce((n) => n + 1), []);
   const loadRef = useRef<() => Promise<void>>(async () => {});
-  const inFlightRef = useRef<{ identity: string; promise: Promise<void> } | null>(null);
+  // The shared in-flight slot. `owner` is the AbortController of the effect
+  // that created the request: a cleanup may only clear its own entry, and an
+  // aborted entry may never be joined (see `in-flight.ts`).
+  const inFlightRef = useRef<{
+    entry: InFlightEntry;
+    promise: Promise<void>;
+  } | null>(null);
   const lastNonceRef = useRef(nonce);
   const urlDeps = depKey(opts?.deps);
   const interval = opts?.interval;
@@ -63,9 +74,12 @@ export function useApi<T>(
     const controller = new AbortController();
     const load = async () => {
       // One request per hook instance at a time, including interval and manual
-      // refetch triggers. Return the active promise instead of starting a twin.
-      if (inFlightRef.current?.identity === identity) {
-        return inFlightRef.current.promise;
+      // refetch triggers. Return the active promise instead of starting a twin
+      // — but only while it can still complete. Joining an aborted request
+      // leaves the caller loading forever and suppresses the retry (D-27).
+      const existing = inFlightRef.current;
+      if (existing && shouldJoinInFlight(existing.entry, identity)) {
+        return existing.promise;
       }
       const request = (async () => {
         try {
@@ -97,12 +111,15 @@ export function useApi<T>(
           if (!cancelled) setLoadingState(false);
         }
       })();
-      const entry = { identity, promise: request };
-      inFlightRef.current = entry;
+      const slot = {
+        entry: { identity, owner: controller, isAborted: () => controller.signal.aborted },
+        promise: request,
+      };
+      inFlightRef.current = slot;
       try {
         await request;
       } finally {
-        if (inFlightRef.current === entry) inFlightRef.current = null;
+        if (inFlightRef.current === slot) inFlightRef.current = null;
       }
     };
 
@@ -111,6 +128,14 @@ export function useApi<T>(
     return () => {
       cancelled = true;
       controller.abort();
+      // Release our own slot. Without this, the next mount of the same hook
+      // (React re-runs effects on mount in development) would find an aborted
+      // entry, join it, and never issue the replacement request: the widget
+      // stays in its loading state even though nothing is being fetched.
+      const current = inFlightRef.current;
+      if (current && shouldReleaseInFlight(current.entry, controller)) {
+        inFlightRef.current = null;
+      }
     };
   }, [requestUrl, identity]);
 

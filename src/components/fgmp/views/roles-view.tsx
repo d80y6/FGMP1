@@ -134,7 +134,7 @@ export function RolesView() {
             <Table>
               <TableHeader className="sticky top-0 bg-card">
                 <TableRow>
-                  <TableHead className="sticky start-0 bg-card z-10">Role</TableHead>
+                  <TableHead className="sticky left-0 bg-card z-10">{t("users.role")}</TableHead>
                   {CAPABILITY_GROUPS.map((g) => (
                     <TableHead key={g.prefix} className="text-center w-[110px]">{g.label}</TableHead>
                   ))}
@@ -159,12 +159,12 @@ export function RolesView() {
                           <span className="text-sm font-medium">{roleLabel(r, numLang)}</span>
                           {isMine && (
                             <Badge variant="outline" className="h-4 px-1 text-[10px] border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
-                              YOU
+                              {t("common.you")}
                             </Badge>
                           )}
                           {isWildcard && (
                             <Badge variant="outline" className="h-4 px-1 text-[10px] border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400">
-                              <Asterisk className="h-2.5 w-2.5 me-0.5" />WILDCARD
+                              <Asterisk className="h-2.5 w-2.5 mr-0.5" />{t("common.wildcard")}
                             </Badge>
                           )}
                         </div>
@@ -248,12 +248,12 @@ function RoleDetailPanel({
             )}
             {isWildcard && (
               <Badge variant="outline" className="text-[10px] border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400">
-                <Asterisk className="h-2.5 w-2.5 me-0.5" />WILDCARD
+                <Asterisk className="h-2.5 w-2.5 mr-0.5" />{t("common.wildcard")}
               </Badge>
             )}
           </CardTitle>
           <Badge variant="outline" className="text-[10px] tabular-nums">
-            {formatNumber(isWildcard ? ALL_ROLES.flatMap((r) => ROLE_PERMISSIONS[r].capabilities).filter((c, i, arr) => c !== "*" && arr.indexOf(c) === i).length : meta.capabilities.length, lang)} capabilities
+            {tFmt("common.capabilitiesCount", { n: formatNumber(isWildcard ? ALL_ROLES.flatMap((r) => ROLE_PERMISSIONS[r].capabilities).filter((c, i, arr) => c !== "*" && arr.indexOf(c) === i).length : meta.capabilities.length, lang) })}
           </Badge>
         </div>
         <p className="text-xs text-muted-foreground">{meta.description}</p>

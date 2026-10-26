@@ -151,7 +151,7 @@ export function RegionLeaderboard({ regions, totalSites, onSelectRegion }: Regio
                       {isLeader && (
                         <Crown className="h-3.5 w-3.5 shrink-0 text-amber-500" />
                       )}
-                      <span className="truncate text-sm font-semibold">{r.region}</span>
+                      <span className="truncate text-sm font-semibold" title={r.region}>{r.region}</span>
                       {isLeader && (
                         <Badge
                           className={cn(

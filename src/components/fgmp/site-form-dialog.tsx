@@ -14,6 +14,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { useFgmp } from "@/lib/fgmp/store";
+import { useCap } from "@/lib/fgmp/use-access";
 import { apiPost, apiPatch } from "@/lib/fgmp/use-api";
 import { useT } from "@/lib/fgmp/use-language";
 import { toast } from "sonner";
@@ -47,13 +48,20 @@ export function SiteFormDialog({
   onSaved: () => void;
   site: SiteState | null;
 }) {
+  // The capability the form's endpoint needs — POST/PATCH /api/fgmp/sites both
+  // require `asset:manage`. Today the only caller (sites-view) already gates the
+  // button and the row menu on it, so this is the second lock on the same door;
+  // it is here because "the parent happens to gate it" is not a property the
+  // dialog can be sure of, and a dialog is exactly the thing that gets reused.
+  const canManageSites = useCap("asset:manage");
+
   // The wrapper returns null while closed, so the inner SiteForm unmounts on
   // close and remounts fresh on the next open — initial state is always
   // derived from the latest `site` prop. The key additionally covers the case
   // where the target site changes while the dialog is already open (e.g. the
   // admin picks Edit on a different row without closing first): a key change
   // forces a clean remount with the new site's values.
-  if (!open) return null;
+  if (!open || !canManageSites) return null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

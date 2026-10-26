@@ -323,10 +323,13 @@ export function FuelDeliveryTracking() {
 
         {/* ===== Recent Completions (collapsible) ===== */}
         <div>
+          {/* min-h-6 + py-0.5: this row was a 20px-tall target, below the 24px
+              WCAG 2.2 AA minimum (2.5.8). aria-expanded states the toggle. */}
           <button
             type="button"
             onClick={() => setCompletionsOpen((v) => !v)}
-            className="mb-2 flex w-full items-center justify-between text-start"
+            aria-expanded={completionsOpen}
+            className="mb-2 flex min-h-6 w-full items-center justify-between py-0.5 text-left"
           >
             <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {completionsOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
@@ -516,9 +519,9 @@ function ActiveDeliveryCard({ d }: { d: Delivery & { uiStatus: UiStatus; region:
         {/* Middle: route + DO */}
         <div className="min-w-[180px] flex-1">
           <div className="flex items-center gap-1 text-[11px]">
-            <span className="truncate font-medium">{d.supplier ?? "—"}</span>
+            <span className="truncate font-medium" title={d.supplier ?? "—"}>{d.supplier ?? "—"}</span>
             <MapPin className="h-2.5 w-2.5 text-muted-foreground" />
-            <span className="truncate text-muted-foreground">{d.site?.name ?? "—"}</span>
+            <span className="truncate text-muted-foreground" title={d.site?.name ?? "—"}>{d.site?.name ?? "—"}</span>
           </div>
           <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
             <span className="inline-flex items-center gap-0.5">

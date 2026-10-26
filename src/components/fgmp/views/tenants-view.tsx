@@ -9,6 +9,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useFgmp } from "@/lib/fgmp/store";
+import { hasCapability } from "@/lib/fgmp/rbac-core";
 import { useApi, apiPost, apiPatch, apiDelete } from "@/lib/fgmp/use-api";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
@@ -34,7 +35,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { toast } from "sonner";
-import { fmtDateTime } from "@/lib/fgmp/format";
+import { fmtDate } from "@/lib/fgmp/format";
 import { useT, useTF, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 
@@ -80,9 +81,10 @@ export function TenantsView() {
 
   const { data: tenants, loading, refetch } = useApi<TenantRow[]>("/api/fgmp/tenants", { interval: 30000 });
 
-  // Task 49 — tenants are now platform-level: only SUPERADMIN can manage
-  // them. ADMIN loses access to this view entirely.
-  const isSuperAdmin = me?.role === "SUPERADMIN";
+  // Task 49 — tenants are platform-level: only SUPERADMIN can manage them, and
+  // ADMIN loses access to this view entirely. That decision is the capability
+  // gate further down (`view:tenants`), not a role literal here — a second copy
+  // is how the view and its nav entry drift apart.
 
   const countries = useMemo(() => {
     const set = new Set<string>();
@@ -111,8 +113,18 @@ export function TenantsView() {
     };
   }, [tenants]);
 
-  // Access control: only SUPERADMIN may use this view (Task 49).
-  if (me && !isSuperAdmin) {
+  // Two different questions, deliberately kept apart:
+  //   view:tenants  — may open this screen (grants the whole tenant registry)
+  //   tenant:manage / user:manage — may create, edit, delete a tenant, mint its
+  //   first admin, or reseed it. Both are SUPERADMIN-only today, so the row menu
+  //   was effectively safe — but "the view capability happens to imply the write
+  //   capability" is the coupling that turned into a live defect everywhere else
+  //   in this file's audit, so the controls name the write capability directly.
+  const canManageTenants = me ? hasCapability(me.role, "tenant:manage") : false;
+  const canManageUsers = me ? hasCapability(me.role, "user:manage") : false;
+  // Access control: `view:tenants` — granted only through SUPERADMIN's
+  // wildcard, so this is the matrix's answer rather than a second copy of it.
+  if (me && !hasCapability(me.role, "view:tenants")) {
     return (
       <div className="mx-auto max-w-2xl py-10">
         <Alert variant="destructive">
@@ -132,10 +144,12 @@ export function TenantsView() {
         icon={<Building2 className="h-5 w-5" />}
         tone="emerald"
         actions={
-          <Button onClick={() => setCreateOpen(true)} size="sm">
-            <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">{t("tenants.add")}</span>
-          </Button>
+          canManageTenants ? (
+            <Button onClick={() => setCreateOpen(true)} size="sm">
+              <Plus className="h-4 w-4" />
+              <span className="hidden sm:inline">{t("tenants.add")}</span>
+            </Button>
+          ) : undefined
         }
       />
 
@@ -174,13 +188,13 @@ export function TenantsView() {
               <Table>
                 <TableHeader className="sticky top-0 bg-card">
                   <TableRow>
-                    <TableHead className="w-[120px]">Code</TableHead>
-                    <TableHead>Name</TableHead>
-                    <TableHead className="hidden md:table-cell">Country</TableHead>
-                    <TableHead className="w-[80px] text-center">Users</TableHead>
-                    <TableHead className="w-[80px] text-center">Sites</TableHead>
-                    <TableHead className="hidden lg:table-cell w-[150px]">Created</TableHead>
-                    <TableHead className="w-[60px] text-end">{t("users.actions")}</TableHead>
+                    <TableHead className="w-[120px]">{t("common.code")}</TableHead>
+                    <TableHead>{t("common.name")}</TableHead>
+                    <TableHead className="hidden md:table-cell">{t("common.country")}</TableHead>
+                    <TableHead className="w-[80px] text-center">{t("common.users")}</TableHead>
+                    <TableHead className="w-[80px] text-center">{t("common.sites")}</TableHead>
+                    <TableHead className="hidden lg:table-cell w-[150px]">{t("common.created")}</TableHead>
+                    <TableHead className="w-[60px] text-right">{t("users.actions")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -223,7 +237,7 @@ export function TenantsView() {
                         </Badge>
                       </TableCell>
                       <TableCell className="hidden lg:table-cell text-[10px] text-muted-foreground" dir="ltr">
-                        {fmtDateTime(tnt.createdAt, numLang).slice(0, 10)}
+                        {fmtDate(tnt.createdAt, numLang)}
                       </TableCell>
                       <TableCell className="text-end">
                         <DropdownMenu>
@@ -233,26 +247,36 @@ export function TenantsView() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="w-40">
-                            <DropdownMenuItem onClick={() => setEditTarget(tnt)}>
-                              <Pencil className="me-2 h-3.5 w-3.5" />
-                              {t("common.edit")}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => setCreateAdminTarget(tnt)}>
-                              <UserPlus className="me-2 h-3.5 w-3.5" />
-                              {t("tenants.createAdmin")}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => setSupportTarget(tnt)}>
-                              <ShieldAlert className="me-2 h-3.5 w-3.5" />
-                              {t("tenants.supportAccess")}
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              className="text-rose-700 dark:text-rose-400 focus:text-rose-700"
-                              onClick={() => setDeleteTarget(tnt)}
-                            >
-                              <Trash2 className="me-2 h-3.5 w-3.5" />
-                              {t("common.delete")}
-                            </DropdownMenuItem>
+                            {canManageTenants && (
+                              <DropdownMenuItem onClick={() => setEditTarget(tnt)}>
+                                <Pencil className="mr-2 h-3.5 w-3.5" />
+                                {t("common.edit")}
+                              </DropdownMenuItem>
+                            )}
+                            {canManageUsers && (
+                              <DropdownMenuItem onClick={() => setCreateAdminTarget(tnt)}>
+                                <UserPlus className="mr-2 h-3.5 w-3.5" />
+                                {t("tenants.createAdmin")}
+                              </DropdownMenuItem>
+                            )}
+                            {canManageTenants && (
+                              <DropdownMenuItem onClick={() => setSupportTarget(tnt)}>
+                                <ShieldAlert className="mr-2 h-3.5 w-3.5" />
+                                {t("tenants.supportAccess")}
+                              </DropdownMenuItem>
+                            )}
+                            {canManageTenants && (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  className="text-rose-700 dark:text-rose-400 focus:text-rose-700"
+                                  onClick={() => setDeleteTarget(tnt)}
+                                >
+                                  <Trash2 className="mr-2 h-3.5 w-3.5" />
+                                  {t("common.delete")}
+                                </DropdownMenuItem>
+                              </>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -385,7 +409,7 @@ function TenantFormFields({
         />
       </div>
       <div className="space-y-1.5">
-        <Label className="text-xs">Code</Label>
+        <Label className="text-xs">{t("common.code")}</Label>
         <Input
           value={form.code}
           onChange={(e) => update("code", e.target.value.toUpperCase())}
@@ -396,7 +420,7 @@ function TenantFormFields({
         <p className="text-[11px] text-muted-foreground">{t("tenants.slugHint")}</p>
       </div>
       <div className="space-y-1.5">
-        <Label className="text-xs">Country</Label>
+        <Label className="text-xs">{t("common.country")}</Label>
         <Input
           value={form.country}
           onChange={(e) => update("country", e.target.value)}

@@ -11,6 +11,7 @@ import {
   Tooltip, XAxis, YAxis, Legend,
 } from "recharts";
 import { useFgmp } from "@/lib/fgmp/store";
+import { useCanView } from "@/lib/fgmp/use-access";
 import { useChartColors } from "@/lib/fgmp/use-chart-colors";
 import { ScrollRegion } from "@/components/ui/scroll-region";
 import { SectionHeader } from "@/components/fgmp/section-header";
@@ -95,6 +96,9 @@ function fmtHours(h: number, numLang: Language): string {
 
 export function FuelForecastView() {
   const { snapshot, setView } = useFgmp(useShallow((s) => ({ snapshot: s.snapshot, setView: s.setView })));
+  // "Create delivery" is a link into Inventory; it is offered only to a role
+  // that can open that view.
+  const canView = useCanView();
   const t = useT();
   const tFmt = useTF();
   const useArabicNums = useArabicNumerals();
@@ -346,6 +350,7 @@ export function FuelForecastView() {
                       </TableCell>
                       <TableCell className="text-end">
                         {(r.risk === "CRITICAL" || r.risk === "HIGH") && (
+                          canView("inventory") && (
                           <Button
                             size="sm"
                             variant="outline"
@@ -354,6 +359,7 @@ export function FuelForecastView() {
                           >
                             <PackagePlus className="me-1 h-3 w-3" /> {t("forecast.createDelivery")}
                           </Button>
+                          )
                         )}
                       </TableCell>
                     </TableRow>

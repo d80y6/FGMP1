@@ -160,6 +160,89 @@ test.describe("authenticated · shell and navigation", () => {
     expect(requested.filter((u) => /\/api\/fgmp\/(users|tenants|api-keys)\b/.test(u))).toEqual([]);
   });
 
+  /**
+   * D-26 — the header must fit the window it is rendered in.
+   *
+   * The header was a single non-wrapping row of ~15 controls with a 1614px
+   * minimum. Past that it did not scroll or wrap: controls continued past the
+   * right edge, where nothing can reach them. At 1440×900 `Switch role` began
+   * at x=1422 and Sign out at x=1578, so an ADMIN on a 1440px laptop could not
+   * sign out; at 390px eight controls were off-screen, including the language
+   * switch and the live-feed pause.
+   *
+   * The assertion is reachability, not a layout shape: every visible header
+   * control's box must lie inside the viewport. It is deliberately independent
+   * of which control moved into the overflow menu.
+   */
+  test("no header control is rendered outside the viewport", async ({ page }) => {
+    await page.goto("/");
+    await signIn(page, ADMIN);
+    for (const [width, height] of VIEWPORTS) {
+      await page.setViewportSize({ width, height });
+      const offenders = await page.evaluate(() => {
+        const vw = window.innerWidth;
+        const header = document.querySelector("header");
+        if (!header) return ["<no header>"];
+        return [...header.querySelectorAll<HTMLElement>("a, button, [role='combobox'], [role='status']")]
+          .filter((el) => {
+            const s = getComputedStyle(el);
+            if (s.display === "none" || s.visibility === "hidden") return false;
+            const r = el.getBoundingClientRect();
+            return r.width > 0 && (r.right > vw + 1 || r.left < -1);
+          })
+          .map((el) => {
+            const r = el.getBoundingClientRect();
+            const name = (el.getAttribute("aria-label") || el.textContent || "").trim().slice(0, 40);
+            return `${width}px: ${name} @${Math.round(r.left)}..${Math.round(r.right)}`;
+          });
+      });
+      expect(offenders, offenders.join("; ")).toEqual([]);
+    }
+  });
+
+  /** The overflow menu is the reason the row fits: on a phone the actions that
+   *  left the header must still be reachable, named, and keyboard-operable. */
+  test("the header overflow menu offers the actions the narrow header omits", async ({ page }) => {
+    await page.goto("/");
+    await signIn(page, ADMIN);
+    await page.setViewportSize({ width: 390, height: 844 });
+
+    const trigger = page.getByTestId("header-overflow-trigger");
+    await expect(trigger).toBeVisible();
+    await trigger.click();
+    const menu = page.getByTestId("header-overflow-menu");
+    await expect(menu).toBeVisible();
+    // Language: the only route to the Arabic UI, previously off-screen at 390px.
+    await expect(menu.getByRole("menuitemradio", { name: /english/i })).toBeVisible();
+    await expect(menu.getByRole("menuitemradio", { name: /arabic|العربية/i })).toBeVisible();
+    // Pause: the live-feed control.
+    await expect(menu.getByRole("menuitem", { name: /pause live|resume live/i })).toBeVisible();
+
+    // Keyboard: Escape closes and returns focus to the trigger.
+    await page.keyboard.press("Escape");
+    await expect(menu).toBeHidden();
+    await expect(trigger).toBeFocused();
+
+    // Same accessibility bar as the rest of the shell.
+    await trigger.click();
+    const violations = await axeViolations(page);
+    expect(violations, JSON.stringify(violations)).toEqual([]);
+  });
+
+  /** D-27 — a widget whose first fetch was aborted must retry, not hang.
+   *  Both of these were stuck in their loading skeleton forever while the
+   *  endpoints answered 200 to a direct fetch. */
+  test("dashboard widgets leave their loading state", async ({ page }) => {
+    await page.goto("/");
+    await signIn(page, ADMIN);
+    await page.goto("/?view=dashboard");
+    const runout = page.locator("main").getByText(/fuel runout eta|وقت نفاد الوقود/i).first();
+    await expect(runout).toBeVisible({ timeout: 30_000 });
+    // The card renders rows (or its own honest empty state) once the request
+    // settles; a skeleton has neither.
+    await expect(page.locator("main .animate-pulse")).toHaveCount(0, { timeout: 30_000 });
+  });
+
   test("dashboard has no WCAG 2.2 AA violations", async ({ page }) => {
     await page.goto("/");
     // ADMIN, not SUPERADMIN: the super-admin belongs to the platform tenant,

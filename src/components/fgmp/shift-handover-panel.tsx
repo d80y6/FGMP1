@@ -48,6 +48,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useFgmp } from "@/lib/fgmp/store";
 import { useApi, apiPost, apiPatch, apiDelete } from "@/lib/fgmp/use-api";
+import { hasCapability } from "@/lib/fgmp/rbac-core";
 import { cn } from "@/lib/utils";
 import { timeAgo } from "@/lib/fgmp/format";
 import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
@@ -140,13 +141,20 @@ export function ShiftHandoverPanel() {
   const curShift = currentShift();
   const CurShiftIcon = SHIFT_ICON[curShift];
 
+  // POST/PATCH /api/fgmp/shift-handover accepts any of alarm:ack,
+  // delivery:manage or ticket:manage (an "any-of" capability rule), so the same
+  // any-of test decides whether the create control is offered.
   const canCreate = useMemo(() => {
     if (!me) return false;
-    // ADMIN, NOC_OPERATOR, REGIONAL_MANAGER, FIELD_ENGINEER can create.
-    return ["ADMIN", "NOC_OPERATOR", "REGIONAL_MANAGER", "FIELD_ENGINEER"].includes(me.role);
+    return (
+      hasCapability(me.role, "alarm:ack") ||
+      hasCapability(me.role, "delivery:manage") ||
+      hasCapability(me.role, "ticket:manage")
+    );
   }, [me]);
 
-  const canDelete = me?.role === "ADMIN";
+  // DELETE /api/fgmp/shift-handover/[id] requires `settings:manage`.
+  const canDelete = me ? hasCapability(me.role, "settings:manage") : false;
 
   const shiftLabel = (s: string) =>
     s === "MORNING" ? t("handover.shiftMorning") : s === "EVENING" ? t("handover.shiftEvening") : t("handover.shiftNight");

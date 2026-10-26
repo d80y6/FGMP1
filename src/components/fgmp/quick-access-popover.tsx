@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/fgmp/status-badge";
 import { useFgmp } from "@/lib/fgmp/store";
+import { useCanView } from "@/lib/fgmp/use-access";
 import {
   useFavorites,
   useFavoritesHydration,
@@ -67,7 +68,13 @@ export function QuickAccessPopover() {
 
   const pinnedCount = pinnedIds.length;
 
+  // Every row here opens a site, which lives in the Sites view. Without
+  // `view:sites` the shell refuses to mount that view, so an offered row would
+  // be a dead link; the popover is not rendered at all in that case.
+  const canView = useCanView();
+
   function goToSite(id: string) {
+    if (!canView("sites")) return;
     selectSite(id);
     setView("sites");
     addRecent(id);

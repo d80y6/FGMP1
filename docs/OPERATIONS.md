@@ -17,11 +17,19 @@ the first compose healthcheck meaningless:
 
 `live` deliberately does not touch the database: a liveness probe that fails
 when the database is slow restarts a healthy process and makes an outage worse.
-`ready` returns 503 with a coarse reason (`db_unreachable`, `schema_missing`,
-`timeout`) and never discloses the driver, host or exception.
+`ready` returns 503 with a coarse reason (`config_invalid`, `runtime_unavailable`,
+`db_unreachable`, `schema_missing`, `timeout`) and never discloses the driver,
+host or exception. `config_invalid` carries a stable `code`
+(`RLS_NOT_ENFORCED`, `ENV_INVALID`, `SESSION_CONFIG_INVALID`) and nothing else;
+`runtime_unavailable` means the database layer could not be loaded at all —
+a bundle problem, not a network one. Deducing the cause of a blanket
+`500` from these two fields is [DEPLOYMENT.md](DEPLOYMENT.md) §4, "When every
+`/api/fgmp/*` route answers 500".
 
-Boot-time validation is the fourth gate: the server refuses to start when the
-environment is invalid (see §8, "App container exits immediately").
+Boot-time validation is the fourth gate: a Node/Bun server refuses to start when
+the environment is invalid (see §8, "App container exits immediately"). On
+Cloudflare Workers the same verdicts are enforced per request as `503 {code}`
+instead of at boot — see [SECURITY.md](SECURITY.md) §5.
 
 ## 2. Health endpoint
 

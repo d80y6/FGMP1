@@ -16,10 +16,16 @@ import {
 
 type ThemeOption = "system" | "light" | "dark";
 
-const OPTIONS: { value: ThemeOption; label: string; icon: typeof Monitor }[] = [
-  { value: "system", label: "System", icon: Monitor },
-  { value: "light", label: "Light", icon: Sun },
-  { value: "dark", label: "Dark", icon: Moon },
+/**
+ * Labels are dictionary keys, not literals: this menu rendered
+ * "Theme / System / Light / Dark / Active: dark" in the Arabic UI. The
+ * untranslated-text guard could not see them — it ignores single-word English
+ * tokens because most of those are brand names and units (D-29).
+ */
+const OPTIONS: { value: ThemeOption; labelKey: string; icon: typeof Monitor }[] = [
+  { value: "system", labelKey: "common.themeSystem", icon: Monitor },
+  { value: "light", labelKey: "common.themeLight", icon: Sun },
+  { value: "dark", labelKey: "common.themeDark", icon: Moon },
 ];
 
 // SSR-safe "mounted" flag: returns false during SSR + first paint, true on the
@@ -56,7 +62,7 @@ export function ThemeSwitcher() {
   const active = (resolvedTheme ?? "dark") as "light" | "dark";
 
   return (
-    <DropdownMenu>
+    <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
         <Button
           variant="outline"
@@ -81,7 +87,7 @@ export function ThemeSwitcher() {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-44">
         <DropdownMenuLabel className="text-xs text-muted-foreground">
-          Theme
+          {t("common.theme")}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         {OPTIONS.map((opt) => {
@@ -94,7 +100,7 @@ export function ThemeSwitcher() {
               className="cursor-pointer"
             >
               <Icon className="h-4 w-4 text-muted-foreground" />
-              <span className="flex-1">{opt.label}</span>
+              <span className="flex-1">{t(opt.labelKey)}</span>
               {isSelected && (
                 <Check className="h-3.5 w-3.5 text-emerald-500" />
               )}
@@ -103,7 +109,7 @@ export function ThemeSwitcher() {
         })}
         <DropdownMenuSeparator />
         <p className="px-2 py-1.5 text-[10px] text-muted-foreground">
-          Active: <span className="font-mono">{mounted ? active : "—"}</span>
+          {t("common.activeOption")}: <span className="font-mono">{mounted ? active : "—"}</span>
         </p>
       </DropdownMenuContent>
     </DropdownMenu>

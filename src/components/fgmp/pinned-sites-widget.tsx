@@ -3,6 +3,7 @@
 import { useMemo, useSyncExternalStore } from "react";
 import { Star, ChevronDown, ChevronRight, X } from "lucide-react";
 import { useFgmp } from "@/lib/fgmp/store";
+import { useCanView } from "@/lib/fgmp/use-access";
 import {
   useFavorites,
   useFavoritesHydration,
@@ -82,7 +83,12 @@ export function PinnedSitesWidget() {
 
   const count = sites.length;
 
+  // The widget is a shortcut into the Sites view; without `view:sites` there
+  // is nowhere for a row to go, so the whole panel is hidden below.
+  const canView = useCanView();
+
   function goToSite(id: string) {
+    if (!canView("sites")) return;
     setView("sites");
     selectSite(id);
   }

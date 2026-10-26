@@ -12,6 +12,7 @@ import { KpiCard } from "@/components/fgmp/kpi-card";
 import { BarGauge, Gauge } from "@/components/fgmp/gauge";
 import { StatusBadge } from "@/components/fgmp/status-badge";
 import { EmptyState } from "@/components/fgmp/empty-state";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Sparkline } from "@/components/fgmp/sparkline";
 import { FuelDeliveryTracking } from "@/components/fgmp/fuel-delivery-tracking";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,7 +34,15 @@ export function FuelView() {
   const numLang: Language = useArabicNums ? "ar" : "en";
   const [q, setQ] = useState("");
   const [sort, setSort] = useState("pct-asc");
-  const { data: analytics } = useApi<AnalyticsPayload>("/api/fgmp/analytics?projection=fuel", { interval: 15000 });
+  const { data: analytics, loading: analyticsLoading } = useApi<AnalyticsPayload>("/api/fgmp/analytics?projection=fuel", { interval: 15000 });
+  // Selected label for the sort trigger's tooltip (the visible value can be
+  // clipped by the fixed trigger width, especially in Arabic).
+  const SORT_LABEL: Record<string, string> = {
+    "pct-asc": t("fuel.sortLowHigh"),
+    "pct-desc": t("fuel.sortHighLow"),
+    capacity: t("fuel.sortCapacity"),
+    site: t("fuel.sortSite"),
+  };
   const cc = useChartColors();
 
   const tanks = useMemo(() => {
@@ -161,6 +170,16 @@ export function FuelView() {
         <Card className="lg:col-span-2">
           <CardHeader className="pb-2"><CardTitle className="text-sm">{t("fuel.nationalConsumption")}</CardTitle></CardHeader>
           <CardContent>
+            {analyticsLoading && !analytics ? (
+              <Skeleton className="h-[200px] w-full" />
+            ) : (analytics?.consumptionTrend ?? []).length === 0 ? (
+              <EmptyState
+                icon={TrendingUp}
+                title={t("common.noDataInRange")}
+                description={t("common.noDataInRangeHint")}
+                compact
+              />
+            ) : (
             <ResponsiveContainer width="100%" height={200}>
               <AreaChart tabIndex={-1} data={analytics?.consumptionTrend ?? []} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
                 <defs>
@@ -176,6 +195,7 @@ export function FuelView() {
                 <Area type="monotone" dataKey="litres" stroke={cc.sky} strokeWidth={2} fill="url(#fuel-cons)" name={t("fuel.litresConsumed")} />
               </AreaChart>
             </ResponsiveContainer>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -189,7 +209,7 @@ export function FuelView() {
               {refillPlan.map((t) => (
                 <div key={t.id} className="flex items-center gap-2">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-xs font-medium">{t.site} · {t.label}</p>
+                    <p className="truncate text-xs font-medium" title={`${t.site} · ${t.label}`}>{t.site} · {t.label}</p>
                     <div className="mt-1"><BarGauge value={t.pct} /></div>
                   </div>
                   <div className="text-end text-[11px]">
@@ -223,15 +243,21 @@ export function FuelView() {
 
       {/* Tank list */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-3">
           <CardTitle className="text-sm">{t("fuel.tankInventory")} ({formatNumber(tanks.length, numLang)})</CardTitle>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
-              <Search className="absolute start-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("fuel.searchTanks")} className="h-9 w-[200px] ps-8" />
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              {/* The filter row must wrap, not overflow: at 390px a 200px
+                  search plus a 186px select ran past the card's right edge and
+                  the sort control became unreachable (D-31). */}
+              <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("fuel.searchTanks")} className="h-9 w-[168px] pl-8 sm:w-[200px]" />
             </div>
             <Select label={t("fuel.sortBy")} value={sort} onValueChange={setSort}>
-              <SelectTrigger className="h-9 w-[150px]"><SelectValue /></SelectTrigger>
+              {/* Width fits the longest option in either language; the title
+                  carries the full value when a translation still overflows
+                  (a nowrap trigger clips silently otherwise — D-31). */}
+              <SelectTrigger className="h-9 w-[132px] sm:w-[186px]" title={SORT_LABEL[sort]}><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="pct-asc">{t("fuel.sortLowHigh")}</SelectItem>
                 <SelectItem value="pct-desc">{t("fuel.sortHighLow")}</SelectItem>
@@ -248,7 +274,7 @@ export function FuelView() {
                 <div className="flex items-center justify-between">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">{t.label}</p>
-                    <p className="truncate text-[10px] text-muted-foreground">{t.code} · {t.site}</p>
+                    <p className="truncate text-[10px] text-muted-foreground" title={`${t.code} · ${t.site}`}>{t.code} · {t.site}</p>
                   </div>
                   <StatusBadge value={t.status} className="h-5 text-[10px]" />
                 </div>

@@ -97,8 +97,12 @@ export function KpiCard({ label, value, unit, icon, trend, hint, info, tone = "d
                   <TooltipTrigger asChild>
                     <button
                       type="button"
-                      aria-label={label}
-                      className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+                      aria-label={info ? `${label} — ${t("common.kpiInfoHint")}` : label}
+                      // The visible glyph is 12px, but the pointer/touch target
+                      // is what WCAG 2.2 AA (2.5.8) measures: a `::after`
+                      // overlay expands it to 24×24 without changing the row's
+                      // layout or the card's density (D-32).
+                      className="relative inline-flex h-3.5 w-3.5 items-center justify-center rounded-full text-muted-foreground transition-colors after:absolute after:-inset-[5px] after:content-[''] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
                     >
                       <Info className="h-3 w-3" />
                     </button>

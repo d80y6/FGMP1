@@ -14,6 +14,7 @@ import { useFgmp } from "@/lib/fgmp/store";
 import { useFavorites } from "@/lib/fgmp/use-favorites";
 import { useApi, apiPost } from "@/lib/fgmp/use-api";
 import { useChartColors } from "@/lib/fgmp/use-chart-colors";
+import { useCan, useCanView } from "@/lib/fgmp/use-access";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { NationalMap } from "@/components/fgmp/national-map";
 import { SectionHeader } from "@/components/fgmp/section-header";
@@ -26,6 +27,7 @@ import { FuelRunoutEta } from "@/components/fgmp/fuel-runout-eta";
 import { ShiftHandoverPanel } from "@/components/fgmp/shift-handover-panel";
 import { StatusBadge, severityDot } from "@/components/fgmp/status-badge";
 import { DashboardSkeleton } from "@/components/fgmp/skeletons";
+import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/fgmp/empty-state";
 import { ExportButton } from "@/components/fgmp/export-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -59,6 +61,20 @@ export function DashboardView() {
   const tick = useFgmp((s) => s.tick);
 
   const addRecent = useFavorites((s) => s.addRecent);
+  // The dashboard is a hub of links into other views, and those links used to
+  // be unconditional: a NOC operator (no `view:analytics`) was offered an
+  // "Analytics" button that went nowhere, because the shell refuses to mount a
+  // view the role lacks. A link is a promise; only offer the ones that can be
+  // kept.
+  const canView = useCanView();
+  // The Ack button posts `{ action: "acknowledge" }` to /api/fgmp/alarms, which
+  // the policy allows for any-of `alarm:ack` | `alarm:resolve` and the handler
+  // then narrows to `alarm:ack`. Gating on the VIEW (`view:alarms`) was wrong in
+  // the one direction that matters here: FIELD_ENGINEER, EXECUTIVE and READONLY
+  // may open the dashboard and read alarms, so they were offered an Ack button
+  // whose only possible outcome was a local 403 toast.
+  const can = useCan();
+  const canAck = can("alarm:ack");
   const t = useT();
   const tFmt = useTF();
   const useArabicNums = useArabicNumerals();
@@ -69,7 +85,7 @@ export function DashboardView() {
   // wide enough pool of OPEN alarms to pick the 5 most urgent from.
   const { data: alarms, error: alarmsError, refetch: refetchAlarms } = useApi<AlarmRow[]>("/api/fgmp/alarms?status=OPEN,ACKNOWLEDGED,ESCALATED&limit=50", { interval: 6000 });
   const [range, setRange] = useState<DashboardRange>("24h");
-  const { data: analytics, error: analyticsError, refetch: refetchAnalytics } = useApi<AnalyticsPayload>(`/api/fgmp/analytics?range=${range}&projection=dashboard`, { interval: 15000, deps: [range] });
+  const { data: analytics, loading: analyticsLoading, error: analyticsError, refetch: refetchAnalytics } = useApi<AnalyticsPayload>(`/api/fgmp/analytics?range=${range}&projection=dashboard`, { interval: 15000, deps: [range] });
   const cc = useChartColors();
   const [regionSheet, setRegionSheet] = useState<string | null>(null);
 
@@ -216,13 +232,17 @@ export function DashboardView() {
         icon={<Activity className="h-5 w-5" />}
         actions={
           <>
-            <Button variant="outline" size="sm" onClick={() => setView("analytics")}>
-              <TrendingUp className="me-1.5 h-4 w-4" /> {t("dash.analytics")}
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setView("alarms")}>
-              <Siren className="me-1.5 h-4 w-4" /> {t("dash.alarms")}
-              {k.openAlarms > 0 && <Badge className="ms-1.5 h-4 px-1 text-[10px]">{formatNumber(k.openAlarms, numLang)}</Badge>}
-            </Button>
+            {canView("analytics") && (
+              <Button variant="outline" size="sm" onClick={() => setView("analytics")}>
+                <TrendingUp className="mr-1.5 h-4 w-4" /> {t("dash.analytics")}
+              </Button>
+            )}
+            {canView("alarms") && (
+              <Button variant="outline" size="sm" onClick={() => setView("alarms")}>
+                <Siren className="mr-1.5 h-4 w-4" /> {t("dash.alarms")}
+                {k.openAlarms > 0 && <Badge className="ml-1.5 h-4 px-1 text-[10px]">{formatNumber(k.openAlarms, numLang)}</Badge>}
+              </Button>
+            )}
             <ExportButton
               filename={csvFilename("kpi-snapshot")}
               rows={kpiSnapshotRows}
@@ -262,7 +282,9 @@ export function DashboardView() {
             <CardTitle className="flex items-center gap-2 text-base"><Siren className="h-4 w-4 text-rose-500" /> {t("dash.topCriticalAlarms")}</CardTitle>
             <span className="hidden truncate text-[11px] text-muted-foreground sm:inline">{t("dash.criticalAlarmsHint")}</span>
           </div>
-          <Button variant="ghost" size="sm" className="h-7 shrink-0 text-xs" onClick={() => setView("alarms")}>{t("common.viewAll")}</Button>
+          {canView("alarms") && (
+            <Button variant="ghost" size="sm" className="h-7 shrink-0 text-xs" onClick={() => setView("alarms")}>{t("common.viewAll")}</Button>
+          )}
         </CardHeader>
         <CardContent className="p-0">
           {topCriticalAlarms.length === 0 ? (
@@ -293,8 +315,8 @@ export function DashboardView() {
                 >
                   <button
                       type="button"
-                      onClick={() => setView("alarms")}
-                      className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 px-4 py-2.5 text-start transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
+                      onClick={() => { if (canView("alarms")) setView("alarms"); }}
+                      className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
                     >
                     {/* Left-border accent coloured by severity (L3=rose, L2=amber, L1=slate).
                         Absolute-positioned so it spans the row height. */}
@@ -320,6 +342,7 @@ export function DashboardView() {
                       </span>
                     </div>
                   </button>
+                  {canAck && (
                   <Button
                     size="sm"
                     variant="outline"
@@ -329,7 +352,7 @@ export function DashboardView() {
                       // #18 — Ack also opens the site detail sheet so operators
                       // can triage the underlying asset immediately, and tracks
                       // the visit in the Quick Access recent-sites list.
-                      if (a.siteId) {
+                      if (a.siteId && canView("sites")) {
                         selectSite(a.siteId);
                         setView("sites");
                         addRecent(a.siteId);
@@ -338,6 +361,7 @@ export function DashboardView() {
                   >
                     <CheckCircle2 className="me-1 h-3.5 w-3.5" /> {t("dash.ackAlarmShort")}
                   </Button>
+                  )}
                 </div>
               ))}
             </div>
@@ -365,7 +389,16 @@ export function DashboardView() {
           </CardHeader>
           <CardContent className="p-2 pt-0">
             <div className="aspect-[16/10] w-full overflow-hidden rounded-lg border bg-muted/30">
-              <NationalMap sites={snapshot.sites} selectedSiteId={selectedSiteId} onSelectSite={(id) => { selectSite(id); setView("sites"); addRecent(id); }} />
+              <NationalMap
+                sites={snapshot.sites}
+                selectedSiteId={selectedSiteId}
+                onSelectSite={(id) => {
+                  if (!canView("sites")) return;
+                  selectSite(id);
+                  setView("sites");
+                  addRecent(id);
+                }}
+              />
             </div>
           </CardContent>
         </Card>
@@ -373,7 +406,9 @@ export function DashboardView() {
         <Card className="flex flex-col">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="flex items-center gap-2 text-base"><Siren className="h-4 w-4 text-rose-500" /> {t("dash.liveAlarmFeed")}</CardTitle>
-            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setView("alarms")}>{t("common.viewAll")}</Button>
+            {canView("alarms") && (
+              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setView("alarms")}>{t("common.viewAll")}</Button>
+            )}
           </CardHeader>
           <CardContent className="flex-1 p-0">
             <ScrollArea className="h-[420px]">
@@ -390,7 +425,12 @@ export function DashboardView() {
                 {(alarms ?? []).map((a) => (
                   <button
                     key={a.id}
-                    onClick={() => { selectSite(a.siteId); setView("sites"); addRecent(a.siteId); }}
+                    onClick={() => {
+                      if (!canView("sites")) return;
+                      selectSite(a.siteId);
+                      setView("sites");
+                      addRecent(a.siteId);
+                    }}
                     className={cn(
                       "flex w-full items-start gap-2.5 rounded-lg border p-2.5 text-start transition-all duration-200 hover:bg-muted/50 hover:shadow-sm motion-reduce:transition-none",
                       a.severity === "L3" && "border-rose-500/20 bg-rose-500/[0.03]",
@@ -476,6 +516,16 @@ export function DashboardView() {
             </ToggleGroup>
           </CardHeader>
           <CardContent>
+            {analyticsLoading && !analytics ? (
+              <Skeleton className="h-[180px] w-full" />
+            ) : consumption.length === 0 ? (
+              <EmptyState
+                icon={TrendingUp}
+                title={t("common.noDataInRange")}
+                description={t("common.noDataInRangeHint")}
+                compact
+              />
+            ) : (
             <ResponsiveContainer width="100%" height={180}>
               <AreaChart tabIndex={-1} data={consumption} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                 <defs>
@@ -491,6 +541,7 @@ export function DashboardView() {
                 <Area type="monotone" dataKey="litres" stroke={cc.emerald} strokeWidth={2} fill="url(#cons-grad)" />
               </AreaChart>
             </ResponsiveContainer>
+            )}
             <div className="mt-1 flex items-center justify-between px-2 text-[11px] text-muted-foreground">
               <span>{t("dash.consumedToday")}: <b className="text-foreground">{formatNumber(k.fuelConsumedTodayL.toLocaleString(), numLang)} L</b></span>
               <span>{t("dash.genHoursToday")}: <b className="text-foreground">{formatNumber(k.generatorHoursToday, numLang)} h</b></span>
@@ -505,6 +556,21 @@ export function DashboardView() {
           <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-sm"><GaugeIcon className="h-4 w-4 text-amber-500" /> {t("dash.regionBreakdownTitle")}</CardTitle></CardHeader>
           <CardContent>
             <div className="space-y-2">
+              {analyticsLoading && !analytics ? (
+                <div className="space-y-2" aria-hidden="true">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <Skeleton key={i} className="h-7 w-full" />
+                  ))}
+                </div>
+              ) : null}
+              {!analyticsLoading && (analytics?.regionBreakdown ?? []).length === 0 && (
+                <EmptyState
+                  icon={GaugeIcon}
+                  title={t("common.noRegionData")}
+                  description={t("common.noRegionDataHint")}
+                  compact
+                />
+              )}
               {(analytics?.regionBreakdown ?? []).map((r) => (
                 <button
                   key={r.region}

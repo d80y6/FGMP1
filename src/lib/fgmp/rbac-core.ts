@@ -41,10 +41,13 @@ export interface Permission {
 //   • src/components/fgmp/views/roles-view.tsx — display only
 //   • src/app/api/fgmp/me/route.ts — display only
 // The two UI filters treat a missing capability as "hide the nav item", and
-// app-shell.tsx ALREADY hides `tenants` + `tenant-isolation` for non-SUPERADMIN
-// with an extra role check. So dropping those two caps from ADMIN removes the
-// duplicate command-palette entry for Tenants (whose only mutating route is
-// SUPERADMIN_ONLY) without hiding anything an admin could legitimately use.
+// that filter is now the WHOLE navigation policy: the `role === "SUPERADMIN"`
+// check that used to sit beside it in app-shell.tsx has been removed, so
+// `tenants` and `tenant-isolation` are absent for every tenant role because
+// the capability is absent from its list — one rule, stated once. (While both
+// checks existed, dropping the capability hid nothing and the duplicate
+// command-palette entry for Tenants survived; two copies disagree the day
+// either one changes, which is why the capability is the survivor.)
 //
 // Every other `view:*` key the sidebar renders is retained below, because
 // ADMIN's routes really do permit those surfaces (settings PUT = ADMIN_ONLY,
@@ -276,6 +279,31 @@ const API_READ_RULES: readonly { prefix: string; capabilities: readonly string[]
   { prefix: "/api/fgmp/users", capabilities: ["view:users"] },
 ];
 
+/**
+ * The datasets `GET /api/fgmp/export?type=` can actually produce, and who may
+ * read each one.
+ *
+ * One table, two consumers: `apiReadCapabilities()` authorises against it and
+ * the route validates its `type` parameter against it. It used to be two — the
+ * policy listed `alarms` and `deliveries`, which the handler never implemented,
+ * and the handler's `else` branch answered every unrecognised type with a
+ * **sites** export. So `?type=alarms` asked the policy one question and returned
+ * another dataset, under a filename that said `alarms`. Neither the policy nor
+ * the payload was wrong on its own; the gap between them was.
+ *
+ * `view:iot` and `view:inventory` are deliberately absent from `sites`: the two
+ * screens that used to trigger that grant (IoT, Inventory) were exporting site
+ * records from screens that are not about sites, and every role that holds
+ * either capability also holds `view:sites` — so the grant bought nothing and
+ * permitted an inventory-only role to read site coordinates.
+ */
+export const EXPORT_TYPE_CAPABILITIES: Readonly<Record<string, readonly string[]>> = {
+  sites: ["view:sites", "view:reports"],
+  tanks: ["view:fuel", "view:reports"],
+  generators: ["view:generators", "view:reports"],
+  batteries: ["view:batteries", "view:reports"],
+};
+
 /** Return the any-of capabilities required to read an FGMP API URL. */
 export function apiReadCapabilities(url: string | URL): readonly string[] | null {
   let parsed: URL;
@@ -307,15 +335,7 @@ export function apiReadCapabilities(url: string | URL): readonly string[] | null
   }
 
   if (pathname === "/api/fgmp/export") {
-    const exportViews: Record<string, readonly string[]> = {
-      sites: ["view:sites", "view:reports", "view:iot", "view:inventory"],
-      tanks: ["view:fuel", "view:reports"],
-      generators: ["view:generators", "view:reports"],
-      batteries: ["view:batteries", "view:reports"],
-      alarms: ["view:alarms", "view:reports"],
-      deliveries: ["view:inventory", "view:reports"],
-    };
-    return exportViews[parsed.searchParams.get("type") ?? "sites"] ?? ["view:reports"];
+    return EXPORT_TYPE_CAPABILITIES[parsed.searchParams.get("type") ?? "sites"] ?? ["view:reports"];
   }
 
   // Read access to control-command history is restricted to the same operators
@@ -324,9 +344,25 @@ export function apiReadCapabilities(url: string | URL): readonly string[] | null
     return ["gen:control"];
   }
 
-  const rule = API_READ_RULES.find(({ prefix }) =>
-    pathname === prefix || pathname.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`),
-  );
+  // Longest-prefix-first, matching API_WRITE_RULES — NOT the first array entry
+  // that happens to fit.
+  //
+  // The rules are currently listed specific-before-general (`/correlation/rules`
+  // before `/correlation`, `/iot/ingest` before `/iot`) so `.find()` resolves
+  // every existing path identically; that was verified against all 107 route
+  // paths before this change. But "the array is in the right order" is an
+  // invariant nobody can see at the point of edit, and its failure mode is
+  // fail-OPEN: inserting a broad rule such as
+  // `{ prefix: "/api/fgmp/platform", capabilities: ["view:dashboard"] }` above
+  // the existing platform rules would silently hand the audit, grants and
+  // support-session surfaces to every dashboard reader. Sorting makes the
+  // outcome independent of list order, which is what docs/AUTHZ.md §1.3 already
+  // claims, and what the write rules already do.
+  const rule = API_READ_RULES
+    .filter(({ prefix }) =>
+      pathname === prefix || pathname.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`),
+    )
+    .sort((a, b) => b.prefix.length - a.prefix.length)[0];
   return rule?.capabilities ?? null;
 }
 
@@ -486,6 +522,21 @@ export function canAccessApi(role: Role | string | undefined | null, url: string
  * have no `tenantId` column at all — see prisma/schema.prisma). Only
  * SUPERADMIN holds them (via the `*` wildcard), which is why ADMIN's explicit
  * list in ROLE_PERMISSIONS above omits them.
+ *
+ * ── THE INVARIANT THIS LIST DEFINES ────────────────────────────────────────
+ * A platform surface is described three times — this list (what the client
+ * shows), the `API_*_RULES` capability for its path (what `canAccessApi`
+ * answers, in the browser and on the server), and `ROLES.SUPERADMIN_ONLY` (what
+ * the handler enforces). This list is the declaration the other two are checked
+ * against: `__tests__/platform-tier-parity.test.ts` walks the route tree on disk
+ * and fails when a route guarded on the platform role has no policy row, when a
+ * policy rule mixes one of these keys with an ordinary capability
+ * (`canAccessApi` is any-of, so that shape fail-OPENS), or when any role other
+ * than SUPERADMIN holds one of them.
+ *
+ * Adding a key here is therefore a claim that no tenant role may ever hold it.
+ * Granting one to ADMIN is what makes the sidebar offer a screen its own API
+ * refuses — the failure the RBAC review exists to prevent.
  */
 export const SUPERADMIN_ONLY_CAPABILITIES = [
   "tenant:manage",

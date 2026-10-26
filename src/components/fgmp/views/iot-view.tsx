@@ -2,9 +2,10 @@
 
 import { useState, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { Cpu, Wifi, Search, RefreshCw, Download, Radio, HardDriveDownload } from "lucide-react";
+import { Cpu, Wifi, Search, RefreshCw, Radio, HardDriveDownload } from "lucide-react";
 import { useFgmp } from "@/lib/fgmp/store";
 import { useApi, apiPatch } from "@/lib/fgmp/use-api";
+import { useCan } from "@/lib/fgmp/use-access";
 import { TruncationNote } from "@/components/fgmp/truncation-note";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
@@ -50,6 +51,12 @@ export function IotView() {
   const [q, setQ] = useState("");
   const [protocol, setProtocol] = useState("all");
   const [type, setType] = useState("all");
+  // OTA and reboot are `edge:manage` (PATCH /api/fgmp/iot). The screen itself is
+  // `view:iot`, which five roles hold WITHOUT `edge:manage` — NOC_OPERATOR,
+  // REGIONAL_MANAGER, FIELD_ENGINEER, EXECUTIVE and READONLY — so the action
+  // column was a pair of buttons whose only possible outcome was a 403.
+  const can = useCan();
+  const canManageEdge = can("edge:manage");
   const [ota, setOta] = useState<{ id: string; name: string; current: string } | null>(null);
   const [otaFw, setOtaFw] = useState("v3.2.0");
 
@@ -83,7 +90,10 @@ export function IotView() {
         title={t("nav.iot")}
         description={t("desc.iot")}
         icon={<Cpu className="h-5 w-5" />}
-        actions={<Button variant="outline" size="sm" onClick={() => window.open("/api/fgmp/export?type=sites", "_blank")}><Download className="me-1.5 h-4 w-4" /> {t("common.exportShort")}</Button>}
+        /* No export button: `GET /api/fgmp/export` has no IoT dataset, and this
+           screen used to download SITE records under an export label. The
+           `view:iot` grant that made that possible is gone from the export rule
+           too (rbac-core.ts EXPORT_TYPE_CAPABILITIES). */
       />
 
       <ResourceError error={devicesError} onRetry={refetch} />
@@ -165,10 +175,16 @@ export function IotView() {
                     <TableCell><StatusBadge value={d.liveStatus} className="h-5 text-[10px]" /></TableCell>
                     <TableCell className="text-end">
                       <div className="flex justify-end gap-1">
-                        <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => { setOta({ id: d.id, name: d.name, current: d.firmware }); setOtaFw(nextFw(d.firmware)); }}>
-                          <HardDriveDownload className="me-1 h-3 w-3" />{t("iot.ota")}
-                        </Button>
-                        <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => reboot(d.id, d.name)} aria-label={t("iot.rebootDevice")} title={t("iot.rebootDevice")}><RefreshCw className="h-3 w-3" /></Button>
+                        {canManageEdge ? (
+                          <>
+                            <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => { setOta({ id: d.id, name: d.name, current: d.firmware }); setOtaFw(nextFw(d.firmware)); }}>
+                              <HardDriveDownload className="mr-1 h-3 w-3" />{t("iot.ota")}
+                            </Button>
+                            <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => reboot(d.id, d.name)} aria-label={t("iot.rebootDevice")} title={t("iot.rebootDevice")}><RefreshCw className="h-3 w-3" /></Button>
+                          </>
+                        ) : (
+                          <span className="text-[10px] text-muted-foreground">{t("common.readOnly")}</span>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>

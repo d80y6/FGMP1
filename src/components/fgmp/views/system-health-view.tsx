@@ -18,7 +18,7 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { useFgmp } from "@/lib/fgmp/store";
-import { canAccessApi } from "@/lib/fgmp/rbac-core";
+import { canAccessApi, hasCapability } from "@/lib/fgmp/rbac-core";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -223,11 +223,15 @@ export function SystemHealthView() {
     return Math.min(100, Math.round((heapUsed / heapTotal) * 100));
   }, [data?.memory]);
 
-  // ── Access control: ADMIN-only ──────────────────────────────────────────
-  // Checked AFTER all hooks are called (Rules of Hooks). Non-admins who
-  // somehow land on this view (e.g. via URL ?view=system-health) see a
+  // ── Access control: `view:system-health` ────────────────────────────────
+  // Checked AFTER all hooks are called (Rules of Hooks). A role without the
+  // capability that lands here (e.g. via URL ?view=system-health) sees a
   // rejection alert instead of the dashboard.
-  if (me && me.role !== "ADMIN") {
+  //
+  // The gate is the same capability GET /api/fgmp/health enforces, not a role
+  // literal. `role !== "ADMIN"` also locked out SUPERADMIN, which holds the
+  // wildcard, is offered the nav entry, and is admitted by the route.
+  if (me && !hasCapability(me.role, "view:system-health")) {
     return (
       <div className="mx-auto max-w-2xl py-10">
         <Alert variant="destructive">

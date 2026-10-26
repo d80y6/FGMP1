@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { useFgmp } from "@/lib/fgmp/store";
 import { useApi, apiPost, apiPatch } from "@/lib/fgmp/use-api";
+import { hasCapability } from "@/lib/fgmp/rbac-core";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -50,7 +51,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
-import { fmtDateTime, timeAgo } from "@/lib/fgmp/format";
+import { fmtDate, fmtDateTimeShort, timeAgo } from "@/lib/fgmp/format";
 import { useT, useTF, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 import { cn } from "@/lib/utils";
@@ -108,23 +109,24 @@ function keyStatus(k: ApiKeyRow): KeyStatus {
 }
 
 function StatusBadge({ status }: { status: KeyStatus }) {
+  const t = useT();
   if (status === "active") {
     return (
       <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-[10px]">
-        Active
+        {t("common.active")}
       </Badge>
     );
   }
   if (status === "revoked") {
     return (
       <Badge variant="outline" className="border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-400 text-[10px]">
-        Revoked
+        {t("common.revoked")}
       </Badge>
     );
   }
   return (
     <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[10px]">
-      Expired
+      {t("common.expiredStatus")}
     </Badge>
   );
 }
@@ -158,6 +160,13 @@ export function ApiKeysView() {
     interval: 30000,
   });
 
+  // The view capability is not the write capability: creating and revoking keys
+  // are POST /api/fgmp/api-keys and PATCH /api/fgmp/api-keys/[id], both gated on
+  // `api-key:manage`. The two sets coincide today, which is exactly why the
+  // controls were never tied to the endpoint — a future widening of
+  // `view:api-keys` (an auditor who may read the key list) would have shipped a
+  // Create button that 403s.
+  const canManageKeys = me ? hasCapability(me.role, "api-key:manage") : false;
   const [createOpen, setCreateOpen] = useState(false);
   const [revealedKey, setRevealedKey] = useState<CreatedKeyResponse | null>(null);
   const [revokeTarget, setRevokeTarget] = useState<ApiKeyRow | null>(null);
@@ -193,8 +202,10 @@ export function ApiKeysView() {
     }
   }, [revokeTarget, refetch]);
 
-  // Access control — admin only.
-  if (me && me.role !== "ADMIN") {
+  // Access control — `view:api-keys`, the capability both the nav filter and
+  // GET /api/fgmp/api-keys require. A role literal here also locked out
+  // SUPERADMIN, whose tenant key manager this is (the route is SUPER_OR_ADMIN).
+  if (me && !hasCapability(me.role, "view:api-keys")) {
     return (
       <div className="mx-auto max-w-2xl py-10">
         <Alert variant="destructive">
@@ -214,11 +225,13 @@ export function ApiKeysView() {
         icon={<KeyRound className="h-5 w-5" />}
         tone="primary"
         actions={
-          <Button size="sm" onClick={() => setCreateOpen(true)}>
-            <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">{t("apiKeys.create")}</span>
-            <span className="sm:hidden">{t("apiKeys.createShort")}</span>
-          </Button>
+          canManageKeys ? (
+            <Button size="sm" onClick={() => setCreateOpen(true)}>
+              <Plus className="h-4 w-4" />
+              <span className="hidden sm:inline">{t("apiKeys.create")}</span>
+              <span className="sm:hidden">{t("apiKeys.createShort")}</span>
+            </Button>
+          ) : undefined
         }
       />
 
@@ -314,34 +327,36 @@ export function ApiKeysView() {
                           {k.lastUsedAt ? (
                             <>
                               <p>{timeAgo(k.lastUsedAt, numLang)}</p>
-                              <p className="text-[10px]">{fmtDateTime(k.lastUsedAt, numLang).slice(5, 16)}</p>
+                              <p className="text-[10px]">{fmtDateTimeShort(k.lastUsedAt, numLang)}</p>
                             </>
                           ) : (
                             <span>{t("apiKeys.never")}</span>
                           )}
                         </TableCell>
                         <TableCell className="hidden lg:table-cell text-[10px] text-muted-foreground">
-                          {fmtDateTime(k.createdAt, numLang).slice(0, 10)}
+                          {fmtDate(k.createdAt, numLang)}
                         </TableCell>
                         <TableCell><StatusBadge status={status} /></TableCell>
-                        <TableCell className="text-end">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-7 w-7" aria-label={t("common.actions")}>
-                                <MoreVertical className="h-3.5 w-3.5" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-44">
-                              <DropdownMenuItem
-                                disabled={status !== "active"}
-                                onClick={() => setRevokeTarget(k)}
-                                className="text-rose-700 dark:text-rose-400 focus:text-rose-700 dark:focus:text-rose-400 focus:bg-rose-500/10"
-                              >
-                                <Ban className="me-2 h-3.5 w-3.5" />
-                                Revoke
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                        <TableCell className="text-right">
+                          {canManageKeys && (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-7 w-7" aria-label={t("common.actions")}>
+                                  <MoreVertical className="h-3.5 w-3.5" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-44">
+                                <DropdownMenuItem
+                                  disabled={status !== "active"}
+                                  onClick={() => setRevokeTarget(k)}
+                                  className="text-rose-700 dark:text-rose-400 focus:text-rose-700 dark:focus:text-rose-400 focus:bg-rose-500/10"
+                                >
+                                  <Ban className="mr-2 h-3.5 w-3.5" />
+                                  {t("common.revoke")}
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
                         </TableCell>
                       </TableRow>
                     );
@@ -559,7 +574,7 @@ function CreateKeyDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>Cancel</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>{t("common.cancel")}</Button>
           <Button onClick={handleSubmit} disabled={submitting || !name.trim()}>
             {submitting ? <Loader2 className="me-1 h-3.5 w-3.5 animate-spin" /> : <KeyRound className="me-1 h-3.5 w-3.5" />}
             {t("apiKeys.generate")}

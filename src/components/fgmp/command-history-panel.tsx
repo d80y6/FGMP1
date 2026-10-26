@@ -292,7 +292,20 @@ export function CommandHistoryPanel({ commands }: Props) {
                                 <Activity className="h-2.5 w-2.5" /> {dur}
                               </span>
                             )}
-                            {c.reason && <span className="truncate italic text-rose-500/80">“{c.reason}”</span>}
+                            {/* The failure reason is the reason an operator
+                                opens this panel, and it was the least legible
+                                text in it: `text-rose-500/80` measured below
+                                4.5:1 on the rose-tinted row (axe
+                                color-contrast, serious — D-35). Same tone as
+                                the FAILED label beside it. */}
+                            {c.reason && (
+                              <span
+                                className="truncate italic text-rose-700 dark:text-rose-400"
+                                title={c.reason}
+                              >
+                                “{c.reason}”
+                              </span>
+                            )}
                           </div>
                         </div>
 

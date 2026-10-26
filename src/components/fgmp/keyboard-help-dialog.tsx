@@ -6,6 +6,11 @@ import { Badge } from "@/components/ui/badge";
 import { Keyboard } from "lucide-react";
 import { KEYBOARD_SHORTCUTS } from "@/lib/fgmp/use-keyboard-shortcuts";
 import { useT } from "@/lib/fgmp/use-language";
+import { useFgmp } from "@/lib/fgmp/store";
+import { hasCapability } from "@/lib/fgmp/rbac-core";
+
+/** A row in the help dialog: literal text, or an i18n key, plus its group. */
+type ShortcutRow = { keys: string; description?: string; descKey?: string; categoryKey?: string };
 
 interface Props {
   open: boolean;
@@ -14,27 +19,42 @@ interface Props {
 
 export function KeyboardHelpDialog({ open, onOpenChange }: Props) {
   const t = useT();
+  const role = useFgmp((s) => s.me?.role ?? null);
+  const can = (cap: string) => role !== null && hasCapability(role, cap);
+
   // Alarms-view-specific shortcuts. These are local to the alarms view
   // (registered via a useEffect in alarms-view.tsx) so they live alongside
   // the dialog rather than in the global KEYBOARD_SHORTCUTS array.
-  const ALARM_SHORTCUTS: { keys: string; description: string }[] = [
-    { keys: "A", description: "Acknowledge selected alarms" },
-    { keys: "R", description: "Resolve selected alarms" },
-    { keys: "Esc", description: "Clear selection / heatmap filter / detail panel" },
+  //
+  // A and R are filtered by their capability for the same reason the buttons
+  // they mirror are: a help dialog is documentation of what the keyboard can
+  // do, and documenting a key that no-ops (or 403s) is the same lie as a
+  // button that does.
+  const ALARM_SHORTCUTS: ShortcutRow[] = [
+    ...(can("alarm:ack") ? [{ keys: "A", descKey: "keyboard.action.ackSelected" }] : []),
+    ...(can("alarm:resolve") ? [{ keys: "R", descKey: "keyboard.action.resolveSelected" }] : []),
+    { keys: "Esc", descKey: "keyboard.action.clearSelection" },
   ];
 
-  const grouped = KEYBOARD_SHORTCUTS.reduce<Record<string, typeof KEYBOARD_SHORTCUTS>>((acc, s) => {
-    (acc[s.category] ??= []).push(s);
-    return acc;
-  }, {});
+  // Navigation shortcuts are listed only for views this role may open.
+  const grouped = KEYBOARD_SHORTCUTS
+    .filter((s) => !s.cap || can(s.cap))
+    .reduce<Record<string, typeof KEYBOARD_SHORTCUTS>>((acc, s) => {
+      (acc[s.category] ??= []).push(s);
+      return acc;
+    }, {});
 
   // Insert the Alarms section right after the Actions group so it appears
   // before the TIP box at the bottom of the dialog.
-  const orderedEntries: [string, { keys: string; description: string }[]][] = [
+  // Rows carry either literal `description` or an i18n `descKey`; the dialog
+  // resolves both here so no caller has to remember which it holds.
+  const orderedEntries: [string, ShortcutRow[]][] = [
     ...Object.entries(grouped).filter(([cat]) => cat !== "Actions"),
     ...Object.entries(grouped).filter(([cat]) => cat === "Actions"),
-    ["Alarms", ALARM_SHORTCUTS],
+    [t("keyboard.category.alarms"), ALARM_SHORTCUTS],
   ];
+  const label = (s: ShortcutRow) => (s.descKey ? t(s.descKey) : (s.description ?? ""));
+  const categoryKeyOf = (rows: ShortcutRow[]) => rows.find((r) => r.categoryKey)?.categoryKey;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -53,12 +73,12 @@ export function KeyboardHelpDialog({ open, onOpenChange }: Props) {
             {orderedEntries.map(([category, shortcuts]) => (
               <div key={category}>
                 <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  {category}
+                  {categoryKeyOf(shortcuts) ? t(categoryKeyOf(shortcuts) as string) : category}
                 </p>
                 <div className="space-y-1.5">
                   {shortcuts.map((s) => (
-                    <div key={s.keys + s.description} className="flex items-center justify-between gap-3 rounded-md px-2 py-1.5 hover:bg-muted/50">
-                      <span className="text-sm text-foreground">{s.description}</span>
+                    <div key={s.keys + label(s)} className="flex items-center justify-between gap-3 rounded-md px-2 py-1.5 hover:bg-muted/50">
+                      <span className="text-sm text-foreground">{label(s)}</span>
                       <kbd className="inline-flex items-center gap-0.5 rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground">
                         {s.keys}
                       </kbd>

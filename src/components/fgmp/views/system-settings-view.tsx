@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import { useFgmp } from "@/lib/fgmp/store";
 import { useApi, apiPatch } from "@/lib/fgmp/use-api";
+import { hasCapability } from "@/lib/fgmp/rbac-core";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import {
@@ -135,10 +136,12 @@ export function SystemSettingsView() {
     [],
   );
 
-  // Access control — the rbac matrix only grants these views to ADMIN (via
-  // the "*" wildcard). Non-admins who somehow navigate here get a clean
-  // 403-style banner instead of a noisy page.
-  if (me && me.role !== "ADMIN") {
+  // Access control — the same `view:system-settings` capability the nav filter
+  // and GET /api/fgmp/settings enforce. A role without it gets a clean
+  // 403-style banner instead of a noisy page. (This was `role !== "ADMIN"`,
+  // which additionally locked out SUPERADMIN — the one role that holds the
+  // wildcard and is the only role allowed to write BRANDING/PLATFORM keys.)
+  if (me && !hasCapability(me.role, "view:system-settings")) {
     return (
       <div className="mx-auto max-w-2xl py-10">
         <Alert variant="destructive">
@@ -198,6 +201,13 @@ export function SystemSettingsView() {
 
 function SettingsSection({ category, numLang }: { category: Category; numLang: Language }) {
   const meta = CATEGORY_META[category];
+  // Save and Reset both `PATCH /api/fgmp/settings`, which the policy gates on
+  // `settings:manage` — WIDER than `view:system-settings`, which is only what
+  // opens the screen. Deriving the buttons from the write capability instead of
+  // from "the viewer got past the page gate" is what keeps a read-only settings
+  // role from being handed two buttons that both 403.
+  const meRole = useFgmp((s) => s.me?.role ?? null);
+  const canEditSettings = meRole !== null && hasCapability(meRole, "settings:manage");
   const t = useT();
   const fields = FIELDS[category];
   const Icon = meta.icon;
@@ -330,29 +340,38 @@ function SettingsSection({ category, numLang }: { category: Category; numLang: L
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {isDirty && (
+            {!canEditSettings && (
+              <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                {t("common.readOnly")}
+              </Badge>
+            )}
+            {canEditSettings && isDirty && (
               <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[10px]">
                 {t("settings.unsavedChanges")}
               </Badge>
             )}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleResetDefaults}
-              disabled={loading || saving}
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">{t("rules.resetToDefaults")}</span>
-              <span className="sm:hidden">Reset</span>
-            </Button>
-            <Button
-              size="sm"
-              onClick={handleSave}
-              disabled={!isDirty || saving || loading}
-            >
-              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-              {t("systemSettings.saveChanges")}
-            </Button>
+            {canEditSettings && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleResetDefaults}
+                  disabled={loading || saving}
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">{t("rules.resetToDefaults")}</span>
+                  <span className="sm:hidden">Reset</span>
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleSave}
+                  disabled={!isDirty || saving || loading}
+                >
+                  {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                  {t("systemSettings.saveChanges")}
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </CardHeader>

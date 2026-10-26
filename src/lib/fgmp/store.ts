@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import type { Snapshot } from "@/lib/fgmp/types";
 import type { Role } from "@/lib/fgmp/types";
-import { canAccessApi } from "@/lib/fgmp/rbac-core";
+import { canAccessApi, hasCapability } from "@/lib/fgmp/rbac-core";
 
 export interface Me {
   id: string;
@@ -16,6 +16,9 @@ export interface Me {
   permanentRole?: Role;
   previewRole?: Role | null;
   tenantId: string;
+  /** The tenant a SUPERADMIN account must belong to, for callers allowed to
+   *  answer that question at all (see platform-identity.ts). `null` otherwise. */
+  platformTenantId?: string | null;
   roles: Role[];
   permissions: { label: string; description: string; capabilities: string[] };
 }
@@ -34,14 +37,16 @@ interface FgmpState {
   /**
    * Identity the cached `snapshot` was fetched FOR, as `identityKey(me)`.
    *
-   * The snapshot is one tenant's (or, for SUPERADMIN, every tenant's) operational
-   * data. `me` changes without the page unloading — logout, account switch, role
-   * preview, demotion, tenant change — and every one of those changes what the
-   * caller is ALLOWED to see. Without this marker the store handed the previous
-   * identity's data to the next one: sign out of tenant A, sign in as tenant B in
-   * the same tab, and the shell painted A's sites, KPIs and alarms until the
-   * first /api/fgmp/state response landed. When the earlier session was
-   * SUPERADMIN the stale payload was the GLOBAL cross-tenant snapshot.
+   * The snapshot is ONE tenant's operational data — `/api/fgmp/state` calls
+   * `snapshotForTenant(tenantIdOrThrow(me.tenantId))` for every role, so a
+   * SUPERADMIN session is scoped to its own platform tenant exactly like any
+   * other (cross-tenant customer content exists only inside the audited
+   * support-session surface). `me` changes without the page unloading — logout,
+   * account switch, role preview, demotion, tenant change — and every one of
+   * those changes what the caller is ALLOWED to see. Without this marker the
+   * store handed the previous identity's data to the next one: sign out of
+   * tenant A, sign in as tenant B in the same tab, and the shell painted A's
+   * sites, KPIs and alarms until the first /api/fgmp/state response landed.
    *
    * `null` means "no snapshot is valid for anyone" — the initial state and the
    * state after any identity change.
@@ -75,11 +80,14 @@ interface FgmpState {
 /**
  * The identity a data payload belongs to.
  *
- * Includes the ROLE and the TENANT, not just the user id, because the payload
- * itself is role-dependent: `/api/fgmp/state` returns the cross-tenant snapshot
- * for SUPERADMIN and one tenant's snapshot for everyone else. Keying on the id
- * alone would survive a SUPERADMIN→ADMIN change and keep showing a demoted
- * user every tenant's data.
+ * Includes the ROLE and the TENANT, not just the user id. The tenant is the
+ * payload's scope: `/api/fgmp/state` is tenant-scoped for EVERY role, SUPERADMIN
+ * included, so a tenant change must drop the cache. The role is defence in
+ * depth rather than a description of today's payload (which `snapshotForTenant`
+ * builds from the tenant alone): the cache is keyed by the AUTHORITY that
+ * fetched it, so no future projection — a per-role field, or a wide snapshot
+ * produced for a platform operator — can be served to a narrower identity by
+ * surviving a role change.
  *
  * Returns null when there is no resolved identity, which never matches a stored
  * key — so "not yet known" also invalidates the cache.
@@ -198,7 +206,29 @@ export const useFgmp = create<FgmpState>((set, get) => ({
     if (!get().error) set({ lastTickAt: Date.now() });
   },
 
-  setView: (v) => set({ view: v, selectedSiteId: null }),
+  /**
+   * Switch the rendered view — but only to one the effective role may open.
+   *
+   * The refusal is silent at this layer on purpose. Every caller that offers a
+   * *link* hides it first (see `useCanView`), so reaching this guard means
+   * either a deep link the shell already refuses to mount, or a caller that
+   * forgot its own check. In the second case the useful behaviour is "nothing
+   * happens": the store must not hold a view the role cannot see, because
+   * `view` also feeds the URL, the breadcrumbs and `safeView` — a stale
+   * unauthorized value is how an "access denied" panel outlives the role that
+   * caused it.
+   *
+   * `me === null` is allowed. It is the one-frame window before the session
+   * envelope resolves, during which the shell renders a spinner instead of any
+   * view, so there is nothing to protect yet and refusing here would fight the
+   * URL-restore effect that runs at the same moment.
+   */
+  setView: (v) =>
+    set((s) => {
+      const role = s.me?.role;
+      if (role && !hasCapability(role, `view:${v}`)) return {};
+      return { view: v, selectedSiteId: null };
+    }),
   selectSite: (id) => set({ selectedSiteId: id }),
   setRegionFilter: (id) => set({ regionFilter: id }),
   setSearch: (s) => set({ search: s }),
@@ -243,11 +273,12 @@ export const useFgmp = create<FgmpState>((set, get) => ({
       throw new Error(`switchRole failed: ${res.status}`);
     }
     const me = await res.json();
-    // Through setMe, not `set({ me })`: switching to a previewed role changes
-    // what /api/fgmp/state would return (SUPERADMIN sees every tenant; ADMIN sees
-    // one), so the cached payload must be dropped exactly as on a real role
-    // change. A direct set() here would keep the cross-tenant snapshot on screen
-    // for the whole preview.
+    // Through setMe, not `set({ me })`: a preview changes the effective ROLE,
+    // and the cached payload is keyed by the authority that fetched it, so it
+    // must be dropped exactly as on a real role change. A direct set() here
+    // would leave data fetched under a wider role on screen for the whole
+    // preview — and would leave `snapshotOwner` claiming an identity that no
+    // longer matches.
     get().setMe(me);
   },
 

@@ -56,6 +56,13 @@ export function AlarmsView() {
   const role = me?.role ?? "READONLY";
   const canManageRules = hasCapability(role, "alarm:configure");
   const canViewSuppressions = hasCapability(role, "view:suppressions");
+  // Acknowledge and resolve are separate capabilities (POST/PATCH
+  // /api/fgmp/alarms accepts either). Both are checked so a READONLY or
+  // EXECUTIVE viewer is not shown a button whose only outcome is a 403.
+  const canViewSites = hasCapability(role, "view:sites");
+  const canAcknowledge = hasCapability(role, "alarm:ack");
+  const canResolve = hasCapability(role, "alarm:resolve");
+  const canAct = canAcknowledge || canResolve;
 
   const t = useT();
   const useArabicNums = useArabicNumerals();
@@ -588,25 +595,25 @@ export function AlarmsView() {
                   <CheckCheck className="h-3.5 w-3.5 text-sky-500" />
                   <span>{formatNumber(selectedCount, numLang)} {t("common.selected")}</span>
                 </div>
-                <div className="ms-auto flex flex-wrap items-center gap-2">
-                  <Button
+                <div className="ml-auto flex flex-wrap items-center gap-2">
+                  {canAcknowledge && <Button
                     size="sm"
                     variant="outline"
                     className="h-7 border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-400 hover:bg-sky-500/20 hover:text-sky-700"
                     onClick={bulkAck}
                   >
-                    <CheckCheck className="me-1.5 h-3.5 w-3.5" />{t("alarms.bulkAck")}
-                    <kbd className="ms-2 hidden items-center rounded border bg-background/80 px-1.5 py-0.5 font-mono text-[10px] sm:inline-flex">A</kbd>
-                  </Button>
-                  <Button
+                    <CheckCheck className="mr-1.5 h-3.5 w-3.5" />{t("alarms.bulkAck")}
+                    <kbd className="ml-2 hidden items-center rounded border bg-background/80 px-1.5 py-0.5 font-mono text-[10px] sm:inline-flex">A</kbd>
+                  </Button>}
+                  {canResolve && <Button
                     size="sm"
                     variant="outline"
                     className="h-7 border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/20 hover:text-emerald-700"
                     onClick={bulkResolve}
                   >
-                    <CheckCircle2 className="me-1.5 h-3.5 w-3.5" />{t("alarms.bulkResolve")}
-                    <kbd className="ms-2 hidden items-center rounded border bg-background/80 px-1.5 py-0.5 font-mono text-[10px] sm:inline-flex">R</kbd>
-                  </Button>
+                    <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />{t("alarms.bulkResolve")}
+                    <kbd className="ml-2 hidden items-center rounded border bg-background/80 px-1.5 py-0.5 font-mono text-[10px] sm:inline-flex">R</kbd>
+                  </Button>}
                   <Button size="sm" variant="ghost" className="h-7" onClick={clearSelection}>
                     <X className="me-1.5 h-3.5 w-3.5" />{t("alarms.clear")}
                     <kbd className="ms-2 hidden items-center rounded border bg-background/80 px-1.5 py-0.5 font-mono text-[10px] sm:inline-flex">Esc</kbd>
@@ -621,13 +628,15 @@ export function AlarmsView() {
               <Table>
                 <TableHeader className="sticky top-0 bg-card">
                   <TableRow>
-                    <TableHead className="w-[40px] pe-0">
-                      <Checkbox
-                        checked={allSelected ? true : someSelected ? "indeterminate" : false}
-                        onCheckedChange={toggleAll}
-                        disabled={actionableIds.length === 0}
-                        aria-label={t("alarms.selectAllActionable")}
-                      />
+                    <TableHead className="w-[40px] pr-0">
+                      {canAct ? (
+                        <Checkbox
+                          checked={allSelected ? true : someSelected ? "indeterminate" : false}
+                          onCheckedChange={toggleAll}
+                          disabled={actionableIds.length === 0}
+                          aria-label={t("alarms.selectAllActionable")}
+                        />
+                      ) : null}
                     </TableHead>
                     <TableHead className="w-[24px]"></TableHead>
                     <TableHead className="w-[140px]">{t("alarms.type")}</TableHead>
@@ -651,8 +660,8 @@ export function AlarmsView() {
                         // the ack/resolve mutation is in flight (#20).
                         isSaving && "opacity-50",
                       )} onClick={() => setSelected(a.id)}>
-                        <TableCell className="pe-0" onClick={(e) => e.stopPropagation()}>
-                          {actionable ? (
+                        <TableCell className="pr-0" onClick={(e) => e.stopPropagation()}>
+                          {actionable && canAct ? (
                             <Checkbox
                               checked={validSelectedIds.has(a.id)}
                               onCheckedChange={() => toggleOne(a.id)}
@@ -675,10 +684,10 @@ export function AlarmsView() {
                         <TableCell className="text-end" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-1">
                             {isSaving && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" aria-label={t("common.saving")} />}
-                            {(a.status === "OPEN" || a.status === "ESCALATED") && (
+                            {canAcknowledge && (a.status === "OPEN" || a.status === "ESCALATED") && (
                               <Button size="sm" variant="outline" className="h-6 px-2 text-[10px] active:scale-[0.98] transition-transform" disabled={isSaving} onClick={() => ack(a.id)}>{t("alarms.ack")}</Button>
                             )}
-                            {a.status !== "RESOLVED" && (
+                            {canResolve && a.status !== "RESOLVED" && (
                               <Button size="sm" variant="outline" className="h-6 px-2 text-[10px] text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 active:scale-[0.98] transition-transform" disabled={isSaving} onClick={() => resolve(a.id)}>
                                 <CheckCircle2 className="me-1 h-3 w-3" />{t("alarms.resolve")}
                               </Button>
@@ -729,7 +738,18 @@ export function AlarmsView() {
       </div>
 
       {/* Alarm Correlation Analysis */}
-      <AlarmCorrelationPanel alarms={mergedAlarms ?? []} onSelectSite={(siteId) => { selectSite(siteId); setView("sites"); }} />
+      {/* The panel correlates alarms; its rows link into Sites, so the link is
+          passed only when `view:sites` is present. Omit the callback rather
+          than pass one that silently does nothing: `onSelectSite` is optional
+          precisely so a correlation panel can be read-only. */}
+      <AlarmCorrelationPanel
+        alarms={mergedAlarms ?? []}
+        onSelectSite={
+          canViewSites
+            ? (siteId) => { selectSite(siteId); setView("sites"); }
+            : undefined
+        }
+      />
 
       {/* Selected alarm detail */}
       {selectedAlarm && (

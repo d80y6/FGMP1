@@ -36,16 +36,49 @@ which is why the geography by-id routes (the Phase 0 IDOR) also scope their
 No role bypasses tenant isolation. `SUPERADMIN` is a capability, not a tenant
 context: every tenant-scoped route — including one serving a super-admin — runs
 inside `withTenant()`, and a super-admin's own session is scoped to the platform
-tenant like anybody else's. Cross-tenant *content* requires an explicit,
+tenant like anybody else's. That last clause is a structural invariant, not a
+convention: `src/lib/fgmp/platform-identity.ts` refuses to create a super-admin
+account in a customer tenant and refuses to promote a customer-tenant user in
+place (`SUPERADMIN_TENANT_FIXED`), because such an account's ordinary session
+would read that customer's data permanently, with no support session and nothing
+in the customer's audit log. Both user routes call it, and
+`platform-tier-parity.test.ts` asserts the call sites as well as the rule. Cross-tenant *content* requires an explicit,
 time-boxed support session that names one tenant, records a reason, and is
 visible in that tenant's audit log (`docs/SUPERADMIN.md`). Cross-tenant *numbers*
 (counts on the health endpoint) are read on the ops connection and never joined
 into a row set.
 
 Everywhere else the tenant comes from the session, never from the request body
-or query. The one exception is a super-admin naming a tenant explicitly on the
-user-administration routes (`?tenant=`), which goes through
-`asTenantForAnotherTenant()` — a named, runtime-checked capability.
+or query. There is exactly one named exception, and it is worth stating
+precisely because it is the only place a request can act on a tenant other than
+the caller's without a support session:
+
+**Cross-tenant user administration (`?tenant=`).** On
+`GET/POST /api/fgmp/users` and `/api/fgmp/users/[id]`, a **SUPERADMIN** may name
+a tenant in the query string; the request then runs inside that tenant's context
+(`withTenant()`, so FORCE RLS applies) rather than the caller's platform tenant.
+The rules the code enforces, in `src/lib/fgmp/route-tenant.ts`:
+
+- Only a SUPERADMIN. For every other role a `?tenant=` is **silently ignored**,
+  not refused: the answer is that role's own scope regardless of whether the
+  named tenant exists, so the parameter cannot be used to probe for tenant ids.
+- `asTenantForAnotherTenant()` re-checks SUPERADMIN *inside* the call, so
+  reaching that line with a hand-built object still throws.
+- Writes (`USER_CREATE`, `USER_UPDATE`, `USER_ACTIVATE`, `USER_DEACTIVATE`) are
+  audited with the **target** tenant id, so they appear in that tenant's log.
+- Reads (`GET /api/fgmp/users`, `GET /api/fgmp/users/[id]`) are not individually
+  audited. They are a read outside a support session, and a super-admin receives
+  no cross-tenant data from anywhere else — `/api/fgmp/state` is scoped to the
+  caller's own tenant for EVERY role, `t-platform` included (an earlier version
+  of this paragraph justified the silence by calling that endpoint "the
+  cross-tenant snapshot", which the code does not do). The roster is the surface
+  used to administer another tenant's accounts, so it is named here rather than
+  left implied; the account/role content it exposes is registry metadata, not a
+  customer's operational rows.
+
+Nothing else crosses the boundary. `docs/RBAC-REVIEW-2026-10.md` §B9 records the
+same exception; before this paragraph, `SECURITY.md` claimed cross-tenant
+*content* required a support session without naming it.
 
 ## 3. Tenant isolation (RLS)
 
@@ -83,11 +116,21 @@ TOTP with encrypted-at-rest secrets and single-use recovery codes. See
 
 ## 5. Boot-time validation
 
-The server refuses to start on an invalid environment (`src/lib/env.ts`,
-`FGMP_REQUIRE_RLS=0` in production, short secrets, partial realtime
-credentials) and exits non-zero rather than serving a half-configured platform.
-`bun run check:env` applies the same rules before a deploy. Problem reports name
-variables, never values.
+On a Node/Bun container the server refuses to start on an invalid environment
+(`src/lib/env.ts`, `FGMP_REQUIRE_RLS=0` in production, short secrets, partial
+realtime credentials) and exits non-zero rather than serving a half-configured
+platform. `bun run check:env` applies the same rules before a deploy. Problem
+reports name variables, never values.
+
+On Cloudflare Workers — the production target — there is no process to kill:
+`src/instrumentation.ts` documents that throwing out of `register()` leaves the
+runtime serving. The same verdicts are therefore evaluated once per isolate by
+`src/lib/fgmp/config-health.ts` and enforced on the request path, where
+`requireAuth()` answers `503` with a stable code (`ENV_INVALID`,
+`RLS_NOT_ENFORCED`, `SESSION_CONFIG_INVALID`) before any handler runs.
+Enforcement is identical — nothing serves — but the failure is readable rather
+than a platform-wide bare `500`, which is what a module-scope throw produces
+there. `GET /api/health/ready` reports the code anonymously.
 
 ## 6. Secrets
 
@@ -171,7 +214,7 @@ trigger, download or restore a dump over HTTP.
 
 | Gap | Impact | Mitigation |
 |---|---|---|
-| A Worker deployment may be given an owner-role `DATABASE_URL` | RLS cannot be enforced | Create `fgmp_app`, keep `FGMP_REQUIRE_RLS=1` in the Worker secrets; the app refuses to start otherwise |
+| A Worker deployment may be given an owner-role `DATABASE_URL` | RLS cannot be enforced | Create `fgmp_app`, keep `FGMP_REQUIRE_RLS=1` in the Worker secrets. The app then refuses every `/api/fgmp/*` request with `503 RLS_NOT_ENFORCED` (and `/api/health/ready` reports it) instead of querying unscoped |
 | `SensorReading` has no retention policy | Dumps and tables grow without bound | Plan a TimescaleDB retention policy |
 | Recovery-code + password policy is configurable, not prescribed | Weak operator choices | Documented defaults; review in code review |
 | Audit log is append-only in the app, not in the database | A compromised app role could rewrite it | Restrict `fgmp_app` to INSERT/SELECT on `AuditLog`; export logs off-box |

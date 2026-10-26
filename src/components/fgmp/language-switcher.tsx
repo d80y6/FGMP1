@@ -50,7 +50,7 @@ export function LanguageSwitcher() {
   const activeOption = OPTIONS.find((o) => o.value === lang) ?? OPTIONS[0];
 
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
+    <DropdownMenu open={open} onOpenChange={setOpen} modal={false}>
       <DropdownMenuTrigger asChild>
         <Button
           variant="outline"
@@ -84,7 +84,7 @@ export function LanguageSwitcher() {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48">
         <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-muted-foreground">
-          Language · اللغة
+          {t("common.language")}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         {OPTIONS.map((opt) => {
@@ -117,9 +117,9 @@ export function LanguageSwitcher() {
         })}
         <DropdownMenuSeparator />
         <p className="px-2 py-1 text-[10px] text-muted-foreground">
-          {mounted && lang === "ar"
-            ? "النشط: العربية (RTL)"
-            : "Active: English (LTR)"}
+          {t("common.activeOption")}: {mounted && lang === "ar"
+            ? `${t("common.arabic")} (RTL)`
+            : `${t("common.english")} (LTR)`}
         </p>
       </DropdownMenuContent>
     </DropdownMenu>

@@ -230,28 +230,47 @@ Persistence + FORCE RLS | `20261011000000_mfa_persistence` | 4 tables, `rls=true
 TOTP / base32 / encryption | `src/lib/fgmp/mfa/` | 37 tests, RFC vectors |
 Pending challenge | `mfa/service.ts` | atomic, hashed, 5 min |
 Backup codes | own rows | hashed, atomic single-use |
-Enforcement guard | `mfa/guard.ts` | allowlist, mutation-tested |
+Enforcement guard | `mfa/guard.ts` | allowlist, mutation-tested, **called from `requireAuth`** |
 Routes | `src/app/api/fgmp/mfa/**` | enrol, verify-enrol, challenge, disable, reset |
 RLS fixtures | `scripts/verify/rls-regression.ts` | 39/39 tables covered |
 
 **Still NOT wired — and each item is deliberate:**
 
-1. **The `mfaPending` marker is declared but not yet set by `authorize()`.**
-   `src/lib/auth.ts` carries the flag on `JWT` and `Session`, and the guard
-   consumes it, but the credentials callback does not yet set it when an enrolled
-   user signs in. Until that line exists, MFA enrolment works but is not
-   *enforced at login*.
+1. **UI.** Enrolment, challenge and recovery screens are not built
+   (`src/components/**` is another agent's scope). No component submits
+   `mfaProof`. The consequence is worth stating plainly, because it is now
+   sharper than it was: a pending session is refused by `requireAuth` on every
+   route except `/api/fgmp/mfa/*` and `/api/auth/*`, so an enrolled user whose
+   client has no challenge screen can complete the login **only** through the
+   API sequence below. That is the correct security answer — a half-authenticated
+   session should reach nothing — but it means MFA must not be switched on for a
+   tenant until the screen exists.
 
-   This is the one remaining gap between "MFA exists" and "MFA is on", and it is a
-   two-line change in a file (`src/lib/auth.ts`) that is explicitly outside the
-   MFA write scope because another agent owns it. **It must not be reported as
-   done until that line exists and the login flow is tested end to end.**
+   ```
+   POST /api/fgmp/mfa/challenge-request          → { challengeToken }
+   POST /api/fgmp/mfa/challenge                  → { verified: true }   (code / backup code)
+   signIn("credentials", { …, mfaProof: challengeToken })                (mints the session)
+   ```
 
-2. **UI.** Enrolment, challenge and recovery screens are not built
-   (`src/components/**` is another agent's scope).
+2. **No production caller of `isPublicPath()`.** The pending-session decision is
+   wired; the "is this path public at all" helper is still only used by tests,
+   because Next has no middleware in this app (Next 16.1) and every route
+   authenticates itself.
 
-3. **Status route.** No `GET /api/fgmp/mfa/status` for the UI to read enrolment
-   state; the routes exist but nothing lists whether MFA is on.
+**Corrected here (previously listed as gaps, no longer true):**
+
+- `authorize()` **does** set `mfaPending` for an enrolled user
+  (`src/lib/auth.ts`, the `hasMfaEnabled` branch), and it deliberately returns
+  the user with **no `role` and no `tenantId`**.
+- `GET /api/fgmp/mfa/status` **exists** (`src/app/api/fgmp/mfa/status/route.ts`)
+  and is reachable while pending, so a client can discover enrolment state
+  without a full session.
+- The guard is wired. `requireAuth` evaluates `evaluatePendingSession(pathname)`
+  **before** `canAccessApi`, so the decision is about the path, not a side effect
+  of the missing role. Before that call site existed, `AUTH_ONLY_API_RULES`
+  routes (`GET /api/fgmp/me`, `/api/fgmp/preferences`, `/api/fgmp/proposal`) were
+  readable by a half-authenticated session; `rbac-server-conformance.test.ts`
+  now asserts the call site itself.
 
 ## Status: ENFORCED
 

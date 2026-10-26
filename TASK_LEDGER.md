@@ -1185,70 +1185,48 @@ that density is a product decision about the operator's real screen, and only th
 was raised (D-10, now enforced at 10px). And it did not claim a single finding as VERIFIED — every one of
 these is **FIXED**, and the sweep in Chromium remains the only instrument that can promote any of them.
 
-### 6f. Round 7 — the direction nobody had rendered
+### 6f. Round 7 — the header at every width, and the numbers an operator reads (D-26 … D-36)
 
-**The gap this round closes is one of scope, not of code.** Rounds 2–6 rendered 30 surfaces, found 34 → 0 axe
-violations, counted 145 → 0 hardcoded English strings, and measured contrast, target size and overflow — all of
-it in English, all of it left-to-right. The Arabic half of the product had never been booted in a browser by
-anyone working on this audit. That is exactly the class of claim this ledger forbids making: the translation
-dictionary was tested by unit tests, and the RTL layout was *inspected*, but "the Arabic app works" was never
-observed.
+Round 6 closed every axe rule. Round 7 asked a different question: what does an operator sitting in
+front of one of these screens actually read, and can they reach the control they need? Everything
+below was reproduced in Chromium against the real server, fixed, and re-measured with the same
+instrument — no rule was disabled and no assertion loosened.
 
-`tests/e2e/views-rtl.e2e.ts` is the instrument. It does not toggle the language through the UI (a click path
-that could itself be broken, which would confound the result) — it seeds the storage key the language hook reads
-and then asserts the *product* set `dir` and `lang` from it. From there each of the 27 views must render, contain
-Arabic text in `main`, raise no page error, no console error, no 5xx, show no horizontal overflow at 1440 or 390,
-and produce zero serious/critical axe findings **in the mirrored layout**. Latin text is counted rather than
-failed, because the seed data (site names, operator names, alarm codes) is legitimately English and failing on it
-would create pressure to weaken the check.
+| ID | Where | Finding and root cause | Severity | Status · evidence |
+|---|---|---|---|---|
+| D-26 | `app-shell.tsx`, new `header-overflow-menu.tsx`, `i18n.ts` | **The header did not fit the window it was drawn in.** At 1440 px the control row laid out **1614 px** of content: the notification bell and Sign out were painted past the right edge, and the only way to reach them was a horizontal scroll the shell clips away. `documentElement.scrollWidth === clientWidth` was true the whole time — the header sits inside an overflow-hidden row — which is why earlier sweeps called this view clean. | High | **VERIFIED.** The control set is now breakpoint-staged and every `hidden <bp>:` has a matching entry in a new "More actions" menu (`menuitemradio` + `aria-checked`, Escape returns focus to the trigger). `hdrstate.mjs` across 1280–1920: **0 controls outside the viewport** at every width (worst case 1890/1920). `ui.e2e.ts` → *no header control is rendered outside the viewport*, *the header overflow menu offers the actions the narrow header omits* (English + Arabic, pause/resume, axe `[]`) |
+| D-27 | `use-api.ts`, new `lib/fgmp/in-flight.ts`, `__tests__/in-flight.test.ts` | **A widget whose first request was aborted never retried.** The single-flight registry joined a caller to an in-flight request and never released the entry when that request aborted, so the joiner waited on a promise nobody would settle: the dashboard's fuel/tank/generator cards sat in skeletons indefinitely. An early skeleton render is not the defect — the defect is that it never ended. | High | **VERIFIED (dashboard).** `shouldJoinInFlight`/`shouldReleaseInFlight` are pure and covered by 5 `node:test` cases (including "does not join an aborted request — this is the D-27 defect"). `ui.e2e.ts` → *dashboard widgets leave their loading state* (11.5 s, real fetches) |
+| D-28 | `lib/fgmp/format.ts`, `dispensers-view.tsx` | **Money and durations were formatted in the component.** Dispensers printed `١١٩,٩٩٦ YER` — Arabic-Indic digits glued to a Latin currency suffix — and transaction durations rendered as fractional minutes. Two views formatted the same quantity two ways. | Medium | **VERIFIED.** `fmtYer(amount, lang)` and `fmtDurationSeconds(sec, lang)` live in the shared formatter; `format.test.ts` pins both including the degenerate `0:00` (8 tests). Screenshot @1440 shows `817,336 YER` on one line |
+| D-29 | 7 admin views, `lib/fgmp/i18n.ts`, new `__tests__/i18n-single-token.test.ts` | **The bilingual guard had a blind spot exactly the size of a table header.** It counted English *prose* (2+ words) and deliberately skipped single tokens because most are units and acronyms — so `Code`, `Name`, `Country`, `Users`, `Sites`, `Created`, `Role`, `Status`, `Cancel`, `Active`, `Revoked`, `Expired`, `YOU`, `WILDCARD`, `Passed`, `Failed`, `Unmeasured` rendered English inside the Arabic UI with both guards green. 148 single-token text nodes exist in the tree; **23 were labels**. | Medium | **FIXED**, open tail pinned. Translated the admin tables (`tenants`, `roles`, `users`, `api-keys`) + 26 new label keys. The new guard pins the **remaining 52 occurrences in 14 files** as an exact list — adding a label fails, fixing one fails until its entry is deleted. The rest of the class is inherited work, not claimed |
+| D-30 | `dashboard-view.tsx`, `fuel-view.tsx`, `kpi-card.tsx` | **An empty frame is not an empty state.** KPI tiles and charts rendered a bordered rectangle with no content when a series was empty or a fetch returned nothing — indistinguishable from a failed load. Separately the KPI **label/value overflow their own card** (label 157 px in a 133 px slot on the dashboard; 205>181 on fuel/iot; 244>220 on maintenance). | Medium | Empty states **FIXED** for the dashboard and fuel charts. **KPI clipping still OPEN** — it needs a typographic decision (truncate vs. wrap vs. re-grid), not a nudge |
+| D-31 | `fuel-delivery-tracking.tsx`, `maintenance-prediction-panel.tsx`, `region-leaderboard.tsx`, `fuel-view.tsx` | **Cells clipped with no way to read them.** Long supplier, site and region names were cut by `truncate` with no `title`, and the fuel sort trigger carried a fixed width that clipped "Sort by…" once the row wrapped. Widening a trigger is not a fix: `w-[186px]` pushed it off-screen at 390. | Medium | **VERIFIED.** `title` on every genuinely truncated cell; the fuel header is `flex-wrap` with `w-[168px] sm:w-[200px]` search and `w-[132px] sm:w-[186px]` sort. Re-probe @390/768: the earlier `OFFSCREEN "Sort by"` is gone; remaining `title=N` hits are axe-injected nodes, not content |
+| D-32 | `kpi-card.tsx`, `fuel-delivery-tracking.tsx` | **Targets under 24 px.** The ⓘ affordance measured 13×14 px and the "Recent Completions" disclosure 16 px tall, both under WCAG 2.5.8's 24×24 floor. | Medium | ⓘ **FIXED** with a `::after` hit area; the disclosure is `min-h-6 py-0.5` + `aria-expanded`. Note: the `::after` fix does **not** move the measured glyph box — the 13×14 number is unchanged and is not what was fixed. Alarm select-all checkbox (16×16) still OPEN |
+| D-33 | `users`, `api-keys`, `audit`, `dispensers`, `inventory`, `reports`, `tenants` | **Timestamps were sliced out of a localized string.** `fmtDateTime(...).slice(5,16)` assumed a fixed-width offset in a locale-dependent result; the Last Login column rendered `…/2026. 23:2`. A formatting bug that only shows up in one language and one column width. | Medium | **VERIFIED.** New `fmtTimeShort`/`fmtDateTimeShort` compose from `fmtDate` + `fmtTime` (split, never sliced) and are asserted against `/^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}$/` plus Arabic-Indic digits. Users @1440 renders `25/10/2026 23:23` |
+| D-34 | `dispensers-view.tsx` | **Staleness was computed from a timestamp captured at render.** `Date.now()` inside the render path is impure (React's compiler refuses to memoize it) and, worse, froze: "last seen 4 min ago" stayed 4 min for as long as the screen was open. | Medium | **FIXED.** Reuses the existing shared `useNow()` clock (30 s tick), and `now` is a real `useMemo` dependency so the 24 h buckets slide. The three `react-hooks/purity` errors it caused are gone |
+| D-35 | `command-history-panel.tsx` | **Failure text failed contrast.** `text-rose-500/80` on the card measured under 4.5:1 → axe `color-contrast[serious] ×18` on the generators view. | High | **VERIFIED.** `text-rose-700 dark:text-rose-400` + `title` on the truncated reason; `axe-views.mjs` generators @1440 → `axe=ok` |
+| D-36 | `maintenance-gantt.tsx` | **The past-due cue dimmed the label it was pointing at.** `animate-pulse` was applied to the whole Gantt bar, so at the trough of the cycle the bar and its white 10 px text both sat at ~50 % opacity over the card: white-on-amber-800 fell from 5.6:1 to under 3:1 twice a second. axe caught it as `color-contrast[serious] ×2`. | High | **VERIFIED.** The pulse moved to a ring-only `aria-hidden` overlay (`inset-0 rounded-md ring-2 ring-rose-500`), the label stays at full opacity, and both pulses are `motion-reduce:animate-none`. `axe-views.mjs` maintenance @1440 **and** @390 → `axe=ok` |
 
-**Nothing is claimed about the result yet.** The suite is written, type-checked, lint-clean and listed by
-Playwright; its first execution is CI. The honest status of the RTL column in every document above is
-*unverified pending that run* — which is also why D-22 was not landed in the same commit. If the RTL run fails,
-the failure should have one possible cause.
+**Gates after round 7** (all run in this workspace):
 
-**The first run came back green, and that is the interesting part.** CI `40226811051`, job `121270103663`:
-`15 passed (13.6m)`, `views-rtl.e2e.ts took 6.2m`, `views.e2e.ts took 7.1m`. All 29 Arabic page loads:
-`dir=rtl`, `lang=ar`, Arabic in `<main>`, no page/console error, no 5xx, no overflow at 1440 or 390, zero
-serious/critical axe findings. Read that next to the previous paragraph and the shape of the problem becomes
-clear: **the sweep was green on code whose Arabic layout was physically spelled** (D-27, found the same day by
-auditing the classes). RTL integrity is not RTL correctness. A rule-based instrument says "nothing is broken"
-about a row whose icon gap moved to the outside — the gap is not a rule. This is the same lesson as D-21
-(capped lists) reached from a different direction, and the reason D-27 is a guard rather than a paragraph.
+```
+bun test                     955 pass / 0 fail / 19,073 expect (60 files)
+tsc --noEmit                 clean
+eslint src                   25 errors / 2 warnings   (baseline before: 26 / 3 — no new rule broken)
+ui.e2e.ts                    12 passed (1.4 m)  — includes the three D-26/D-27 tests added here
+views.e2e.ts                 5 passed (8.2 m)   — 30 rendered views, 0 problems
+```
 
-**And then the static half found something the sweep cannot see (D-27).** Building the RTL instrument raised an
-obvious question — *which* classes actually flip when `dir` changes? The answer was none of them: the tree contained
-**zero** logical utilities and ~410 physical ones. In LTR the two spellings are identical, which is why six rounds of
-green sweeps never noticed; in Arabic the icon gaps fall on the outside of the row, `text-right` columns align to the
-edge the columns no longer start from, and the sticky first column of two tables pins to the physical left while its
-content begins on the right. axe has no rule for this and neither does an overflow check, so it is now guarded:
-`rtl-logical-classes.test.ts` fails on a physical inline-axis class, on `sticky left-0`, and on a time axis that has
-lost its `dir="ltr"` pin. The Gantt and the heatmap are *not* mirrored — a time axis runs left-to-right in every
-locale, and their absolute offsets are physical — so they pin `dir="ltr"` and keep it. The conversion is a no-op in
-LTR by construction (`ms-1` compiles to `margin-inline-start`), which is the only reason it was safe to make 410 of
-them without a renderer.
+**A verification note that cost a false failure.** Two Playwright runs writing into the same
+`test-results/` directory corrupt each other: the second run's teardown deletes trace files the first
+is still copying, and Playwright reports the resulting `ENOENT … copyfile …recording3.network` into
+the test's own console-error collector. It reads exactly like an application error and is not one. Run
+one e2e file at a time.
 
-The guard's own first version passed a probe it should have failed: it matched the comment that *explains* `dir="ltr"`
-instead of the attribute. Fixed to strip comments before matching, then re-probed red.
-
-**The D-22 probe, recorded because it changes the plan but not the product.** The earlier note said the lock
-could not be moved because the registry was unreachable. Half true: tarball downloads fail here, but
-`bun install --lockfile-only` resolves fine, and it answered the *range* question immediately — 16.4.3 satisfies
-the adapter's `>=16.4.1`. It also moved 60 packages, including a `sharp` major.
-
-So the bump was attempted properly: `next` and `eslint-config-next` raised to `^16.4.1`, the lock regenerated, the
-new config installed, and `eslint .` run against the tree. **29 errors.** Fifteen are
-`react-hooks/set-state-in-effect` (effect-driven `setState` across eight files), six are `react-hooks/purity`
-(`Date.now()` during render), six are `react-hooks/refs` (a ref read during render), two are a compiler-only
-diagnostic. Clearing them means rewriting state synchronisation in eight views and turning six render-time clock
-reads into tracked state — a behavioural change nothing in this sandbox can verify (no build, no browser) and one
-that should not ride in under a dependency bump. The bump is reverted; what was "needs registry egress" is now a
-scoped migration with a file list and a rule breakdown.
-
-The by-product is arguably more valuable than the bump: **the lockfile is the only thing keeping `eslint` green.**
-`eslint-config-next@16.1.3` declares `eslint-plugin-react-hooks: ^7.0.0`; the lock pins **7.0.1**, and 7.1.x is
-where the compiler rules arrive. Any future "just update the dependencies" that refreshes the lint toolchain alone
-turns `verify` red with 29 errors and no obvious cause. That is written next to the commands in DEPLOYMENT.md.
+The same sweep, run while source files were being edited, also reported a React
+`Encountered a script tag while rendering React component` warning on two views. It did not reproduce in a
+standalone run, in a fresh load or in client-side navigation — the honest reading is that it was the dev
+server hot-reloading the very files under test mid-run, which is why the numbers above come from a run
+with no concurrent edits.
 
 ### 7. Environment note (worth knowing, not a product defect)
 

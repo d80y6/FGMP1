@@ -9,6 +9,7 @@ import { errorResponse } from "@/lib/fgmp/api-error";
 import { render, isExportFormat } from "@/lib/fgmp/export-render";
 import { requireAuth } from "@/lib/fgmp/auth-helpers";
 import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
+import { EXPORT_TYPE_CAPABILITIES } from "@/lib/fgmp/rbac-core";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +26,23 @@ export async function GET(req: NextRequest) {
       return res;
     }
     const { searchParams } = new URL(req.url);
-    const type = searchParams.get("type") ?? "sites"; // sites | tanks | generators | alarms | deliveries
+    const type = searchParams.get("type") ?? "sites";
+
+    // Validate `type` against the SAME table the policy authorises with. An
+    // unrecognised type used to fall through to the `else` branch below and be
+    // answered with site rows — a 200 carrying a different dataset under the
+    // requested name, which is indistinguishable from a working export until
+    // somebody opens the file. The allowlist makes it a 400 instead, and keeps
+    // "which types exist" in one place (rbac-core.ts), so a type cannot be
+    // authorisable but unimplementable again.
+    if (!Object.hasOwn(EXPORT_TYPE_CAPABILITIES, type)) {
+      const res = NextResponse.json(
+        { error: `Unsupported type "${type}"`, supported: Object.keys(EXPORT_TYPE_CAPABILITIES) },
+        { status: 400 },
+      );
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
 
     // Engine memory can contain several tenants. Never let the platform role
     // turn an ordinary export into a cross-tenant data export.
@@ -74,7 +91,15 @@ export async function GET(req: NextRequest) {
         };
       });
     } else {
-      rows = sites.map((s) => ({ code: s.code, name: s.name, region: s.region, status: s.status }));
+      // Unreachable: `type` is validated above against the same table the
+      // policy uses. It stays a refusal rather than a sites fallback, because a
+      // fallback here is what produced a "sites" payload for an "alarms" URL.
+      const res = NextResponse.json(
+        { error: `Unsupported type "${type}"`, supported: Object.keys(EXPORT_TYPE_CAPABILITIES) },
+        { status: 400 },
+      );
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
     }
 
     if (rows.length === 0) {

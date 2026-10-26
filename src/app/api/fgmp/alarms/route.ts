@@ -20,6 +20,7 @@ import {
   assertTenantOwned,
 } from "@/lib/fgmp/auth-helpers";
 import { withMetrics } from "@/lib/fgmp/with-metrics";
+import { hasCapability, type Role } from "@/lib/fgmp/rbac-core";
 
 export const dynamic = "force-dynamic";
 
@@ -104,6 +105,37 @@ export const POST = withMetrics(async function POST(req: NextRequest) {
       return res;
     }
     const data = r.data;
+
+    // ── Per-ACTION authority ────────────────────────────────────────────────
+    // `ROLES.ALARM_OPS` is the UNION of the two capability holders:
+    //
+    //   alarm:ack     ADMIN, NOC_OPERATOR, REGIONAL_MANAGER
+    //   alarm:resolve ADMIN, NOC_OPERATOR
+    //
+    // so a route-level allow-list cannot express the difference, and this
+    // handler let a REGIONAL_MANAGER resolve an alarm — an action the matrix
+    // does not grant them. The client hides the Resolve control from that role
+    // (it asks `alarm:resolve`), which made the two layers visibly disagree:
+    // the button was gone but the API still said yes to the same session.
+    //
+    // The matrix is the policy, so it wins here: the route gate stays as the
+    // cheap first refusal, and each action then requires its own capability.
+    // Resolve is the stronger act — it closes the alarm and records the
+    // outcome — and the two capabilities exist precisely to be separable.
+    const resolving = data.action === "resolve" || data.action === "bulkResolve";
+    const requiredCapability = resolving ? "alarm:resolve" : "alarm:ack";
+    if (!hasCapability(me.role as Role, requiredCapability)) {
+      const res = NextResponse.json(
+        {
+          error: "Forbidden",
+          code: "INSUFFICIENT_CAPABILITY",
+          required: requiredCapability,
+        },
+        { status: 403 },
+      );
+      applyRateLimitHeaders(res.headers, rl);
+      return res;
+    }
 
     // Bulk actions.
     if (data.action === "bulkAcknowledge") {

@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { useFgmp } from "@/lib/fgmp/store";
 import { useApi, apiPost, apiPatch, apiDelete } from "@/lib/fgmp/use-api";
+import { hasCapability } from "@/lib/fgmp/rbac-core";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { StatusBadge } from "@/components/fgmp/status-badge";
@@ -83,7 +84,13 @@ export function GeographyView() {
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
 
-  const isAdmin = me?.role === "ADMIN";
+  // Two different questions, two different capabilities:
+  //   view:geography  — may open the hierarchy at all (GET /api/fgmp/geography)
+  //   geography:manage — may create/edit/delete (POST/PATCH/DELETE)
+  // Both are read from the matrix; a role literal also hid the whole view from
+  // SUPERADMIN, which holds the wildcard and is offered the nav entry.
+  const canViewGeography = me ? hasCapability(me.role, "view:geography") : true;
+  const canManageGeography = me ? hasCapability(me.role, "geography:manage") : false;
 
   const { data: regions, loading, refetch } = useApi<RegionNode[]>("/api/fgmp/geography", { interval: 30000 });
 
@@ -146,8 +153,9 @@ export function GeographyView() {
     return { regions: list.length, governorates: govCount, districts: districtCount, sites: siteCount };
   }, [regions]);
 
-  // Access control: only ADMIN may manage geography.
-  if (me && !isAdmin) {
+  // Access control: the same `view:geography` capability the nav filter and
+  // GET /api/fgmp/geography enforce.
+  if (me && !canViewGeography) {
     return (
       <div className="mx-auto max-w-2xl py-10">
         <Alert variant="destructive">
@@ -183,7 +191,7 @@ export function GeographyView() {
           title={t("geography.regionsTitle")}
           count={stats.regions}
           icon={<Globe2 className="h-4 w-4" />}
-          onAdd={isAdmin ? () => setRegionCreateOpen(true) : undefined}
+          onAdd={canManageGeography ? () => setRegionCreateOpen(true) : undefined}
           loading={loading && !regions}
           dir={dir}
         >
@@ -194,9 +202,9 @@ export function GeographyView() {
               onClick={() => setSelectedRegionId(r.id)}
               title={r.name}
               meta={`${formatNumber(r.governorates.length, numLang)} govs · ${formatNumber(r._count.sites, numLang)} sites`}
-              canEdit={isAdmin}
+              canEdit={canManageGeography}
               onEdit={() => setRegionEditTarget(r)}
-              canDelete={isAdmin}
+              canDelete={canManageGeography}
               onDelete={() =>
                 setDeleteTarget({
                   kind: "region",
@@ -219,7 +227,7 @@ export function GeographyView() {
           title={t("geography.governoratesTitle")}
           count={selectedRegion?.governorates.length ?? 0}
           icon={<Map className="h-4 w-4" />}
-          onAdd={isAdmin && selectedRegion ? () => setGovCreateOpen(true) : undefined}
+          onAdd={canManageGeography && selectedRegion ? () => setGovCreateOpen(true) : undefined}
           loading={false}
           parentHint={selectedRegion?.name}
           dir={dir}
@@ -235,9 +243,9 @@ export function GeographyView() {
                   onClick={() => setSelectedGovId(g.id)}
                   title={g.name}
                   meta={`${formatNumber(g.districts.length, numLang)} districts · ${formatNumber(g._count.sites, numLang)} sites`}
-                  canEdit={isAdmin}
+                  canEdit={canManageGeography}
                   onEdit={() => setGovEditTarget(g)}
-                  canDelete={isAdmin}
+                  canDelete={canManageGeography}
                   onDelete={() =>
                     setDeleteTarget({
                       kind: "governorate",
@@ -261,7 +269,7 @@ export function GeographyView() {
           title={t("geography.districtsTitle")}
           count={selectedGov?.districts.length ?? 0}
           icon={<MapPin className="h-4 w-4" />}
-          onAdd={isAdmin && selectedGov ? () => setDistrictCreateOpen(true) : undefined}
+          onAdd={canManageGeography && selectedGov ? () => setDistrictCreateOpen(true) : undefined}
           loading={false}
           parentHint={selectedGov?.name}
           dir={dir}
@@ -277,9 +285,9 @@ export function GeographyView() {
                   onClick={() => setSelectedDistrictId(d.id)}
                   title={d.name}
                   meta={`${formatNumber(d._count.sites, numLang)} sites`}
-                  canEdit={isAdmin}
+                  canEdit={canManageGeography}
                   onEdit={() => setDistrictEditTarget(d)}
-                  canDelete={isAdmin}
+                  canDelete={canManageGeography}
                   onDelete={() =>
                     setDeleteTarget({
                       kind: "district",

@@ -25,11 +25,11 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogD
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { toast } from "sonner";
-import { fmtDateTime, timeAgo } from "@/lib/fgmp/format";
+import { fmtDateTime, fmtDateTimeShort, timeAgo } from "@/lib/fgmp/format";
 import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 import { roleLabel } from "@/lib/fgmp/labels";
-import { ALL_ROLES } from "@/lib/fgmp/rbac-core";
+import { ALL_ROLES, hasCapability } from "@/lib/fgmp/rbac-core";
 import type { Role } from "@/lib/fgmp/types";
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -139,8 +139,16 @@ export function UsersView() {
     };
   }, [users]);
 
+  // Read vs write, named separately: `view:users` opens the roster, and
+  // `user:manage` is what every mutation in the row menu needs (create, edit,
+  // reset password, activate/deactivate — POST/PUT/PATCH
+  // /api/fgmp/users[/:id]). They coincide today, which is why the menu was never
+  // tied to the endpoint, but a roster reader is a plausible future role and one
+  // click would then be a 403.
+  const canManageUsers = me ? hasCapability(me.role, "user:manage") : false;
+
   // Access control: only ADMIN and SUPERADMIN may use this view.
-  if (me && me.role !== "ADMIN" && me.role !== "SUPERADMIN") {
+  if (me && !hasCapability(me.role, "view:users")) {
     return (
       <div className="mx-auto max-w-2xl py-10">
         <Alert variant="destructive">
@@ -160,10 +168,12 @@ export function UsersView() {
         icon={<Users className="h-5 w-5" />}
         tone="primary"
         actions={
-          <Button onClick={() => setCreateOpen(true)} size="sm">
-            <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">{t("users.createUser")}</span>
-          </Button>
+          canManageUsers ? (
+            <Button onClick={() => setCreateOpen(true)} size="sm">
+              <Plus className="h-4 w-4" />
+              <span className="hidden sm:inline">{t("users.createUser")}</span>
+            </Button>
+          ) : undefined
         }
       />
 
@@ -230,7 +240,7 @@ export function UsersView() {
                       <TableRow key={u.id} className={cn("transition-colors hover:bg-muted/30", u.active ? "" : "opacity-60")}>
                         <TableCell>
                           <div className="flex flex-col">
-                            <span className="text-sm font-medium">{u.name}{isSelf && <Badge variant="outline" className="ms-2 h-4 px-1 text-[10px]">YOU</Badge>}</span>
+                            <span className="text-sm font-medium">{u.name}{isSelf && <Badge variant="outline" className="ml-2 h-4 px-1 text-[10px]">{t("common.you")}</Badge>}</span>
                             <span className="text-[11px] text-muted-foreground">{u.email}</span>
                           </div>
                         </TableCell>
@@ -248,15 +258,26 @@ export function UsersView() {
                         </TableCell>
                         <TableCell className="hidden md:table-cell text-[10px] text-muted-foreground">
                           {u.lastLoginAt ? (
-                            <>
+                            // `fmtDateTime(...).slice(5, 16)` cut a
+                            // locale-formatted string at fixed character
+                            // offsets, so the column rendered the fragment
+                            // "…/2026. 23:2" — no date, no minutes. Formatting
+                            // is a formatting decision, not a substring of one
+                            // (D-33); compose it from the date and time
+                            // formatters instead, and keep the exact instant in
+                            // the title.
+                            <span title={fmtDateTime(u.lastLoginAt, numLang)}>
                               <p>{timeAgo(u.lastLoginAt, numLang)}</p>
-                              <p className="text-[10px]">{fmtDateTime(u.lastLoginAt, numLang).slice(5, 16)}</p>
-                            </>
+                              <p className="text-[10px] tabular-nums">
+                                {fmtDateTimeShort(u.lastLoginAt, numLang)}
+                              </p>
+                            </span>
                           ) : (
                             <span>{t("users.lastLoginNever")}</span>
                           )}
                         </TableCell>
-                        <TableCell className="text-end">
+                        <TableCell className="text-right">
+                          {canManageUsers && (
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="icon" className="h-7 w-7" aria-label={t("users.moreActions")}>
@@ -323,6 +344,7 @@ export function UsersView() {
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
+                          )}
                         </TableCell>
                       </TableRow>
                     );
@@ -358,6 +380,7 @@ export function UsersView() {
         onSaved={() => { refetch(); setEditTarget(null); }}
         lang={numLang}
         meRole={me?.role ?? "READONLY"}
+        platformTenantId={me?.platformTenantId ?? null}
       />
 
       {/* Reset password dialog */}
@@ -494,6 +517,12 @@ function CreateUserDialog({
         if (code === "CANNOT_ASSIGN_SUPERADMIN" || err === "CANNOT_ASSIGN_SUPERADMIN") {
           toast.error(t("users.cannotAssignSuperadmin"));
           form.setError("role", { message: t("users.cannotAssignSuperadmin") });
+        } else if (code === "SUPERADMIN_TENANT_FIXED") {
+          // The server refused to place a super-admin in a customer tenant (see
+          // lib/fgmp/platform-identity.ts). Say which rule was hit instead of
+          // echoing "Invalid input" at an operator who picked a tenant.
+          toast.error(t("users.superadminPlatformOnly"));
+          form.setError("tenantId", { message: t("users.superadminPlatformOnly") });
         } else if (err === "Email already in use") {
           toast.error(t("users.emailTaken"));
           form.setError("email", { message: t("users.emailTaken") });
@@ -665,17 +694,29 @@ function CreateUserDialog({
 }
 
 function EditUserDialog({
-  target, onOpenChange, onSaved, lang, meRole,
+  target, onOpenChange, onSaved, lang, meRole, platformTenantId,
 }: {
   target: UserRow | null;
   onOpenChange: (o: boolean) => void;
   onSaved: () => void;
   lang: Language;
   meRole: Role;
+  /** The tenant a super-admin account must belong to, or null when this caller
+   *  may not answer that question (see lib/fgmp/platform-identity.ts). */
+  platformTenantId: string | null;
 }) {
   const t = useT();
   const [submitting, setSubmitting] = useState(false);
   const isSuperAdmin = meRole === "SUPERADMIN";
+  // The role list offers SUPERADMIN only when the SERVER would accept the
+  // promotion: the target must already live in the platform tenant. Promotion
+  // does not move the account, so promoting a customer-tenant user would give
+  // it permanent access to that customer's data from its ordinary session — the
+  // standing access the support-session model exists to avoid. The server
+  // refuses it (`superAdminPromotionRefusal`); this hides the option instead of
+  // inviting a 400.
+  const canHoldSuperAdmin =
+    isSuperAdmin && platformTenantId !== null && target?.tenantId === platformTenantId;
 
   const form = useForm<EditForm>({
     resolver: zodResolver(editSchema),
@@ -711,6 +752,8 @@ function EditUserDialog({
           toast.error(t("users.cannotEditSuperadmin"));
         } else if (code === "CANNOT_ASSIGN_SUPERADMIN" || err === "CANNOT_ASSIGN_SUPERADMIN") {
           toast.error(t("users.cannotAssignSuperadmin"));
+        } else if (code === "SUPERADMIN_TENANT_FIXED") {
+          toast.error(t("users.superadminPlatformOnly"));
         } else {
           toast.error(err ?? `HTTP ${res.status}`);
         }
@@ -753,11 +796,15 @@ function EditUserDialog({
                       value={field.value}
                       onChange={field.onChange}
                       lang={lang}
-                      excludeSuperAdmin={!isSuperAdmin}
+                      excludeSuperAdmin={!canHoldSuperAdmin}
                     />
                   </FormControl>
                   <FormDescription className="text-[11px]">
-                    {isSuperAdmin ? t("users.superadminScopeHint") : t("users.tenantAdminScopeHint")}
+                    {canHoldSuperAdmin
+                      ? t("users.superadminScopeHint")
+                      : isSuperAdmin
+                        ? t("users.superadminPlatformOnly")
+                        : t("users.tenantAdminScopeHint")}
                   </FormDescription>
                   <FormMessage className="text-xs" />
                 </FormItem>

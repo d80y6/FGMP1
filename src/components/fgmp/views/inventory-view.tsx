@@ -2,10 +2,11 @@
 
 import { useState, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { Truck, Plus, CheckCircle2, Package, TrendingUp, Download, FileCheck } from "lucide-react";
+import { Truck, Plus, CheckCircle2, Package, TrendingUp, FileCheck } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Cell } from "recharts";
 import { useFgmp } from "@/lib/fgmp/store";
 import { useApi, apiPost } from "@/lib/fgmp/use-api";
+import { hasCapability } from "@/lib/fgmp/rbac-core";
 import { SectionHeader } from "@/components/fgmp/section-header";
 import { KpiCard } from "@/components/fgmp/kpi-card";
 import { StatusBadge } from "@/components/fgmp/status-badge";
@@ -18,7 +19,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
-import { fmtDateTime, fmtLitres } from "@/lib/fgmp/format";
+import { fmtDate, fmtLitres } from "@/lib/fgmp/format";
 import { useT, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import type { Language } from "@/lib/fgmp/i18n";
 import type { AnalyticsPayload, DeliveryRow, SiteState, TankState } from "@/lib/fgmp/types";
@@ -46,10 +47,15 @@ function supplierLabel(supplier: string | null | undefined, lang: Language): str
 }
 
 export function InventoryView() {
-  const { snapshot, tick } = useFgmp(useShallow((s) => ({ snapshot: s.snapshot, tick: s.tick })));
+  const { snapshot, tick, me } = useFgmp(useShallow((s) => ({ snapshot: s.snapshot, tick: s.tick, me: s.me })));
   const t = useT();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
+  // Create / dispatch / verify all POST to /api/fgmp/deliveries, which requires
+  // `delivery:manage`. READONLY, EXECUTIVE and NOC_OPERATOR can read inventory
+  // but not change it, so they must not be offered controls that only produce a
+  // 403.
+  const canManageDeliveries = me ? hasCapability(me.role, "delivery:manage") : false;
   const { data: deliveries, error: deliveriesError, refetch } = useApi<DeliveryRow[]>("/api/fgmp/deliveries", { interval: 8000 });
   const { data: analytics, error: analyticsError, refetch: refetchAnalytics } = useApi<AnalyticsPayload>("/api/fgmp/analytics?projection=inventory", { interval: 15000 });
   const [createOpen, setCreateOpen] = useState(false);
@@ -90,8 +96,12 @@ export function InventoryView() {
         icon={<Truck className="h-5 w-5" />}
         actions={
           <>
-            <Button variant="outline" size="sm" onClick={() => window.open("/api/fgmp/export?type=sites", "_blank")}><Download className="me-1.5 h-4 w-4" /> {t("common.exportShort")}</Button>
-            <CreateDeliveryDialog open={createOpen} onOpenChange={setCreateOpen} onCreated={() => { refetch(); setCreateOpen(false); }} tanks={snapshot.tanks} sites={snapshot.sites} />
+            {/* No export button: `/api/fgmp/export` has no deliveries dataset,
+                and this screen used to download SITE records. An export control
+                that returns a different dataset is worse than no control. */}
+            {canManageDeliveries && (
+              <CreateDeliveryDialog open={createOpen} onOpenChange={setCreateOpen} onCreated={() => { refetch(); setCreateOpen(false); }} tanks={snapshot.tanks} sites={snapshot.sites} />
+            )}
           </>
         }
       />
@@ -134,11 +144,11 @@ export function InventoryView() {
                       </TableCell>
                       <TableCell className="text-xs tabular-nums">{formatNumber(Math.round(d.volumeOrderedLitres), numLang)}L</TableCell>
                       <TableCell className="text-[11px] text-muted-foreground">{supplierLabel(d.supplier, numLang)}</TableCell>
-                      <TableCell className="text-[10px] text-muted-foreground">{fmtDateTime(d.scheduledAt, numLang).slice(0, 10)}</TableCell>
+                      <TableCell className="text-[10px] text-muted-foreground">{fmtDate(d.scheduledAt, numLang)}</TableCell>
                       <TableCell><StatusBadge value={d.status} className="h-5 text-[10px]" /></TableCell>
-                      <TableCell className="text-end">
-                        {d.status === "SCHEDULED" && <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => dispatch(d.id)}>{t("inventory.dispatch")}</Button>}
-                        {d.status === "DELIVERED" && <Button size="sm" variant="outline" className="h-6 px-2 text-[10px] text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10" onClick={() => setVerify({ id: d.id, vol: d.volumeOrderedLitres })}>{t("inventory.verify")}</Button>}
+                      <TableCell className="text-right">
+                        {canManageDeliveries && d.status === "SCHEDULED" && <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => dispatch(d.id)}>{t("inventory.dispatch")}</Button>}
+                        {canManageDeliveries && d.status === "DELIVERED" && <Button size="sm" variant="outline" className="h-6 px-2 text-[10px] text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10" onClick={() => setVerify({ id: d.id, vol: d.volumeOrderedLitres })}>{t("inventory.verify")}</Button>}
                         {(d.status === "VERIFIED" || d.status === "IN_TRANSIT") && <span className="text-[10px] text-muted-foreground">—</span>}
                       </TableCell>
                     </TableRow>
