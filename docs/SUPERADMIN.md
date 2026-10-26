@@ -64,6 +64,18 @@ The control plane reads `Tenant` (the registry), `SystemSetting` and
 `EspFirmwareRelease` — the three global tables — plus the two platform tables
 this work added. It never returns rows from a tenant's operational tables.
 
+**Where a super-admin account lives.** `t-platform`, always. Every rule in this
+document assumes a super-admin's session context is the platform tenant; that is
+a property of the `User.tenantId` column, not of the role, so
+`src/lib/fgmp/platform-identity.ts` enforces it on the only two paths that could
+break it: creating a super-admin (a customer `tenantId` is refused with
+`SUPERADMIN_TENANT_FIXED`, and the default is the platform tenant) and promoting
+an existing user (refused unless the account is already in the platform tenant —
+promotion does not move the row, so promoting a customer-tenant user would give
+it standing access to that customer, which is option "A" in
+`support-session.ts`). The user editor hides the role for a user outside the
+platform tenant, using `platformTenantId` from `GET /api/fgmp/me`.
+
 ### 2.2 Support sessions — customer content
 
 A support session is the only way to read a tenant's data as somebody other

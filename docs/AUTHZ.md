@@ -153,6 +153,11 @@ not trust a list), and fails on each of the four ways the triangle can break:
 4. a platform route with no policy row, which would exist on the server and be
    unreachable from the browser for every role including `SUPERADMIN`.
 
+The same file covers the one structural rule the support-session model depends
+on — a super-admin account belongs to the platform tenant — behaviourally, plus
+the call sites that enforce it (`src/lib/fgmp/platform-identity.ts`). The review
+that found it is `docs/RBAC-REVIEW-2026-10.md` §10.2.
+
 **Cross-tenant access has exactly two shapes, and RBAC widens neither.**
 
 * **Customer content** — only through an open, ticketed support session, on
@@ -167,6 +172,15 @@ not trust a list), and fails on each of the four ways the triangle can break:
   through `asTenantForAnotherTenant()` (which re-checks the role inside). This is
   registry administration — accounts and roles — not a read of a customer's
   operational data.
+
+  Its one structural rule is that **a super-admin account belongs to the
+  platform tenant** (`src/lib/fgmp/platform-identity.ts`): creating one in a
+  customer tenant, or promoting a customer-tenant user in place, is refused with
+  `SUPERADMIN_TENANT_FIXED`. Without that rule the support-session model is
+  decorative — a SUPERADMIN row in a customer tenant reads that customer's data
+  from its ordinary session, permanently. `GET /api/fgmp/me` carries
+  `platformTenantId` (null for every other role) so the user editor hides the
+  role the server would refuse.
 
 **Surfaces that are API-only today.** `GET /api/fgmp/platform/audit`,
 `GET /api/fgmp/platform/grants` (its `?format=csv` form is an access-review

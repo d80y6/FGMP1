@@ -16,6 +16,9 @@ export interface Me {
   permanentRole?: Role;
   previewRole?: Role | null;
   tenantId: string;
+  /** The tenant a SUPERADMIN account must belong to, for callers allowed to
+   *  answer that question at all (see platform-identity.ts). `null` otherwise. */
+  platformTenantId?: string | null;
   roles: Role[];
   permissions: { label: string; description: string; capabilities: string[] };
 }
