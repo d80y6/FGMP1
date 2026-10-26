@@ -63,9 +63,10 @@ shell/panel components, and all 107 route files (171 handlers).
   entry declares (27 nav entries).
 * An esbuild syntax pass over all 25 changed/added files (0 failures).
 
-**Not executable here:** `tsc --noEmit`, `bun test`, `authz-live.ts` — no
-`node_modules`, no `bun`, no database (`binaries.prisma.sh` unreachable). See
-§6.
+**Not executable here:** `authz-live.ts` — it needs a running server, a
+database and seeded per-role credentials. `tsc`, `eslint` and the five test
+suites were all reproduced locally instead; see §6 for how and what they
+caught.
 
 ---
 
@@ -479,23 +480,34 @@ it currently reads like shared operational record-keeping.
 
 ---
 
-## 6. What could not be verified
+## 6. Verification performed (and its limits)
 
-* **No `tsc --noEmit`, no `bun test`.** This environment has no `node_modules`
-  and no `bun`; Prisma's client binaries cannot be fetched. The 24 changed files
-  pass an esbuild parse, which proves syntax, not types. Nothing in the changes
-  is type-risky (they are `hasCapability(role, "literal")` calls and boolean
-  renames), but CI should be the judge.
-* **No live authorization probe.** `scripts/verify/authz-live.ts` needs a
-  running server, seeded tenants and per-role credentials.
-* **No browser pass.** F3 is the kind of change that wants a click-through as
-  each of the seven roles; the capability assertions are static.
+CI's `verify` job (typecheck → lint) failed on the first push, so the gaps in
+the original review were closed by reproducing the gate locally:
 
-Existing coverage that does apply: `route-authorization-contract`,
-`platform-surface`, `platform-tenant-boundary`, `rbac-matrix`,
-`rbac-api-access`, `support-session`, plus `scripts/verify/route-inventory.ts`.
+| Check | How | Result |
+|---|---|---|
+| `tsc --noEmit` | `npm install --ignore-scripts` + `tsc` on this branch **and** on a worktree of the base commit, diffing the error sets | **Two real errors, both fixed** — see below. The remaining 522 errors are byte-identical on base and branch and are all cascades of the missing generated Prisma client (`prisma generate` needs `binaries.prisma.sh`, which this sandbox cannot reach); CI generates the client, so they do not exist there. |
+| `eslint .` | with the versions `bun.lock` pins (`eslint@9.39.2`, `eslint-config-next@16.1.3`, `eslint-plugin-react-hooks@7.0.1`) | **exit 0**, 0 errors, 2 warnings (both pre-existing in `users-view.tsx`). Note: npm's default resolution picks `eslint-plugin-react-hooks@7.1.1` and `eslint-config-next@16.4.3`, which report 25 errors *on the base commit too* — a version artifact, not this change. |
+| `bun test` (5 RBAC/platform suites) | `bun` cannot be downloaded here (`release-assets.githubusercontent.com` is blocked), so each suite was bundled with esbuild against a minimal `bun:test` shim and run under Node | **80 assertions, 0 failures** — including all 27 in the new `rbac-ui-gates.test.ts` |
 
----
+The two type errors the gate caught are worth recording, because both were
+invisible to a parse-only check and both are the kind of thing this review is
+about:
+
+1. `onboarding-checklist.tsx` — `me?.role` is `Role | undefined`, so
+   `hasCapability(role, "view:users")` did not type-check without first
+   narrowing. Fixed to `role ? hasCapability(role, "view:users") : false`, which
+   is also the correct fail-closed reading: no session means no user
+   administration.
+2. `rbac-ui-gates.test.ts` — the `ACTION_GATES` table was declared inside one
+   `describe()` and referenced from another, so the new test would have thrown
+   `ReferenceError` at collection time. Hoisted to module scope.
+
+Still unverified: a live authorization probe (`scripts/verify/authz-live.ts`
+needs a server and seeded accounts) and a per-role click-through of the changed
+controls, which is the only way to confirm the buttons are actually hidden
+rather than merely gated.
 
 ## 7. Changes applied in this working tree
 
@@ -549,4 +561,4 @@ reproduced with an equivalent script during the review.
 | 4 | **B8** — implement `findUnknownCapabilities()`; it is the last unverified link | ~10 lines |
 | 5 | **B7** — wire or delete `mfa/guard.ts` and fix the three comments | small |
 | 6 | **F10 / B5 / B9** — decide the site-notes question; document platform-settings reads and the user-administration cross-tenant exception in `SECURITY.md` | docs |
-| 7 | Run `tsc --noEmit`, `bun test`, `route-inventory.ts`, and a per-role click-through of the changed controls | CI + manual |
+| 7 | A per-role click-through of the changed controls, then `authz-live.ts` against a seeded stack. (`tsc`, `eslint` and the five suites already pass, §6.) | manual |

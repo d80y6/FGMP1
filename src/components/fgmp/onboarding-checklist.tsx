@@ -196,7 +196,10 @@ export function OnboardingChecklist() {
   // `view:users`, the capability that reads /api/fgmp/users. Hooks remain
   // unconditional; a role without it passes null rather than issuing a request
   // the server would refuse.
-  const canAdministerUsers = hasCapability(role, "view:users");
+  // `me` is null until the session envelope arrives, so `role` is
+  // `Role | undefined` here — no session must mean "no user administration",
+  // not a capability lookup on undefined.
+  const canAdministerUsers = role ? hasCapability(role, "view:users") : false;
   const { data: users } = useApi<unknown[]>(
     canAdministerUsers ? "/api/fgmp/users" : null,
     { interval: 30000 },

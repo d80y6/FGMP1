@@ -86,6 +86,27 @@ const VIEW_GATES: { view: string; capability: string }[] = [
   { view: "users-view.tsx", capability: "view:users" },
 ];
 
+/**
+ * A minimal static check per action: the component must consult the named
+ * capability. It cannot prove the button is hidden (that is a render
+ * question), but it does prove the file no longer decides the question with a
+ * role comparison — which is what regressed.
+ */
+const ACTION_GATES: { file: string; capability: string; why: string }[] = [
+  { file: "views/alarms-view.tsx", capability: "alarm:ack", why: "Acknowledge / bulk acknowledge" },
+  { file: "views/alarms-view.tsx", capability: "alarm:resolve", why: "Resolve / bulk resolve" },
+  { file: "views/maintenance-view.tsx", capability: "ticket:manage", why: "Create / complete ticket" },
+  { file: "views/inventory-view.tsx", capability: "delivery:manage", why: "Create / dispatch / verify delivery" },
+  { file: "views/edge-firmware-view.tsx", capability: "dispenser:control", why: "ESP reboot" },
+  { file: "views/sites-view.tsx", capability: "asset:manage", why: "Site create / edit / delete" },
+  { file: "views/dispensers-view.tsx", capability: "asset:manage", why: "Dispenser CRUD" },
+  { file: "views/dispensers-view.tsx", capability: "dispenser:control", why: "Live dispenser command" },
+  { file: "correlation-rules-editor.tsx", capability: "alarm:configure", why: "Correlation-rule authoring" },
+  { file: "site-detail-sheet.tsx", capability: "settings:manage", why: "Interlock threshold editing" },
+  { file: "header-overflow-menu.tsx", capability: "role:preview", why: "Role switcher" },
+  { file: "shift-handover-panel.tsx", capability: "settings:manage", why: "Delete a handover note" },
+];
+
 describe("every view that can refuse itself names a capability, not a role", () => {
   for (const { view, capability } of VIEW_GATES) {
     test(`${view} gates on ${capability}`, () => {
@@ -123,27 +144,6 @@ describe("no view restates the policy as a role literal", () => {
 });
 
 describe("the affordances a view offers follow the capability its endpoint needs", () => {
-  /**
-   * A minimal static check per action: the component must consult the named
-   * capability. It cannot prove the button is hidden (that is a render
-   * question), but it does prove the file no longer decides the question with a
-   * role comparison — which is what regressed.
-   */
-  const ACTION_GATES: { file: string; capability: string; why: string }[] = [
-    { file: "views/alarms-view.tsx", capability: "alarm:ack", why: "Acknowledge / bulk acknowledge" },
-    { file: "views/alarms-view.tsx", capability: "alarm:resolve", why: "Resolve / bulk resolve" },
-    { file: "views/maintenance-view.tsx", capability: "ticket:manage", why: "Create / complete ticket" },
-    { file: "views/inventory-view.tsx", capability: "delivery:manage", why: "Create / dispatch / verify delivery" },
-    { file: "views/edge-firmware-view.tsx", capability: "dispenser:control", why: "ESP reboot" },
-    { file: "views/sites-view.tsx", capability: "asset:manage", why: "Site create / edit / delete" },
-    { file: "views/dispensers-view.tsx", capability: "asset:manage", why: "Dispenser CRUD" },
-    { file: "views/dispensers-view.tsx", capability: "dispenser:control", why: "Live dispenser command" },
-    { file: "correlation-rules-editor.tsx", capability: "alarm:configure", why: "Correlation-rule authoring" },
-    { file: "site-detail-sheet.tsx", capability: "settings:manage", why: "Interlock threshold editing" },
-    { file: "header-overflow-menu.tsx", capability: "role:preview", why: "Role switcher" },
-    { file: "shift-handover-panel.tsx", capability: "settings:manage", why: "Delete a handover note" },
-  ];
-
   for (const { file, capability, why } of ACTION_GATES) {
     test(`${file} asks for ${capability} (${why})`, () => {
       const source = read(join(COMPONENTS, file));
