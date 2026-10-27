@@ -183,6 +183,12 @@ describe("the template-URL blind spot is a known, bounded list", () => {
     "src/components/fgmp/remote-control-dialog.tsx",
     "src/components/fgmp/site-detail-sheet.tsx",
     "src/components/fgmp/views/sites-view.tsx",
+    // The support summary's POST names its tenant in the path
+    // (`/platform/support/${id}/summary`), so the scan cannot resolve it to a
+    // policy row. Its gate is `view:tenants` — the same capability the API
+    // policy names for the prefix, and the one the dialog checks before it
+    // renders anything — declared in `rbac-ui-gates.test.ts`.
+    "src/components/fgmp/platform/support-summary-dialog.tsx",
   ];
   /**
    * Files that issue at least one literal mutation (covered by the scan) AND at

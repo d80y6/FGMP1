@@ -703,9 +703,9 @@ declared, displayed in the Roles screen, and enforced nowhere:
 
 | Key | Roles that hold it |
 |---|---|
-| `delivery:verify` | ADMIN, NOC_OPERATOR, REGIONAL_MANAGER, FIELD_ENGINEER |
-| `delivery:approve` | ADMIN, REGIONAL_MANAGER |
-| `ticket:create` | ADMIN, NOC_OPERATOR, REGIONAL_MANAGER |
+| `delivery:verify` | ADMIN, REGIONAL_MANAGER, FIELD_ENGINEER |
+| `delivery:approve` | ADMIN, REGIONAL_MANAGER, FIELD_ENGINEER |
+| `ticket:create` | ADMIN, NOC_OPERATOR, REGIONAL_MANAGER, FIELD_ENGINEER |
 | `ticket:assign` | ADMIN, REGIONAL_MANAGER |
 | `ticket:complete` | ADMIN, REGIONAL_MANAGER, FIELD_ENGINEER |
 
@@ -716,34 +716,59 @@ policy, `ROLES.DELIVERY` / `ROLES.MAINTENANCE` on the handler). So an
 administrator reading the matrix is told the platform distinguishes verifying a
 delivery from dispatching one. It does not.
 
-Two such keys were fixed, three-plus-one were not, and the difference is
-deliberate:
+All five are now enforced, and not one of them by taking access away.
 
-* **`delivery:verify` is now enforced** in `POST /api/fgmp/deliveries`
-  (`action: "verify"`). It is the one key of the five where **every**
-  `ROLES.DELIVERY` holder also holds the capability, so the check changes no
-  current outcome — it makes a true statement true, and lets a Verify button be
-  gated on it.
-* **`delivery:approve`, `ticket:create`, `ticket:assign`, `ticket:complete` stay
-  unenforced**, because enforcing them would REMOVE access that exists today:
-  `dispatch` is open to FIELD_ENGINEER (which lacks `delivery:approve`);
-  `ticket:create` would additionally admit NOC_OPERATOR (in the capability list,
-  outside the role set); and `ticket:complete` would take completion away from
-  REGIONAL_MANAGER, which `ROLES.MAINTENANCE` admits but the matrix does not
-  grant. Those are product decisions about who may do the work, not RBAC
-  tidy-ups, and guessing them in a security review would be the same mistake as
-  granting a capability to make a test pass.
+The first pass enforced only `delivery:verify`, because it was the one key where
+every `ROLES.DELIVERY` holder already held it. The other four were excused on the
+grounds that enforcing them would REMOVE access that exists today — `dispatch`
+was open to FIELD_ENGINEER (which lacked `delivery:approve`); `ticket:create`
+would have admitted NOC_OPERATOR; `ticket:complete` would have taken completion
+away from REGIONAL_MANAGER. Every one of those statements was true, and every one
+of them described the **matrix** being wrong rather than the route. A capability
+that says a role may do a thing, while the route that does the thing admits the
+role anyway, is a lie in the table an administrator reads. So the matrix was
+corrected to match the access that already existed, and then the routes were made
+to answer honestly:
+
+| Key | Enforced at | Added to |
+|---|---|---|
+| `delivery:verify` | `POST /api/fgmp/deliveries` → `action: verify` | — |
+| `delivery:approve` | `POST /api/fgmp/deliveries` → `action: dispatch` | FIELD_ENGINEER |
+| `ticket:create` | `POST /api/fgmp/maintenance` → `action: create` | FIELD_ENGINEER |
+| `ticket:complete` | `POST /api/fgmp/maintenance` → `action: complete` | REGIONAL_MANAGER |
+| `ticket:assign` | `POST /api/fgmp/maintenance/[id]/assign` | — |
+
+Each check sits **after** body validation (so a malformed body is still a 400,
+not a 403) and **before** the first read. No caller that is admitted today starts
+failing: the grant closes the gap in the same commit as the check.
+
+Two consequences worth stating plainly.
+
+* **`NOC_OPERATOR` lost `delivery:verify`.** It held the key but was never in
+  `ROLES.DELIVERY`, and the path policy asks `POST /api/fgmp/deliveries` for
+  `delivery:manage`, which it does not hold — so the key was unreachable twice
+  over. The alternative, admitting NOC to both, would have granted a monitoring
+  role the ability to write delivered volumes against a customer's tank. The key
+  is gone rather than the gate widened.
+* **The controls now ask, so they cannot disagree.** `inventory-view` gates
+  Dispatch on `delivery:approve` and Verify on `delivery:verify`;
+  `maintenance-view` gates the create dialog on `ticket:create` and the Complete
+  row action on `ticket:complete`. Every one is ANDed with the coarse
+  `delivery:manage` / `ticket:manage` the path policy applies, so the narrowing
+  can only remove a button the route would have refused. `ticket:assign` has no
+  control in the client yet — it is API-only, which is a missing surface, not a
+  missing check.
 
 **What stops the next one.** `__tests__/capability-reachability.test.ts` requires
 every key in the matrix to be (1) named by an API policy rule, (2) named by a
 non-test file outside `rbac-core.ts` — a route's `can(...)`/`hasCapability(...)`
 or a component's gate — or (3) a `view:*` key, whose surface is the nav entry
-asserted by the nav suites. The four exceptions above live in
-`DECLARED_BUT_INERT`, each with its reason and the condition that retires it, and
-the suite fails both ways: a new decorative key fails "no capability is
-decorative", and an exemption that has since been wired up fails "is now
-ENFORCED — remove it". Mutation-tested by adding a fake `report:forge` to
-READONLY (caught) and removing it.
+asserted by the nav suites. `DECLARED_BUT_INERT` is now **empty**: there is no
+longer any key that is declared and unenforced, so every future one must either
+be wired up or be written down with a reason. The suite fails both ways: a new
+decorative key fails "no capability is decorative", and an exemption that has
+since been wired up fails "is now ENFORCED — remove it". Mutation-tested by
+adding a fake `report:forge` to READONLY (caught) and removing it.
 
 ### 11.1 The same question for mutations: is there a limiter?
 
@@ -788,12 +813,144 @@ edit cannot diverge silently.
 
 ### 11.3 Still open
 
-* The four inert capabilities in §11 need a product decision, then either
-  enforcement or removal from the matrix.
-* The platform views listed in §10.4 still do not exist.
-* The per-role click-through in §6 item 7 remains unrun.
-* `rtl-logical-classes.test.ts` fails on `master` (~40 physical `ml-`/`text-right`
-  utilities and two `sticky left-0`). It is not an RBAC defect and not covered by
-  CI's test selection; recorded here because it is the only suite in
-  `src/lib/fgmp/__tests__` that is red for a reason other than the postgres-less
-  sandbox.
+* `ticket:assign` is enforced and has no client control yet: the API is gated,
+  the maintenance screen does not offer assignment. A missing screen, not a
+  missing check.
+* Site notes remain localStorage with a client-supplied author (§F10).
+* `rtl-logical-classes.test.ts` — fixed in the same wave as §11 (39 conversions
+  across 18 files); it was red on `master` for a reason unrelated to RBAC.
+
+---
+
+## 12. The four enforcement gaps closed, and the two production defects the
+## live walk found underneath them
+
+### 12.1 The four capabilities are enforced, and the matrix was the thing that was wrong
+
+§11 left `delivery:approve`, `ticket:create`, `ticket:assign` and
+`ticket:complete` excused, on the ground that enforcing them would "remove
+access that exists today". That was true, and it was an argument for fixing the
+MATRIX rather than for leaving the keys decorative: the routes already admitted
+the roles, so the table an administrator reads was the only thing that
+disagreed. Every one of the four is now checked after body validation and before
+the first read, and every role its route admits holds it:
+
+| capability | enforced at | added to |
+|---|---|---|
+| `delivery:approve` | `POST /api/fgmp/deliveries` → `action: dispatch` | FIELD_ENGINEER |
+| `ticket:create` | `POST /api/fgmp/maintenance` → `action: create` | FIELD_ENGINEER |
+| `ticket:complete` | `POST /api/fgmp/maintenance` → `action: complete` | REGIONAL_MANAGER |
+| `ticket:assign` | `POST /api/fgmp/maintenance/[id]/assign` | — |
+
+Two keys were REMOVED instead, because their holders could not use them through
+any route and the alternative was widening a gate:
+
+* `NOC_OPERATOR` lost `delivery:verify` (not in `ROLES.DELIVERY`, and `POST
+  /api/fgmp/deliveries` asks the path policy for `delivery:manage`, which it does
+  not hold — unreachable twice over);
+* `NOC_OPERATOR` lost `ticket:create` (the same double refusal: `ticket:manage`
+  on the path, `ROLES.MAINTENANCE` on the handler).
+
+`DECLARED_BUT_INERT` is now **empty** and the reachability suite still fails both
+ways, so the next decorative key has to be written down. The controls moved with
+the checks: `inventory-view` gates Dispatch on `delivery:approve` and Verify on
+`delivery:verify`; `maintenance-view` gates the create dialog on `ticket:create`
+and the Complete row action on `ticket:complete`. Each is ANDed with the coarse
+`delivery:manage` / `ticket:manage` the path policy applies, so narrowing can
+only hide a button the route would have refused.
+
+### 12.2 The four missing surfaces
+
+Each of these had a working API and no screen — a control that exists for a
+`curl` and for nobody else. All four are now built, and all four ask the same
+capability their route names:
+
+* **Platform audit** — `GET /api/fgmp/platform/audit` → a tab on the tenants
+  screen: who opened a support session, for which tenant, why, and when it ended,
+  with action/tenant filters, offset paging and the record's `detail` expandable.
+  * **Access grants** — `GET /api/fgmp/platform/grants` → role totals from the
+  server, a searchable/paginated table, and the CSV export as a plain link to
+  `?format=csv` so the file and the screen cannot diverge.
+* **Support summary** — `GET|POST /api/fgmp/platform/support/[tenant]/summary` →
+  a dialog that asks the SERVER whether a session is open (rather than trusting
+  the click that opened it), then shows counts plus recent alarms and, in WRITE
+  mode, appends a note to the tenant's own audit log.
+* **Firmware releases** — `GET|POST /api/fgmp/edge/firmware` and
+  `DELETE /edge/firmware/[id]` → a Releases tab on Edge & Firmware. Publishing is
+  a platform act (`platform:firmware`), so a field engineer sees the registry and
+  no Publish button at all.
+
+The first three share the tenants screen on purpose: they are all gated by
+`view:tenants`, and inventing three more `view:*` keys would have meant three new
+policy rows to drift. That is recorded in the tab code, not just here.
+
+### 12.3 MFA enrolment UI, and the reason it could not have worked before
+
+The MFA machinery was complete and unreachable: `enrol`, `verify-enrol`,
+`status`, `disable` were implemented, audited and rate-limited, and nothing in
+the product called them. `components/fgmp/security/mfa-card.tsx` now does — on
+the account (Preferences) screen, where a second factor belongs, with the flow
+the endpoints support: secret + otpauth URI (copy-paste; no QR library is added
+for one field), a code to confirm, recovery codes shown once behind an
+acknowledgement, and a disable path that requires a current code and a reason.
+
+Building it surfaced a defect that would have made the feature actively
+dangerous: **`fgmp_resolve_mfa_challenge` could never return a row.**
+`MfaChallenge` is `FORCE ROW LEVEL SECURITY`, the function is `SECURITY DEFINER`
+owned by `fgmp_migrate`, and FORCE applies to the owner — so the inner SELECT ran
+with `app.tenant_id` unset and the policy filtered everything out. The migration
+that introduced it asserted `prosecdef` (true, and irrelevant) and its own header
+claimed SECURITY DEFINER "bypasses FORCE RLS", which is not what FORCE means.
+Consequence: `POST /api/fgmp/mfa/challenge` answered CHALLENGE_INVALID for every
+token, so an enrolled account could never finish signing in. The second factor was
+a one-way door, and the unit suite was green throughout because it asserted the
+SQL STRING.
+
+`prisma/migrations/20261027000000_mfa_challenge_resolver_rls` adds a SELECT
+policy for the function's owner on that one table — not `BYPASSRLS` on
+`fgmp_migrate`, which would switch tenant isolation off for the role that owns
+the schema. `mfa-status-rls.test.ts` (which inserts a live challenge and reads it
+back through the function) is what notices; it was red before the migration and
+is green after.
+
+### 12.4 A 500 on the most ordinary write a tenant admin makes
+
+`POST /api/fgmp/users` called `asTenantForAnotherTenant()` for every caller. That
+helper asserts SUPERADMIN at the point the privilege is exercised — by design —
+so a tenant ADMIN adding a colleague in their OWN tenant hit the assertion and
+the route returned **500**. The helper was right; the call site was wrong. The
+route now branches: a super-admin's client-supplied target goes through the
+privileged helper, everybody else goes through `asTenant(me, …)` against the
+tenant already forced to their own three lines above. Neither branch can widen.
+
+### 12.5 The per-role click-through, run
+
+`scripts/verify/rbac-live-walk.ts` (`bun run test:rbac-walk`) signs in as each of
+the seven roles against a live server and a seeded PostgreSQL database and,
+per role, records the four things the brief asks for:
+
+* **nav** — `navEntriesFor(hasCapability(role, …))`, i.e. the exact function the
+  sidebar and command palette call;
+* **link/content** — it then calls the endpoint behind EVERY view, including the
+  ones that role must not reach: a visible view must answer 2xx, a hidden one
+  must answer 401/403. That second half is what makes "no capability ⇒ no
+  content" true for a typed URL, not just for a missing menu item;
+* **control** — 14 write controls probed with the capability that gates each:
+  a holder must not be refused, a non-holder must be.
+
+Result: **all seven roles consistent, 0 mismatches** (one role at a time; the MFA
+probe on the last role reports `rate-limited`, which is the limiter, not a
+decision). The generated table is `docs/RBAC-LIVE-WALK-2026-10.md`, with JSON
+available via `--json`.
+
+`scripts/verify/mfa-live-flow.ts` (`bun run test:mfa-flow`) walks enrol → verify →
+pending session → challenge → full session → disable against the same server,
+computing codes with an INDEPENDENT TOTP implementation so a wrong `totp.ts`
+cannot agree with itself.
+
+**What the walk cannot prove**, stated so a green line is not read as more than
+it is: it is HTTP, not a browser. It proves what data a role can reach and what
+its controls are gated on, not that a `div` renders. The capability→control
+mapping is covered by `rbac-ui-gates.test.ts` and `rbac-link-surfaces.test.ts`,
+and the lack of a browser-level pass is a residual gap rather than a claimed
+success.

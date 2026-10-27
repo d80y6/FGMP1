@@ -122,6 +122,12 @@ const ACTION_GATES: { file: string; capability: string; why: string }[] = [
   { file: "remote-control-dialog.tsx", capability: "gen:control", why: "The dialog that actually issues the command" },
   { file: "header-overflow-menu.tsx", capability: "role:preview", why: "Role switcher" },
   { file: "shift-handover-panel.tsx", capability: "settings:manage", why: "Delete a handover note" },
+  // The three platform-console surfaces. Each checks the capability the API
+  // policy names for its prefix before it renders, so a tenant role sees
+  // nothing — not an empty table, not a heading.
+  { file: "platform/support-summary-dialog.tsx", capability: "view:tenants", why: "Read a tenant's summary during a support session" },
+  { file: "platform/platform-audit-panel.tsx", capability: "view:tenants", why: "Read the platform audit trail" },
+  { file: "platform/platform-grants-panel.tsx", capability: "view:tenants", why: "Read the cross-tenant grant inventory" },
 ];
 
 describe("every view that can refuse itself names a capability, not a role", () => {

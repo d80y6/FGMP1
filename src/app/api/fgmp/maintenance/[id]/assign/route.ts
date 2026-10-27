@@ -8,7 +8,7 @@ import {
   MUTATION_LIMIT,
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse, ApiError } from "@/lib/fgmp/api-error";
-import { requireRole, ROLES, assertSiteTenantOwned } from "@/lib/fgmp/auth-helpers";
+import { requireRole, ROLES, can, assertSiteTenantOwned } from "@/lib/fgmp/auth-helpers";
 import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 import { withTenant } from "@/lib/fgmp/tenant-context";
 import { emitToRealtime } from "@/lib/fgmp/realtime-emitter";
@@ -108,6 +108,23 @@ export async function POST(
       return res;
     }
     const data = r.data;
+
+    // ── The action's own capability ──────────────────────────────────────
+    // `ticket:assign` is declared in the matrix (ADMIN, REGIONAL_MANAGER) and
+    // gated nothing: ROLES.MAINTENANCE admits FIELD_ENGINEER too, whose only
+    // ticket write is meant to be `ticket:complete`. Dispatching work to another
+    // engineer is a supervisory act — deciding who does the job — so it is
+    // checked here rather than left to the coarse role set.
+    //
+    // Checked after validation (malformed body ⇒ 400) and before the ticket is
+    // read. Both granting roles are in ROLES.MAINTENANCE, so no caller that is
+    // admitted today loses access; the declaration and the route now agree.
+    if (!can(me, "ticket:assign")) {
+      return NextResponse.json(
+        { error: "Forbidden", code: "INSUFFICIENT_CAPABILITY" },
+        { status: 403 },
+      );
+    }
 
     const ticket = await withTenant(tenantIdOrThrow(me.tenantId), (tx) => tx.maintenanceTicket.findUnique({
       where: { id },

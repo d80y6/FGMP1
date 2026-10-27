@@ -38,6 +38,7 @@ import { useFgmp } from "@/lib/fgmp/store";
 import { notificationPreferenceSchema } from "@/lib/fgmp/schemas";
 import type { NotificationPreferenceInput } from "@/lib/fgmp/schemas";
 import { SectionHeader } from "@/components/fgmp/section-header";
+import { MfaCard } from "@/components/fgmp/security/mfa-card";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -562,6 +563,14 @@ export function PreferencesView() {
           </div>
         </CardContent>
       </Card>
+
+      {/*
+        Security, not preferences — but this is the only "my account" screen, and
+        a second factor belongs to the account rather than to a tenant. The card
+        talks to endpoints that are deliberately role-agnostic (see
+        AUTH_ONLY_API_RULES), so every role sees the same flow.
+      */}
+      <MfaCard />
 
       {/* Summary card */}
       <Card className="bg-muted/30">

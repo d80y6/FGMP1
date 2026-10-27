@@ -109,8 +109,8 @@ export async function POST(req: NextRequest) {
 
     if (data.action === "verify") {
       // ── The action's own capability, not just the endpoint's ─────────────
-      // `delivery:verify` is declared in the matrix (ADMIN, NOC_OPERATOR,
-      // REGIONAL_MANAGER, FIELD_ENGINEER) and until now it gated NOTHING: the
+      // `delivery:verify` is declared in the matrix (ADMIN, REGIONAL_MANAGER,
+      // FIELD_ENGINEER) and until now it gated NOTHING: the
       // endpoint is admitted by ROLES.DELIVERY and its path policy requires
       // `delivery:manage`, so a role could hold the capability, be shown it in
       // the Roles matrix, and still be refused — or, worse, hold neither and pass
@@ -118,8 +118,8 @@ export async function POST(req: NextRequest) {
       // delivered volumes against a tank, so it is worth the check.
       //
       // Checked AFTER validation (so a malformed body is a 400, not a 403) and
-      // BEFORE any read: three of the four holders above are in ROLES.DELIVERY,
-      // so this changes no current outcome — it makes the declared capability
+      // BEFORE any read. Every holder above is in ROLES.DELIVERY, so
+      // this changes no current outcome — it makes the declared capability
       // true, which is what lets the client gate a Verify button on it.
       if (!can(me, "delivery:verify")) {
         return NextResponse.json(
@@ -199,6 +199,22 @@ export async function POST(req: NextRequest) {
       return res;
     }
     if (data.action === "dispatch") {
+      // ── The action's own capability, not just the endpoint's ─────────────
+      // `delivery:approve` is the authority to send a tanker, and it gated
+      // nothing: the route is admitted by ROLES.DELIVERY and its path policy
+      // asks only for `delivery:manage`. Dispatching commits an asset and a
+      // driver against a site, so it gets the explicit check — mirroring the
+      // one `verify` already had.
+      //
+      // Every role in ROLES.DELIVERY now holds `delivery:approve`, so no
+      // caller that is admitted today starts failing; the point is that the
+      // matrix can be read as fact and the UI can gate on it.
+      if (!can(me, "delivery:approve")) {
+        return NextResponse.json(
+          { error: "Forbidden", code: "INSUFFICIENT_CAPABILITY" },
+          { status: 403 },
+        );
+      }
       // Same shape as `verify`: guard + conditional write + read-back in ONE
       // transaction, ownership checked on a row read inside it, audit outside.
       const outcome = await asTenant(me, async (tx) => {
