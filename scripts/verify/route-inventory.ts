@@ -40,6 +40,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import {
   AUTH_ONLY_API_RULES,
+  CAPABILITIES,
   ROLE_PERMISSIONS,
   apiRequestCapabilities,
   EXPORT_TYPE_CAPABILITIES,
@@ -328,39 +329,45 @@ export function findUnknownRoles(roleSets: Record<string, string[]>): string[] {
  * Checked: every capability the route table asks for, plus every capability the
  * auth helpers name in a ROLES set, plus the export-type table.
  */
-export function findUnknownCapabilities(): string[] {
-  const known = new Set<string>();
-  let wildcard = false;
-  for (const entry of Object.values(ROLE_PERMISSIONS)) {
-    for (const cap of entry.capabilities) {
-      if (cap === "*") wildcard = true;
-      known.add(cap);
-    }
-  }
+export function findUnknownCapabilities(handlers: RouteHandler[] = analyzeRoutes()): string[] {
+  // `*` is an authorization wildcard, NOT a capability identifier. Counting
+  // it as a match here made this verifier accept every misspelling because
+  // SUPERADMIN holds `*`; a typo then silently 403ed all tenant roles. The
+  // capability catalog is the closed vocabulary, including the intentionally
+  // SUPERADMIN-only capabilities which are not repeated in tenant role lists.
+  const known = new Set<string>(CAPABILITIES);
   const bad: string[] = [];
 
-  const handlers = analyzeRoutes();
   const seen = new Set<string>();
   for (const h of handlers) {
     for (const cap of h.requiredCapabilities ?? []) {
-      const key = `${cap}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      if (!known.has(cap) && !wildcard) {
+      if (seen.has(cap)) continue;
+      seen.add(cap);
+      if (!known.has(cap)) {
         bad.push(
-          `policy requires "${cap}" (${h.method} ${h.matchPath}) but no role holds it — ` +
-            "a typo here denies the endpoint to everyone",
+          `policy requires unknown capability "${cap}" (${h.method} ${h.matchPath}) — ` +
+            "a typo here denies the endpoint to every tenant role",
         );
       }
     }
   }
 
-  // The same test for the export table, whose entries are read by
+  // The same check for the export table, whose entries are read by
   // `apiReadCapabilities()` only after the `type` parameter is matched.
   for (const [type, caps] of Object.entries(EXPORT_TYPE_CAPABILITIES)) {
     for (const cap of caps) {
-      if (!known.has(cap) && !wildcard) {
-        bad.push(`export type "${type}" requires "${cap}" but no role holds it`);
+      if (!known.has(cap)) {
+        bad.push(`export type "${type}" requires unknown capability "${cap}"`);
+      }
+    }
+  }
+
+  // Also guard the matrix itself at runtime for data loaded from an untyped
+  // source or a future refactor that weakens its declared TypeScript type.
+  for (const [role, entry] of Object.entries(ROLE_PERMISSIONS)) {
+    for (const cap of entry.capabilities) {
+      if (cap !== "*" && !known.has(cap)) {
+        bad.push(`role "${role}" declares unknown capability "${cap}"`);
       }
     }
   }

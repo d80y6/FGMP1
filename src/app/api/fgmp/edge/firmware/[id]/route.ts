@@ -42,7 +42,7 @@ export async function DELETE(
   const auth = await requireRole(req, ROLES.SUPERADMIN_ONLY);
   if ("error" in auth) return auth.error;
   try {
-    const { user } = await bootstrap();
+    const { user } = await bootstrap(auth.user);
     const rl = await rateLimitByUser(req, user.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
     if (!rl.success) {
       const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });

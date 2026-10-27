@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
   const auth = await requireRole(req, ROLES.SUPER_OR_ADMIN);
   if ("error" in auth) return auth.error;
   try {
-    await bootstrap();
+    await bootstrap(auth.user);
     const me = auth.user;
     const rl = await rateLimitByUser(req, me.id, READ_LIMIT.limit, READ_LIMIT.windowMs);
     if (!rl.success) {

@@ -80,7 +80,7 @@ export async function POST(
   if ("error" in auth) return auth.error;
   const me = auth.user;
   try {
-    const { user } = await bootstrap();
+    const { user } = await bootstrap(auth.user);
     const rl = await rateLimitByUser(
       req,
       user.id,

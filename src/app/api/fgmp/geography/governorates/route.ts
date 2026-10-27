@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
   const auth = await requireRole(req, ROLES.SUPER_OR_ADMIN);
   if ("error" in auth) return auth.error;
   try {
-    const { user } = await bootstrap();
+    const { user } = await bootstrap(auth.user);
     const rl = await rateLimitByUser(req, user.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
     if (!rl.success) {
       const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });

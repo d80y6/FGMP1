@@ -1,6 +1,8 @@
 import { db } from "@/lib/db";
 import { engine } from "./engine";
 import { getCurrentUser, getSystemUser } from "./rbac";
+import type { SessionUser } from "@/lib/auth";
+import { toFgmpUser } from "./session-principal";
 
 // Prepare the in-process engine and resolve the acting user.
 //
@@ -18,18 +20,17 @@ import { getCurrentUser, getSystemUser } from "./rbac";
 // Seeding is now a DEPLOY-TIME step (`bun run db:seed`, or POST /api/fgmp/seed
 // for an authenticated admin). The web app never holds the owner credential.
 //
-// SECURITY (Phase 0.3): the `user` returned here comes from getCurrentUser(),
-// which FAILS CLOSED (throws) when there is no NextAuth session. Every route
-// that calls bootstrap() has already passed requireAuth()/requireRole(), so a
-// session is present and this returns the real authenticated user.
-//
-// Non-request contexts (seed/CLI jobs) that legitimately have no session must
-// call getSystemUser() explicitly instead of relying on bootstrap().user.
-export async function bootstrap() {
-  // Bootstrap has no session and no tenant — it is explicitly the non-request
-  // path, so all tenants is the honest scope. Named rather than ambient.
+// SECURITY: request handlers must pass the exact principal returned by
+// requireAuth()/requireRole(). Resolving getServerSession() a second time here
+// would trust stale JWT role/tenant claims and could ignore a role-preview
+// overlay. Non-request contexts (seed/CLI jobs) must use getSystemUser().
+export async function bootstrap(sessionUser: SessionUser) {
+  // The route must pass the principal returned by requireAuth()/requireRole().
+  // Resolving getServerSession() again here would re-read the signed JWT, whose
+  // role and tenant may be stale (and whose role may ignore the request's role
+  // preview). Authorization and data scope must use the exact same principal.
+  const user = toFgmpUser(sessionUser);
   await engine.ensureAllTenants();
-  const user = await getCurrentUser();
   return { user };
 }
 

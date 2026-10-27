@@ -33,9 +33,12 @@
  */
 
 import { withTenant } from "./tenant-context";
+import { tenantIdOrThrow } from "./tenant-id";
 import type { SessionUser } from "@/lib/auth";
 import { isSuperAdmin } from "@/lib/fgmp/rbac-core";
 import type { Prisma } from "@prisma/client";
+
+export { tenantIdOrThrow } from "./tenant-id";
 
 /**
  * The transaction client `withTenant` hands back. Every tenant-scoped query must
@@ -93,37 +96,6 @@ export function asTenant<T>(
   fn: (tx: TenantScopedClient) => Promise<T>,
 ): Promise<T> {
   return withTenant(tenantIdOrThrow(user.tenantId), fn);
-}
-
-/**
- * Coerce a possibly-absent tenant id to the non-optional form a tenant-scoped
- * call requires, failing CLOSED if there is none.
- *
- * ── WHY NOT `user.tenantId!` ────────────────────────────────────────────────
- * `SessionUser.tenantId` is optional on purpose: a PENDING MFA session must not
- * carry a tenant, and an absent key is falsy so the ~80 existing
- * `user.role === X` checks deny it for free.
- *
- * That optionality must be resolved exactly once — here, where a session
- * becomes a query context. `user.tenantId!` would typecheck while handing
- * `undefined` to `withTenant`, which sets `app.tenant_id` to a non-string and
- * leaves RLS filtering on a NULL context: the caller gets an empty result that
- * reads as "no data" rather than "not allowed".
- *
- * This is also defence in depth. The MFA guard refuses these paths by URL, so
- * if it is ever bypassed or mis-ordered, a tenant-less session still cannot
- * construct a valid tenant context at all.
- */
-export function tenantIdOrThrow(tenantId: string | undefined | null): string {
-  if (typeof tenantId === "string" && tenantId.trim() !== "") return tenantId.trim();
-  throw new Error(
-    "[route-tenant] A tenant-scoped call was made without a tenant id. This " +
-      "happens when a session is pending multi-factor authentication: such a " +
-      "session deliberately carries no tenant and must not be able to query " +
-      "anything. Guard the route with the MFA guard, or use the unscoped " +
-      "helpers (tenantWhereOrAll / siteTenantWhereOrAll) if cross-tenant read " +
-      "is genuinely intended.",
-  );
 }
 
 /**
