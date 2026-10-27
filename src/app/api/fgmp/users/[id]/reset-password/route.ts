@@ -51,7 +51,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   const auth = await requireRole(req, ROLES.SUPER_OR_ADMIN);
   if ("error" in auth) return auth.error;
   const me = auth.user;
-  await bootstrap();
+  await bootstrap(auth.user);
 
   const rl = await rateLimitByUser(req, me.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
   if (!rl.success) {

@@ -7,6 +7,7 @@ import {
   ROUTE_ROOT,
   allowListOf,
   analyzeRoutes,
+  findUnknownCapabilities,
   findUnknownRoles,
   findViolations,
   parseRoleSets,
@@ -78,6 +79,14 @@ describe("the real route tree satisfies the authorization contract", () => {
 
   test("every ROLES.* set names only real roles", () => {
     expect(findUnknownRoles(roleSets)).toEqual([]);
+  });
+
+  test("every policy capability belongs to the closed catalog even with SUPERADMIN wildcard", () => {
+    expect(findUnknownCapabilities(handlers)).toEqual([]);
+    const typo = handler({ requiredCapabilities: ["view:sitez"], matchPath: "/api/fgmp/sites" });
+    expect(findUnknownCapabilities([typo])).toEqual([
+      'policy requires unknown capability "view:sitez" (GET /api/fgmp/sites) — a typo here denies the endpoint to every tenant role',
+    ]);
   });
 
   test("no session-guarded handler skips the capability policy", () => {

@@ -6,6 +6,68 @@ import type { Role } from "./types";
 // against its own key union is a matrix nothing verifies.
 export type { Role };
 
+/**
+ * Canonical, typed capability catalog. Role grants and endpoint policies must
+ * use one of these stable identifiers; tenant/resource scope is enforced by
+ * the authorization context and query/RLS boundary, not encoded as a grant.
+ */
+export const CAPABILITIES = [
+  "alarm:ack",
+  "alarm:configure",
+  "alarm:resolve",
+  "alarm:suppress",
+  "api-key:manage",
+  "asset:manage",
+  "delivery:approve",
+  "delivery:manage",
+  "delivery:verify",
+  "dispenser:control",
+  "edge:manage",
+  "gen:control",
+  "geography:manage",
+  "notification:manage",
+  "role:preview",
+  "settings:manage",
+  "simul:tick",
+  "ticket:assign",
+  "ticket:complete",
+  "ticket:create",
+  "ticket:manage",
+  "user:manage",
+  "view:alarms",
+  "view:analytics",
+  "view:api-keys",
+  "view:asset-registry",
+  "view:audit",
+  "view:batteries",
+  "view:consumption-patterns",
+  "view:dashboard",
+  "view:dispensers",
+  "view:edge-firmware",
+  "view:fuel",
+  "view:fuel-forecast",
+  "view:generators",
+  "view:geography",
+  "view:inventory",
+  "view:iot",
+  "view:maintenance",
+  "view:preferences",
+  "view:reports",
+  "view:roles",
+  "view:sites",
+  "view:suppressions",
+  "view:system-health",
+  "view:system-settings",
+  "view:users",
+  "platform:firmware",
+  "tenant:manage",
+  "user:grant-superadmin",
+  "view:tenants",
+  "view:tenant-isolation",
+] as const;
+
+export type Capability = (typeof CAPABILITIES)[number];
+
 export interface Permission {
   view: string; // dashboard view key
 }
@@ -60,7 +122,7 @@ export interface Permission {
 export const ROLE_PERMISSIONS: Record<Role, {
   label: string;
   description: string;
-  capabilities: string[]; // fine-grained capability keys
+  capabilities: readonly (Capability | "*")[]; // explicit grants; wildcard is platform-only
 }> = {
   SUPERADMIN: {
     label: "Platform Super-Admin",
@@ -259,9 +321,9 @@ export const ALL_ROLES: Role[] = [
  * greppable, and the route-inventory contract check asserts it is used only on
  * routes that actually carry their own non-session credential.
  */
-export const NO_SESSION_ROLE: readonly string[] = [];
+export const NO_SESSION_ROLE: readonly Capability[] = [];
 
-const API_READ_RULES: readonly { prefix: string; capabilities: readonly string[] }[] = [
+const API_READ_RULES: readonly { prefix: string; capabilities: readonly Capability[] }[] = [
   { prefix: "/api/fgmp/admin/tenant-isolation-test", capabilities: ["view:tenant-isolation"] },
   { prefix: "/api/fgmp/alarms", capabilities: ["view:alarms"] },
   { prefix: "/api/fgmp/api-keys", capabilities: ["view:api-keys"] },
@@ -325,7 +387,7 @@ const API_READ_RULES: readonly { prefix: string; capabilities: readonly string[]
  * either capability also holds `view:sites` — so the grant bought nothing and
  * permitted an inventory-only role to read site coordinates.
  */
-export const EXPORT_TYPE_CAPABILITIES: Readonly<Record<string, readonly string[]>> = {
+export const EXPORT_TYPE_CAPABILITIES: Readonly<Record<string, readonly Capability[]>> = {
   sites: ["view:sites", "view:reports"],
   tanks: ["view:fuel", "view:reports"],
   generators: ["view:generators", "view:reports"],
@@ -333,7 +395,7 @@ export const EXPORT_TYPE_CAPABILITIES: Readonly<Record<string, readonly string[]
 };
 
 /** Return the any-of capabilities required to read an FGMP API URL. */
-export function apiReadCapabilities(url: string | URL): readonly string[] | null {
+export function apiReadCapabilities(url: string | URL): readonly Capability[] | null {
   let parsed: URL;
   try {
     parsed = url instanceof URL ? url : new URL(url, "https://fgmp.invalid");
@@ -394,7 +456,7 @@ export function apiReadCapabilities(url: string | URL): readonly string[] | null
   return rule?.capabilities ?? null;
 }
 
-const API_WRITE_RULES: readonly { method: string; prefix: string; capabilities: readonly string[] }[] = [
+const API_WRITE_RULES: readonly { method: string; prefix: string; capabilities: readonly Capability[] }[] = [
   { method: "POST", prefix: "/api/fgmp/alarms", capabilities: ["alarm:ack", "alarm:resolve"] },
   { method: "PATCH", prefix: "/api/fgmp/alarms", capabilities: ["alarm:ack", "alarm:resolve"] },
   { method: "POST", prefix: "/api/fgmp/api-keys", capabilities: ["api-key:manage"] },
@@ -474,7 +536,7 @@ const API_WRITE_RULES: readonly { method: string; prefix: string; capabilities: 
 ];
 
 /** Return the any-of capabilities required for an API request, if mapped. */
-export function apiRequestCapabilities(method: string, url: string | URL): readonly string[] | null {
+export function apiRequestCapabilities(method: string, url: string | URL): readonly Capability[] | null {
   const normalizedMethod = method.toUpperCase();
   if (normalizedMethod === "GET") return apiReadCapabilities(url);
   let parsed: URL;
@@ -572,7 +634,7 @@ export const SUPERADMIN_ONLY_CAPABILITIES = [
   "view:tenant-isolation",
   "platform:firmware",
   "user:grant-superadmin",
-] as const;
+] as const satisfies readonly Capability[];
 
 /** Whether the given role is the platform-level super-admin. Capability, not a
  *  tenant context: see the note on `ROLE_PERMISSIONS.SUPERADMIN`. */

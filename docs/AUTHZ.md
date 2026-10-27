@@ -38,6 +38,13 @@ not the token's. A JWT is a claim about the past: without this, a demoted,
 deactivated or password-reset account keeps its old authority until the token
 expires. `sessionEpoch` provides explicit revocation.
 
+The same request principal must flow from this guard into domain/database work.
+API handlers pass `auth.user` to `bootstrap(auth.user)`; bootstrap does not call
+`getServerSession()` again. A second JWT lookup could restore an old role or
+tenant after authorization already used the fresh database state, or ignore a
+role-preview overlay. `toFgmpUser()` narrows the guarded principal and rejects a
+missing tenant or unknown role before engine work.
+
 ### 1.1.1 An MFA-pending session reaches nothing but the challenge
 
 A session that has passed the password but not the second factor carries
@@ -58,11 +65,16 @@ guard had no caller.
 
 ### 1.2 Layer 1 — role → capability
 
-`src/lib/fgmp/rbac-core.ts: ROLE_PERMISSIONS`. Seven roles, each an explicit
-allow-list. Only `SUPERADMIN` holds `"*"`. An unrecognised capability is denied.
+`src/lib/fgmp/rbac-core.ts: CAPABILITIES` is the typed capability vocabulary;
+`ROLE_PERMISSIONS` maps the seven roles to explicit allow-lists. Only
+`SUPERADMIN` holds `"*"`. An unrecognised capability is denied and is also a
+route-inventory failure, even though SUPERADMIN's wildcard can authorize known
+capabilities. The complete role/permission matrix is generated in
+`docs/security/RBAC-REFERENCE-MATRIX.md`.
 
-The full matrix is generated in `TASK_LEDGER.md` §5; run
-`bun run scripts/verify/route-inventory.ts` for the endpoint side.
+The full matrix is `docs/security/RBAC-REFERENCE-MATRIX.md`; regenerate it with
+`bun run scripts/verify/generate-rbac-reference.ts`. Run
+`bun run scripts/verify/route-inventory.ts` for the endpoint contract.
 
 ### 1.3 Layer 2 — endpoint → required capability
 

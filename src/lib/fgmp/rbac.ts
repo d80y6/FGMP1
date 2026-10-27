@@ -4,7 +4,8 @@ import type { Role } from "./types";
 import { db } from "@/lib/db";
 import type { PrismaClient } from "@prisma/client";
 import { getOpsDb } from "@/lib/fgmp/owner-db";
-import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
+import { toCurrentFgmpUser, type FgmpUser } from "@/lib/fgmp/session-principal";
+import { getSessionState } from "@/lib/auth-identity";
 
 export {
   ALL_ROLES,
@@ -22,16 +23,16 @@ export type { Permission, Role } from "./rbac-core";
 //
 // SECURITY (Phase 0.3): getCurrentUser() used to wrap the session lookup in a
 // bare `catch {}` that fell through to a hardcoded t-default "mock" identity.
-// bootstrap() (src/lib/fgmp/index.ts) feeds its result into 83 API route
-// handlers, and many use it for TENANT SCOPING (assertTenantOwned,
-// tenantWhere, rate-limit keys, audit attribution) rather than merely for
-// logging. So any transient failure of `import("next-auth")` silently
-// substituted the wrong tenant — a fail-open authorization bug triggered by an
-// operational fault. `_current` was also process-global module state, so once
-// degraded the wrong identity persisted for the life of the process and leaked
-// across requests.
+// At the time, bootstrap() fed its result into dozens of API route handlers,
+// many using it for tenant scoping, rate-limit keys and audit attribution. A
+// transient NextAuth import failure could therefore substitute the wrong
+// tenant — a fail-open authorization bug triggered by an operational fault.
+// The old session fallback was process-global; `_current` is now only the cache
+// for an explicitly requested system identity, never a request-session source.
+// Bootstrap consumes the exact principal that passed the request guard, and
+// getCurrentUser() independently revalidates session state for any direct use.
 //
-// It now FAILS CLOSED: no session means an exception, never an identity.
+// It fails closed: no session means an exception, never an identity.
 // System/seed contexts that legitimately have no HTTP session must call
 // getSystemUser() explicitly, so the intent is visible at every call site
 // instead of being an invisible side effect of an import failure.
@@ -62,14 +63,6 @@ const DEFAULT_USER = {
   tenantId: "t-default",
 };
 
-export interface FgmpUser {
-  id: string;
-  name: string;
-  email: string;
-  role: Role;
-  tenantId: string;
-}
-
 let _current: FgmpUser | null = null;
 
 /**
@@ -87,20 +80,15 @@ export async function getCurrentUser(): Promise<FgmpUser> {
   const { authOptions } = await import("@/lib/auth");
   const session = await getServerSession(authOptions);
   if (session?.user?.id) {
-    // `Me` declares tenantId as a plain string because that is what every
-    // AUTHENTICATED user has. A PENDING MFA session has none — it is not yet
-    // authorised — so this is the one place the two meet.
-    //
-    // requireTenantId THROWS rather than defaulting to "". An empty-string
-    // tenant would build a filter matching nothing while looking perfectly
-    // valid, which reads as "no data" instead of "not allowed".
-    return {
-      id: session.user.id,
-      name: session.user.name,
-      email: session.user.email,
-      role: session.user.role as Role,
-      tenantId: tenantIdOrThrow(session.user.tenantId),
-    };
+    // Never consume the JWT's old role or tenant as current authority. This
+    // helper is not the route guard, but it must still fail closed if a caller
+    // uses it after an account was disabled, revoked, or changed.
+    const state = await getSessionState(session.user.id);
+    try {
+      return toCurrentFgmpUser(session.user, state);
+    } catch {
+      throw new Error("getCurrentUser(): session is not an active, fully authenticated session.");
+    }
   }
   throw new Error(
     "getCurrentUser(): no authenticated session. Request handlers must use the " +

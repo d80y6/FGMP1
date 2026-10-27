@@ -51,7 +51,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ enti
   const auth = await requireAuth(req);
   if ("error" in auth) return auth.error;
   try {
-    const { user } = await bootstrap();
+    const { user } = await bootstrap(auth.user);
     const rl = await rateLimitByUser(req, user.id, READ_LIMIT.limit, READ_LIMIT.windowMs);
     if (!rl.success) {
       const res = NextResponse.json({ error: "Too many requests" }, { status: 429 });

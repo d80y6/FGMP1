@@ -24,7 +24,7 @@ import {
   parseIntParam,
 } from "@/lib/fgmp/rate-limit";
 import { errorResponse } from "@/lib/fgmp/api-error";
-import { PLATFORM_TENANT_ID, superAdminPlacement } from "@/lib/fgmp/platform-identity";
+import { superAdminPlacement } from "@/lib/fgmp/platform-identity";
 
 export const dynamic = "force-dynamic";
 
@@ -99,7 +99,7 @@ export async function GET(req: NextRequest) {
   const auth = await requireRole(req, ROLES.SUPER_OR_ADMIN);
   if ("error" in auth) return auth.error;
   const me = auth.user;
-  await bootstrap();
+  await bootstrap(auth.user);
   try {
     const rl = await rateLimitByUser(req, me.id, READ_LIMIT.limit, READ_LIMIT.windowMs);
     if (!rl.success) {
@@ -174,7 +174,7 @@ export async function POST(req: NextRequest) {
   const auth = await requireRole(req, ROLES.SUPER_OR_ADMIN);
   if ("error" in auth) return auth.error;
   const me = auth.user;
-  await bootstrap();
+  await bootstrap(auth.user);
   const superAdmin = isSuperAdminUser(me);
 
   const rl = await rateLimitByUser(req, me.id, MUTATION_LIMIT.limit, MUTATION_LIMIT.windowMs);
