@@ -26,7 +26,8 @@
  *   01 (as provisioner)  → roles created, membership granted, no warnings
  *   01 again             → idempotent
  *   set role fgmp_migrate→ the membership actually works
- *   02 (as provisioner)  → 45 tables, 40 FORCE RLS, 55 policies
+ *   02 (as provisioner)  → the post-condition notice, at or above its floors
+ *                          (45 tables, 40 FORCE RLS, 55+ policies, 4 grants)
  *   03 (as fgmp_ops)     → the seed writes two tenants under BYPASSRLS
  *   04 (as provisioner)  → "FGMP deployment verified."
  *
@@ -89,6 +90,15 @@ function expectOk(label: string, url: string, args: string[]): string {
   else fail(label, r.out);
   return r.out;
 }
+
+/**
+ * The schema script's post-condition notice, with its four numbers captured.
+ * Kept beside `expectNotice` so the two reading styles are visible together:
+ * a boolean "did this line appear" and a parsed "are these counts still
+ * adequate".
+ */
+const SCHEMA_NOTICE =
+  /FGMP schema applied: (\d+) tables, (\d+) with FORCE RLS, (\d+) policies, (\d+) DML grants on "User" for fgmp_app/;
 
 function expectNotice(label: string, out: string, needle: string | RegExp): void {
   const hit = typeof needle === "string" ? out.includes(needle) : needle.test(out);
@@ -186,7 +196,41 @@ function main(): void {
 
   // ── 2. Schema ─────────────────────────────────────────────────────────────
   const schema = expectOk("02-schema.sql exits 0", url, ["-f", `${SCRIPTS}/02-schema.sql`]);
-  expectNotice("…45 tables, 40 FORCE RLS, 55 policies", schema, /FGMP schema applied: 45 tables, 40 with FORCE RLS, 55 policies/);
+  // ── The post-condition, asserted as FLOORS rather than as one sentence ──
+  // This used to match the literal string "45 tables, 40 with FORCE RLS, 55
+  // policies", so adding any policy — even a correct one — turned a healthy
+  // schema into a red build with no hint of which number moved. That is the
+  // copy-of-a-fact pattern this review keeps finding: the assertion is supposed
+  // to answer "did the schema land with enough FORCE RLS and enough policies",
+  // and a number in a regex cannot answer it. The floors are the same ones
+  // 02-schema.sql itself enforces; the numbers are parsed so a regression that
+  // DROPS tables or policies still fails, and the run prints what it saw.
+  const counters = SCHEMA_NOTICE.exec(schema);
+  const counts = counters
+    ? {
+        tables: Number(counters[1]),
+        forced: Number(counters[2]),
+        policies: Number(counters[3]),
+        grants: Number(counters[4]),
+      }
+    : null;
+  const floors = { tables: 45, forced: 40, policies: 55, grants: 4 };
+  const short = counts
+    ? (Object.keys(floors) as (keyof typeof floors)[]).filter((k) => counts[k] < floors[k])
+    : (Object.keys(floors) as (keyof typeof floors)[]);
+  if (counts && short.length === 0) {
+    ok(
+      "…schema post-condition",
+      `${counts.tables} tables, ${counts.forced} FORCE RLS, ${counts.policies} policies, ${counts.grants} grants`,
+    );
+  } else {
+    fail(
+      `…schema post-condition (floors ${JSON.stringify(floors)})`,
+      counts
+        ? `below floor: ${short.join(", ")} — saw ${JSON.stringify(counts)}`
+        : `no "FGMP schema applied" notice in:\n${schema}`,
+    );
+  }
 
   // ── 3a. The seed's own privilege guard ────────────────────────────────────
   // README tells the operator to run 03 with `set role fgmp_ops;` because it is
