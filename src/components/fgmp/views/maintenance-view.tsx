@@ -87,6 +87,13 @@ export function MaintenanceView() {
   // read this view and used to be shown Create/Complete buttons that always
   // returned 403.
   const canManageTickets = me ? hasCapability(me.role, "ticket:manage") : false;
+  // Same narrowing for the two actions POST /api/fgmp/maintenance now checks
+  // individually. `ticket:manage` remains the coarse gate the path policy
+  // applies; `ticket:create` and `ticket:complete` decide which control is
+  // drawn. They are ANDed, so a role can only lose a button it could not have
+  // used: the route would have refused it.
+  const canCreateTicket = canManageTickets && me ? hasCapability(me.role, "ticket:create") : false;
+  const canCompleteTicket = canManageTickets && me ? hasCapability(me.role, "ticket:complete") : false;
   const [status, setStatus] = useState("OPEN,SCHEDULED,IN_PROGRESS");
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
@@ -181,7 +188,7 @@ export function MaintenanceView() {
             >
               <Download className="me-1.5 h-4 w-4" /> {t("common.export")}
             </Button>
-            {canManageTickets && (
+            {canCreateTicket && (
               <CreateTicketDialog open={createOpen} onOpenChange={setCreateOpen} sites={snapshot.sites} generators={snapshot.generators} onCreated={() => { refetch(); setCreateOpen(false); }} />
             )}
           </>
@@ -243,7 +250,7 @@ export function MaintenanceView() {
                       <TableCell><StatusBadge value={tk.status} className="h-5 text-[10px]" /></TableCell>
                       <TableCell className="hidden md:table-cell text-[10px] text-muted-foreground">{tk.scheduledFor ? timeAgo(tk.scheduledFor, numLang) : "—"}</TableCell>
                       <TableCell className="text-end">
-                        {canManageTickets && tk.status !== "DONE" && (
+                        {canCompleteTicket && tk.status !== "DONE" && (
                           <Button size="sm" variant="outline" className="h-6 px-2 text-[10px] text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10" onClick={() => complete(tk.id)}>
                             <CheckCircle2 className="me-1 h-3 w-3" />{t("maintenance.complete")}
                           </Button>

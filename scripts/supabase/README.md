@@ -79,7 +79,7 @@ NOTICE:    fgmp_app — login=t, superuser=f, bypassrls=f, postgres can assume i
 NOTICE:    fgmp_migrate — login=t, superuser=f, bypassrls=f, postgres can assume it: set=t, usage=t
 NOTICE:    fgmp_ops — login=t, superuser=f, bypassrls=t, postgres can assume it: set=t, usage=t
 NOTICE:  Next: 02-schema.sql (as postgres), then 03-seed.sql as fgmp_ops.
-NOTICE:  FGMP schema applied: 45 tables, 40 with FORCE RLS, 55 policies, 4 DML grants on "User" for fgmp_app.
+NOTICE:  FGMP schema applied: 45 tables, 40 with FORCE RLS, 56 policies, 4 DML grants on "User" for fgmp_app.
 NOTICE:  FGMP seed ready: 2 tenants, 6 users, 8 sites, 8 tanks, 8 generators, 8 dispensers, 5 alarms, 12 fuel transactions.
 NOTICE:  OK: fgmp_app sees 0 sites with no tenant context.
 NOTICE:  FGMP deployment verified.
@@ -107,8 +107,10 @@ Every connection string below is unusable until you do.
 ## What the schema contains
 
 45 tables. 40 of them carry a `tenantId` and have **FORCE ROW LEVEL SECURITY**
-with one `tenant_isolation` policy each (55 policies in total, counting the
-SECURITY DEFINER helper on the MFA challenge table). The remaining six are
+with one `tenant_isolation` policy each (56 policies in total: one
+`tenant_isolation` per table, plus the SECURITY DEFINER helper's own SELECT
+policy on the MFA challenge table, which is what lets that helper read a row
+under FORCE RLS at all). The remaining six are
 platform-global and have no tenant column, deliberately:
 
 | table | why it is global |
@@ -229,7 +231,7 @@ asserts 22 facts, among them:
 * the role running the scripts is **not** a superuser (otherwise everything below
   passes for the wrong reason);
 * `01` records default privileges for `fgmp_migrate` (2 rows) and re-runs silently;
-* `02` reports `45 tables, 40 with FORCE RLS, 55 policies`;
+* `02` reports `45 tables, 40 with FORCE RLS, 56 policies`;
 * `03` refuses to run as `fgmp_migrate` — the guard fires *before* any insert,
   rather than dying mid-transaction on a `FORCE RLS` violation;
 * `03` then succeeds as `fgmp_ops`;

@@ -12,7 +12,7 @@ import {
 } from "@/lib/fgmp/rate-limit";
 import { withTenant } from "@/lib/fgmp/tenant-context";
 import { errorResponse } from "@/lib/fgmp/api-error";
-import { requireAuth, requireRole, ROLES, assertSiteTenantOwned, siteTenantWhereOrAll } from "@/lib/fgmp/auth-helpers";
+import { requireAuth, requireRole, ROLES, can, assertSiteTenantOwned, siteTenantWhereOrAll } from "@/lib/fgmp/auth-helpers";
 import { tenantIdOrThrow } from "@/lib/fgmp/route-tenant";
 
 export const dynamic = "force-dynamic";
@@ -71,6 +71,26 @@ export async function POST(req: NextRequest) {
     const data = r.data;
 
     if (data.action === "complete") {
+      // ── The action's own capability, not just the endpoint's ─────────────
+      // `ticket:complete` is declared in the matrix and until now gated
+      // NOTHING: ROLES.MAINTENANCE admitted ADMIN, REGIONAL_MANAGER and
+      // FIELD_ENGINEER, and the path policy only asked for `ticket:manage`,
+      // which all three hold. A role could therefore appear in the Roles table
+      // without the capability and still close tickets, and — the case that
+      // matters — a role could HOLD the capability, be shown the Complete
+      // button, and be refused. Closing a work order is the write that retires
+      // an alarm condition, so it gets the explicit check.
+      //
+      // Checked after validation (malformed body ⇒ 400, not 403) and before any
+      // read. All three roles above now hold the capability, so no caller that
+      // succeeds today starts failing; what changes is that the declaration is
+      // true and the client can gate on it.
+      if (!can(me, "ticket:complete")) {
+        return NextResponse.json(
+          { error: "Forbidden", code: "INSUFFICIENT_CAPABILITY" },
+          { status: 403 },
+        );
+      }
       const existing = await withTenant(tenantIdOrThrow(me.tenantId), (tx) => tx.maintenanceTicket.findUnique({
         where: { id: data.ticketId },
         select: { site: { select: { tenantId: true } } },
@@ -85,6 +105,16 @@ export async function POST(req: NextRequest) {
       const res = NextResponse.json(updated);
       applyRateLimitHeaders(res.headers, rl);
       return res;
+    }
+    // create — the same check for the other declared action. `ticket:create`
+    // was inert for the same reason as `ticket:complete`; opening a work order
+    // is lower risk but the asymmetry between "the matrix says READONLY cannot
+    // create" and "the route never asked" is exactly what this pass removes.
+    if (!can(me, "ticket:create")) {
+      return NextResponse.json(
+        { error: "Forbidden", code: "INSUFFICIENT_CAPABILITY" },
+        { status: 403 },
+      );
     }
     // create — verify the referenced site belongs to the caller's tenant
     const site = await withTenant(tenantIdOrThrow(me.tenantId), (tx) => tx.site.findUnique({

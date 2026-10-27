@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Building2, Search, Plus, Pencil, Trash2, MoreVertical, ShieldAlert,
-  Users, MapPin, Globe, UserPlus,
+  Users, MapPin, Globe, UserPlus, KeyRound, ScrollText, Stethoscope,
 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -37,6 +37,10 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { toast } from "sonner";
 import { fmtDate } from "@/lib/fgmp/format";
 import { useT, useTF, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PlatformGrantsPanel } from "@/components/fgmp/platform/platform-grants-panel";
+import { PlatformAuditPanel } from "@/components/fgmp/platform/platform-audit-panel";
+import { SupportSummaryDialog } from "@/components/fgmp/platform/support-summary-dialog";
 import type { Language } from "@/lib/fgmp/i18n";
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -68,6 +72,7 @@ const EMPTY_FORM: TenantForm = { name: "", code: "", country: "Yemen" };
 export function TenantsView() {
   const me = useFgmp((s) => s.me);
   const t = useT();
+  const tFmt = useTF();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
 
@@ -78,6 +83,18 @@ export function TenantsView() {
   const [deleteTarget, setDeleteTarget] = useState<TenantRow | null>(null);
   const [createAdminTarget, setCreateAdminTarget] = useState<TenantRow | null>(null);
   const [supportTarget, setSupportTarget] = useState<TenantRow | null>(null);
+  const [summaryTarget, setSummaryTarget] = useState<TenantRow | null>(null);
+  /**
+   * The three surfaces that share this screen, and the reason they share it.
+   *
+   * The tenant registry, the grant inventory and the platform trail are all
+   * gated by the SAME capability (`view:tenants`, granted only through the
+   * platform wildcard). Giving each its own nav entry would have meant either
+   * three `view:*` capabilities the API policy does not name, or three entries
+   * pointing at one capability — and the nav suite asserts the two agree. Tabs
+   * keep one capability, one screen, and no new policy rows to drift.
+   */
+  const [tab, setTab] = useState<"tenants" | "grants" | "audit">("tenants");
 
   const { data: tenants, loading, refetch } = useApi<TenantRow[]>("/api/fgmp/tenants", { interval: 30000 });
 
@@ -153,6 +170,29 @@ export function TenantsView() {
         }
       />
 
+      {/*
+        Three surfaces, one capability. Every tab below is behind
+        `view:tenants`; the two panels re-check it themselves and render
+        nothing if it is absent, so a tab that somehow became reachable would
+        still show no content.
+      */}
+      <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
+        <TabsList className="grid w-full grid-cols-3 sm:w-auto sm:inline-grid">
+          <TabsTrigger value="tenants" className="text-xs">
+            <Building2 className="me-1.5 h-3.5 w-3.5" />
+            {t("platform.tab.tenants")}
+          </TabsTrigger>
+          <TabsTrigger value="grants" className="text-xs">
+            <KeyRound className="me-1.5 h-3.5 w-3.5" />
+            {t("platform.tab.grants")}
+          </TabsTrigger>
+          <TabsTrigger value="audit" className="text-xs">
+            <ScrollText className="me-1.5 h-3.5 w-3.5" />
+            {t("platform.tab.audit")}
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="tenants" className="mt-4 space-y-4">
       {/* KPI strip */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <KpiCard label={t("tenants.total")} value={formatNumber(stats.total, numLang)} icon={<Building2 className="h-4 w-4" />} />
@@ -215,7 +255,7 @@ export function TenantsView() {
                           </span>
                           {tnt._count.suppressions > 0 && (
                             <span className="text-[10px] text-muted-foreground">
-                              {formatNumber(tnt._count.suppressions, numLang)} suppressions
+                              {tFmt("tenants.suppressionsCount", { n: formatNumber(tnt._count.suppressions, numLang) })}
                             </span>
                           )}
                         </div>
@@ -265,6 +305,20 @@ export function TenantsView() {
                                 {t("tenants.supportAccess")}
                               </DropdownMenuItem>
                             )}
+                            {/*
+                              The summary is gated on the same capability as the
+                              session that makes it readable: opening the dialog
+                              without a session is not an error, it is the state
+                              the dialog renders (with the button that opens
+                              one), because "no session" is a legitimate answer
+                              a super-admin needs to see.
+                            */}
+                            {canManageTenants && (
+                              <DropdownMenuItem onClick={() => setSummaryTarget(tnt)}>
+                                <Stethoscope className="me-2 h-3.5 w-3.5" />
+                                {t("tenants.viewSummary")}
+                              </DropdownMenuItem>
+                            )}
                             {canManageTenants && (
                               <>
                                 <DropdownMenuSeparator />
@@ -286,8 +340,8 @@ export function TenantsView() {
                     <TableRow>
                       <TableCell colSpan={7} className="py-12 text-center text-sm text-muted-foreground">
                         {tenants && tenants.length === 0
-                          ? "No tenants yet. Click “Add Tenant” to create the first one."
-                          : "No tenants match your filters."}
+                          ? t("tenants.emptyNone")
+                          : t("tenants.emptyFiltered")}
                       </TableCell>
                     </TableRow>
                   )}
@@ -297,6 +351,16 @@ export function TenantsView() {
           )}
         </CardContent>
       </Card>
+        </TabsContent>
+
+        <TabsContent value="grants" className="mt-4">
+          <PlatformGrantsPanel tenants={(tenants ?? []).map((tnt) => ({ id: tnt.id, name: tnt.name }))} />
+        </TabsContent>
+
+        <TabsContent value="audit" className="mt-4">
+          <PlatformAuditPanel tenants={(tenants ?? []).map((tnt) => ({ id: tnt.id, name: tnt.name }))} />
+        </TabsContent>
+      </Tabs>
 
       <CreateTenantDialog
         open={createOpen}
@@ -339,6 +403,17 @@ export function TenantsView() {
         key={supportTarget?.id ?? "none"}
         target={supportTarget}
         onOpenChange={(o) => !o && setSupportTarget(null)}
+      />
+
+      {/* The read half of the support path: counts and recent alarms for the
+          tenant the OPEN session names. Keyed by tenant for the same reason as
+          the dialog above — a summary fetched for tenant A must not render
+          under tenant B's heading. */}
+      <SupportSummaryDialog
+        key={summaryTarget?.id ?? "summary-none"}
+        target={summaryTarget}
+        onOpenChange={(o) => !o && setSummaryTarget(null)}
+        onRequestSession={(tnt) => setSupportTarget(tnt as TenantRow)}
       />
     </div>
   );

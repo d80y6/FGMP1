@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { bootstrap } from "@/lib/fgmp";
-import { asTenant, asTenantForAnotherTenant, resolveTenantScope } from "@/lib/fgmp/route-tenant";
+import {
+  asTenant,
+  asTenantForAnotherTenant,
+  resolveTenantScope,
+  type TenantScopedClient,
+} from "@/lib/fgmp/route-tenant";
 import {
   requireRole,
   ROLES,
@@ -275,12 +280,25 @@ export async function POST(req: NextRequest) {
   // `tenantId` above is either the caller's own or a super-admin's explicit
   // choice — a tenant admin supplying someone else's id is rejected with 403
   // before this point.
-  // Privileged helper: for a SUPERADMIN `tenantId` may be a client-supplied
-  // target, which is the documented behaviour of this endpoint. Using
-  // asTenant(me, …) here would type-check and silently create the user in the
-  // super-admin's own tenant instead of the requested one — a credential
-  // written to the wrong place, which is worse than a build failure.
-  const { tenant, user } = await asTenantForAnotherTenant(me, tenantId, async (tx) => {
+  //
+  // ── TWO PATHS, AND WHY THIS USED TO 500 ──────────────────────────────────
+  // The call was `asTenantForAnotherTenant(me, tenantId, …)` for EVERY caller.
+  // That helper asserts SUPERADMIN at the point the privilege is exercised — by
+  // design, so a cross-tenant context cannot be obtained by accident — which
+  // means a tenant ADMIN creating a user in their OWN tenant reached the
+  // assertion and threw. The route's own error handler turned that into a
+  // **500 on POST /api/fgmp/users**: the single most ordinary write a tenant
+  // administrator makes ("add a colleague") was broken, and broken in the way
+  // that looks like an outage rather than a refusal.
+  //
+  // The helper was right; the call site was wrong. A super-admin's target may be
+  // a client-supplied tenant, which is exactly what the helper exists for. A
+  // tenant admin's target is already forced to their own tenant three lines
+  // above (`requireTenantId(me)`), so it takes the ordinary `asTenant(me, …)`
+  // path — the same context, obtained without claiming a privilege they do not
+  // have. Neither branch can widen: the non-super branch cannot name a tenant at
+  // all, and the super branch is the only one that reads `clientTenantId`.
+  const create = async (tx: TenantScopedClient) => {
     const t = await tx.tenant.findUnique({ where: { id: tenantId }, select: { id: true } });
     if (!t) return { tenant: null, user: null };
     const created = await tx.user.create({
@@ -295,7 +313,10 @@ export async function POST(req: NextRequest) {
       select: userSelect,
     });
     return { tenant: t, user: created };
-  });
+  };
+  const { tenant, user } = superAdmin
+    ? await asTenantForAnotherTenant(me, tenantId, create)
+    : await asTenant(me, create);
   if (!tenant) {
     return NextResponse.json({ error: "Unknown tenantId" }, { status: 400 });
   }

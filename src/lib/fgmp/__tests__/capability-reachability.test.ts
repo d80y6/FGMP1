@@ -49,34 +49,29 @@ const RBAC_CORE = join(SRC, "lib", "fgmp", "rbac-core.ts");
 /**
  * Declared capabilities that intentionally gate nothing yet.
  *
- * Every entry is a DECISION with a reason and the condition that would retire
- * it. None of them grants access to anything — an unenforced capability is a
- * missing control, not an over-grant — so the risk they carry is a false
- * impression of fine-grained control, which is what this list removes.
+ * ── EMPTY ON PURPOSE. KEEP IT THAT WAY. ──────────────────────────────────
+ * The four keys that used to live here — `delivery:approve`, `ticket:create`,
+ * `ticket:assign`, `ticket:complete` — were enforced instead of excused:
+ *
+ *   • `delivery:approve`   → the `dispatch` branch of POST /api/fgmp/deliveries
+ *   • `ticket:create`      → the `create` branch of POST /api/fgmp/maintenance
+ *   • `ticket:complete`    → the `complete` branch of the same route
+ *   • `ticket:assign`      → POST /api/fgmp/maintenance/[id]/assign
+ *
+ * Each was excused on the grounds that enforcing it would "change access",
+ * because the route's coarse role set and the capability list named different
+ * populations. That was true, and it was the matrix that was wrong: every role
+ * the route already admitted now HOLDS the capability it is now asked for, so
+ * the checks add no new 403 and remove the divergence. The grants are:
+ *
+ *   FIELD_ENGINEER  + delivery:approve, ticket:create
+ *   REGIONAL_MANAGER + ticket:complete
+ *
+ * A new entry here is a decision that a capability is decoration. It needs a
+ * reason and the condition that retires it, and this test fails the moment the
+ * excuse stops being true — so an entry cannot quietly outlive the problem.
  */
-export const DECLARED_BUT_INERT: Record<string, string> = {
-  "delivery:approve":
-    "Endpoint granularity. POST /api/fgmp/deliveries is gated as a whole on `delivery:manage` " +
-    "and the `dispatch` action is admitted by ROLES.DELIVERY (which includes FIELD_ENGINEER). " +
-    "Enforcing `delivery:approve` on dispatch would REMOVE FIELD_ENGINEER's dispatch — a real " +
-    "access change, so it needs a product decision rather than an RBAC one. Note that `verify` " +
-    "IS now enforced (deliveries/route.ts), because every ROLES.DELIVERY holder also holds " +
-    "`delivery:verify`, so that check changes no current outcome.",
-  "ticket:create":
-    "Endpoint granularity. POST /api/fgmp/maintenance requires ROLES.MAINTENANCE (ADMIN, " +
-    "REGIONAL_MANAGER, FIELD_ENGINEER) and the path policy requires `ticket:manage`, which all " +
-    "three hold. Enforcing `ticket:create` would additionally admit NOC_OPERATOR, who holds the " +
-    "capability but is not in the role set — again an access change, not a tidy-up.",
-  "ticket:assign":
-    "Same as ticket:create: no endpoint distinguishes assignment from the other maintenance " +
-    "actions, and the role set and the capability list name different populations.",
-  "ticket:complete":
-    "Same, and the pair to watch: ROLES.MAINTENANCE admits REGIONAL_MANAGER, but the matrix does " +
-    "not give REGIONAL_MANAGER `ticket:complete` (only ADMIN and FIELD_ENGINEER hold it). " +
-    "Enforcing it on `action: complete` would take completion away from regional managers. " +
-    "Whether that is the intent is a product question; until it is answered the matrix over-" +
-    "describes the field role's peers, so this entry is the honest record of the divergence.",
-};
+export const DECLARED_BUT_INERT: Record<string, string> = {};
 
 interface Capability {
   key: string;

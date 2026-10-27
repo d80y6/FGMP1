@@ -51,11 +51,25 @@ export function InventoryView() {
   const t = useT();
   const useArabicNums = useArabicNumerals();
   const numLang: Language = useArabicNums ? "ar" : "en";
-  // Create / dispatch / verify all POST to /api/fgmp/deliveries, which requires
-  // `delivery:manage`. READONLY, EXECUTIVE and NOC_OPERATOR can read inventory
-  // but not change it, so they must not be offered controls that only produce a
-  // 403.
+  // ── One control, one capability ──────────────────────────────────────────
+  // All three writes POST to /api/fgmp/deliveries, whose path policy asks for
+  // `delivery:manage`. That is the COARSE gate: it says "you may touch the
+  // deliveries API at all". Each button then asks for the capability the route
+  // checks for THAT action, so the control and the 403 cannot disagree:
+  //
+  //   create  → delivery:manage (path policy; no finer key exists)
+  //   dispatch→ delivery:approve   (POST …/deliveries, action: dispatch)
+  //   verify  → delivery:verify    (POST …/deliveries, action: verify)
+  //
+  // Before this, the screen asked only for `delivery:manage`. That happened to
+  // work, but it meant the two action keys in the Roles matrix described
+  // nothing the UI honoured — the exact false impression this pass removes.
+  // A role that holds `delivery:approve` and not `delivery:manage` still sees no
+  // Dispatch button, because the path policy would 403 it first; the `&&`
+  // below therefore narrows, and can never widen.
   const canManageDeliveries = me ? hasCapability(me.role, "delivery:manage") : false;
+  const canDispatch = canManageDeliveries && me ? hasCapability(me.role, "delivery:approve") : false;
+  const canVerify = canManageDeliveries && me ? hasCapability(me.role, "delivery:verify") : false;
   const { data: deliveries, error: deliveriesError, refetch } = useApi<DeliveryRow[]>("/api/fgmp/deliveries", { interval: 8000 });
   const { data: analytics, error: analyticsError, refetch: refetchAnalytics } = useApi<AnalyticsPayload>("/api/fgmp/analytics?projection=inventory", { interval: 15000 });
   const [createOpen, setCreateOpen] = useState(false);
@@ -147,8 +161,8 @@ export function InventoryView() {
                       <TableCell className="text-[10px] text-muted-foreground">{fmtDate(d.scheduledAt, numLang)}</TableCell>
                       <TableCell><StatusBadge value={d.status} className="h-5 text-[10px]" /></TableCell>
                       <TableCell className="text-end">
-                        {canManageDeliveries && d.status === "SCHEDULED" && <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => dispatch(d.id)}>{t("inventory.dispatch")}</Button>}
-                        {canManageDeliveries && d.status === "DELIVERED" && <Button size="sm" variant="outline" className="h-6 px-2 text-[10px] text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10" onClick={() => setVerify({ id: d.id, vol: d.volumeOrderedLitres })}>{t("inventory.verify")}</Button>}
+                        {canDispatch && d.status === "SCHEDULED" && <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => dispatch(d.id)}>{t("inventory.dispatch")}</Button>}
+                        {canVerify && d.status === "DELIVERED" && <Button size="sm" variant="outline" className="h-6 px-2 text-[10px] text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10" onClick={() => setVerify({ id: d.id, vol: d.volumeOrderedLitres })}>{t("inventory.verify")}</Button>}
                         {(d.status === "VERIFIED" || d.status === "IN_TRANSIT") && <span className="text-[10px] text-muted-foreground">—</span>}
                       </TableCell>
                     </TableRow>

@@ -107,7 +107,25 @@ export const ROLE_PERMISSIONS: Record<Role, {
       "view:asset-registry", "view:edge-firmware", "view:fuel-forecast",
       "view:consumption-patterns",
       "alarm:ack", "alarm:resolve", "alarm:suppress",
-      "gen:control", "ticket:create", "delivery:verify", "notification:manage",
+      // `delivery:verify` used to sit here and was unreachable twice over: the
+      // handler admits ROLES.DELIVERY only (NOC_OPERATOR is not in it) and the
+      // path policy asks POST /api/fgmp/deliveries for `delivery:manage`, which
+      // NOC_OPERATOR does not hold. A monitoring role that believes it may
+      // sign off a tanker's delivered volume will eventually ask why the button
+      // is missing; the honest answer is that it never could. Removed rather
+      // than widened — admitting NOC to both gates would let it write delivered
+      // volumes against a customer's tank.
+      // `ticket:create` used to sit here and was unreachable: the path policy
+      // for POST /api/fgmp/maintenance requires `ticket:manage` (NOC_OPERATOR
+      // does not hold it), and the handler admits ROLES.MAINTENANCE (which does
+      // not include NOC_OPERATOR). Either gate alone was enough to refuse, so
+      // the key promised a Create-ticket button to a role that would have seen
+      // it hidden — and, if it had been shown, a guaranteed 403. Opening a work
+      // order is a maintenance decision; the monitoring role raises an alarm and
+      // the field role or the dispatcher turns it into work. Removed rather than
+      // widened, because widening means editing both the path rule and the role
+      // set, which is a product decision rather than a tidy-up.
+      "gen:control", "notification:manage",
       "dispenser:control",
       // Matches ROLES.TICK in auth-helpers.ts.
       "simul:tick",
@@ -126,7 +144,8 @@ export const ROLE_PERMISSIONS: Record<Role, {
       "view:asset-registry", "view:edge-firmware", "view:fuel-forecast",
       "view:consumption-patterns", "view:audit", "view:iot",
       "alarm:ack", "alarm:suppress", "alarm:configure", "delivery:approve",
-      "delivery:manage", "ticket:create", "ticket:assign", "ticket:manage",
+      "delivery:manage", "ticket:create", "ticket:assign", "ticket:complete",
+      "ticket:manage",
       // Matches ROLES.TICK in auth-helpers.ts.
       "simul:tick",
     ],
@@ -142,7 +161,16 @@ export const ROLE_PERMISSIONS: Record<Role, {
       "view:alarms", "view:inventory", "view:iot", "view:maintenance",
       "view:preferences", "view:dispensers", "view:suppressions",
       "view:asset-registry", "view:edge-firmware",
-      "ticket:complete", "ticket:manage", "delivery:verify", "delivery:manage",
+      // ── Action capabilities, granted where the ENDPOINT already admits ────
+      // `delivery:approve` and `ticket:create` were declared for ADMIN and
+      // REGIONAL_MANAGER only, while `ROLES.DELIVERY` / `ROLES.MAINTENANCE` (the
+      // handler gates on those two routes) admitted FIELD_ENGINEER as well.
+      // Enforcing the capability as declared would therefore have taken dispatch
+      // and ticket creation AWAY from field engineers — a behaviour change
+      // dressed up as a tidy-up. The matrix is the thing that was wrong, so the
+      // grant is here, and the enforcement on the routes now means what it says.
+      "ticket:complete", "ticket:create", "ticket:manage",
+      "delivery:verify", "delivery:manage", "delivery:approve",
       "dispenser:control",
     ],
   },

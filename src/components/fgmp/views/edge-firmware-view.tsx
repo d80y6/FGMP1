@@ -43,6 +43,7 @@ import { toast } from "sonner";
 import { timeAgo } from "@/lib/fgmp/format";
 import { useT, useTF, useArabicNumerals, formatNumber } from "@/lib/fgmp/use-language";
 import { useChartColors } from "@/lib/fgmp/use-chart-colors";
+import { FirmwareReleasesTab } from "@/components/fgmp/platform/firmware-releases-tab";
 import type { Language } from "@/lib/fgmp/i18n";
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -131,7 +132,7 @@ export function EdgeFirmwareView() {
   const canPatchIot = me ? hasCapability(me.role, "edge:manage") : false;
   const canOtaFor = (source: EspGateway["source"]) =>
     source === "iot" ? canPatchIot : canPatchDispensers;
-  const [tab, setTab] = useState<"gateways" | "firmware" | "rs485" | "reboot">("gateways");
+  const [tab, setTab] = useState<"gateways" | "firmware" | "releases" | "rs485" | "reboot">("gateways");
 
   const { data: dispensers, loading: dispLoading } = useApi<DispenserRow[]>(
     "/api/fgmp/dispensers", { interval: 10000 },
@@ -256,13 +257,25 @@ export function EdgeFirmwareView() {
       </div>
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
-        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 h-auto">
+        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-5 h-auto">
           <TabsTrigger value="gateways" className="text-xs">
             <Router className="me-1.5 h-3.5 w-3.5" />
             Gateways
           </TabsTrigger>
           <TabsTrigger value="firmware" className="text-xs">
             <HardDriveDownload className="me-1.5 h-3.5 w-3.5" />{t("firmware.espFirmware")}</TabsTrigger>
+          {/*
+            The release registry. Readable by everyone who can open this screen
+            (`view:edge-firmware`); the Publish / Delete controls inside it are
+            gated on `platform:firmware`, which only the platform wildcard
+            grants. That split is the point: a field engineer needs to know
+            which firmware is current, and must not be able to publish one to
+            the whole installation.
+          */}
+          <TabsTrigger value="releases" className="text-xs">
+            <HardDriveDownload className="me-1.5 h-3.5 w-3.5" />
+            {t("firmware.releases")}
+          </TabsTrigger>
           <TabsTrigger value="rs485" className="text-xs">
             <Radio className="me-1.5 h-3.5 w-3.5" />
             RS485 Diagnostics
@@ -282,6 +295,9 @@ export function EdgeFirmwareView() {
             onRefresh={tick}
             canOtaFor={canOtaFor}
           />
+        </TabsContent>
+        <TabsContent value="releases" className="mt-4">
+          <FirmwareReleasesTab />
         </TabsContent>
         <TabsContent value="rs485" className="mt-4">
           <Rs485Tab gateways={gateways} loading={loading} numLang={numLang} />

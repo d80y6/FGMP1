@@ -130,9 +130,22 @@ describe("global state and service credentials", () => {
 
   test("cross-tenant request-scoped database contexts are limited to named user administration", () => {
     const userAdmin = source("src/app/api/fgmp/users/route.ts");
-    expect(userAdmin).toContain("import { asTenant, asTenantForAnotherTenant, resolveTenantScope }");
+    // The import used to be asserted as one exact line; the names are what
+    // matter, so it is matched as a set. (It moved to a multi-line import when
+    // the route started type-checking its transaction callback.)
+    for (const name of ["asTenant", "asTenantForAnotherTenant", "resolveTenantScope"]) {
+      expect({ name, imported: new RegExp(`\\b${name}\\b[^;]*\\} from \"@/lib/fgmp/route-tenant\"`, "s").test(userAdmin) }).toEqual({ name, imported: true });
+    }
     expect(userAdmin).toContain("resolveTenantScope(me, searchParams.get(\"tenant\"))");
     expect(userAdmin).toContain("asTenantForAnotherTenant(me, tenantId");
+    // ── The privileged helper is for SUPERADMIN, and only for it ────────────
+    // POST /api/fgmp/users called it for EVERY caller, so a tenant ADMIN adding
+    // a colleague in their own tenant hit the helper's SUPERADMIN assertion and
+    // got a 500. Both branches must exist: the privileged one for a
+    // super-admin's cross-tenant target, and the ordinary one for everybody
+    // else, whose tenant is already forced to their own three lines above.
+    expect(userAdmin).toContain("? await asTenantForAnotherTenant(me, tenantId, create)");
+    expect(userAdmin).toContain(": await asTenant(me, create)");
 
     for (const path of ["src/app/api/fgmp/sites/route.ts", "src/app/api/fgmp/geography/regions/route.ts"]) {
       expect(source(path)).not.toContain("asTenantForAnotherTenant");
