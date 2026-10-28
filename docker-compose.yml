@@ -279,10 +279,9 @@ services:
     environment:
       - NEXT_API_BASE=http://fgmp-app:3000
       - IOT_API_KEYS=${IOT_API_KEYS:-}
-      # Snapshot polling token. This was MISSING here before the Apinator
-      # migration — the bridge fell back to its dev default in compose
-      # deployments and every snapshot poll 401'd. It must match the
-      # REALTIME_SERVICE_TOKEN handed to fgmp-app.
+      # Shared snapshot-directory credential. It must match the app value;
+      # the bridge now has no fallback and rejects the publicly known legacy
+      # default. Generate with: openssl rand -hex 32.
       - REALTIME_SERVICE_TOKEN=${REALTIME_SERVICE_TOKEN:?set REALTIME_SERVICE_TOKEN (openssl rand -hex 32)}
       # mTLS (proposal §7): set to 1 and point NEXT_API_BASE at
       # the gateway's internal listener (https://fgmp-app:8443)

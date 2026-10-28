@@ -114,6 +114,54 @@ describe("the real route tree satisfies the authorization contract", () => {
     expect(unreachable.map((h) => `${h.method} ${h.route}`)).toEqual([]);
   });
 
+  test("bridge directory requires safe credentials and returns only tenant-scoped identifiers", () => {
+    const route = readFileSync("src/app/api/fgmp/realtime/snapshot/route.ts", "utf8");
+    const credentialCheck = route.indexOf("matchesRealtimeServiceToken(token, expected)");
+    const directoryRead = route.indexOf("engine.bridgeSiteDirectory()");
+    const engine = readFileSync("src/lib/fgmp/engine.ts", "utf8");
+    expect(route).toContain("isRealtimeServiceTokenConfigured(expected)");
+    expect(credentialCheck).toBeGreaterThanOrEqual(0);
+    expect(directoryRead).toBeGreaterThan(credentialCheck);
+    expect(route).not.toContain("engine.snapshot()");
+    expect(route).not.toContain("engine.ensureAllTenants()");
+    expect(route).not.toContain("token !== expected");
+    expect(route).toContain('response.headers.set("Cache-Control", "private, no-store, max-age=0")');
+    expect(route).toContain("NextResponse.json({ sites })");
+    expect(engine).toContain("async bridgeSiteDirectory()");
+    expect(engine).toContain("if (tenantIds.length === 0)");
+    expect(engine).toContain("withTenant(tenantId");
+    expect(engine).toContain("where: { tenantId }");
+    expect(engine).toContain("select: { id: true, tenantId: true }");
+  });
+
+  test("IoT ingest validates the tenant API key before loading operational state", () => {
+    const route = readFileSync("src/app/api/fgmp/iot/ingest/route.ts", "utf8");
+    const directoryRead = route.indexOf("engine.bridgeSiteDirectory()");
+    const siteOwnershipCheck = route.indexOf("tx.site.findFirst({");
+    const keyLookup = route.indexOf("keyHash: hashApiKey(apiKey)");
+    const credentialDenial = route.indexOf("if (!credential)");
+    const rateLimit = route.indexOf("rl = await rateLimitByApiKey(");
+    const usageUpdate = route.indexOf("tx.apiKey.updateMany(");
+    const engineLoad = route.indexOf("await engine.ensureAllTenants()");
+    expect(directoryRead).toBeGreaterThanOrEqual(0);
+    expect(siteOwnershipCheck).toBeGreaterThan(directoryRead);
+    expect(keyLookup).toBeGreaterThan(siteOwnershipCheck);
+    expect(credentialDenial).toBeGreaterThan(keyLookup);
+    expect(rateLimit).toBeGreaterThan(credentialDenial);
+    expect(usageUpdate).toBeGreaterThan(rateLimit);
+    expect(engineLoad).toBeGreaterThan(usageUpdate);
+    expect(route).not.toContain("engine.sites.find");
+  });
+
+  test("the bridge has no committed fallback for its global snapshot credential", () => {
+    const bridge = readFileSync("mini-services/iot-bridge/index.ts", "utf8");
+    const credential = readFileSync("mini-services/iot-bridge/service-token.ts", "utf8");
+    expect(bridge).toContain("requireRealtimeServiceToken(");
+    expect(bridge).toContain("process.env.REALTIME_SERVICE_TOKEN");
+    expect(bridge).not.toContain('?? "fgmp-realtime-dev-token"');
+    expect(credential).toContain("value === LEGACY_INSECURE_REALTIME_TOKEN");
+  });
+
   test("NO_SESSION_ROLE is only used on routes that carry their own credential", () => {
     // `capabilities: []` means "no session role, ever". It would be a serious
     // mistake to reach for it on a browser route — that would silently deny the
