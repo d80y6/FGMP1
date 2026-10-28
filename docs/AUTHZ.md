@@ -347,12 +347,14 @@ handler inventory or resource-level cross-tenant IDOR test.
 ### Remaining live coverage gaps
 
 * **Cross-tenant item-level IDOR.** The representative policy matrix uses a
-  non-existent identifier. A separate CI-only suite now creates disposable
-  tenant-B Site/User rows, logs in as tenant-A ADMIN, sends valid GET/PATCH/
-  DELETE probes (including a forged `?tenant=`) and attempts self-promotion; a
-  privileged after-check asserts no row or role changed, then cleans up. This
-  covers two resource families, not every sensitive item route, and is not yet
-  considered verified until that CI step passes.
+  non-existent identifier. A separate CI-only suite creates disposable tenant-B
+  Site/User rows, logs in as tenant-A ADMIN, sends valid GET/PATCH/DELETE probes
+  (including a forged `?tenant=`) and attempts self-promotion. Run
+  [40750422596](https://github.com/d80y6/FGMP1/actions/runs/40750422596) passed
+  all eight live HTTP probes, privileged before/after row and caller-role
+  assertions, and fixture cleanup against the disposable CI database. This is
+  verified for these two resource families only—not every sensitive item route
+  or the production environment.
 * **Browser network assertions.** CI renders the authenticated UI with Playwright,
   and unit tests verify client request gating, but no browser test yet walks every
   role while asserting forbidden requests never appear in the network log.
@@ -361,11 +363,14 @@ handler inventory or resource-level cross-tenant IDOR test.
   production secrets still require an approved operator-run validation.
 
 The CI `ui` job runs the representative matrix after the seven-role walk and retains
-JSON evidence. Run 40745553712 passed it: 37 anonymous + 7×37 role probes (296 total) were
-observable and matched. The job sets `RATE_LIMIT_MUTATION_MAX=500` only on its disposable
-test server because the two suites share per-user budgets; this lets the matrix observe policy
-rather than limiter exhaustion and does **not** validate the production rate limit. Neither
-live script replaces the resource-level cross-tenant checks listed above.
+JSON evidence. Run [40745553712](https://github.com/d80y6/FGMP1/actions/runs/40745553712)
+passed it: 37 anonymous + 7×37 role probes (296 total) were observable and matched. The job
+sets `RATE_LIMIT_MUTATION_MAX=500` only on its disposable test server because the two suites
+share per-user budgets; this lets the matrix observe policy rather than limiter exhaustion and
+does **not** validate the production rate limit. Run [40750422596](https://github.com/d80y6/FGMP1/actions/runs/40750422596)
+then passed the live real-resource IDOR and database-integrity steps. Its logs/artifacts remain
+attached to CI, but the Actions blob host returned EOF when accessed from this workspace. Neither
+live suite replaces deployment-specific validation or comprehensive coverage of all resource routes.
 
 ---
 
