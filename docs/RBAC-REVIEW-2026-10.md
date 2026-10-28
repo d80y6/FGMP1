@@ -938,10 +938,14 @@ per role, records the four things the brief asks for:
 * **control** — 14 write controls probed with the capability that gates each:
   a holder must not be refused, a non-holder must be.
 
-Result: **all seven roles consistent, 0 mismatches** (one role at a time; the MFA
-probe on the last role reports `rate-limited`, which is the limiter, not a
-decision). The generated table is `docs/RBAC-LIVE-WALK-2026-10.md`, with JSON
-available via `--json`.
+The historical generated table was rendered as “all seven roles consistent,”
+but inspection of `docs/RBAC-LIVE-WALK-2026-10.md` shows HTTP 429 / `rate-limited`
+for numerous write-control probes across roles. The script classified these as
+`unknown` but did not fail, so the prior “0 mismatches” conclusion is **not valid
+authorization evidence**. The report now carries an explicit inconclusive warning.
+Fix the script's 429 handling and regenerate before claiming the seven-role walk
+passes. The separate CI Playwright suite passes browser-level public/authenticated
+checks, but does not replace the direct-API authorization walk.
 
 `scripts/verify/mfa-live-flow.ts` (`bun run test:mfa-flow`) walks enrol → verify →
 pending session → challenge → full session → disable against the same server,

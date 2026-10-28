@@ -452,6 +452,30 @@ jobs:
           done
           echo "server did not become ready"; tail -50 /tmp/server.log; exit 1
 
+      # The UI sweep checks the rendered surfaces. This separate HTTP walk calls
+      # every view endpoint and write-control probe as each of the seven roles;
+      # unlike the browser sweep it verifies direct API authorization. Rate-limit
+      # responses are inconclusive and fail the walk rather than counting as a
+      # match. Run first against a fresh server so the browser suite cannot
+      # consume the per-user test budgets.
+      - name: Live seven-role API authorization walk
+        run: |
+          mkdir -p test-results
+          set -o pipefail
+          bun run test:rbac-walk -- --md test-results/rbac-live-walk.md --json test-results/rbac-live-walk.json 2>&1 | tee /tmp/rbac-live-walk.log
+        env:
+          FGMP_BASE_URL: http://127.0.0.1:3000
+
+      - name: Upload seven-role authorization report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rbac-live-walk
+          path: |
+            test-results/rbac-live-walk.md
+            test-results/rbac-live-walk.json
+          if-no-files-found: warn
+
       # `github` as well as `list`: the list reporter's output lives in the job
       # log, which the Actions log archive serves from a host this project's
       # sandbox cannot reach, so a red run there is a red run with no readable
@@ -487,7 +511,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: >
           python3 scripts/ci/publish-logs.py "ui: browser suite"
-          /tmp/build.log /tmp/server.log /tmp/ui.log
+          /tmp/build.log /tmp/server.log /tmp/rbac-live-walk.log /tmp/ui.log
 
 
   docker:
