@@ -666,7 +666,12 @@ export function SystemHealthView() {
               </p>
             </div>
           ) : (
-            <div className="health-errors-scroll max-h-96 overflow-y-auto rounded-lg border">
+            <div
+              className="health-errors-scroll max-h-96 overflow-y-auto rounded-lg border focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"
+              role="region"
+              aria-label={t("systemHealth.recentErrors")}
+              tabIndex={0}
+            >
               <Table>
                 <TableHeader className="sticky top-0 z-10 bg-card">
                   <TableRow>

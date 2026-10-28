@@ -442,6 +442,14 @@ jobs:
           "$PW_HOME/node_modules/.bin/playwright" install --with-deps chromium
 
       - name: Start the server
+        env:
+          # The broad route walk and the representative matrix run sequentially
+          # as the same seeded principals. Keep this disposable server's shared
+          # per-user write budget above their combined probe count, so the RBAC
+          # matrix measures authorization rather than exercising the limiter.
+          # Production/default limits remain unchanged and are not validated by
+          # this test-only override.
+          RATE_LIMIT_MUTATION_MAX: "500"
         run: |
           node .next/standalone/server.js > /tmp/server.log 2>&1 &
           for i in $(seq 1 60); do
@@ -466,7 +474,24 @@ jobs:
         env:
           FGMP_BASE_URL: http://127.0.0.1:3000
 
-      - name: Upload seven-role authorization report
+      # This second matrix probes representative method/policy shapes in the
+      # route contract. The first walk creates the disposable READONLY demo user.
+      # Each role gets its own seeded credential; these are CI-only demo values.
+      - name: Live representative API policy matrix
+        run: |
+          set -o pipefail
+          bun run test:authz:live -- --json test-results/authz-live.json 2>&1 | tee /tmp/authz-live.log
+        env:
+          FGMP_BASE_URL: http://127.0.0.1:3000
+          FGMP_AUTHZ_PASSWORD_SUPERADMIN: Super@2026
+          FGMP_AUTHZ_PASSWORD_ADMIN: Admin@2026
+          FGMP_AUTHZ_PASSWORD_NOC_OPERATOR: Admin@2026
+          FGMP_AUTHZ_PASSWORD_REGIONAL_MANAGER: Admin@2026
+          FGMP_AUTHZ_PASSWORD_FIELD_ENGINEER: Admin@2026
+          FGMP_AUTHZ_PASSWORD_EXECUTIVE: Admin@2026
+          FGMP_AUTHZ_PASSWORD_READONLY: Readonly@2026
+
+      - name: Upload live authorization reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -474,6 +499,7 @@ jobs:
           path: |
             test-results/rbac-live-walk.md
             test-results/rbac-live-walk.json
+            test-results/authz-live.json
           if-no-files-found: warn
 
       # `github` as well as `list`: the list reporter's output lives in the job
@@ -507,11 +533,12 @@ jobs:
 
       - name: Publish failure diagnostics
         if: always()
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: >
           python3 scripts/ci/publish-logs.py "ui: browser suite"
-          /tmp/build.log /tmp/server.log /tmp/rbac-live-walk.log /tmp/ui.log
+          /tmp/build.log /tmp/server.log /tmp/rbac-live-walk.log /tmp/authz-live.log /tmp/ui.log
 
 
   docker:

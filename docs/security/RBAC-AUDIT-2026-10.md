@@ -236,3 +236,54 @@ No role/permission schema migration was introduced. The current schema stores bu
 - [ ] Decide the Regional Manager scope requirement (tenant-wide vs region-level).
 
 **Conclusion:** repository CI now proves standard Prisma generation, root typecheck/lint/build, broad unit tests, isolated PostgreSQL RLS behavior, and authenticated browser behavior. This audit remains **conditionally incomplete for production assurance** until R-2/R-5 deployment-specific evidence and the seven-role direct-API walk are complete, and the regional scope requirement is decided.
+
+## 11. Follow-up evidence update (2026-10-28)
+
+PR #33 (`fix: fail closed on inconclusive RBAC walk probes`) is merged at
+`8d04c88c0134fe55c9766882d83edf7e87532b69`. GitHub Actions run
+[40728180674](https://github.com/d80y6/FGMP1/actions/runs/40728180674) passed all jobs,
+including its seven-role walk and authenticated browser suite. The walk's JSON artifact was
+uploaded, but its per-role rows have not been reviewed in this workspace; an aggregate green
+exit is not evidence of comprehensive IDOR coverage.
+
+The active follow-up branch `arena/c7a96403-fgmp1` adds a **representative** seven-role live
+API-policy matrix in `scripts/verify/authz-live.ts`, inserts it after the seeded role walk in
+`.github/workflows/ci.yml`, and retains its JSON report. It validates the actual account email
+and database-resolved permanent role before assigning outcomes. Observable mismatches,
+identity mismatches, missing roles, and inconclusive HTTP/network outcomes have separate
+nonzero statuses. Local typecheck, focused ESLint, Bun bundle, focused logic test (5 passed /
+29 expectations), complete unit suite (1,115 passed / 13 skipped / 0 failed; 19,501
+expectations), `test:authz` (120 passed / 492 expectations), workflow YAML parse, `npx next
+build` and diff check passed. An offline negative test exited 3 with 37 inconclusive anonymous
+probes, 7 unavailable roles and 0 mismatches. That is evidence of fail-closed failure reporting
+only.
+
+The first follow-up CI run, [40736640722](https://github.com/d80y6/FGMP1/actions/runs/40736640722),
+ran the matrix and did **not** find a policy or identity mismatch. It correctly failed closed
+with 19 inconclusive HTTP 429 responses: 12 for SUPERADMIN and 7 for ADMIN after the preceding
+walk consumed the shared per-user mutation budget. The other five roles matched 37/37; SUPERADMIN
+matched 25/37 and ADMIN 30/37 before rate limiting. The anonymous baseline passed. The diagnostic
+check-run log was available via the synthetic merge commit although the Actions blob archive was
+not downloadable. A CI-only mutation-limit override (`RATE_LIMIT_MUTATION_MAX=500`) has now been
+added to the disposable test server, so the next run can test policy without conflating it with
+rate-limit exhaustion. This does not validate the production rate limit. The rerun
+[40739099008](https://github.com/d80y6/FGMP1/actions/runs/40739099008) passed the new matrix,
+but the browser suite then found `scrollable-region-focusable[serious]` on the System Health recent-
+errors table in both English and Arabic; the table was scrollable but not keyboard-focusable. It is
+now a named, keyboard-focusable region with a visible focus indicator, pending CI re-verification.
+The diagnostic-publication step failed secondarily and was changed to best-effort so it cannot mask
+the browser result. The JSX fix passes local TypeScript and `npx next build`; focused npm ESLint on
+the component also reports nine pre-existing `react-hooks/*` issues at lines 169–217, outside the
+changed table markup (the locked CI lint gate remains the authoritative verification). The overall
+run did **not** pass. **No live cross-tenant request against a real
+tenant B resource has been executed.**
+
+Prisma Client was generated locally for all 44 models using Prisma 6.19.3's official
+client generator with the matching schema-WASM/DMMF workaround after the normal engine
+CDN download failed. The generated files are ignored output, not a tracked change. CI's
+standard generation was already successful in run 40728180674.
+
+The report's residual-risk conclusions stand: the production pooler/secrets/runtime remain
+unverified; Regional Manager's tenant-wide-versus-regional scope remains a product decision;
+and neither live walk establishes comprehensive cross-tenant resource ownership or privilege
+escalation behavior. See the durable continuation record in `TASK_LEDGER.md` Part E.
