@@ -49,6 +49,7 @@ import { writeFileSync } from "node:fs";
 import { ALL_ROLES, ROLE_PERMISSIONS, hasCapability } from "../../src/lib/fgmp/rbac-core";
 import { navEntriesFor } from "../../src/lib/fgmp/navigation";
 import type { ViewKey } from "../../src/lib/fgmp/store";
+import { classifyWalkControl, isWalkProbeInconclusive, walkExitCode } from "./rbac-live-walk-logic";
 
 const BASE = process.env.FGMP_BASE_URL ?? "http://localhost:3000";
 if (!process.env.FGMP_BASE_URL) {
@@ -285,26 +286,55 @@ function absorb(jar: Cookies, res: Response): void {
   }
 }
 
-async function login(email: string, password: string): Promise<{ jar: Cookies; ok: boolean; detail: string }> {
+async function login(
+  email: string,
+  password: string,
+): Promise<{ jar: Cookies; ok: boolean; detail: string; status: number }> {
   const jar: Cookies = new Map();
-  const csrfRes = await fetch(`${BASE}/api/auth/csrf`, { headers: { cookie: cookieHeader(jar) } });
+  let csrfRes: Response;
+  try {
+    csrfRes = await fetch(`${BASE}/api/auth/csrf`, { headers: { cookie: cookieHeader(jar) } });
+  } catch {
+    return { jar, ok: false, detail: "unavailable (CSRF request failed)", status: 0 };
+  }
   absorb(jar, csrfRes);
-  const { csrfToken } = (await csrfRes.json()) as { csrfToken: string };
+  if (!csrfRes.ok || isWalkProbeInconclusive(csrfRes.status)) {
+    return { jar, ok: false, detail: `HTTP ${csrfRes.status}`, status: csrfRes.status };
+  }
+  let csrfToken: string;
+  try {
+    ({ csrfToken } = (await csrfRes.json()) as { csrfToken: string });
+  } catch {
+    return { jar, ok: false, detail: "unavailable (invalid CSRF response)", status: 0 };
+  }
+  if (!csrfToken) {
+    return { jar, ok: false, detail: "unavailable (missing CSRF token)", status: 0 };
+  }
 
   const body = new URLSearchParams({ csrfToken, email, password, callbackUrl: BASE, json: "true" });
-  const res = await fetch(`${BASE}/api/auth/callback/credentials`, {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded", cookie: cookieHeader(jar) },
-    body,
-    redirect: "manual",
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/api/auth/callback/credentials`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", cookie: cookieHeader(jar) },
+      body,
+      redirect: "manual",
+    });
+  } catch {
+    return { jar, ok: false, detail: "unavailable (credentials request failed)", status: 0 };
+  }
   absorb(jar, res);
 
   // NextAuth answers 200 with a URL on success and 401 on bad credentials; a
   // redirect (302) is also a success signal in the non-JSON form flow.
   const hasSession =
     [...jar.keys()].some((k) => k.includes("session-token")) || jar.has("__Secure-next-auth.session-token");
-  return { jar, ok: (res.status === 200 || res.status === 302) && hasSession, detail: `HTTP ${res.status}` };
+  return {
+    jar,
+    ok: (res.status === 200 || res.status === 302) && hasSession,
+    detail: `HTTP ${res.status}`,
+    status: res.status,
+  };
 }
 
 interface ProbeResult {
@@ -318,23 +348,27 @@ async function call(
   path: string,
   body?: unknown,
 ): Promise<ProbeResult> {
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    headers: {
-      cookie: cookieHeader(jar),
-      ...(body === undefined ? {} : { "content-type": "application/json" }),
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-    redirect: "manual",
-  });
-  const text = await res.text();
-  let parsed: unknown = text;
   try {
-    parsed = JSON.parse(text);
-  } catch {
-    /* not JSON — an HTML error page, usually; keep the text */
+    const res = await fetch(`${BASE}${path}`, {
+      method,
+      headers: {
+        cookie: cookieHeader(jar),
+        ...(body === undefined ? {} : { "content-type": "application/json" }),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      redirect: "manual",
+    });
+    const text = await res.text();
+    let parsed: unknown = text;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      /* not JSON — an HTML error page, usually; keep the text */
+    }
+    return { status: res.status, body: parsed };
+  } catch (error) {
+    return { status: 0, body: error instanceof Error ? error.message : String(error) };
   }
-  return { status: res.status, body: parsed };
 }
 
 const denied = (status: number) => status === 401 || status === 403;
@@ -355,6 +389,8 @@ interface RoleReport {
     status: number;
     verdict: "ok" | "wrong" | "unknown";
   }[];
+  /** Probes that were blocked by rate limits or unavailable responses; these are not passes. */
+  inconclusive: string[];
   problems: string[];
 }
 
@@ -384,6 +420,7 @@ async function walkRole(role: string): Promise<RoleReport> {
     nav: [],
     views: [],
     controls: [],
+    inconclusive: [],
     problems,
   };
 
@@ -392,17 +429,24 @@ async function walkRole(role: string): Promise<RoleReport> {
     return report;
   }
 
-  const { jar, ok, detail } = await login(creds.email, creds.password);
+  const { jar, ok, detail, status: loginStatus } = await login(creds.email, creds.password);
   report.login = ok ? "ok" : `FAILED (${detail})`;
   if (!ok) {
-    problems.push(`login failed for ${creds.email}: ${detail}`);
+    if (isWalkProbeInconclusive(loginStatus)) {
+      report.inconclusive.push(`login probe was inconclusive (${detail})`);
+    } else {
+      problems.push(`login failed for ${creds.email}: ${detail}`);
+    }
     return report;
   }
 
   const me = await call(jar, "GET", "/api/fgmp/me");
-  const meBody = me.body as { role?: string; email?: string };
+  const meBody = me.body !== null && typeof me.body === "object" ? (me.body as { role?: string; email?: string }) : {};
   report.identity = `${meBody.email ?? creds.email} · ${meBody.role ?? "?"}`;
-  if (meBody.role !== role) {
+  if (isWalkProbeInconclusive(me.status)) {
+    report.inconclusive.push(`/api/fgmp/me probe was inconclusive (HTTP ${me.status})`);
+    if (me.status === 0) return report;
+  } else if (meBody.role !== role) {
     problems.push(`/api/fgmp/me reports role ${meBody.role ?? "?"}, expected ${role}`);
   }
 
@@ -415,27 +459,34 @@ async function walkRole(role: string): Promise<RoleReport> {
     const probes = VIEW_PROBES[key];
     let worst = 0;
     let detailText: string | undefined;
+    const inconclusiveDetails: string[] = [];
     for (const path of probes) {
       const r = await call(jar, "GET", path);
       worst = Math.max(worst, r.status);
+      if (isWalkProbeInconclusive(r.status)) {
+        inconclusiveDetails.push(`${path} → HTTP ${r.status}`);
+      }
       if (r.status >= 400 && !detailText) {
         detailText = `${path} → ${r.status}`;
       }
     }
     report.views.push({ key, shown: shown.has(key), status: worst, detail: detailText });
+    if (inconclusiveDetails.length) {
+      report.inconclusive.push(`view "${key}" probe(s) inconclusive: ${inconclusiveDetails.join(", ")}`);
+    }
   }
 
-  // A view the role CAN open must answer. 429 is a limiter, not a denial.
+  // A view the role CAN open must answer. Rate limits and server/network
+  // failures do not establish authorization either way.
   for (const v of report.views) {
-    if (v.shown && (v.status >= 400 && v.status !== 429)) {
+    if (v.shown && v.status >= 400 && !isWalkProbeInconclusive(v.status)) {
       problems.push(`nav shows "${v.key}" but its API answered ${v.status} (${v.detail ?? ""})`);
     }
     if (
       !v.shown &&
       !SNAPSHOT_BACKED.has(v.key) &&
       !denied(v.status) &&
-      v.status !== 429 &&
-      v.status !== 0
+      !isWalkProbeInconclusive(v.status)
     ) {
       // Not reaching a 401/403 here means the endpoint is reachable without the
       // nav capability — which is exactly the "typed URL shows content" defect.
@@ -447,29 +498,17 @@ async function walkRole(role: string): Promise<RoleReport> {
   for (const p of CONTROL_PROBES) {
     const holds = p.capability === "*" ? true : hasCapability(role as never, p.capability);
     const r = await call(jar, p.method, p.path, p.body);
-    let verdict: "ok" | "wrong" | "unknown" = "unknown";
-    if (r.status === 429) {
-      verdict = "unknown"; // limiter, says nothing about authorization
-    } else if (holds) {
+    const verdict = classifyWalkControl(holds, r.status);
+    if (verdict === "unknown") {
+      report.inconclusive.push(`control "${p.name}" was inconclusive (HTTP ${r.status})`);
+    } else if (verdict === "wrong" && holds) {
       // A holder may still be outside the route's coarse role set (e.g. a route
       // gated on ROLES.MAINTENANCE). That is a 403 for a different reason, and
       // `capability-reachability` + the role sets are what keep the two aligned;
-      // here we only flag the case that would be a genuine lie to the UI: the
-      // endpoint would 403 a role the matrix says holds the key AND the route
-      // admits.
-      verdict = denied(r.status) ? "wrong" : "ok";
-      if (verdict === "wrong") {
-        problems.push(
-          `control "${p.name}" REFUSED a ${role} that holds ${p.capability} (HTTP ${r.status})`,
-        );
-      }
-    } else {
-      verdict = denied(r.status) ? "ok" : "wrong";
-      if (verdict === "wrong") {
-        problems.push(
-          `control "${p.name}" ACCEPTED a ${role} that does NOT hold ${p.capability} (HTTP ${r.status})`,
-        );
-      }
+      // here we only flag a route that refuses a holder it admits.
+      problems.push(`control "${p.name}" REFUSED a ${role} that holds ${p.capability} (HTTP ${r.status})`);
+    } else if (verdict === "wrong") {
+      problems.push(`control "${p.name}" ACCEPTED a ${role} that does NOT hold ${p.capability} (HTTP ${r.status})`);
     }
     report.controls.push({ name: p.name, capability: p.capability, holds, status: r.status, verdict });
   }
@@ -497,7 +536,13 @@ function mdTable(reports: RoleReport[]): string {
       const good = v.shown
         ? v.status < 400 || v.status === 429
         : SNAPSHOT_BACKED.has(v.key) || v.status === 401 || v.status === 403 || v.status === 429;
-      const verdict = SNAPSHOT_BACKED.has(v.key) && !v.shown ? "snapshot (n/a)" : good ? "ok" : "**MISMATCH**";
+      const verdict = isWalkProbeInconclusive(v.status)
+        ? "**INCONCLUSIVE**"
+        : SNAPSHOT_BACKED.has(v.key) && !v.shown
+          ? "snapshot (n/a)"
+          : good
+            ? "ok"
+            : "**MISMATCH**";
       lines.push(
         `| ${v.key} | ${v.shown ? "yes" : "no"} | ${v.status}${v.detail ? ` (${v.detail})` : ""} | ${verdict} |`,
       );
@@ -505,14 +550,18 @@ function mdTable(reports: RoleReport[]): string {
     lines.push("", "| control | capability | holds | HTTP | verdict |", "|---|---|---|---|---|");
     for (const c of r.controls) {
       lines.push(
-        `| ${c.name} | \`${c.capability}\` | ${c.holds ? "yes" : "no"} | ${c.status} | ${c.verdict === "ok" ? "ok" : c.verdict === "unknown" ? "rate-limited" : "**MISMATCH**"} |`,
+        `| ${c.name} | \`${c.capability}\` | ${c.holds ? "yes" : "no"} | ${c.status} | ${c.verdict === "ok" ? "ok" : c.verdict === "unknown" ? "**INCONCLUSIVE**" : "**MISMATCH**"} |`,
       );
     }
     lines.push("");
     if (r.problems.length) {
       lines.push("**Problems:**", "", ...r.problems.map((p) => `- ${p}`), "");
-    } else {
-      lines.push("No mismatches.", "");
+    }
+    if (r.inconclusive.length) {
+      lines.push("**Inconclusive probes (not passes):**", "", ...r.inconclusive.map((p) => `- ${p}`), "");
+    }
+    if (!r.problems.length && !r.inconclusive.length) {
+      lines.push("No mismatches; every probe produced an authorization-observable result.", "");
     }
   }
   return lines.join("\n");
@@ -563,11 +612,21 @@ async function main() {
   console.log("\n" + md + "\n");
 
   const failing = reports.filter((r) => r.problems.length > 0);
-  if (failing.length) {
-    console.error(`[walk] ${failing.length} role(s) with mismatches: ${failing.map((r) => r.role).join(", ")}`);
-    process.exit(1);
+  const inconclusive = reports.filter((r) => r.inconclusive.length > 0);
+  const exitCode = walkExitCode(failing.length > 0, inconclusive.length > 0);
+  if (exitCode === 1) {
+    console.error(`[walk] ${failing.length} role(s) with authorization mismatches: ${failing.map((r) => r.role).join(", ")}`);
+    process.exitCode = exitCode;
+    return;
   }
-  console.log(`[walk] all ${reports.length} roles consistent`);
+  if (exitCode === 2) {
+    console.error(
+      `[walk] INCONCLUSIVE: ${inconclusive.length} role(s) had rate-limited or unavailable probes: ${inconclusive.map((r) => r.role).join(", ")}`,
+    );
+    process.exitCode = exitCode;
+    return;
+  }
+  console.log(`[walk] all ${reports.length} roles consistent; every probe produced an authorization-observable result`);
 }
 
 await main();
