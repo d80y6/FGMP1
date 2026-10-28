@@ -111,11 +111,11 @@ The role-policy test matrix confirms the policy-side set for each route. Handler
 
 **Evidence:** previous `findUnknownCapabilities()` collected `*` and skipped unknown identifiers whenever any role held it. Since SUPERADMIN always holds `*`, a misspelling in a route policy could pass the verifier and fail closed for every tenant role without a diagnostic.
 
-**Impact:** accidental denial / authorization drift, misleading UI and a security verifier that appeared to prove more than it did; not a grant to tenant users because `hasCapability()` remains allow-list based.
+**Impact:** accidental denial / authorization drift and a verifier that appeared to prove more than it did. Previously the wildcard also made `hasCapability(SUPERADMIN, unknownString)` return true, although it did not grant the typo to tenant roles.
 
-**Correction:** introduced a canonical `CAPABILITIES` literal and `Capability` type, applied capability typing to role grants and endpoint/export rules, and changed the verifier to compare identifiers to the catalog. `*` is treated as wildcard authorization behavior, never as an identifier.
+**Correction:** introduced a canonical `CAPABILITIES` literal and `Capability` type, applied capability typing to role grants and endpoint/export rules, and changed the verifier to compare identifiers to the catalog. Runtime `hasCapability()` now rejects identifiers outside the catalog before applying SUPERADMIN's wildcard. `*` is a role grant marker, never a capability identifier.
 
-**Verification:** a negative regression fixture checks the typo `view:sitez`; it is rejected despite the SUPERADMIN wildcard. Current route inventory reports no unknown capability.
+**Verification:** regression tests assert unknown capability `view:misspelled-surface` is denied for every role (including SUPERADMIN), a known capability is authorized by its wildcard, and `*` itself is not a capability. The route inventory also rejects the typo `view:sitez` and currently reports no unknown capability.
 
 ### A-3 — Regional/organizational sub-tenant scope is not represented (MEDIUM product/security requirement risk; unresolved)
 
@@ -144,7 +144,7 @@ The preceding RBAC review documents many fixes already present at this base comm
 
 ### Authorization refactor
 
-- `src/lib/fgmp/rbac-core.ts`: authoritative 52-key typed capability catalog; role grant lists and API policy rules use `Capability`; known admin-only capability keys are included explicitly; existing permission identifiers and role assignment behavior are retained.
+- `src/lib/fgmp/rbac-core.ts`: authoritative 52-key typed capability catalog; role grant lists and API policy rules use `Capability`; known admin-only capability keys are included explicitly; runtime capability checks reject unknown keys before applying the SUPERADMIN wildcard; existing permission identifiers and role assignment behavior are retained.
 - `src/lib/fgmp/session-principal.ts`: validates a guarded `SessionUser` and narrows it to a domain principal; uses the same canonical role set; rejects missing role/tenant and invalid role strings.
 - `src/lib/fgmp/tenant-id.ts`: dependency-free tenant ID guard shared by route scoping and principal resolution, permitting tests without loading Prisma.
 - `src/lib/fgmp/route-tenant.ts`: re-exports the shared tenant guard without changing the query-context behavior.
@@ -153,7 +153,7 @@ The preceding RBAC review documents many fixes already present at this base comm
 - All 89 actual `bootstrap()` call sites in protected API routes now pass `auth.user`; the service-token/device paths retain their separate credential model and do not gain a user role.
 - `scripts/verify/route-inventory.ts`: capability verification now uses the canonical vocabulary and rejects the previous wildcard-based false acceptance.
 - `scripts/verify/generate-rbac-reference.ts` and `docs/security/RBAC-REFERENCE-MATRIX.md`: deterministic generation of role catalog, permission catalog, complete matrix and 171-handler route inventory.
-- Tests added: `session-principal.test.ts`, `bootstrap-principal-contract.test.ts`, and negative unknown-capability assertion in `route-authorization-contract.test.ts`. `test:authz` now includes server-conformance, platform-parity, and new principal tests.
+- Tests added/extended: `session-principal.test.ts`, `bootstrap-principal-contract.test.ts`, `rbac-matrix.test.ts`, `platform-tier-parity.test.ts`, and route-contract negative cases. `test:authz` includes server conformance, platform parity, principal flow, and unknown-capability fail-closed assertions.
 
 ### Database and migration status
 
@@ -163,17 +163,17 @@ No role/permission schema migration was introduced. The current schema stores bu
 
 ### Passed in this execution
 
-- `npx bun run test:authz` — **exit 0**. Route inventory: **171 handlers, 107 route files, 0 authorization contract violations**. Authorization suite: **112 passed, 0 failed** across eight files (policy matrix, endpoint policy, route contract, UI store identity, role/permission conformance, platform-tier parity, principal mapping, bootstrap principal contract).
-- Additional static/UI/platform suite results observed: **128 passed**; some suites could not load because Prisma client generation was absent (see failures below). Individual passing tests include mutation affordance gates, navigation/link surfaces, platform surfaces, support-session policy checks, matrix consistency, and principal fail-closed cases.
-- `npx eslint` on the new principal/tenant/helper/test files and route inventory — **exit 0** at the first targeted run. Full lint was also executed; see below.
+- `npx bun run test:authz` — **exit 0**. Route inventory: **171 handlers, 107 route files, 0 authorization contract violations**. Authorization suite: **113 passed, 0 failed** across eight files (policy matrix, endpoint policy, route contract, UI store identity, role/permission conformance, platform-tier parity, principal mapping, bootstrap principal contract).
+- Additional focused static/UI/platform suite run (`rbac-mutation-gates`, `rbac-ui-gates`, `rbac-link-surfaces`, `rbac-nav-single-source`, `platform-surface`, `support-session`, `route-authorization-contract`, `platform-tier-parity`) — **146 passed, 0 failed** across eight files. This is a distinct run and overlaps some `test:authz` cases; it adds evidence for UI mutation affordances, navigation, platform boundaries, and support-session policy.
+- Focused ESLint on verifier, RBAC, principal, tenant and related contract-test files — **exit 0** after the latest source change; `git diff --check` also passes. Full lint was executed separately; see below.
 - `npx bun run scripts/verify/generate-rbac-reference.ts` — **exit 0**, generated all 7 roles, 52 capabilities and 171 API methods.
 
 ### Failed or blocked; not reported as passing
 
 - `npm run typecheck` (invoked with `npx bun run typecheck`) — **exit 2**. The checked-out Prisma client has not been generated: the bulk of errors report missing `PrismaClient`, Prisma model/enums and consequently untyped Prisma query results. `npx prisma generate` was attempted and could not download Prisma's schema/query engine because the sandbox cannot reach `binaries.prisma.sh`; only configured hosts are available. Type checking therefore remains unverified. The typecheck output is not clean evidence for the changed code.
 - Full `npx eslint .` — **exit 1**, 25 errors and 5 warnings. Errors are largely existing React Compiler / hooks diagnostics in UI views (synchronous setState in effects, refs/impure render computations and memoization mismatches); no authorization-specific source file from this change was reported as an error. New generator unused-variable warning was removed after the run. Full lint remains failing and must be addressed separately or baseline-confirmed.
-- Full `npx bun test` — **exit 1**, 913 tests across 73 files; **903 passed, 10 failed with 10 module-load errors**. Prisma-dependent tests could not import `'.prisma/client/default'`; this is a missing generated-client setup, not a passing full suite.
-- Database-backed `npx bun run test:rls` — **exit 1** at startup with `Cannot find module '.prisma/client/default'`. No database URL or generated client is available, so it did not exercise RLS assertions.
+- Full `npx bun test` — **exit 1**, 914 tests across 73 files; **904 passed, 10 failed with 10 module-load errors**. Prisma-dependent tests could not import `'.prisma/client/default'`; this is a missing generated-client setup, not a passing full suite.
+- Database-backed `npx bun run test:rls` — **exit 1** at startup with `Cannot find module '.prisma/client/default'`. No database URL or generated client is available, so it did not exercise RLS assertions. This was rerun in the current environment; it failed before any assertions.
 - `test:authz:live`, `test:rbac-walk`, and MFA live flow were not run: no `DATABASE_URL`, running application, seeded roles or live credentials are configured in this workspace. Their results are not claimed.
 - `npx bun run build` — **exit 1**. OpenNext invoked `prisma generate`, which could not fetch Prisma's `schema-engine.gz.sha256` from `binaries.prisma.sh`; Next build did not start. Production build status is **unverified**.
 
@@ -195,7 +195,7 @@ No role/permission schema migration was introduced. The current schema stores bu
 - [x] Complete generated role, permission, scope and permission matrix produced.
 - [x] 171 API handler methods enumerated with policy, guard and source references.
 - [x] Stale principal re-resolution corrected; all 89 actual route bootstrap call sites pass the guarded principal.
-- [x] Invalid capability catalog verifier fixed; negative test added.
+- [x] Unknown capability identifiers fail closed in the verifier and runtime for every role, including SUPERADMIN; regression coverage treats `*` as a matrix declaration only.
 - [x] Authz suite and generated matrix command executed successfully.
 - [ ] Live cross-tenant PostgreSQL/RLS tests and real HTTP/E2E per-role walk verified in this environment.
 - [ ] Typecheck, full lint, and production build are green.

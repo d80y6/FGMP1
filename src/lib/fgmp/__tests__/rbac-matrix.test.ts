@@ -14,7 +14,7 @@
  * Run: bun test src/lib/fgmp/__tests__/rbac-matrix.test.ts
  */
 import { describe, test, expect } from "bun:test";
-import { ROLE_PERMISSIONS, ALL_ROLES, type Role } from "../rbac-core";
+import { ROLE_PERMISSIONS, ALL_ROLES, hasCapability, type Role } from "../rbac-core";
 
 const caps = (r: Role): Set<string> => new Set(ROLE_PERMISSIONS[r].capabilities);
 // NOTE: read directly off ROLE_PERMISSIONS rather than parsed from source, so an
@@ -24,7 +24,7 @@ const caps = (r: Role): Set<string> => new Set(ROLE_PERMISSIONS[r].capabilities)
 const has = (r: Role, c: string): boolean => caps(r).has(c);
 
 /** Every capability that grants power rather than visibility, derived from the matrix. */
-const CONTROL_ACTIONS = [...new Set(
+const CONTROL_ACTIONS: string[] = [...new Set(
   ALL_ROLES.flatMap((role) => ROLE_PERMISSIONS[role].capabilities)
     .filter((capability) => capability !== "*" && !capability.startsWith("view:")),
 )];
@@ -138,6 +138,14 @@ describe("matrix hygiene", () => {
       expect(ROLE_PERMISSIONS[r].label).toBeTruthy();
       expect(ROLE_PERMISSIONS[r].description).toBeTruthy();
     }
+  });
+
+  test("unknown capability strings fail closed, including for SUPERADMIN", () => {
+    for (const role of ALL_ROLES) {
+      expect(hasCapability(role, "view:misspelled-surface")).toBe(false);
+    }
+    expect(hasCapability("SUPERADMIN", "view:sites")).toBe(true);
+    expect(hasCapability("SUPERADMIN", "*")).toBe(false);
   });
 
   test("no duplicate capabilities within a role", () => {

@@ -67,6 +67,7 @@ export const CAPABILITIES = [
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
+const CAPABILITY_SET: ReadonlySet<string> = new Set(CAPABILITIES);
 
 export interface Permission {
   view: string; // dashboard view key
@@ -651,9 +652,13 @@ export function isSuperAdmin(role: Role | string | undefined | null): boolean {
  * unknown capability is denied by default (allow-list semantics).
  */
 export function hasCapability(role: Role, cap: string): boolean {
+  // The platform wildcard applies to every known capability, not arbitrary
+  // strings. Unknown identifiers fail closed for every role, including
+  // SUPERADMIN; route-inventory also reports them as a source contract error.
+  if (!CAPABILITY_SET.has(cap)) return false;
   const perms = ROLE_PERMISSIONS[role]?.capabilities ?? [];
   if (perms.includes("*")) return true;
-  return perms.includes(cap);
+  return perms.some((permission) => permission === cap);
 }
 
 export function canView(role: Role, viewKey: string): boolean {
