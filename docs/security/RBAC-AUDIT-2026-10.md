@@ -204,7 +204,7 @@ No role/permission schema migration was introduced. The current schema stores bu
 - The sandbox's standard Prisma downloader still fails TLS against `binaries.prisma.sh`; unlike the local workaround, CI's standard `bun run db:generate` passed. Local `npx bun run build` therefore stops at its Prisma-generation step, while the unmodified standard build succeeds in CI.
 - Local `npx eslint .` after npm installation reports 25 errors / 3 warnings, while the frozen-lockfile Bun CI lint step passes. The local-vs-CI toolchain discrepancy has not been isolated; the CI gate is green.
 - Local `npx bun run test:rls` cannot start without `DATABASE_URL`; the CI run above did execute the database-backed checks.
-- The checked-in seven-role API walk report is **historical and inconclusive**: many controls show HTTP 429 / `rate-limited`. Its logic now treats 429/timeouts/network/server failures as inconclusive and exits nonzero. PR #33 CI run [40724629338](https://github.com/d80y6/FGMP1/actions/runs/40724629338) ran the walk against a fresh seeded server with exit 0 and uploaded the Markdown/JSON artifact. The sandbox could not download that artifact from the Actions blob host (EOF), so the aggregate result is verified but per-role rows remain for human review. `test:authz:live` and MFA live flow were not run here.
+- The checked-in seven-role API walk report is **historical and inconclusive**: many controls show HTTP 429 / `rate-limited`. Its logic now treats 429/timeouts/network/server failures as inconclusive and exits nonzero. PR #33 CI run [40724629338](https://github.com/d80y6/FGMP1/actions/runs/40724629338) ran the walk against a fresh seeded server with exit 0 and uploaded the Markdown/JSON artifact. The sandbox could not download that artifact from the Actions blob host (EOF), so the aggregate result is verified but per-role rows remain for human review. `test:authz:live` was not run from this sandbox; the later follow-up CI run is recorded in §11. The MFA live flow remains unrun.
 - No request was exercised against the actual deployment pooler or production secret configuration, and the seeded seven-role walk is not comprehensive live cross-tenant/IDOR or escalation evidence. The CI browser suite covers real authenticated browser paths but is not a substitute for those direct-API cases.
 
 ## 9. Residual risk register
@@ -215,7 +215,7 @@ No role/permission schema migration was introduced. The current schema stores bu
 | R-2 | Production-specific RLS/pooler behavior remains unverified; the CI database path passed | Medium pending deployment proof | `prisma/migrations/*enable_rls*`, tenant context, CI RLS job 40708733488 | CI ran fresh PostgreSQL with non-owner `fgmp_app`, strict DB suites, smoke and RLS regression successfully, but not the production provider/pooler or its credentials | Run the pooler proof and tenant-isolation checks against the actual deployment endpoint/roles; record evidence without secrets. **Before production sign-off.** |
 | R-3 | Local sandbox cannot reach the Prisma engine CDN; standard generation/typecheck/lint/build all pass in locked Bun CI | Low (local environment only) | CI verify job 40708733488; local `npx prisma generate` | The local sandbox network fails TLS to `binaries.prisma.sh`, but CI successfully ran standard generation, typecheck, lint, schema validation, tests and OpenNext build | No code action required unless local development must work offline; retain the green CI gate. **Monitor.** |
 | R-4 | Local npm-resolved ESLint reports 25 errors / 3 warnings, but frozen-lockfile Bun CI lint passes | Low toolchain parity concern | Local `npx eslint .` vs CI verify job `Lint` step | Toolchain/dependency resolution differs between local npm install and locked Bun install; cause not isolated. CI's required lint gate is green. | Reproduce with frozen Bun install locally if parity is required; do not treat the npm-only result as the CI gate. **Developer experience.** |
-| R-5 | Broader live cross-tenant IDOR/escalation cases and live bridge credential integration remain unverified; seven-role seeded smoke walk passed | Medium | `scripts/verify/rbac-live-walk.ts`, `docs/RBAC-LIVE-WALK-2026-10.md`, token unit/route-contract tests | PR #33 CI run 40724629338 completed the fresh seeded seven-role direct-API walk with exit 0 and uploaded the report; the artifact's per-role rows were not retrieved from this sandbox due to the blob-host EOF. This smoke walk does not establish comprehensive cross-tenant or privilege-escalation behavior. | Review the per-role artifact, then exercise tenant-crossing IDOR/escalation cases and bridge credentials against an approved live environment. **Before production sign-off.** |
+| R-5 | Real-resource cross-tenant IDOR/escalation and live bridge-credential integration remain unverified; representative seeded API-policy matrix passed | Medium | `scripts/verify/rbac-live-walk.ts`, `scripts/verify/authz-live.ts`, pending `scripts/verify/authz-idors-live.ts` | Follow-up CI run 40745553712 completed the representative matrix with exit 0 (296 observable probes) and uploaded JSON. A new CI-only two-tenant fixture suite now targets real Site/User rows and attempts cross-tenant reads/writes plus self-promotion, with after-state assertions; it has not run yet. The representative matrix uses ghost IDs and neither suite validates production or live bridge integration. | Run and review the new live IDOR suite, then expand to other sensitive resources and bridge credentials against an approved seeded environment. **Before production sign-off.** |
 | R-6 | Audit log immutability is application-level; a compromised DB app principal may rewrite logs | Medium | `docs/SECURITY.md` §11 | Existing deployment gap; no DB grant changes made here | Restrict `fgmp_app` privileges to SELECT/INSERT on audit tables and ship audit events off-box. **Security hardening.** |
 
 ## 10. Completion status
@@ -231,16 +231,19 @@ No role/permission schema migration was introduced. The current schema stores bu
 - [x] PostgreSQL-backed RLS regression, non-owner app-role smoke check, strict DB suites, and direct-endpoint pooler-proof control pass in CI run 40708733488.
 - [x] Standard Prisma generation, root typecheck, full lint, unit tests, and unmodified OpenNext production build pass in the frozen-lockfile CI `verify` job.
 - [x] Real seeded-server Playwright public/authenticated browser suite passes in CI; Docker and hosted-provisioning checks also pass.
-- [ ] Run the updated CI seven-role HTTP walk, verify its new inconclusive handling, review all seven role outcomes, and regenerate the historical report only after every required probe is observable.
+- [x] Run the updated seven-role HTTP walk and representative live policy matrix against fresh seeded CI: follow-up run 40745553712 passed both, with the representative 296-probe matrix fully observable and matched.
+- [ ] Review the detailed uploaded per-role JSON rows; exercise real cross-tenant resource/privilege-escalation behavior and bridge credentials against an approved environment. The current ghost-ID matrix does not close this requirement.
 - [ ] Verify actual production pooler, database role/secret configuration, and direct API cross-tenant IDOR/escalation cases; CI only proves its isolated PostgreSQL environment and the direct-endpoint pooler control.
 - [ ] Decide the Regional Manager scope requirement (tenant-wide vs region-level).
 
-**Conclusion:** repository CI now proves standard Prisma generation, root typecheck/lint/build, broad unit tests, isolated PostgreSQL RLS behavior, and authenticated browser behavior. This audit remains **conditionally incomplete for production assurance** until R-2/R-5 deployment-specific evidence and the seven-role direct-API walk are complete, and the regional scope requirement is decided.
+**Conclusion:** repository CI now proves standard Prisma generation, root typecheck/lint/build, broad unit tests, isolated PostgreSQL RLS behavior, and authenticated browser behavior. This audit remains **conditionally incomplete for production assurance** until R-2/R-5 deployment-specific and real-resource evidence is collected, and the Regional Manager scope requirement is decided. The seeded CI matrix is representative policy evidence, not a substitute for live cross-tenant IDOR testing.
 
 ## 11. Follow-up evidence update (2026-10-28)
 
 PR #33 (`fix: fail closed on inconclusive RBAC walk probes`) is merged at
-`8d04c88c0134fe55c9766882d83edf7e87532b69`. GitHub Actions run
+`8d04c88c0134fe55c9766882d83edf7e87532b69`. Follow-up PR #34 (live representative API
+matrix and keyboard-accessible System Health error list) is merged at
+`8771792ee06d7d87bdf4c0ee0077ea409e715bb1` after CI run 40745553712 passed. GitHub Actions run
 [40728180674](https://github.com/d80y6/FGMP1/actions/runs/40728180674) passed all jobs,
 including its seven-role walk and authenticated browser suite. The walk's JSON artifact was
 uploaded, but its per-role rows have not been reviewed in this workspace; an aggregate green
@@ -274,16 +277,26 @@ now a named, keyboard-focusable region with a visible focus indicator, pending C
 The diagnostic-publication step failed secondarily and was changed to best-effort so it cannot mask
 the browser result. The JSX fix passes local TypeScript and `npx next build`; focused npm ESLint on
 the component also reports nine pre-existing `react-hooks/*` issues at lines 169–217, outside the
-changed table markup (the locked CI lint gate remains the authoritative verification). The overall
-run did **not** pass. **No live cross-tenant request against a real
-tenant B resource has been executed.**
+changed table markup. The locked-CI rerun [40745553712](https://github.com/d80y6/FGMP1/actions/runs/40745553712)
+then passed all six jobs. Its live matrix step completed with exit 0: 37 anonymous probes plus
+seven roles × 37 probes (296 total) were observable, matched policy, and had no unavailable role.
+The JSON report was uploaded, although its detailed artifact rows could not be downloaded in this
+workspace because the Actions blob host returned EOF. The authenticated browser suite passed 18
+tests, including both LTR and RTL sweeps, after the focusability fix. The locked CI lint and build,
+RLS/database-backed suites, provisioning and Docker checks also passed. This establishes the
+representative seeded CI matrix, not production behavior. **No live cross-tenant request against a
+real tenant B resource has been executed.**
 
 Prisma Client was generated locally for all 44 models using Prisma 6.19.3's official
 client generator with the matching schema-WASM/DMMF workaround after the normal engine
 CDN download failed. The generated files are ignored output, not a tracked change. CI's
 standard generation was already successful in run 40728180674.
 
-The report's residual-risk conclusions stand: the production pooler/secrets/runtime remain
-unverified; Regional Manager's tenant-wide-versus-regional scope remains a product decision;
-and neither live walk establishes comprehensive cross-tenant resource ownership or privilege
-escalation behavior. See the durable continuation record in `TASK_LEDGER.md` Part E.
+The current follow-up branch adds a CI-only `authz-idors-live.ts` suite with a second-tenant
+Site/User fixture, valid write attempts, a forged tenant-query check, self-promotion denial, and
+privileged post-probe integrity assertions followed by fixture cleanup. That suite has not yet
+run; until it passes, **no live cross-tenant request against a real tenant-B resource is verified**.
+The report's other residual-risk conclusions stand: the production pooler/secrets/runtime remain
+unverified; Regional Manager's tenant-wide-versus-regional scope remains a product decision; and
+the new suite covers only two resource families, not the complete API surface. See the durable
+continuation record in `TASK_LEDGER.md` Part E.

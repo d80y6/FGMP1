@@ -427,6 +427,11 @@ jobs:
       - name: Seed
         run: bun run db:seed
 
+      # Extra real tenant-B rows exist only in this disposable job database.
+      # The direct HTTP suite probes those rows as the seeded t-default ADMIN.
+      - name: Create disposable cross-tenant IDOR fixtures
+        run: PGPASSWORD=cimigrate psql -h 127.0.0.1 -U fgmp_migrate -d fgmp -v ON_ERROR_STOP=1 -f scripts/verify/authz-idors-fixtures.sql
+
       - name: Build the standalone server
         run: |
           set -o pipefail
@@ -491,6 +496,28 @@ jobs:
           FGMP_AUTHZ_PASSWORD_EXECUTIVE: Admin@2026
           FGMP_AUTHZ_PASSWORD_READONLY: Readonly@2026
 
+      # These probes target actual rows owned by a second tenant. Valid write
+      # bodies make 404 a meaningful ownership result; DB assertions below prove
+      # a failed guard did not mutate/delete the fixture or promote the caller.
+      - name: Live real-resource cross-tenant IDOR and escalation checks
+        run: |
+          set -o pipefail
+          bun run test:authz:idor-live -- --json test-results/authz-idors-live.json 2>&1 | tee /tmp/authz-idors-live.log
+        env:
+          FGMP_BASE_URL: http://127.0.0.1:3000
+          FGMP_AUTHZ_PASSWORD_ADMIN: Admin@2026
+
+      - name: Assert IDOR fixtures unchanged and clean up
+        if: always()
+        run: |
+          set +e
+          PGPASSWORD=cimigrate psql -h 127.0.0.1 -U fgmp_migrate -d fgmp -v ON_ERROR_STOP=1 -f scripts/verify/authz-idors-assert.sql
+          assert_status=$?
+          PGPASSWORD=cimigrate psql -h 127.0.0.1 -U fgmp_migrate -d fgmp -v ON_ERROR_STOP=1 -f scripts/verify/authz-idors-cleanup.sql
+          cleanup_status=$?
+          if [ "$assert_status" -ne 0 ]; then exit "$assert_status"; fi
+          exit "$cleanup_status"
+
       - name: Upload live authorization reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -500,6 +527,7 @@ jobs:
             test-results/rbac-live-walk.md
             test-results/rbac-live-walk.json
             test-results/authz-live.json
+            test-results/authz-idors-live.json
           if-no-files-found: warn
 
       # `github` as well as `list`: the list reporter's output lives in the job
@@ -538,7 +566,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: >
           python3 scripts/ci/publish-logs.py "ui: browser suite"
-          /tmp/build.log /tmp/server.log /tmp/rbac-live-walk.log /tmp/authz-live.log /tmp/ui.log
+          /tmp/build.log /tmp/server.log /tmp/rbac-live-walk.log /tmp/authz-live.log /tmp/authz-idors-live.log /tmp/ui.log
 
 
   docker:
