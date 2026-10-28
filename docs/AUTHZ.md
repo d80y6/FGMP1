@@ -358,8 +358,9 @@ handler inventory or resource-level cross-tenant IDOR test.
   production secrets still require an approved operator-run validation.
 
 The CI `ui` job runs the representative matrix after the seven-role walk and retains
-JSON evidence. It sets `RATE_LIMIT_MUTATION_MAX=500` only on its disposable test server,
-because the two suites share per-user budgets; this lets the RBAC matrix observe policy
+JSON evidence. Run 40745553712 passed it: 37 anonymous + 7×37 role probes (296 total) were
+observable and matched. The job sets `RATE_LIMIT_MUTATION_MAX=500` only on its disposable
+test server because the two suites share per-user budgets; this lets the matrix observe policy
 rather than limiter exhaustion and does **not** validate the production rate limit. Neither
 live script replaces the resource-level cross-tenant checks listed above.
 
