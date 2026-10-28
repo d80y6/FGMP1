@@ -266,8 +266,17 @@ matched 25/37 and ADMIN 30/37 before rate limiting. The anonymous baseline passe
 check-run log was available via the synthetic merge commit although the Actions blob archive was
 not downloadable. A CI-only mutation-limit override (`RATE_LIMIT_MUTATION_MAX=500`) has now been
 added to the disposable test server, so the next run can test policy without conflating it with
-rate-limit exhaustion. This does not validate the production rate limit. **No live cross-tenant
-request against a real tenant B resource has been executed.**
+rate-limit exhaustion. This does not validate the production rate limit. The rerun
+[40739099008](https://github.com/d80y6/FGMP1/actions/runs/40739099008) passed the new matrix,
+but the browser suite then found `scrollable-region-focusable[serious]` on the System Health recent-
+errors table in both English and Arabic; the table was scrollable but not keyboard-focusable. It is
+now a named, keyboard-focusable region with a visible focus indicator, pending CI re-verification.
+The diagnostic-publication step failed secondarily and was changed to best-effort so it cannot mask
+the browser result. The JSX fix passes local TypeScript and `npx next build`; focused npm ESLint on
+the component also reports nine pre-existing `react-hooks/*` issues at lines 169–217, outside the
+changed table markup (the locked CI lint gate remains the authoritative verification). The overall
+run did **not** pass. **No live cross-tenant request against a real
+tenant B resource has been executed.**
 
 Prisma Client was generated locally for all 44 models using Prisma 6.19.3's official
 client generator with the matching schema-WASM/DMMF workaround after the normal engine
