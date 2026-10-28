@@ -299,6 +299,7 @@ narrower identity by surviving a role change.
 | Platform tier | `bun test src/lib/fgmp/__tests__/platform-tier-parity.test.ts` | matrix, policy and handler agree for every platform route, derived from the route tree on disk (§1.6) | no |
 | Platform surface | `bun test src/lib/fgmp/__tests__/platform-surface.test.ts` | every `/platform/` route calls `requireSuperAdmin`, imports no raw Prisma, and reads tenant data only through `currentSupport()` | no |
 | **Live representative policy matrix** | `bun run test:authz:live -- --json /tmp/authz-live.json` | real sessions and HTTP: seven role identities × 37 representative method/policy probes, plus an anonymous baseline; fails on mismatches and treats 408/429/5xx/transport failures as inconclusive | seeded test deployment; it spends normal per-user rate-limit budget but does not mutate product rows |
+| **Real-resource IDOR + escalation** | `bun run test:authz:idor-live -- --json /tmp/authz-idors.json` | cross-tenant GET/PATCH/DELETE of actual site/user rows and tenant-admin self-promotion, with privileged before/after DB assertions | disposable two-tenant CI database only |
 | RLS | `bun run test:rls` | policies bind for `fgmp_app`; cross-tenant reads/writes fail | **yes** |
 
 ### Running the live matrix
@@ -345,11 +346,13 @@ handler inventory or resource-level cross-tenant IDOR test.
 
 ### Remaining live coverage gaps
 
-* **Cross-tenant item-level IDOR.** The live policy matrix uses a non-existent
-  identifier to test representative guards; the RLS suite exercises real
-  database isolation directly. Neither yet logs in as tenant A, targets a real
-  tenant B user/asset, and verifies 404/no side effect across all sensitive
-  item routes. Add disposable two-tenant fixtures and direct HTTP assertions.
+* **Cross-tenant item-level IDOR.** The representative policy matrix uses a
+  non-existent identifier. A separate CI-only suite now creates disposable
+  tenant-B Site/User rows, logs in as tenant-A ADMIN, sends valid GET/PATCH/
+  DELETE probes (including a forged `?tenant=`) and attempts self-promotion; a
+  privileged after-check asserts no row or role changed, then cleans up. This
+  covers two resource families, not every sensitive item route, and is not yet
+  considered verified until that CI step passes.
 * **Browser network assertions.** CI renders the authenticated UI with Playwright,
   and unit tests verify client request gating, but no browser test yet walks every
   role while asserting forbidden requests never appear in the network log.
