@@ -20,7 +20,7 @@ export interface Me {
    *  answer that question at all (see platform-identity.ts). `null` otherwise. */
   platformTenantId?: string | null;
   roles: Role[];
-  permissions: { label: string; description: string; capabilities: string[] };
+  permissions: { label: string; description: string; capabilities: readonly string[] };
 }
 
 export type ViewKey =

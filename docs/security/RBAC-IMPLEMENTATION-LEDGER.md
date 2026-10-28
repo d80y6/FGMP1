@@ -2,7 +2,7 @@
 
 **Branch:** `arena/75c8f4d2-fgmp1`
 **Last verified:** 2026-10-28
-**Current phase:** credential-boundary hardening and focused source/unit verification complete; acceptance-scope runtime/database validation remains blocked, so the task is not production-complete.
+**Current phase:** credential-boundary hardening complete; local Prisma Client generation, full unit suite, root typecheck, and Next/OpenNext build are now verified. Standard Prisma CLI generation and live database/authorization validation remain blocked, so the task is not production-complete.
 
 ## Completed
 
@@ -22,7 +22,11 @@
 - [x] IoT ingest no longer loads global operational state before API-key validation and per-key rate limiting; it uses the minimal cached directory, confirms site ownership plus key scope under tenant RLS, and writes `lastUsedAt` only after the limit permits the request.
 - [x] `npx bun run test:authz`: exit 0; route inventory 171 handlers / 107 files, 0 violations; 120 pass / 0 fail / 492 expectations.
 - [x] Focused UI/platform/support-session suite: 149 pass / 0 fail across eight files (overlaps the authz target).
-- [x] Focused ESLint on changed credential, route, engine, bridge, and contract-test files; exit 0. Bridge TypeScript project check exits 0. `git diff --check` passes.
+- [x] Focused ESLint on changed credential, route, engine, bridge, store, app-shell, and contract-test files; exit 0. Bridge TypeScript project check exits 0. `git diff --check` passes.
+- [x] Prisma Client generated locally for all 44 schema models using the matching Prisma schema-WASM engine commit plus Prisma 6.19.3's published client generator; `PrismaClient` import and `PrismaPg` adapter instantiation verified. The generated output is ignored under `node_modules/.prisma/client`; standard Prisma CLI generation still cannot reach the engine CDN.
+- [x] Root `npm run typecheck` passes after the store permission envelope was typed as readonly to match the catalog.
+- [x] Full `npx bun test`: 1,110 pass / 13 skipped / 0 fail across 75 files.
+- [x] `npx next build` passes; OpenNext Cloudflare build passes when the already-completed Prisma generation pre-step is temporarily skipped. The ordinary build script remains blocked at Prisma's CDN fetch.
 
 ## Findings and decisions
 
@@ -53,6 +57,7 @@
 - `src/lib/fgmp/__tests__/bootstrap-principal-contract.test.ts` (new)
 - `src/lib/fgmp/service-token.ts` and `src/lib/fgmp/__tests__/service-token.test.ts` (new)
 - `src/app/api/fgmp/realtime/snapshot/route.ts`, `src/app/api/fgmp/iot/ingest/route.ts`, and `src/lib/fgmp/engine.ts` (minimal RLS-scoped bridge directory; ingest auth-before-engine-load ordering)
+- `src/lib/fgmp/store.ts` (readonly capability list type aligned with the canonical role catalog so root typecheck passes)
 - `mini-services/iot-bridge/service-token.ts`, bridge integration, and credential tests (new)
 - `.env.example`, `docs/ARCHITECTURE.md`, `docs/DEPLOYMENT.md`, `docs/OPERATIONS.md`
 - `docs/security/RBAC-REFERENCE-MATRIX.md` (generated)
@@ -68,17 +73,18 @@
 | Generated reference | PASS | Generator emits 7 roles, 52 capabilities, 171 handlers |
 | Targeted lint / bridge tsc | PASS | Changed credential, route, engine and bridge files lint; IoT bridge project typecheck passes |
 | Full lint | FAIL | 25 errors / 3 warnings, predominantly React hook/compiler diagnostics in UI components; details in audit report |
-| Typecheck | BLOCKED/FAIL | 518 diagnostics; Prisma-generated client missing and engine/query types cascade from absent Prisma exports; Prisma binary downloads unavailable |
-| Full `bun test` | BLOCKED/FAIL | 921 tests / 75 files: 911 pass, 10 Prisma-dependent module-load errors (`.prisma/client/default` missing) |
-| RLS script | BLOCKED/FAIL | `test:rls` exits before assertions because generated Prisma client is missing; no DB URL/service |
+| Local Prisma Client | PASS (nonstandard generation route) | 44 schema models generated into ignored `node_modules/.prisma/client` using matching schema-WASM DMMF plus Prisma 6.19.3 client generator; adapter instantiation passes. Standard `prisma generate` remains blocked by CDN TLS failure. |
+| Typecheck | PASS | `npm run typecheck` exits 0 after readonly capability type alignment. |
+| Full `bun test` | PASS with skips | 1,110 passed / 13 skipped / 0 failed, 75 files, 19,472 expectations. Skips do not establish live DB/service behavior. |
+| RLS script | BLOCKED | `test:rls` exits before assertions because `DATABASE_URL` is absent; runner warns to use `fgmp_app` so RLS is enforced. |
 | Live authz / per-role walk | NOT RUN | No running app, seeded DB, or role credentials |
-| Production build | BLOCKED/FAIL | OpenNext invokes Prisma generation; schema-engine download from `binaries.prisma.sh` unavailable |
+| Next/OpenNext build | PASS with qualification | `next build` passes; OpenNext bundle passes using the locally generated client after temporary removal of `prisma generate &&` from the script (restored). Standard unmodified build fails at CDN fetch. |
 
 ## Pending / blocking actions
 
-- [ ] In an environment with approved Prisma engine artifacts, generate Prisma client and rerun `npm run typecheck`.
+- [ ] In CI or an environment with approved Prisma engine artifacts, verify standard `prisma generate` and the unmodified OpenNext build pipeline (the local workaround generated the client but does not prove fresh-install reproducibility).
 - [ ] Rerun full lint and triage 25 React Compiler/hooks errors; confirm baseline vs introduced.
-- [ ] Run production build and runtime smoke test.
+- [ ] Run a production runtime smoke test against the generated bundle.
 - [ ] Run RLS regression against isolated PostgreSQL using `fgmp_app` and verify cross-tenant reads and writes, including reports/exports.
 - [ ] Run live authorization matrix across all seven roles and negative direct-API/IDOR/escalation cases.
 - [ ] Decide whether Regional Manager is tenant-wide or region-scoped; implement a safe assignment model only if required.
@@ -86,4 +92,4 @@
 
 ## Next action
 
-Continue with a Prisma-enabled CI/runtime validation environment. Do not mark production readiness or close the task as fully verified until the blocked checks above are recorded with actual outputs.
+Continue with standard Prisma CLI generation in a CI/runtime environment that can reach Prisma's engine CDN, then run the unmodified build pipeline and live PostgreSQL/RLS/role-walk checks. Do not mark production readiness or close the task as fully verified until the blocked checks above are recorded with actual outputs.
