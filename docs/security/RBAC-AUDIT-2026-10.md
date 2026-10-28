@@ -241,7 +241,9 @@ No role/permission schema migration was introduced. The current schema stores bu
 ## 11. Follow-up evidence update (2026-10-28)
 
 PR #33 (`fix: fail closed on inconclusive RBAC walk probes`) is merged at
-`8d04c88c0134fe55c9766882d83edf7e87532b69`. GitHub Actions run
+`8d04c88c0134fe55c9766882d83edf7e87532b69`. Follow-up PR #34 (live representative API
+matrix and keyboard-accessible System Health error list) is merged at
+`8771792ee06d7d87bdf4c0ee0077ea409e715bb1` after CI run 40745553712 passed. GitHub Actions run
 [40728180674](https://github.com/d80y6/FGMP1/actions/runs/40728180674) passed all jobs,
 including its seven-role walk and authenticated browser suite. The walk's JSON artifact was
 uploaded, but its per-role rows have not been reviewed in this workspace; an aggregate green

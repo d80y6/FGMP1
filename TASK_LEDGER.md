@@ -1243,7 +1243,7 @@ here is plain HTTP against localhost.
 
 ## Part E — RBAC live matrix and Prisma Client
 
-**Branch:** `arena/c7a96403-fgmp1` (active) · **Base:** `8d04c88c0134fe55c9766882d83edf7e87532b69` (PR #33 merged) · **Assessment date:** 2026-10-28 (Asia/Aden)
+**Branch:** `arena/c7a96403-fgmp1` (active) · **Base:** `8d04c88c0134fe55c9766882d83edf7e87532b69` (PR #33 merged) · **PR #34:** merged at `8771792ee06d7d87bdf4c0ee0077ea409e715bb1` after CI 40745553712 passed · **Assessment date:** 2026-10-28 (Asia/Aden)
 
 ### Scope and implemented changes
 
