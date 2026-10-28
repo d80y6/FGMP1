@@ -3,7 +3,7 @@
 **Implementation PR:** [#32](https://github.com/d80y6/FGMP1/pull/32), merged to `master` on 2026-10-28.
 **Current continuation branch:** `arena/6f6818ed-fgmp1`
 **Last verified:** 2026-10-28
-**Current phase:** all six prior CI jobs passed for PR head `93fff2542c7ecdf28e028e55e24d5a8be21d4a2`. The historical seven-role API walk was found to overstate rate-limited probes; its verdict logic now marks 429/unavailable responses inconclusive, the stale report is labeled historical, and the UI CI job now runs a fresh-server seven-role API walk before browser tests. New CI has not yet run on this continuation branch. Remaining work is inspect/fix that run's role-walk findings, validate the actual deployment pooler/secrets, and decide Regional Manager scope; do not claim production readiness.
+**Current phase:** PR #33 (`9db6a14`) adds fail-closed inconclusive handling and a fresh-server seven-role API walk. CI run [40724629338](https://github.com/d80y6/FGMP1/actions/runs/40724629338) completed the API walk successfully (exit 0) and uploaded its Markdown/JSON artifact; all other jobs except the long-running UI browser suite had passed at last status check. The artifact download returned EOF from the external Actions blob host, so the raw per-role report was not independently read in this sandbox; a successful walk exit means its current checks found no mismatch or inconclusive probes. Remaining work: confirm final browser-suite status, inspect the report artifact, verify broader live cross-tenant/IDOR and escalation cases, validate deployment pooler/secrets, and decide Regional Manager scope. Do not claim production readiness.
 
 ## Completed
 
@@ -31,8 +31,9 @@
 - [x] GitHub Actions CI run [40708733488](https://github.com/d80y6/FGMP1/actions/runs/40708733488) for PR head `93fff2542c7ecdf28e028e55e24d5a8be21d4a2` passed all six jobs: `verify`, `mini-services (iot-bridge)`, `provisioning`, `docker`, `rls`, and `ui`.
 - [x] The CI `verify` job successfully ran frozen-lockfile install, standard `bun run db:generate`, root typecheck, full lint, Prisma validation, full unit tests, and `bun run build`.
 - [x] The CI `rls` job provisioned `fgmp_app`/ops/migration roles, applied migrations, seeded, passed the RLS-enforcing smoke test, strict database-backed suites, the RLS regression suite, and the direct-endpoint control for the pooler RLS proof.
-- [x] The CI `ui` job generated Prisma Client, migrated/seeded PostgreSQL, built and started the server, and passed the real Playwright browser suite; Docker boot and hosted provisioning jobs passed.
-- [x] Corrected the seven-role HTTP walk: 429/unavailable control/view probes are explicitly inconclusive, yield exit code 2, and cannot produce “all roles consistent.” Added verdict/exit-code unit tests and a fresh-server CI step; that new step still needs its first run on this branch.
+- [x] Earlier PR #32 CI run [40708733488] `ui` job generated Prisma Client, migrated/seeded PostgreSQL, built and started the server, and passed the real Playwright browser suite; its Docker boot and hosted provisioning jobs passed.
+- [x] Corrected the seven-role HTTP walk: 429/timeouts/network/server failures are explicitly inconclusive and yield exit code 2; authorization mismatches yield exit 1. Added verdict tests and a fresh-server CI step.
+- [x] CI run [40724629338](https://github.com/d80y6/FGMP1/actions/runs/40724629338), PR #33: the fresh seeded seven-role API walk completed successfully (exit 0), and its Markdown/JSON artifact uploaded. The aggregate success demonstrates no current walk mismatch/inconclusive probes. Raw artifact download from the Actions blob host returned EOF in this sandbox, so the per-role rows remain for human review; the UI browser suite was still running at last check.
 
 ## Findings and decisions
 
