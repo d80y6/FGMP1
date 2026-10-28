@@ -442,6 +442,14 @@ jobs:
           "$PW_HOME/node_modules/.bin/playwright" install --with-deps chromium
 
       - name: Start the server
+        env:
+          # The broad route walk and the representative matrix run sequentially
+          # as the same seeded principals. Keep this disposable server's shared
+          # per-user write budget above their combined probe count, so the RBAC
+          # matrix measures authorization rather than exercising the limiter.
+          # Production/default limits remain unchanged and are not validated by
+          # this test-only override.
+          RATE_LIMIT_MUTATION_MAX: "500"
         run: |
           node .next/standalone/server.js > /tmp/server.log 2>&1 &
           for i in $(seq 1 60); do

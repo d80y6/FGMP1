@@ -357,9 +357,11 @@ handler inventory or resource-level cross-tenant IDOR test.
   the RLS regression suite; the actual deployment pooler, credentials, and
   production secrets still require an approved operator-run validation.
 
-The CI `ui` job now runs the representative live authorization matrix after the
-seven-role walk and retains JSON evidence. Neither live script replaces the
-resource-level cross-tenant checks listed above.
+The CI `ui` job runs the representative matrix after the seven-role walk and retains
+JSON evidence. It sets `RATE_LIMIT_MUTATION_MAX=500` only on its disposable test server,
+because the two suites share per-user budgets; this lets the RBAC matrix observe policy
+rather than limiter exhaustion and does **not** validate the production rate limit. Neither
+live script replaces the resource-level cross-tenant checks listed above.
 
 ---
 

@@ -253,12 +253,21 @@ and database-resolved permanent role before assigning outcomes. Observable misma
 identity mismatches, missing roles, and inconclusive HTTP/network outcomes have separate
 nonzero statuses. Local typecheck, focused ESLint, Bun bundle, focused logic test (5 passed /
 29 expectations), complete unit suite (1,115 passed / 13 skipped / 0 failed; 19,501
-expectations), `test:authz` (120 passed / 492 expectations), workflow YAML parse and diff check
-passed. `npx next build` also completed, compiling the App Router and generating static pages.
-An offline negative test exited 3 with 37 inconclusive anonymous probes, 7 unavailable
-roles and 0 mismatches. That is evidence of fail-closed failure reporting only. **This
-follow-up matrix has not yet run in GitHub Actions, and no live cross-tenant request against a
-real tenant B resource has been executed.**
+expectations), `test:authz` (120 passed / 492 expectations), workflow YAML parse, `npx next
+build` and diff check passed. An offline negative test exited 3 with 37 inconclusive anonymous
+probes, 7 unavailable roles and 0 mismatches. That is evidence of fail-closed failure reporting
+only.
+
+The first follow-up CI run, [40736640722](https://github.com/d80y6/FGMP1/actions/runs/40736640722),
+ran the matrix and did **not** find a policy or identity mismatch. It correctly failed closed
+with 19 inconclusive HTTP 429 responses: 12 for SUPERADMIN and 7 for ADMIN after the preceding
+walk consumed the shared per-user mutation budget. The other five roles matched 37/37; SUPERADMIN
+matched 25/37 and ADMIN 30/37 before rate limiting. The anonymous baseline passed. The diagnostic
+check-run log was available via the synthetic merge commit although the Actions blob archive was
+not downloadable. A CI-only mutation-limit override (`RATE_LIMIT_MUTATION_MAX=500`) has now been
+added to the disposable test server, so the next run can test policy without conflating it with
+rate-limit exhaustion. This does not validate the production rate limit. **No live cross-tenant
+request against a real tenant B resource has been executed.**
 
 Prisma Client was generated locally for all 44 models using Prisma 6.19.3's official
 client generator with the matching schema-WASM/DMMF workaround after the normal engine
