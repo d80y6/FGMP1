@@ -185,17 +185,23 @@ export async function POST(req: NextRequest) {
   try {
   const { siteId, readings } = parsed.data;
 
-  // Device ingestion is a service-to-service path and may load the shared
-  // engine snapshot, but a credential is valid only for the tenant that owns
-  // the submitted site. The actual persistence below remains tenant-RLS scoped.
-  await engine.ensureAllTenants();
-  const site = engine.sites.find((s) => s.id === siteId);
+  // Resolve only the submitted site's opaque tenant mapping before auth; the
+  // cached directory contains IDs only. Verify both site ownership and the
+  // tenant API key under that tenant's RLS context before loading operational
+  // engine state or performing any mutation.
+  const site = (await engine.bridgeSiteDirectory()).find((entry) => entry.id === siteId);
   if (!site) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const tenantId = site.tenantId;
   const now = new Date();
   const credential = await withTenant(tenantId, async (tx) => {
+    const ownedSite = await tx.site.findFirst({
+      where: { id: siteId, tenantId },
+      select: { id: true },
+    });
+    if (!ownedSite) return null;
+
     const found = await tx.apiKey.findFirst({
       where: {
         tenantId,
@@ -209,11 +215,6 @@ export async function POST(req: NextRequest) {
     if (!found) return null;
     const scopes = found.scopes.split(",").map((scope) => scope.trim());
     if (!scopes.includes("write") && !scopes.includes("admin")) return null;
-    await tx.apiKey.update({
-      where: { id: found.id },
-      data: { lastUsedAt: now },
-      select: { id: true },
-    });
     return found.id;
   });
   if (!credential) {
@@ -230,18 +231,33 @@ export async function POST(req: NextRequest) {
     applyRateLimitHeaders(res.headers, rl);
     return res;
   }
+  // Do not write lastUsedAt for a credential rejected by the rate limiter.
+  // Revalidate revocation/expiry inside the tenant transaction after the
+  // limiter, so a key revoked during the request is refused before mutation.
+  const usedAt = new Date();
+  const usage = await withTenant(tenantId, (tx) =>
+    tx.apiKey.updateMany({
+      where: {
+        id: credential,
+        tenantId,
+        revoked: false,
+        revokedAt: null,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: usedAt } }],
+      },
+      data: { lastUsedAt: usedAt },
+    }),
+  );
+  if (usage.count !== 1) {
+    const res = NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    applyRateLimitHeaders(res.headers, rl);
+    return res;
+  }
+
+  // Only an authenticated, in-scope, rate-limited API key may trigger the
+  // engine's global operational load. The body is already bounded above; an
+  // invalid credential never causes that expensive cross-tenant initialization.
+  await engine.ensureAllTenants();
   const nowMs = now.getTime();
-  // Phase 1 step 4: SensorReading requires a tenantId, and the ingest body only
-  // carries siteId. Resolve the owning tenant once, from the Site the engine
-  // loaded FROM THE DATABASE. An unknown site is rejected rather than
-  // defaulted: a guessed tenant would place telemetry in the wrong tenant, and
-  // the step 6 RLS policy would then protect it there forever.
-  //
-  // Reading it from the engine rather than issuing a fresh query is deliberate.
-  // The lookup needs a tenant in order to build the tenant context, so querying
-  // here would be circular. The engine's site list IS the database's site list
-  // for the tenants it has loaded, and an empty or stale list now fails CLOSED
-  // with a 404 rather than writing anywhere.
   const applied: {
     tank?: string;
     generator?: string;

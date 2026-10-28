@@ -1,8 +1,8 @@
 # RBAC audit implementation ledger
 
-**Branch:** `arena/17a4002c-fgmp1`
+**Branch:** `arena/75c8f4d2-fgmp1`
 **Last verified:** 2026-10-28
-**Current phase:** supplemental source-level fail-closed hardening and focused verification complete; acceptance-scope runtime/database validation remains blocked, so the task is not production-complete.
+**Current phase:** credential-boundary hardening and focused source/unit verification complete; acceptance-scope runtime/database validation remains blocked, so the task is not production-complete.
 
 ## Completed
 
@@ -16,16 +16,22 @@
 - [x] Complete role catalog, permission catalog, 7 × 52 matrix and 171-handler inventory generated in `RBAC-REFERENCE-MATRIX.md`.
 - [x] Evidence-based audit and remediation report written in `RBAC-AUDIT-2026-10.md`.
 - [x] Security-specific test package script extended to cover route contracts, platform parity, role conformance and principal flow.
-- [x] `npx bun run test:authz`: exit 0; route inventory 171 handlers / 107 files, 0 violations; 113 pass / 0 fail / 449 expectations.
-- [x] Focused UI/platform/support-session suite: 146 pass / 0 fail across eight files (overlaps the authz target).
-- [x] Targeted ESLint on verifier, RBAC, principal, tenant and related contract-test files after latest changes; exit 0. `git diff --check` passes.
+- [x] `hasCapability()` rejects unknown capabilities for every role, including SUPERADMIN; `*` remains a role-matrix marker only.
+- [x] Global bridge endpoint hardened: rejects the known legacy token, constant-time digest comparison, bounded token config, private/no-store responses, minimal site/tenant ID response, and per-tenant RLS-scoped site lookup.
+- [x] IoT bridge no longer has a committed service-token fallback and refuses to start without a valid explicit token; it now consumes only the minimal site directory.
+- [x] IoT ingest no longer loads global operational state before API-key validation and per-key rate limiting; it uses the minimal cached directory, confirms site ownership plus key scope under tenant RLS, and writes `lastUsedAt` only after the limit permits the request.
+- [x] `npx bun run test:authz`: exit 0; route inventory 171 handlers / 107 files, 0 violations; 120 pass / 0 fail / 492 expectations.
+- [x] Focused UI/platform/support-session suite: 149 pass / 0 fail across eight files (overlaps the authz target).
+- [x] Focused ESLint on changed credential, route, engine, bridge, and contract-test files; exit 0. Bridge TypeScript project check exits 0. `git diff --check` passes.
 
 ## Findings and decisions
 
 1. **Stale principal after revalidation (high potential impact):** route auth established fresh authority, but `bootstrap()` re-resolved signed JWT role/tenant. Fixed by requiring and using the same authorized principal for bootstrap and domain identity. Current HTTP user-management API does not offer tenant reassignment; no current client-reachable tenant-move exploit is claimed.
 2. **Wildcard masked policy typos:** verifier used SUPERADMIN wildcard as unknown-permission validation. Fixed with a canonical catalog and negative test.
 3. **Regional boundary absent:** `REGIONAL_MANAGER` is tenant-wide because the schema has no region/site membership relation. No assumed migration/grants were made; product decision remains open.
-4. **No DB migrations added:** existing enum roles, user accounts, tenant IDs and data remain untouched.
+4. **Bridge overexposure and credential hygiene:** the service route returned the entire cross-tenant operational snapshot while the bridge needed only site/tenant IDs; the bridge also had the published fallback token and the app used string equality. Replaced with a minimal per-tenant RLS-scoped directory, bounded/constant-time credential checks, explicit bridge configuration, and no-store responses. Still requires live DB/API verification.
+5. **Unauthenticated ingest work ordering:** the IoT route loaded all tenant engine state before validating the tenant key. It now performs minimal ID resolution and site/key/scope checks under RLS, rate-limits the credential, and loads operational state only after success.
+6. **No DB migrations added:** existing enum roles, user accounts, tenant IDs and data remain untouched.
 
 ## Files changed (implementation)
 
@@ -45,6 +51,10 @@
 - `src/lib/fgmp/__tests__/platform-tier-parity.test.ts`
 - `src/lib/fgmp/__tests__/session-principal.test.ts` (new)
 - `src/lib/fgmp/__tests__/bootstrap-principal-contract.test.ts` (new)
+- `src/lib/fgmp/service-token.ts` and `src/lib/fgmp/__tests__/service-token.test.ts` (new)
+- `src/app/api/fgmp/realtime/snapshot/route.ts`, `src/app/api/fgmp/iot/ingest/route.ts`, and `src/lib/fgmp/engine.ts` (minimal RLS-scoped bridge directory; ingest auth-before-engine-load ordering)
+- `mini-services/iot-bridge/service-token.ts`, bridge integration, and credential tests (new)
+- `.env.example`, `docs/ARCHITECTURE.md`, `docs/DEPLOYMENT.md`, `docs/OPERATIONS.md`
 - `docs/security/RBAC-REFERENCE-MATRIX.md` (generated)
 - `docs/security/RBAC-AUDIT-2026-10.md` (new)
 
@@ -52,13 +62,14 @@
 
 | Check | Status | Evidence / blocker |
 |---|---|---|
-| Authz test target | PASS | `npx bun run test:authz`; 113 passed, 0 failed |
+| Authz test target | PASS | `npx bun run test:authz`; 120 passed, 0 failed / 492 expectations |
 | Route inventory | PASS | 171 handlers across 107 route files, 0 violations |
+| Focused UI/platform/support tests | PASS | 149 passed, 0 failed across eight files; overlaps authz target |
 | Generated reference | PASS | Generator emits 7 roles, 52 capabilities, 171 handlers |
-| Targeted lint | PASS | Changed identity/helper/test files passed initial targeted ESLint |
-| Full lint | FAIL | 25 errors / 5 warnings, predominantly existing React hook/compiler diagnostics in UI components; details in audit report |
-| Typecheck | BLOCKED/FAIL | Prisma-generated client missing; generation cannot reach `binaries.prisma.sh`; errors are dominated by absent generated Prisma types, so full type status unknown |
-| Full `bun test` | BLOCKED/FAIL | 914 tests / 73 files: 904 pass, 10 Prisma-dependent module-load errors (`.prisma/client/default` missing) |
+| Targeted lint / bridge tsc | PASS | Changed credential, route, engine and bridge files lint; IoT bridge project typecheck passes |
+| Full lint | FAIL | 25 errors / 3 warnings, predominantly React hook/compiler diagnostics in UI components; details in audit report |
+| Typecheck | BLOCKED/FAIL | 518 diagnostics; Prisma-generated client missing and engine/query types cascade from absent Prisma exports; Prisma binary downloads unavailable |
+| Full `bun test` | BLOCKED/FAIL | 921 tests / 75 files: 911 pass, 10 Prisma-dependent module-load errors (`.prisma/client/default` missing) |
 | RLS script | BLOCKED/FAIL | `test:rls` exits before assertions because generated Prisma client is missing; no DB URL/service |
 | Live authz / per-role walk | NOT RUN | No running app, seeded DB, or role credentials |
 | Production build | BLOCKED/FAIL | OpenNext invokes Prisma generation; schema-engine download from `binaries.prisma.sh` unavailable |

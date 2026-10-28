@@ -23,10 +23,10 @@
  *      header to learn the site list (that endpoint stays because the bridge
  *      cannot obtain a NextAuth browser session).
  *
- * Env vars (all optional, sensible dev defaults):
+ * Env vars (service token required; other settings have development defaults):
  *   NEXT_API_BASE             (default http://localhost:3000)
  *   IOT_API_KEYS              (JSON object: tenantId -> tenant API key)
- *   REALTIME_SERVICE_TOKEN    (default fgmp-realtime-dev-token) — snapshot polling
+ *   REALTIME_SERVICE_TOKEN    (required secret, min 16 chars) — snapshot polling
  *   REALTIME_POLL_PATH        (default /api/fgmp/realtime/snapshot)
  *   INGEST_INTERVAL_MS        (default 10000)
  *   SITE_REFRESH_INTERVAL_MS  (default 300000)
@@ -86,6 +86,7 @@
  */
 
 import { mtlsFetch } from "./mtls";
+import { requireRealtimeServiceToken } from "./service-token";
 
 const NEXT_API_BASE = process.env.NEXT_API_BASE ?? "http://localhost:3000";
 const IOT_API_KEYS: Record<string, string> = (() => {
@@ -110,8 +111,9 @@ const IOT_API_KEYS: Record<string, string> = (() => {
 // Service token for the Next.js `/api/fgmp/realtime/snapshot` endpoint.
 // Required because `/api/fgmp/state` is wrapped in NextAuth session auth
 // (Task 31-A); the iot-bridge cannot obtain a browser session.
-const SERVICE_TOKEN =
-  process.env.REALTIME_SERVICE_TOKEN ?? "fgmp-realtime-dev-token";
+const SERVICE_TOKEN = requireRealtimeServiceToken(
+  process.env.REALTIME_SERVICE_TOKEN,
+);
 const SNAPSHOT_PATH =
   process.env.REALTIME_POLL_PATH ?? "/api/fgmp/realtime/snapshot";
 const INGEST_INTERVAL_MS = Number(process.env.INGEST_INTERVAL_MS ?? 10000);
@@ -122,8 +124,6 @@ const SITE_REFRESH_INTERVAL_MS = Number(
 interface SiteInfo {
   id: string;
   tenantId: string;
-  name: string;
-  region: string;
 }
 
 interface TelemetryReading {
@@ -159,14 +159,12 @@ async function refreshSites(): Promise<void> {
       },
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const snap = (await res.json()) as {
-      sites?: Array<{ id: string; tenantId: string; name: string; region: string }>;
+    const directory = (await res.json()) as {
+      sites?: Array<{ id: string; tenantId: string }>;
     };
-    sites = (snap.sites ?? []).map((s) => ({
-      id: s.id,
-      tenantId: s.tenantId,
-      name: s.name,
-      region: s.region,
+    sites = (directory.sites ?? []).map((site) => ({
+      id: site.id,
+      tenantId: site.tenantId,
     }));
     console.log(`[iot-bridge] loaded ${sites.length} sites from API`);
   } catch (e) {
@@ -233,7 +231,7 @@ async function ingestOnce(): Promise<void> {
   for (const site of batch) {
     const apiKey = IOT_API_KEYS[site.tenantId];
     if (!apiKey) {
-      console.warn(`[iot-bridge] no write API key configured for tenant ${site.tenantId}; skipped ${site.name}`);
+      console.warn(`[iot-bridge] no write API key configured for tenant ${site.tenantId}; skipped site ${site.id}`);
       continue;
     }
     const payload = genReading(site);
@@ -253,7 +251,7 @@ async function ingestOnce(): Promise<void> {
       else {
         const txt = await res.text().catch(() => "");
         console.error(
-          `[iot-bridge] ingest ${site.name} (${site.id}) HTTP ${res.status}: ${txt.slice(0, 200)}`,
+          `[iot-bridge] ingest site ${site.id} HTTP ${res.status}: ${txt.slice(0, 200)}`,
         );
       }
     } catch (e) {

@@ -133,7 +133,7 @@ orchestrator health probes and looks like a crash loop.
 | `NEXTAUTH_SECRET` | Signs session JWTs. `openssl rand -base64 32`. |
 | `NEXTAUTH_URL` | Canonical origin; callback URLs depend on it. |
 | `IOT_API_KEYS` | Optional bridge-only JSON map of `tenantId` to raw tenant API keys. Create keys in the API-key manager with `write` scope; the app validates them against each submitted site's tenant. |
-| `REALTIME_SERVICE_TOKEN` | Authenticates the IoT bridge on `/api/fgmp/realtime/snapshot`. |
+| `REALTIME_SERVICE_TOKEN` | Required shared app/bridge secret for `/api/fgmp/realtime/snapshot`; generate with `openssl rand -hex 32`. The endpoint rejects missing/short/oversized values and the committed legacy default. It returns only site/tenant IDs and sends `Cache-Control: private, no-store`. |
 | `APINATOR_APP_ID`, `APINATOR_KEY`, `APINATOR_SECRET`, `APINATOR_CLUSTER` | Hosted realtime channels (server-side emit + channel auth). |
 | `NEXT_PUBLIC_APINATOR_APP_KEY`, `NEXT_PUBLIC_APINATOR_CLUSTER` | Browser subscription. `NEXT_PUBLIC_*` values are baked at build time — changing them requires a rebuild. In Docker they are passed as **build args** (the Dockerfile declares the ARGs and compose forwards them from `.env`); supplying them only at runtime produces a bundle with an empty app key and realtime silently disabled. |
 | `FGMP_MFA_ENCRYPTION_KEY` | Encrypts TOTP secrets at rest. Changing it invalidates every enrolment. The app starts without it but MFA enrolment is refused (reported at boot). |

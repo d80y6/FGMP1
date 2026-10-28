@@ -215,6 +215,12 @@ class FgmpEngine {
   private initializing: Promise<void> | null = null;
   /** Tenants whose state this instance currently holds. Empty = not loaded. */
   private loadedTenantIds: string[] = [];
+  /** Short-lived, minimal cross-tenant directory used before device-key auth. */
+  private bridgeSiteDirectoryCache: {
+    expiresAt: number;
+    sites: Array<{ id: string; tenantId: string }>;
+  } | null = null;
+  private bridgeSiteDirectoryLoad: Promise<Array<{ id: string; tenantId: string }>> | null = null;
   /** Cache key for the loaded set, so a changed scope forces a reload. */
   private loadedKey = "";
   /** Which scope an in-flight initialisation is for, for single-flight dedup. */
@@ -3113,6 +3119,61 @@ async controlDispenser(
    */
   async snapshot(): Promise<Snapshot> {
     return this.snapshotForTenant(null);
+  }
+
+  /**
+   * Minimal site directory for the IoT bridge's tenant-key routing.
+   *
+   * The bridge needs only opaque site and tenant IDs to select a tenant API
+   * key. Do not hand it a global Snapshot containing operational telemetry,
+   * alarms, transactions, or other tenant data. Each site query runs in its
+   * own RLS transaction; the unscoped tenant catalog contributes IDs only.
+   */
+  async bridgeSiteDirectory(): Promise<Array<{ id: string; tenantId: string }>> {
+    const now = Date.now();
+    if (this.bridgeSiteDirectoryCache && this.bridgeSiteDirectoryCache.expiresAt > now) {
+      return this.bridgeSiteDirectoryCache.sites.map((site) => ({ ...site }));
+    }
+
+    let loading = this.bridgeSiteDirectoryLoad;
+    if (!loading) {
+      loading = (async () => {
+        const tenantIds = await resolveActiveTenantIds();
+        if (tenantIds.length === 0) {
+          throw new EngineTenantContextError(
+            "Bridge site directory found no tenants; refusing to present an unseeded platform as an empty directory.",
+          );
+        }
+        const sites: Array<{ id: string; tenantId: string }> = [];
+        // Keep pool pressure bounded even when the tenant count grows; this
+        // directory is cached, so sequential RLS queries do not fan out per read.
+        for (const tenantId of tenantIds) {
+          const tenantSites = await withTenant(tenantId, (tx) =>
+            tx.site.findMany({
+              where: { tenantId },
+              select: { id: true, tenantId: true },
+              orderBy: { id: "asc" },
+            }),
+          );
+          sites.push(...tenantSites);
+        }
+        sites.sort((a, b) => a.id.localeCompare(b.id));
+        this.bridgeSiteDirectoryCache = {
+          expiresAt: Date.now() + 30_000,
+          sites,
+        };
+        return sites;
+      })();
+      this.bridgeSiteDirectoryLoad = loading;
+    }
+
+    try {
+      return (await loading).map((site) => ({ ...site }));
+    } finally {
+      if (this.bridgeSiteDirectoryLoad === loading) {
+        this.bridgeSiteDirectoryLoad = null;
+      }
+    }
   }
 }
 

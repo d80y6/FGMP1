@@ -137,6 +137,12 @@ on `127.0.0.1:8443`.
 The route upserts tank/generator/battery readings and pushes the change into
 Apinator itself. The bridge holds no socket.
 
+The bridge's `/api/fgmp/realtime/snapshot` poll (legacy path name) requires the
+same explicitly configured `REALTIME_SERVICE_TOKEN` in app and bridge. Generate
+a fresh value with `openssl rand -hex 32`; the committed legacy default is
+rejected. The response contains only site and tenant IDs, not operational
+telemetry or a full tenant snapshot. Missing/invalid credentials fail closed.
+
 ## 7. Logging
 
 `src/lib/observability/log.ts` writes structured JSON and redacts sensitive keys

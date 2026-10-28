@@ -88,8 +88,11 @@ ESP32/ESP8266 ──MQTT──▶ mosquitto (per-tenant ACL) ──▶ mini-serv
   key carrying `write` or `admin` scope. The submitted site determines which
   tenant's key registry is checked; a key for another tenant is rejected. The
   route persists under that tenant's RLS context.
-* `/api/fgmp/realtime/snapshot` exists for the bridge only: it presents
-  `REALTIME_SERVICE_TOKEN` because the bridge cannot hold a browser session.
+* `/api/fgmp/realtime/snapshot` exists for the bridge only: it presents the
+  explicitly configured `REALTIME_SERVICE_TOKEN` because the bridge cannot hold
+  a browser session. The route returns only `{ sites: [{ id, tenantId }] }` for
+  API-key routing (not a global operational snapshot), queries each tenant's
+  site IDs inside its RLS context, and marks every response `private, no-store`.
 
 ## 5. Protocol and control
 
