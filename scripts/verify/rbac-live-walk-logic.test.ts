@@ -19,6 +19,8 @@ describe("live RBAC walk probe verdicts", () => {
     expect(classifyWalkControl(false, 401)).toBe("ok");
     expect(classifyWalkControl(false, 403)).toBe("ok");
     expect(classifyWalkControl(false, 200)).toBe("wrong");
+    expect(classifyWalkControl(false, 302)).toBe("wrong");
+    expect(classifyWalkControl(false, 404)).toBe("wrong");
   });
 
   test("successful or resource-level responses are not mistaken for authorization denials", () => {

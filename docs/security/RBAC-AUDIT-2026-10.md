@@ -236,3 +236,36 @@ No role/permission schema migration was introduced. The current schema stores bu
 - [ ] Decide the Regional Manager scope requirement (tenant-wide vs region-level).
 
 **Conclusion:** repository CI now proves standard Prisma generation, root typecheck/lint/build, broad unit tests, isolated PostgreSQL RLS behavior, and authenticated browser behavior. This audit remains **conditionally incomplete for production assurance** until R-2/R-5 deployment-specific evidence and the seven-role direct-API walk are complete, and the regional scope requirement is decided.
+
+## 11. Follow-up evidence update (2026-10-28)
+
+PR #33 (`fix: fail closed on inconclusive RBAC walk probes`) is merged at
+`8d04c88c0134fe55c9766882d83edf7e87532b69`. GitHub Actions run
+[40728180674](https://github.com/d80y6/FGMP1/actions/runs/40728180674) passed all jobs,
+including its seven-role walk and authenticated browser suite. The walk's JSON artifact was
+uploaded, but its per-role rows have not been reviewed in this workspace; an aggregate green
+exit is not evidence of comprehensive IDOR coverage.
+
+The active follow-up branch `arena/c7a96403-fgmp1` adds a **representative** seven-role live
+API-policy matrix in `scripts/verify/authz-live.ts`, inserts it after the seeded role walk in
+`.github/workflows/ci.yml`, and retains its JSON report. It validates the actual account email
+and database-resolved permanent role before assigning outcomes. Observable mismatches,
+identity mismatches, missing roles, and inconclusive HTTP/network outcomes have separate
+nonzero statuses. Local typecheck, focused ESLint, Bun bundle, focused logic test (5 passed /
+29 expectations), complete unit suite (1,115 passed / 13 skipped / 0 failed; 19,501
+expectations), `test:authz` (120 passed / 492 expectations), workflow YAML parse and diff check
+passed. `npx next build` also completed, compiling the App Router and generating static pages.
+An offline negative test exited 3 with 37 inconclusive anonymous probes, 7 unavailable
+roles and 0 mismatches. That is evidence of fail-closed failure reporting only. **This
+follow-up matrix has not yet run in GitHub Actions, and no live cross-tenant request against a
+real tenant B resource has been executed.**
+
+Prisma Client was generated locally for all 44 models using Prisma 6.19.3's official
+client generator with the matching schema-WASM/DMMF workaround after the normal engine
+CDN download failed. The generated files are ignored output, not a tracked change. CI's
+standard generation was already successful in run 40728180674.
+
+The report's residual-risk conclusions stand: the production pooler/secrets/runtime remain
+unverified; Regional Manager's tenant-wide-versus-regional scope remains a product decision;
+and neither live walk establishes comprehensive cross-tenant resource ownership or privilege
+escalation behavior. See the durable continuation record in `TASK_LEDGER.md` Part E.

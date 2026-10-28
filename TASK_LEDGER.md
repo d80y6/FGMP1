@@ -1,7 +1,6 @@
 # TASK_LEDGER
 
-This file is durable across agent sessions and context limits. It holds **four** task records: three
-complete, one in progress. Read the part for the task you are resuming; do not delete a part when
+This file is durable across agent sessions and context limits. It holds **five** task records. Read the part for the task you are resuming; do not delete a part when
 you finish a new task — add one.
 
 | Part | Task | Outcome |
@@ -10,6 +9,7 @@ you finish a new task — add one.
 | [B](#part-b--rbac-api-authorization-and-ui-enforcement) | RBAC, API authorization, UI permission enforcement | Complete; 4 defects fixed and verified, 2 blocked, 2 decisions open |
 | [C](#part-c--hosted-supabase-provisioning) | Hosted (Supabase/Neon/RDS) provisioning path | Defect fixed and verified as a non-superuser; CI gate added; 2 operator findings |
 | [D](#part-d--uiux-audit-and-remediation) | UI/UX audit, remediation and browser verification | Shell defects fixed and proven by a real Chromium run; authenticated views blocked in-sandbox, covered by CI |
+| [E](#part-e--rbac-live-matrix-and-prisma-client) | RBAC live-matrix fail-closed hardening and generated Prisma Client | Implementation/tests pass locally; added CI matrix pending run; real cross-tenant resource probes remain open |
 
 Status vocabulary used throughout: `DISCOVERED` → `CONFIRMED` → `IN_PROGRESS` → `FIXED` →
 `VERIFIED` → `BLOCKED`. Nothing is `VERIFIED` on the strength of reading code: every VERIFIED line
@@ -1239,3 +1239,40 @@ The stub libraries, for the record: `libnss3.so`, `libnssutil3.so` and `libnspr4
 with `gcc -shared` from the undefined-symbol list of the unpacked Chromium (32 NSS + 6 NSPR symbols),
 because the sandbox has no package manager access. TLS inside that browser does not work; every test
 here is plain HTTP against localhost.
+
+
+## Part E — RBAC live matrix and Prisma Client
+
+**Branch:** `arena/c7a96403-fgmp1` (active) · **Base:** `8d04c88c0134fe55c9766882d83edf7e87532b69` (PR #33 merged) · **Assessment date:** 2026-10-28 (Asia/Aden)
+
+### Scope and implemented changes
+
+The representative API-policy matrix is implemented in `scripts/verify/authz-live.ts` and integrated into the `ui` job in `.github/workflows/ci.yml`, after the seven-role RBAC walk provisions the disposable READONLY test identity. It performs anonymous checks and 37 representative HTTP method/policy probes for each of seven role identities. It is explicitly **not** a per-handler live inventory or a real-resource cross-tenant IDOR test.
+
+Each login verifies the exact account email and the profile's database-resolved `permanentRole` before attributing probes to a role; a role mismatch is reported separately and that account's probes are not mislabeled. The HTTP helper classifies 401/403 as denial, other observable responses as reaching application behavior, and 408/429/5xx/network failures as inconclusive. Requests have a 15-second timeout. Optional JSON output includes the role rows, anonymous baseline, mismatches, inconclusive results and unavailable roles. Exit codes are distinct: 0 matched, 1 authorization/identity mismatch, 2 configuration or inconclusive run, 3 roles could not establish sessions. Reports are uploaded by CI and the new log is included in failure diagnostics.
+
+The probe bodies and literal ghost identifiers avoid product-row mutations; the script still consumes ordinary rate-limit budget. It must run on a seeded test deployment by default. Production use requires an approved maintenance window, rotated per-role credentials and a pre-provisioned disposable READONLY account; do not run the CI walk against production because it provisions that test identity.
+
+### Prisma Client requirement
+
+A generated Prisma Client was produced for all 44 models using Prisma 6.19.3's official generator, with `@prisma/internals` schema-WASM to provide DMMF/config after the normal schema-engine download failed at `binaries.prisma.sh`. Output is `node_modules/.prisma/client` (ignored build output); the official generator completed successfully. The failed network download itself is not counted as successful generation, and the temporary workaround files stayed outside the repository.
+
+### Local evidence collected (2026-10-28)
+
+| Check | Result |
+|---|---|
+| `npm run typecheck` | Passed. |
+| Focused ESLint (`authz-live.ts`, live-walk logic and logic tests) | Passed. |
+| `npx bun build scripts/verify/authz-live.ts --target=bun` | Passed. |
+| `npx bun test scripts/verify/rbac-live-walk-logic.test.ts` | 5 passed / 0 failed / 29 expectations; includes 302 and 404 denied-response regression assertions. |
+| `npx bun test` | 1,115 passed / 13 skipped / 0 failed; 19,501 expectations across 76 files. Skips remain explicitly unverified. |
+| `npx bun run test:authz` | 120 passed / 0 failed / 492 expectations; route inventory reports 171 handlers in 107 files and no authorization-contract violations. |
+| CI YAML parse, Bun bundle, `npx next build`, `git diff --check` | Passed; `next build` compiled all 171 handlers and completed static generation. |
+| Offline negative simulation (`FGMP_BASE_URL=http://127.0.0.1:1`) | Exit 3; JSON reports 37 inconclusive anonymous probes, 7 unavailable roles, 0 mismatches. This proves fail-closed reporting only, not live authorization. |
+
+### Not yet verified / next actions
+
+- The new CI matrix has **not** run in GitHub Actions as of this ledger update. Push the active branch, inspect the CI result and review the uploaded JSON artifact; fix any genuine policy mismatch, do not weaken expectations to force green.
+- No real cross-tenant API/IDOR request was executed against a tenant B resource using a tenant A session. The ghost-ID matrix and direct RLS suite do not satisfy that acceptance criterion; build a safe seeded two-tenant HTTP fixture and exercise sensitive item routes without destructive side effects.
+- The production pooler, actual secrets, and runtime authorization behavior are unverified; no production requests were made. Regional Manager scope remains a business decision, not an inferred permission change.
+- Do not mark the broader RBAC audit complete or production-ready until the resource-level cross-tenant verification and deployment-specific checks have evidence.

@@ -5,7 +5,8 @@
  * `route-authorization-contract.test.ts` proves the two policy layers agree and
  * that no route is unmapped. It cannot prove that the ROUTE actually returns 403
  * — that needs a running server, a real NextAuth session and a real database.
- * This script does exactly that, for every role × every endpoint.
+ * This script probes one endpoint per representative API-policy shape for each role.
+ * It is not a per-handler inventory or a cross-tenant resource-ownership test.
  *
  * ── WHY IT REFUSES TO RUN WITHOUT CONFIGURATION ────────────────────────────
  * A verification script that silently passes when it cannot reach anything is
@@ -18,15 +19,15 @@
  *   • every id used is a literal that does not exist (`__authz_probe__`), so an
  *     authorized DELETE/PATCH reaches the handler and gets 404 — the handler's
  *     own "not found" path — without touching a row;
- *   • POST bodies are deliberately incomplete, so an authorized call stops at
- *     validation with 400 and a denied call stops at the guard with 403.
+ *   • Most POST/PUT/PATCH bodies are deliberately incomplete, so an authorized
+ *     call stops at validation with 400 and a denied call stops at the guard.
+ *     The role-preview probe only mutates the discarded response cookie.
  * The status classes therefore separate cleanly:
  *     401 / 403                → DENIED   (authorization refused)
- *     anything else            → ALLOWED  (authorization passed; the request then
+ *     other 4xx / 2xx          → ALLOWED (authorization passed; the request then
  *                                          failed its own validation or found
  *                                          nothing — which is the point)
- *   429                        → ALLOWED but rate-limited; reported separately,
- *                                never counted as a pass for a DENIED expectation.
+ *     408 / 429 / 5xx / no response → INCONCLUSIVE, never counted as a pass.
  *
  * ── USAGE ──────────────────────────────────────────────────────────────────
  *   FGMP_BASE_URL=http://localhost:3000 \
@@ -38,7 +39,10 @@
  * The script never prints a password and never prints a session cookie.
  */
 
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { canAccessApi } from "../../src/lib/fgmp/rbac-core";
+import { classifyWalkControl, type WalkControlVerdict } from "./rbac-live-walk-logic";
 
 const ROLES = [
   "SUPERADMIN",
@@ -55,15 +59,18 @@ type Role = (typeof ROLES)[number];
 const DEMO_EMAIL: Record<Role, string> = {
   SUPERADMIN: "superadmin@fgmp.telecom",
   ADMIN: "admin@fgmp.telecom",
-  NOC_OPERATOR: "noc@fgmp.telecom",
-  REGIONAL_MANAGER: "regional@fgmp.telecom",
-  FIELD_ENGINEER: "field@fgmp.telecom",
-  EXECUTIVE: "exec@fgmp.telecom",
-  READONLY: "readonly@fgmp.telecom",
+  NOC_OPERATOR: "noc.operator@fgmp.telecom",
+  REGIONAL_MANAGER: "regional.manager@fgmp.telecom",
+  FIELD_ENGINEER: "field.engineer@fgmp.telecom",
+  EXECUTIVE: "cto@fgmp.telecom",
+  // The live RBAC walk creates this disposable seeded-test user before this
+  // matrix runs. It is intentionally not part of the production seed set.
+  READONLY: "readonly.walk@fgmp.telecom",
 };
 
 /** A literal that cannot be a real row id. */
 const GHOST = "__authz_probe_does_not_exist__";
+const REQUEST_TIMEOUT_MS = 15_000;
 
 interface Probe {
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -75,9 +82,10 @@ interface Probe {
 }
 
 /**
- * One probe per (method, policy shape). Deliberately not every route: the
- * question is whether each POLICY RULE is enforced, and routes that share a
- * prefix share a rule. Add entries when you add rules.
+ * Representative probes for the currently declared (method, policy) shapes.
+ * This deliberately does not claim every exported handler has a live probe;
+ * route-inventory contracts cover handler coverage, and tenant IDOR needs its
+ * own fixtures and resource-level verification.
  */
 const PROBES: Probe[] = [
   { method: "GET", path: "/api/fgmp/state" },
@@ -119,19 +127,21 @@ const PROBES: Probe[] = [
   { method: "POST", path: "/api/fgmp/me/preview-role", body: { role: "READONLY" } },
 ];
 
-type Outcome = "ALLOWED" | "DENIED" | "RATE_LIMITED" | "ERROR";
-
 interface Result {
   role: Role;
   probe: Probe;
   status: number;
-  outcome: Outcome;
   expected: boolean;
-  ok: boolean;
+  verdict: WalkControlVerdict;
 }
 
 function passwordFor(role: Role): string | undefined {
   return process.env[`FGMP_AUTHZ_PASSWORD_${role}`] ?? process.env.FGMP_AUTHZ_PASSWORD;
+}
+
+function argValue(flag: string): string | null {
+  const index = process.argv.indexOf(flag);
+  return index >= 0 ? (process.argv[index + 1] ?? null) : null;
 }
 
 function baseUrl(): string {
@@ -140,7 +150,7 @@ function baseUrl(): string {
     console.error(
       "FGMP_BASE_URL is not set.\n\n" +
         "This script performs a REAL end-to-end authorization matrix: it signs in as each\n" +
-        "seeded role over HTTP and calls every endpoint, so it needs a running deployment\n" +
+        "seeded role over HTTP and calls representative API-policy probes, so it needs a running deployment\n" +
         "with a seeded database. It refuses to run (rather than printing a pass) because an\n" +
         "unverified matrix must never look like a verified one.\n\n" +
         "  FGMP_BASE_URL=http://localhost:3000 FGMP_AUTHZ_PASSWORD='Admin@2026' \\\n" +
@@ -154,66 +164,86 @@ function baseUrl(): string {
 }
 
 /**
- * Sign in through NextAuth's credentials flow and return the session cookie.
- * Returns null when the deployment rejects the credentials.
+ * Sign in through NextAuth, verify the expected account identity and return the
+ * session cookie plus the database-resolved permanent role. Returns null when
+ * no reliable identity can be established.
  */
-async function signIn(url: string, email: string, password: string): Promise<string | null> {
-  // 1. CSRF token, with its cookie.
-  const csrfRes = await fetch(`${url}/api/auth/csrf`, { redirect: "manual" });
-  const csrfCookies = csrfRes.headers.getSetCookie?.() ?? [];
-  const csrfJson = (await csrfRes.json()) as { csrfToken?: string };
-  if (!csrfJson.csrfToken) return null;
+async function signIn(
+  url: string,
+  email: string,
+  password: string,
+): Promise<{ cookie: string; role: string } | null> {
+  try {
+    // 1. CSRF token, with its cookie.
+    const csrfRes = await fetch(`${url}/api/auth/csrf`, { redirect: "manual", signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+    if (!csrfRes.ok) return null;
+    const csrfCookies = csrfRes.headers.getSetCookie?.() ?? [];
+    const csrfJson = (await csrfRes.json()) as { csrfToken?: string };
+    if (!csrfJson.csrfToken) return null;
 
-  // 2. Credential submission.
-  const body = new URLSearchParams({
-    csrfToken: csrfJson.csrfToken,
-    email,
-    password,
-    callbackUrl: url,
-    json: "true",
-  });
-  const loginRes = await fetch(`${url}/api/auth/callback/credentials`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      cookie: csrfCookies.map((c) => c.split(";")[0]).join("; "),
-    },
-    body,
-    redirect: "manual",
-  });
-  if (loginRes.status !== 200 && loginRes.status !== 302) return null;
+    // 2. Credential submission.
+    const body = new URLSearchParams({
+      csrfToken: csrfJson.csrfToken,
+      email,
+      password,
+      callbackUrl: url,
+      json: "true",
+    });
+    const loginRes = await fetch(`${url}/api/auth/callback/credentials`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        cookie: csrfCookies.map((c) => c.split(";")[0]).join("; "),
+      },
+      body,
+      redirect: "manual",
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (loginRes.status !== 200 && loginRes.status !== 302) return null;
 
-  // 3. Collect the session cookie(s) and verify the session actually resolves.
-  const sessionCookies = (loginRes.headers.getSetCookie?.() ?? [])
-    .filter((c) => /session-token|next-auth/i.test(c))
-    .map((c) => c.split(";")[0]);
-  if (sessionCookies.length === 0) return null;
-  const cookie = sessionCookies.join("; ");
+    // 3. Collect the session cookie(s) and verify the expected account resolves.
+    const sessionCookies = (loginRes.headers.getSetCookie?.() ?? [])
+      .filter((c) => /session-token|next-auth/i.test(c))
+      .map((c) => c.split(";")[0]);
+    if (sessionCookies.length === 0) return null;
+    const cookie = sessionCookies.join("; ");
 
-  const me = await fetch(`${url}/api/auth/session`, { headers: { cookie } });
-  const meJson = (await me.json()) as { user?: { email?: string } } | null;
-  if (!meJson?.user?.email) return null;
-  return cookie;
-}
+    const session = await fetch(`${url}/api/auth/session`, { headers: { cookie }, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+    const sessionJson = (await session.json()) as { user?: { email?: string } } | null;
+    if (sessionJson?.user?.email?.toLowerCase() !== email.toLowerCase()) return null;
 
-function classify(status: number): Outcome {
-  if (status === 429) return "RATE_LIMITED";
-  if (status === 401 || status === 403) return "DENIED";
-  if (status >= 500) return "ERROR";
-  return "ALLOWED";
+    // Verify the database-resolved role before attributing endpoint outcomes to
+    // the requested role. An account with a changed role must not silently
+    // populate the wrong row of the matrix.
+    const profile = await fetch(`${url}/api/fgmp/me`, { headers: { cookie }, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+    if (!profile.ok) return null;
+    const profileJson = (await profile.json()) as { role?: string; permanentRole?: string; email?: string };
+    if (profileJson.email?.toLowerCase() !== email.toLowerCase()) return null;
+    return { cookie, role: profileJson.permanentRole ?? profileJson.role ?? "" };
+  } catch {
+    // A failed login/network probe is not an authorization pass. The caller
+    // records the role as unavailable and the process exits nonzero.
+    return null;
+  }
 }
 
 async function probe(url: string, cookie: string | null, p: Probe): Promise<number> {
-  const headers: Record<string, string> = {};
-  if (cookie) headers.cookie = cookie;
-  if (p.body !== undefined) headers["Content-Type"] = "application/json";
-  const res = await fetch(`${url}${p.path}`, {
-    method: p.method,
-    headers,
-    body: p.body === undefined ? undefined : JSON.stringify(p.body),
-    redirect: "manual",
-  });
-  return res.status;
+  try {
+    const headers: Record<string, string> = {};
+    if (cookie) headers.cookie = cookie;
+    if (p.body !== undefined) headers["Content-Type"] = "application/json";
+    const res = await fetch(`${url}${p.path}`, {
+      method: p.method,
+      headers,
+      body: p.body === undefined ? undefined : JSON.stringify(p.body),
+      redirect: "manual",
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    return res.status;
+  } catch {
+    // 0 is reserved as the transport-failure marker by the shared classifier.
+    return 0;
+  }
 }
 
 async function main(): Promise<void> {
@@ -221,14 +251,16 @@ async function main(): Promise<void> {
 
   const results: Result[] = [];
   const unavailable: Role[] = [];
+  const identityMismatches: { expectedRole: Role; actualRole: string; email: string }[] = [];
 
   // Unauthenticated baseline first: every /api/fgmp endpoint must refuse a
   // request that carries no session at all. Kept separate from `results` so it
-  // is never counted as a role row.
-  const anonFailures: { probe: Probe; status: number }[] = [];
+  // is never counted as a role row. 429/5xx/network failures are inconclusive,
+  // not evidence that the guard denied the request.
+  const anonymous: { probe: Probe; status: number; verdict: WalkControlVerdict }[] = [];
   for (const p of PROBES) {
     const status = await probe(url, null, p);
-    if (classify(status) !== "DENIED") anonFailures.push({ probe: p, status });
+    anonymous.push({ probe: p, status, verdict: classifyWalkControl(false, status) });
   }
 
   for (const role of ROLES) {
@@ -237,8 +269,8 @@ async function main(): Promise<void> {
       unavailable.push(role);
       continue;
     }
-    const cookie = await signIn(url, DEMO_EMAIL[role], password);
-    if (!cookie) {
+    const session = await signIn(url, DEMO_EMAIL[role], password);
+    if (!session) {
       console.error(
         `\n! could not sign in as ${role} (${DEMO_EMAIL[role]}).\n` +
           `  In production the seeded demo password is refused unless FGMP_ALLOW_DEMO_CREDENTIALS=1;\n` +
@@ -247,18 +279,20 @@ async function main(): Promise<void> {
       unavailable.push(role);
       continue;
     }
+    if (session.role !== role) {
+      identityMismatches.push({ expectedRole: role, actualRole: session.role, email: DEMO_EMAIL[role] });
+      continue;
+    }
 
     for (const p of PROBES) {
-      const status = await probe(url, cookie, p);
-      const outcome = classify(status);
+      const status = await probe(url, session.cookie, p);
       const expected = canAccessApi(role, p.path, p.method);
       results.push({
         role,
         probe: p,
         status,
-        outcome,
         expected,
-        ok: expected ? outcome === "ALLOWED" || outcome === "RATE_LIMITED" : outcome === "DENIED",
+        verdict: classifyWalkControl(expected, status),
       });
     }
   }
@@ -270,44 +304,75 @@ async function main(): Promise<void> {
     byRole.get(r.role)!.push(r);
   }
 
-  console.log("\nAnonymous (must be 401 on every /api/fgmp endpoint):");
-  if (anonFailures.length === 0) {
-    console.log("  OK — every probe was refused");
-  } else {
-    for (const f of anonFailures) console.log(`  ✗ ${f.probe.method} ${f.probe.path} → ${f.status}`);
+  const anonymousMismatches = anonymous.filter((r) => r.verdict === "wrong");
+  const anonymousInconclusive = anonymous.filter((r) => r.verdict === "unknown");
+  console.log("\nAnonymous baseline (each probe must be denied):");
+  if (!anonymousMismatches.length && !anonymousInconclusive.length) {
+    console.log("  PASS — every probe was refused");
+  }
+  for (const r of anonymousMismatches) {
+    console.log(`  MISMATCH ${r.probe.method} ${r.probe.path} → HTTP ${r.status}`);
+  }
+  for (const r of anonymousInconclusive) {
+    console.log(`  INCONCLUSIVE ${r.probe.method} ${r.probe.path} → HTTP ${r.status}`);
+  }
+
+  for (const issue of identityMismatches) {
+    console.log(
+      `\nIDENTITY MISMATCH: ${issue.email} authenticated as ${issue.actualRole || "<no role>"}; expected ${issue.expectedRole}.`,
+    );
   }
 
   for (const [role, rows] of byRole) {
-    const bad = rows.filter((r) => !r.ok);
-    const limited = rows.filter((r) => r.outcome === "RATE_LIMITED");
+    const mismatches = rows.filter((r) => r.verdict === "wrong");
+    const inconclusive = rows.filter((r) => r.verdict === "unknown");
     console.log(
-      `\n${role}: ${rows.length - bad.length}/${rows.length} as expected` +
-        (limited.length ? ` (${limited.length} rate-limited)` : ""),
+      `\n${role}: ${rows.length - mismatches.length - inconclusive.length}/${rows.length} observable probes matched` +
+        (mismatches.length ? `; ${mismatches.length} mismatch(es)` : "") +
+        (inconclusive.length ? `; ${inconclusive.length} inconclusive` : ""),
     );
-    for (const b of bad) {
+    for (const result of mismatches) {
       console.log(
-        `  ✗ ${b.probe.method} ${b.probe.path} → ${b.status} ${b.outcome}` +
-          ` (expected ${b.expected ? "ALLOWED" : "DENIED"})`,
+        `  MISMATCH ${result.probe.method} ${result.probe.path} → HTTP ${result.status}` +
+          ` (expected ${result.expected ? "ALLOW" : "DENY"})`,
       );
+    }
+    for (const result of inconclusive) {
+      console.log(`  INCONCLUSIVE ${result.probe.method} ${result.probe.path} → HTTP ${result.status}`);
     }
   }
 
   if (unavailable.length) {
     console.log(
-      `\nRoles with no credentials supplied (NOT verified): ${unavailable.join(", ")}\n` +
-        "  Supply FGMP_AUTHZ_PASSWORD_<ROLE> for each. These rows are absent from the matrix\n" +
-        "  above; do not read a missing row as a pass.",
+      `\nRoles without observable credentials/session (NOT verified): ${unavailable.join(", ")}\n` +
+        "  Supply FGMP_AUTHZ_PASSWORD_<ROLE> for each role. These missing rows are not passes.",
     );
   }
 
-  const total = results.length;
-  const failures = results.filter((r) => !r.ok).length;
-  console.log(`\n${total} probes, ${failures} mismatch(es).`);
-  if (unavailable.length) {
-    console.log(`INCOMPLETE — ${unavailable.length} role(s) could not be exercised.`);
-    process.exit(3);
+  const mismatches =
+    anonymousMismatches.length + results.filter((r) => r.verdict === "wrong").length + identityMismatches.length;
+  const inconclusive = anonymousInconclusive.length + results.filter((r) => r.verdict === "unknown").length;
+  const total = anonymous.length + results.length;
+  const reportPath = argValue("--json");
+  const summary = { total, mismatches, inconclusive, unavailable, identityMismatches, anonymous, results };
+  if (reportPath) {
+    mkdirSync(dirname(reportPath), { recursive: true });
+    writeFileSync(reportPath, JSON.stringify({ base: url, generatedAt: new Date().toISOString(), ...summary }, null, 2));
+    console.log(`[authz-live] wrote ${reportPath}`);
   }
-  process.exit(failures === 0 ? 0 : 1);
+
+  console.log(`\n${total} HTTP probes: ${mismatches} mismatch(es), ${inconclusive} inconclusive, ${unavailable.length} unavailable role(s).`);
+  if (unavailable.length) {
+    console.error("INCOMPLETE — at least one role could not be exercised.");
+    process.exitCode = 3;
+  } else if (mismatches) {
+    process.exitCode = 1;
+  } else if (inconclusive) {
+    console.error("INCONCLUSIVE — rate-limited/unavailable probes are not passes.");
+    process.exitCode = 2;
+  } else {
+    console.log(`[authz-live] all ${ROLES.length} roles matched the representative API policy probes`);
+  }
 }
 
 void main();

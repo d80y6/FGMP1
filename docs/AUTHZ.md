@@ -298,44 +298,68 @@ narrower identity by surviving a role change.
 | Matrix | `bun test src/lib/fgmp/__tests__/rbac-api-access.test.ts` | per-endpoint policy expectations | no |
 | Platform tier | `bun test src/lib/fgmp/__tests__/platform-tier-parity.test.ts` | matrix, policy and handler agree for every platform route, derived from the route tree on disk (§1.6) | no |
 | Platform surface | `bun test src/lib/fgmp/__tests__/platform-surface.test.ts` | every `/platform/` route calls `requireSuperAdmin`, imports no raw Prisma, and reads tenant data only through `currentSupport()` | no |
-| **Live matrix** | `bun run scripts/verify/authz-live.ts` | real sessions, real HTTP, real rows: 7 roles × 37 probes, plus an anonymous baseline | **yes** |
+| **Live representative policy matrix** | `bun run test:authz:live -- --json /tmp/authz-live.json` | real sessions and HTTP: seven role identities × 37 representative method/policy probes, plus an anonymous baseline; fails on mismatches and treats 408/429/5xx/transport failures as inconclusive | seeded test deployment; it spends normal per-user rate-limit budget but does not mutate product rows |
 | RLS | `bun run test:rls` | policies bind for `fgmp_app`; cross-tenant reads/writes fail | **yes** |
 
 ### Running the live matrix
 
 ```bash
-# local, seeded, development mode
+# local seeded CI/development stack. Run test:rbac-walk first; it creates the
+# disposable READONLY probe account (readonly.walk@fgmp.telecom).
 FGMP_BASE_URL=http://localhost:3000 \
-FGMP_AUTHZ_PASSWORD='Super@2026' \
-bun run scripts/verify/authz-live.ts
+FGMP_AUTHZ_PASSWORD_SUPERADMIN='Super@2026' \
+FGMP_AUTHZ_PASSWORD_ADMIN='Admin@2026' \
+FGMP_AUTHZ_PASSWORD_NOC_OPERATOR='Admin@2026' \
+FGMP_AUTHZ_PASSWORD_REGIONAL_MANAGER='Admin@2026' \
+FGMP_AUTHZ_PASSWORD_FIELD_ENGINEER='Admin@2026' \
+FGMP_AUTHZ_PASSWORD_EXECUTIVE='Admin@2026' \
+FGMP_AUTHZ_PASSWORD_READONLY='Readonly@2026' \
+bun run test:authz:live -- --json /tmp/authz-live.json
 
-# production: the seeded demo passwords are REFUSED unless explicitly allowed.
-# Prefer rotating them, then:
+# approved production validation only: arrange a disposable READONLY test account
+# first, coordinate the rate-limit budget, then provide each role's password.
+# Do not run the CI walk against production: it provisions a test user. Missing
+# roles, identity mismatches and inconclusive probes never pass.
 FGMP_BASE_URL=https://app.example.com \
 FGMP_AUTHZ_PASSWORD_SUPERADMIN='…' \
 FGMP_AUTHZ_PASSWORD_ADMIN='…' \
-… \
-bun run scripts/verify/authz-live.ts
+FGMP_AUTHZ_PASSWORD_NOC_OPERATOR='…' \
+FGMP_AUTHZ_PASSWORD_REGIONAL_MANAGER='…' \
+FGMP_AUTHZ_PASSWORD_FIELD_ENGINEER='…' \
+FGMP_AUTHZ_PASSWORD_EXECUTIVE='…' \
+FGMP_AUTHZ_PASSWORD_READONLY='…' \
+bun run test:authz:live -- --json /tmp/authz-live.json
 ```
 
-Exit codes: `0` all expectations met, `1` mismatch, `2` not configured,
-`3` incomplete (a role had no credentials — **not** a pass).
+Exit codes: `0` all probes were observable and matched, `1` policy/identity
+mismatch, `2` unconfigured or inconclusive (including HTTP 408/429/5xx and
+transport failures), `3` one or more roles could not establish a session.
+Missing or unobservable role rows are never passes.
 
-Probes are non-destructive by construction: ids are a literal that cannot exist,
-and POST bodies deliberately fail validation, so an authorized call stops at 404
-or 400 and a denied call stops at 401/403. The status class is what is asserted.
+Probes use a literal nonexistent id for item-level mutation checks and
+intentionally invalid bodies for write probes. The valid preview-role probe
+affects only the returned browser cookie, which the script discards. Requests do
+consume normal rate-limit budget; run on a seeded test stack unless a production
+run has been explicitly scheduled. This representative matrix is not a complete
+handler inventory or resource-level cross-tenant IDOR test.
 
-### What is not automated yet
+### Remaining live coverage gaps
 
-* **Browser network assertions** (Playwright). No Playwright dependency exists in
-  this repository and no browser binary was available in the sandbox that
-  produced this document. The store-level half of that requirement is covered by
-  `store-identity.test.ts`; the in-browser half — "walk each role through the UI
-  and assert no forbidden request appears in the network log" — is specified
-  above and still to be written.
-* **DB-backed route tests.** The Prisma client cannot be generated in the sandbox
-  (`binaries.prisma.sh` unreachable), so the 16 `decimal.test.ts` failures are
-  environmental. `authz-live.ts` is the substitute and is not a mock.
+* **Cross-tenant item-level IDOR.** The live policy matrix uses a non-existent
+  identifier to test representative guards; the RLS suite exercises real
+  database isolation directly. Neither yet logs in as tenant A, targets a real
+  tenant B user/asset, and verifies 404/no side effect across all sensitive
+  item routes. Add disposable two-tenant fixtures and direct HTTP assertions.
+* **Browser network assertions.** CI renders the authenticated UI with Playwright,
+  and unit tests verify client request gating, but no browser test yet walks every
+  role while asserting forbidden requests never appear in the network log.
+* **Production-specific behavior.** CI runs fresh PostgreSQL with `fgmp_app` and
+  the RLS regression suite; the actual deployment pooler, credentials, and
+  production secrets still require an approved operator-run validation.
+
+The CI `ui` job now runs the representative live authorization matrix after the
+seven-role walk and retains JSON evidence. Neither live script replaces the
+resource-level cross-tenant checks listed above.
 
 ---
 
