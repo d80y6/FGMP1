@@ -299,6 +299,7 @@ narrower identity by surviving a role change.
 | Platform tier | `bun test src/lib/fgmp/__tests__/platform-tier-parity.test.ts` | matrix, policy and handler agree for every platform route, derived from the route tree on disk (§1.6) | no |
 | Platform surface | `bun test src/lib/fgmp/__tests__/platform-surface.test.ts` | every `/platform/` route calls `requireSuperAdmin`, imports no raw Prisma, and reads tenant data only through `currentSupport()` | no |
 | **Live representative policy matrix** | `bun run test:authz:live -- --json /tmp/authz-live.json` | real sessions and HTTP: seven role identities × 37 representative method/policy probes, plus an anonymous baseline; fails on mismatches and treats 408/429/5xx/transport failures as inconclusive | seeded test deployment; it spends normal per-user rate-limit budget but does not mutate product rows |
+| **Real-resource IDOR + escalation** | `bun run test:authz:idor-live -- --json /tmp/authz-idors.json` | cross-tenant GET/PATCH/DELETE of actual site/user rows and tenant-admin self-promotion, with privileged before/after DB assertions | disposable two-tenant CI database only |
 | RLS | `bun run test:rls` | policies bind for `fgmp_app`; cross-tenant reads/writes fail | **yes** |
 
 ### Running the live matrix
@@ -345,11 +346,15 @@ handler inventory or resource-level cross-tenant IDOR test.
 
 ### Remaining live coverage gaps
 
-* **Cross-tenant item-level IDOR.** The live policy matrix uses a non-existent
-  identifier to test representative guards; the RLS suite exercises real
-  database isolation directly. Neither yet logs in as tenant A, targets a real
-  tenant B user/asset, and verifies 404/no side effect across all sensitive
-  item routes. Add disposable two-tenant fixtures and direct HTTP assertions.
+* **Cross-tenant item-level IDOR.** The representative policy matrix uses a
+  non-existent identifier. A separate CI-only suite creates disposable tenant-B
+  Site/User rows, logs in as tenant-A ADMIN, sends valid GET/PATCH/DELETE probes
+  (including a forged `?tenant=`) and attempts self-promotion. Run
+  [40750422596](https://github.com/d80y6/FGMP1/actions/runs/40750422596) passed
+  all eight live HTTP probes, privileged before/after row and caller-role
+  assertions, and fixture cleanup against the disposable CI database. This is
+  verified for these two resource families only—not every sensitive item route
+  or the production environment.
 * **Browser network assertions.** CI renders the authenticated UI with Playwright,
   and unit tests verify client request gating, but no browser test yet walks every
   role while asserting forbidden requests never appear in the network log.
@@ -358,10 +363,14 @@ handler inventory or resource-level cross-tenant IDOR test.
   production secrets still require an approved operator-run validation.
 
 The CI `ui` job runs the representative matrix after the seven-role walk and retains
-JSON evidence. It sets `RATE_LIMIT_MUTATION_MAX=500` only on its disposable test server,
-because the two suites share per-user budgets; this lets the RBAC matrix observe policy
-rather than limiter exhaustion and does **not** validate the production rate limit. Neither
-live script replaces the resource-level cross-tenant checks listed above.
+JSON evidence. Run [40745553712](https://github.com/d80y6/FGMP1/actions/runs/40745553712)
+passed it: 37 anonymous + 7×37 role probes (296 total) were observable and matched. The job
+sets `RATE_LIMIT_MUTATION_MAX=500` only on its disposable test server because the two suites
+share per-user budgets; this lets the matrix observe policy rather than limiter exhaustion and
+does **not** validate the production rate limit. Run [40750422596](https://github.com/d80y6/FGMP1/actions/runs/40750422596)
+then passed the live real-resource IDOR and database-integrity steps. Its logs/artifacts remain
+attached to CI, but the Actions blob host returned EOF when accessed from this workspace. Neither
+live suite replaces deployment-specific validation or comprehensive coverage of all resource routes.
 
 ---
 
