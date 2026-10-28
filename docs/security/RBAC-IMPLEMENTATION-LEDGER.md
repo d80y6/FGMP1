@@ -1,8 +1,8 @@
 # RBAC audit implementation ledger
 
-**Branch:** `arena/f5687ac4-fgmp1`  
-**Last verified:** 2026-10-28  
-**Current phase:** implementation complete for source-level remediation; database/runtime validation is blocked and the task is not production-complete.
+**Branch:** `arena/17a4002c-fgmp1`
+**Last verified:** 2026-10-28
+**Current phase:** supplemental source-level fail-closed hardening and focused verification complete; acceptance-scope runtime/database validation remains blocked, so the task is not production-complete.
 
 ## Completed
 
@@ -10,14 +10,15 @@
 - [x] Existing role and permission discovery: seven persisted roles, explicit capability role matrix, platform-only capability boundaries, 107 route files / 171 exported handlers.
 - [x] Tenant model inspection: one tenant ID per User, FORCE RLS/transaction tenant context, no region/site membership model, no server actions/middleware/file upload API.
 - [x] Canonical `CAPABILITIES` catalog introduced with 52 typed stable identifiers; role grants and endpoint policies use `Capability`.
-- [x] `findUnknownCapabilities()` no longer treats SUPERADMIN `*` as a valid arbitrary permission; negative typo regression added.
+- [x] `findUnknownCapabilities()` and runtime `hasCapability()` no longer treat SUPERADMIN `*` as a valid arbitrary permission; unknown identifiers fail closed for all roles and regression tests cover both paths.
 - [x] Request identity flow refactored: route `bootstrap` requires `auth.user`; 89 actual API call sites pass the same principal returned by `requireAuth`/`requireRole`.
 - [x] Fail-closed principal narrowing added; stale JWT identity re-resolution removed from bootstrap; `getCurrentUser()` checks active/session epoch and DB role/tenant.
 - [x] Complete role catalog, permission catalog, 7 × 52 matrix and 171-handler inventory generated in `RBAC-REFERENCE-MATRIX.md`.
 - [x] Evidence-based audit and remediation report written in `RBAC-AUDIT-2026-10.md`.
 - [x] Security-specific test package script extended to cover route contracts, platform parity, role conformance and principal flow.
-- [x] `npx bun run test:authz`: exit 0; route inventory 171 handlers, 0 violations; 112 pass / 0 fail.
-- [x] Targeted ESLint on initial changed principal/helper/test files and route inventory: exit 0.
+- [x] `npx bun run test:authz`: exit 0; route inventory 171 handlers / 107 files, 0 violations; 113 pass / 0 fail / 449 expectations.
+- [x] Focused UI/platform/support-session suite: 146 pass / 0 fail across eight files (overlaps the authz target).
+- [x] Targeted ESLint on verifier, RBAC, principal, tenant and related contract-test files after latest changes; exit 0. `git diff --check` passes.
 
 ## Findings and decisions
 
@@ -40,6 +41,8 @@
 - `scripts/verify/generate-rbac-reference.ts` (new)
 - `package.json`
 - `src/lib/fgmp/__tests__/route-authorization-contract.test.ts`
+- `src/lib/fgmp/__tests__/rbac-matrix.test.ts`
+- `src/lib/fgmp/__tests__/platform-tier-parity.test.ts`
 - `src/lib/fgmp/__tests__/session-principal.test.ts` (new)
 - `src/lib/fgmp/__tests__/bootstrap-principal-contract.test.ts` (new)
 - `docs/security/RBAC-REFERENCE-MATRIX.md` (generated)
@@ -49,13 +52,13 @@
 
 | Check | Status | Evidence / blocker |
 |---|---|---|
-| Authz test target | PASS | `npx bun run test:authz`; 112 passed, 0 failed |
+| Authz test target | PASS | `npx bun run test:authz`; 113 passed, 0 failed |
 | Route inventory | PASS | 171 handlers across 107 route files, 0 violations |
 | Generated reference | PASS | Generator emits 7 roles, 52 capabilities, 171 handlers |
 | Targeted lint | PASS | Changed identity/helper/test files passed initial targeted ESLint |
 | Full lint | FAIL | 25 errors / 5 warnings, predominantly existing React hook/compiler diagnostics in UI components; details in audit report |
 | Typecheck | BLOCKED/FAIL | Prisma-generated client missing; generation cannot reach `binaries.prisma.sh`; errors are dominated by absent generated Prisma types, so full type status unknown |
-| Full `bun test` | BLOCKED/FAIL | 913 tests / 73 files: 903 pass, 10 Prisma-dependent module-load errors (`.prisma/client/default` missing) |
+| Full `bun test` | BLOCKED/FAIL | 914 tests / 73 files: 904 pass, 10 Prisma-dependent module-load errors (`.prisma/client/default` missing) |
 | RLS script | BLOCKED/FAIL | `test:rls` exits before assertions because generated Prisma client is missing; no DB URL/service |
 | Live authz / per-role walk | NOT RUN | No running app, seeded DB, or role credentials |
 | Production build | BLOCKED/FAIL | OpenNext invokes Prisma generation; schema-engine download from `binaries.prisma.sh` unavailable |

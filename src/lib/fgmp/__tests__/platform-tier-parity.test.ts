@@ -58,6 +58,7 @@ import {
   apiRequestCapabilities,
   canAccessApi,
   hasCapability,
+  ROLE_PERMISSIONS,
 } from "../rbac-core";
 import { NAV_ENTRIES } from "../navigation";
 import {
@@ -213,9 +214,10 @@ describe("platform tier — the capability matrix has exactly one holder", () =>
     });
   }
 
-  test("SUPERADMIN is the only role holding the wildcard", () => {
-    const wildcard = ALL_ROLES.filter((role) => hasCapability(role, "*"));
+  test("SUPERADMIN is the only role declaring the wildcard; wildcard is not a capability", () => {
+    const wildcard = ALL_ROLES.filter((role) => ROLE_PERMISSIONS[role].capabilities.includes("*"));
     expect(wildcard).toEqual(["SUPERADMIN"]);
+    for (const role of ALL_ROLES) expect(hasCapability(role, "*")).toBe(false);
   });
 });
 
