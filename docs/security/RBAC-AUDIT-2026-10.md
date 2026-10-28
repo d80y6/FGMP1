@@ -215,7 +215,7 @@ No role/permission schema migration was introduced. The current schema stores bu
 | R-2 | Production-specific RLS/pooler behavior remains unverified; the CI database path passed | Medium pending deployment proof | `prisma/migrations/*enable_rls*`, tenant context, CI RLS job 40708733488 | CI ran fresh PostgreSQL with non-owner `fgmp_app`, strict DB suites, smoke and RLS regression successfully, but not the production provider/pooler or its credentials | Run the pooler proof and tenant-isolation checks against the actual deployment endpoint/roles; record evidence without secrets. **Before production sign-off.** |
 | R-3 | Local sandbox cannot reach the Prisma engine CDN; standard generation/typecheck/lint/build all pass in locked Bun CI | Low (local environment only) | CI verify job 40708733488; local `npx prisma generate` | The local sandbox network fails TLS to `binaries.prisma.sh`, but CI successfully ran standard generation, typecheck, lint, schema validation, tests and OpenNext build | No code action required unless local development must work offline; retain the green CI gate. **Monitor.** |
 | R-4 | Local npm-resolved ESLint reports 25 errors / 3 warnings, but frozen-lockfile Bun CI lint passes | Low toolchain parity concern | Local `npx eslint .` vs CI verify job `Lint` step | Toolchain/dependency resolution differs between local npm install and locked Bun install; cause not isolated. CI's required lint gate is green. | Reproduce with frozen Bun install locally if parity is required; do not treat the npm-only result as the CI gate. **Developer experience.** |
-| R-5 | Real-resource cross-tenant IDOR/escalation and live bridge-credential integration remain unverified; representative seeded API-policy matrix passed | Medium | `scripts/verify/rbac-live-walk.ts`, `scripts/verify/authz-live.ts`, `docs/RBAC-LIVE-WALK-2026-10.md` | Follow-up CI run 40745553712 completed the representative matrix with exit 0 (296 observable probes) and uploaded JSON. The artifact rows were not retrieved in this sandbox (Actions blob host EOF); more importantly, the probes use ghost IDs and do not exercise a real tenant-B resource. Neither matrix tests production or live bridge integration. | Review the uploaded row-level reports, then exercise tenant-crossing IDOR/escalation cases and bridge credentials against an approved seeded environment. **Before production sign-off.** |
+| R-5 | Real-resource cross-tenant IDOR/escalation and live bridge-credential integration remain unverified; representative seeded API-policy matrix passed | Medium | `scripts/verify/rbac-live-walk.ts`, `scripts/verify/authz-live.ts`, pending `scripts/verify/authz-idors-live.ts` | Follow-up CI run 40745553712 completed the representative matrix with exit 0 (296 observable probes) and uploaded JSON. A new CI-only two-tenant fixture suite now targets real Site/User rows and attempts cross-tenant reads/writes plus self-promotion, with after-state assertions; it has not run yet. The representative matrix uses ghost IDs and neither suite validates production or live bridge integration. | Run and review the new live IDOR suite, then expand to other sensitive resources and bridge credentials against an approved seeded environment. **Before production sign-off.** |
 | R-6 | Audit log immutability is application-level; a compromised DB app principal may rewrite logs | Medium | `docs/SECURITY.md` §11 | Existing deployment gap; no DB grant changes made here | Restrict `fgmp_app` privileges to SELECT/INSERT on audit tables and ship audit events off-box. **Security hardening.** |
 
 ## 10. Completion status
@@ -292,7 +292,11 @@ client generator with the matching schema-WASM/DMMF workaround after the normal 
 CDN download failed. The generated files are ignored output, not a tracked change. CI's
 standard generation was already successful in run 40728180674.
 
-The report's residual-risk conclusions stand: the production pooler/secrets/runtime remain
-unverified; Regional Manager's tenant-wide-versus-regional scope remains a product decision;
-and neither live walk establishes comprehensive cross-tenant resource ownership or privilege
-escalation behavior. See the durable continuation record in `TASK_LEDGER.md` Part E.
+The current follow-up branch adds a CI-only `authz-idors-live.ts` suite with a second-tenant
+Site/User fixture, valid write attempts, a forged tenant-query check, self-promotion denial, and
+privileged post-probe integrity assertions followed by fixture cleanup. That suite has not yet
+run; until it passes, **no live cross-tenant request against a real tenant-B resource is verified**.
+The report's other residual-risk conclusions stand: the production pooler/secrets/runtime remain
+unverified; Regional Manager's tenant-wide-versus-regional scope remains a product decision; and
+the new suite covers only two resource families, not the complete API surface. See the durable
+continuation record in `TASK_LEDGER.md` Part E.
