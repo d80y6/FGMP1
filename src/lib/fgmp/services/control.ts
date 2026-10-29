@@ -232,7 +232,7 @@ export class ControlService {
     });
     if (!scope.allowed) return { ok: false, message: scope.message };
 
-    const result = await applyEspReboot(dispenserId, userId, tenantId);
+    const result = await engine.applyEspReboot(dispenserId, userId, tenantId);
 
     await audit({
       userId,
@@ -265,7 +265,7 @@ export class ControlService {
     });
     if (!scope.allowed) return { ok: false, message: scope.message };
 
-    const result = await applyGatewayReboot(gatewayId, userId, tenantId);
+    const result = await engine.applyGatewayReboot(gatewayId, userId, tenantId);
 
     await audit({
       userId,
@@ -298,7 +298,7 @@ export class ControlService {
     });
     if (!scope.allowed) return { ok: false, message: scope.message };
 
-    const result = await applyFirmwareDeployment(dispenserId, releaseId, userId, tenantId);
+    const result = await engine.applyFirmwareDeployment(dispenserId, releaseId, userId, tenantId);
 
     await audit({
       userId,

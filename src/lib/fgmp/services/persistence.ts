@@ -235,7 +235,14 @@ export class PersistenceService {
   /** Create an alarm row. */
   async createAlarm(alarm: PersistableAlarm): Promise<string> {
     const row = await withTenant(alarm.tenantId, (tx) =>
-      tx.alarm.create({ data: alarm, select: { id: true } }),
+      tx.alarm.create({
+        data: {
+          ...alarm,
+          type: alarm.type as never,
+          severity: alarm.severity as never,
+        },
+        select: { id: true },
+      }),
     );
     return row.id;
   }
@@ -250,9 +257,9 @@ export class PersistenceService {
     await withTenant(tenantId, (tx) =>
       tx.alarm.updateMany({
         where: {
-          type,
+          type: type as never,
           entityId,
-          ...(severity ? { severity } : {}),
+          ...(severity ? { severity: severity as never } : {}),
           status: { in: ["OPEN", "ACKNOWLEDGED", "ESCALATED"] },
         },
         data: {
