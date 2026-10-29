@@ -65,6 +65,9 @@ import { disconnectPrivilegedDbs, getOpsDb } from "@/lib/fgmp/owner-db";
 import { engine } from "./engine";
 import { evaluateAndPersist } from "./correlation/service";
 
+/** The engine's module-level client (used by init() for cross-tenant reads). */
+const engineDb = db;
+
 /**
  * Advisory-lock key.
  *
@@ -139,13 +142,6 @@ async function tickAllTenants(
     correlationErrors: [] as Array<{ tenantId: string; error: string }>,
   };
 
-  // One instant for the whole sweep, captured BEFORE the first tick and reused
-  // for both the tick accounting and every correlation evaluation. A single
-  // shared clock is what keeps the evaluation window aligned with the alarms the
-  // tick produced; taking Date.now() per tenant would drift the window forward
-  // as the sweep takes longer.
-  const tickInstant = Date.now();
-
   // enumerate on the owner connection: a scheduler that could only see the
   // tenants its own credentials expose would silently skip the others.
   const tenants = await client.tenant.findMany({
@@ -163,11 +159,12 @@ async function tickAllTenants(
     totals.alarmsCreated += r.alarmsCreated;
 
     // ── Correlation, immediately after this tenant's tick ───────────────────
-    // `now` is the SAME instant the tick advanced to, not a fresh Date.now().
-    // Using a later clock would slide the evaluation window forward of the
-    // alarms the tick just produced, so freshly-raised alarms could fall
-    // outside the rule's window and never correlate.
-    //
+    // Use a timestamp captured AFTER the tick so freshly raised alarms (which
+    // receive timestamps at the time of tick execution) fall within the
+    // evaluation window. Using a timestamp from before the tick would exclude
+    // those alarms because their createdAt > tickInstant.
+    const correlationNow = Date.now();
+
     // Failures are isolated deliberately. Correlation reads and writes are
     // tenant-scoped on the APP role inside withTenant(), while this loop runs on
     // the ops connection — so an evaluator error must never propagate into the
@@ -176,7 +173,7 @@ async function tickAllTenants(
     try {
       const outcome = await evaluateAndPersist({
         tenantId: tenant.id,
-        now: tickInstant,
+        now: correlationNow,
       });
       totals.correlationEvaluated += outcome.rulesConsidered;
       totals.correlationMatches += outcome.triggered.length;
@@ -249,7 +246,7 @@ export async function advanceOnce(
   // is taken correctly but engine.init() reads as the app role, sees zero rows
   // under RLS, and the scheduler advances an empty platform — a silent no-op
   // that looks healthy. Detected rather than assumed.
-  const engineSeesRows = await client.site.count();
+  const engineSeesRows = await engineDb.site.count();
   if (engineSeesRows === 0) {
     return {
       ok: false,
@@ -300,13 +297,14 @@ export async function advanceOnce(
 
   if (locked === false) {
     return {
-      ok: true,
+      ok: false,
       acquired: false,
       seconds: 0,
       tickCount: 0,
       eventsCreated: 0,
       alarmsCreated: 0,
       durationMs: Date.now() - started,
+      error: "Another scheduler instance holds the advisory lock; this advance was skipped.",
     };
   }
 

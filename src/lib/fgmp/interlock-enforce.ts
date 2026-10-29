@@ -12,6 +12,7 @@
  */
 
 import { db } from "@/lib/db";
+import { withTenant } from "./tenant-context";
 import { buildInterlockContext } from "./interlock-state";
 import {
   evaluateInterlocks,
@@ -148,14 +149,16 @@ export async function enforceInterlock(params: {
   // it, an acknowledged command is not the hazard this bound exists to exclude.
   const STALE_COMMAND_MS = 5 * 60 * 1000;
   const staleBefore = new Date(now - STALE_COMMAND_MS);
-  const inFlight = await db.controlCommand.findFirst({
-    where: {
-      generatorId: params.generatorId,
-      status: { in: ["PENDING", "SENT"] },
-      issuedAt: { gte: staleBefore },
-    },
-    select: { id: true, command: true, status: true, issuedAt: true },
-  });
+  const inFlight = await withTenant(params.tenantId, (tx) =>
+    tx.controlCommand.findFirst({
+      where: {
+        generatorId: params.generatorId,
+        status: { in: ["PENDING", "SENT"] },
+        issuedAt: { gte: staleBefore },
+      },
+      select: { id: true, command: true, status: true, issuedAt: true },
+    }),
+  );
   ctx.commandInFlight = inFlight;
 
   // Fix 2: an exact-duplicate resubmission is treated as the SAME command, not

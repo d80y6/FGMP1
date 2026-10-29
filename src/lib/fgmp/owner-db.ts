@@ -82,7 +82,6 @@ export function getPrivilegedDb(
 export function getOpsDb(env: OwnerDbEnv = process.env): PrismaClient | null {
   const raw =
     env.FGMP_OPS_DATABASE_URL ||
-    env.FGPS_OPS_DATABASE_URL ||
     env.FGMP_MIGRATE_DATABASE_URL ||
     undefined;
   if (!raw) return null;
