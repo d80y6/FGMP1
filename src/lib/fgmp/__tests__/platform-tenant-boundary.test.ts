@@ -118,7 +118,7 @@ describe("global state and service credentials", () => {
   });
 
   test("tenant snapshots exclude events whose ownership cannot be proven", () => {
-    const engine = source("src/lib/fgmp/engine.ts");
+    const engine = source("src/lib/fgmp/services/core.ts");
     expect(engine).toContain("return typeof sid === \"string\" && siteIds.has(sid)");
   });
 

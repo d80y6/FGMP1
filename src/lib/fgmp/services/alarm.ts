@@ -17,11 +17,7 @@ import { db } from "@/lib/db";
 import { withTenant } from "../tenant-context";
 import { isAlarmSuppressed } from "../suppression-check";
 import type { AlarmType, Severity } from "../types";
-let escalationAuditDetail: any = { inc: () => {} };
-try {
-  const m = require('@/lib/observability/metrics');
-  if (m.escalationAuditDetail) escalationAuditDetail = m.escalationAuditDetail;
-} catch {}
+import { isBatteryLowVoltage } from "../thresholds-battery";
 
 export interface AlarmCandidate {
   siteId: string;
@@ -72,7 +68,7 @@ export class AlarmService {
    */
   async evaluate(
     assets: {
-      sites: { id: string; tenantId: string; name: string; gridAvailable: boolean; powerSource: string; commLossUntil?: number; capacity: number }[];
+      sites: { id: string; tenantId: string; name: string; gridAvailable: boolean; powerSource: string; commLossUntil?: number }[];
       tanks: { id: string; siteId: string; label: string; current: number; low: number; critical: number; fuelType: string; capacity: number }[];
       generators: { id: string; siteId: string; label: string; status: string; temperatureC: number; mode: string }[];
       batteries: { id: string; siteId: string; label: string; voltage: number; nominalVoltage: number; stateOfHealth: number }[];
@@ -283,7 +279,6 @@ export class AlarmService {
     }
 
     for (const b of assets.batteries) {
-      const { isBatteryLowVoltage } = require("../thresholds-battery");
       if (isBatteryLowVoltage(b.voltage, b.nominalVoltage)) add("BATT_LOW_VOLTAGE", "L2", b.id);
       if (b.stateOfHealth < 70) add("BATT_FAILURE", "L1", b.id);
     }
@@ -362,8 +357,9 @@ export class AlarmService {
         });
       }
 
-      // Audit the escalation
-      escalationAuditDetail.inc({ action: "escalated", from: a.escalationLevel, to: nextLevel });
+      // The escalation is recorded by the caller through `persistence`; there
+      // is no metric wired to this path (the previous `require`-based counter
+      // resolved to a no-op stub and named an export that never existed).
     }
 
     return notifications;

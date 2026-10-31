@@ -145,6 +145,17 @@ export class EngineCore {
     return this.state.tickCount;
   }
 
+  /**
+   * Set tick count directly.
+   *
+   * `state` is private, so a caller that needs to restore or fast-forward the
+   * counter cannot assign it. Only the engine facade's `tickCount` setter uses
+   * this; normal ticking goes through `incrementTick()`.
+   */
+  setTickCount(value: number): void {
+    this.state.tickCount = value;
+  }
+
   /** Initialize engine for EXPLICITLY NAMED tenants. */
   async ensureInit(tenants: readonly string[]): Promise<void> {
     if (!tenants || tenants.length === 0) {
@@ -439,7 +450,9 @@ export class EngineCore {
           (SELECT COUNT(*)::int FROM "FuelDelivery" WHERE "status" IN ('SCHEDULED', 'IN_TRANSIT')) AS "pendingDeliveries",
           (SELECT COUNT(*)::int FROM "MaintenanceTicket" WHERE "status" IN ('OPEN', 'SCHEDULED', 'IN_PROGRESS')) AS "openTickets"
       `;
-      return rows[0]!;
+      const [row] = rows;
+      if (!row) throw new Error("snapshot count query returned no rows");
+      return row;
     };
     let counts: SnapshotCountRow;
     if (tenantId) counts = await withTenant(tenantId, readCounts);

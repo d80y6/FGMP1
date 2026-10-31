@@ -118,7 +118,7 @@ describe("the real route tree satisfies the authorization contract", () => {
     const route = readFileSync("src/app/api/fgmp/realtime/snapshot/route.ts", "utf8");
     const credentialCheck = route.indexOf("matchesRealtimeServiceToken(token, expected)");
     const directoryRead = route.indexOf("engine.bridgeSiteDirectory()");
-    const engine = readFileSync("src/lib/fgmp/engine.ts", "utf8");
+    const engine = readFileSync("src/lib/fgmp/services/core.ts", "utf8");
     expect(route).toContain("isRealtimeServiceTokenConfigured(expected)");
     expect(credentialCheck).toBeGreaterThanOrEqual(0);
     expect(directoryRead).toBeGreaterThan(credentialCheck);
@@ -129,8 +129,8 @@ describe("the real route tree satisfies the authorization contract", () => {
     expect(route).toContain("NextResponse.json({ sites })");
     expect(engine).toContain("async bridgeSiteDirectory()");
     expect(engine).toContain("if (tenantIds.length === 0)");
-    expect(engine).toContain("withTenant(tenantId");
-    expect(engine).toContain("where: { tenantId }");
+    expect(engine).toContain("withTenant(tid,");
+    expect(engine).toContain("where: { tenantId: tid }");
     expect(engine).toContain("select: { id: true, tenantId: true }");
   });
 

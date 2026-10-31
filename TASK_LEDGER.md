@@ -1,6 +1,6 @@
 # TASK_LEDGER
 
-This file is durable across agent sessions and context limits. It holds **five** task records. Read the part for the task you are resuming; do not delete a part when
+This file is durable across agent sessions and context limits. It holds **six** task records. Read the part for the task you are resuming; do not delete a part when
 you finish a new task — add one.
 
 | Part | Task | Outcome |
@@ -10,6 +10,7 @@ you finish a new task — add one.
 | [C](#part-c--hosted-supabase-provisioning) | Hosted (Supabase/Neon/RDS) provisioning path | Defect fixed and verified as a non-superuser; CI gate added; 2 operator findings |
 | [D](#part-d--uiux-audit-and-remediation) | UI/UX audit, remediation and browser verification | Shell defects fixed and proven by a real Chromium run; authenticated views blocked in-sandbox, covered by CI |
 | [E](#part-e--rbac-live-matrix-and-prisma-client) | RBAC live-matrix hardening, generated Prisma Client, and real-resource IDOR verification | CI passed representative role matrix and eight real-resource IDOR probes; production-specific assurance and scope decision remain open |
+| [F](#part-f--engine-facade-recursion-stubbed-crud-and-the-any-backlog) | Engine facade: infinite recursion, stubbed dispenser CRUD, `any` backlog | 4 recursion paths fixed and verified, dispenser CRUD restored, 13 lint errors cleared; typecheck, lint, 1,141 tests and the production build all pass |
 
 Status vocabulary used throughout: `DISCOVERED` → `CONFIRMED` → `IN_PROGRESS` → `FIXED` →
 `VERIFIED` → `BLOCKED`. Nothing is `VERIFIED` on the strength of reading code: every VERIFIED line
@@ -1278,3 +1279,124 @@ The next workflow run, 40739099008, passed the new live matrix and uploaded its 
 - CI run [40750422596](https://github.com/d80y6/FGMP1/actions/runs/40750422596) passed all six jobs. In the `ui` job, fixture creation, real-resource live IDOR/escalation probes, privileged before/after integrity assertions, cleanup, authorization reports, and the 18-test authenticated browser suite all passed. The eight expected HTTP outcomes matched: foreign-tenant Site/User reads, writes and deletes (including forged tenant query) were hidden with 404; ADMIN self-promotion was rejected with 403. Because the probe script exits nonzero on any mismatch and its CI step passed, these cases are verified against the disposable CI database. The Actions artifact/log archive could not be downloaded in this workspace (blob host returned EOF); check-run step results and workflow completion were available. Coverage is limited to Site/User and seeded CI, not all sensitive APIs or production.
 - Production pooler, actual secrets, and deployed-runtime authorization remain unverified; no production requests were made. Regional Manager scope remains a business decision, not an inferred permission change.
 - Do not mark the broader RBAC audit complete or production-ready until the full resource/entry-point coverage, deployment-specific checks, and Regional Manager decision have evidence.
+
+---
+
+## Part F — Engine facade: recursion, stubbed CRUD, and the `any` backlog
+
+**Branch:** `master` · **Base:** `f4f675c` ("Fix build errors in decomposed services") · **Date:** 2026-10-31 (Asia/Aden)
+
+### Why this part exists
+
+The `60832b0` refactor split a 3,192-line `FgmpEngine` into a facade plus four
+services. The split left the facade **calling back into the service that had
+just called it**, stubbed out dispenser CRUD, and reached every state field
+through `as any`. All of it compiled, and none of it was caught, because the
+facade's methods were only exercised by suites that could not run in the
+sandbox that produced the refactor.
+
+Status vocabulary is unchanged: nothing is VERIFIED without naming the command
+that proves it.
+
+### Status summary
+
+- [x] Phase 1 — reproduce the four control paths against a live PostgreSQL.
+- [x] Phase 2 — fix the mutual recursion so each path performs its own work.
+- [x] Phase 3 — restore dispenser create/update/delete (DB row + engine state).
+- [x] Phase 4 — remove all `any` from the facade; typed accessors over `EngineState`.
+- [x] Phase 5 — clear the service-layer `require()`/`any` backlog and the
+      non-null assertion.
+- [x] Phase 6 — verify with typecheck, locked lint, the full unit suite and a
+      production build.
+
+### 1. The defect this part found: infinite mutual recursion
+
+`ControlService` owns the scope check, the interlock evaluation, the command
+lock and the audit row, and then calls the facade as its **execution step**.
+The facade, in turn, called the service — so each of four paths recursed
+forever and never reached a state change:
+
+| Facade method | Called | Which called back |
+|---|---|---|
+| `applyCommand` | `controlService.controlGenerator` | `engine.applyCommand` |
+| `applyEspReboot` | `controlService.rebootEspController` | `engine.applyEspReboot` |
+| `applyGatewayReboot` | `controlService.rebootGateway` | `engine.applyGatewayReboot` |
+| `applyFirmwareDeployment` | `controlService.deployFirmware` | `engine.applyFirmwareDeployment` |
+
+These are reachable from real routes (`/api/fgmp/edge/esp/[dispenserId]/reboot`,
+`/api/fgmp/edge/gateways/[id]`, `/api/fgmp/edge/firmware/deploy`, and the
+generator command path). Reproduced before the fix: a probe calling
+`engine.applyEspReboot("nonexistent-dispenser-id", …)` **timed out at 5s**
+rather than returning. The generator path surfaced the same defect as five
+`applyCommand` cases timing out at 60s.
+
+**Fixed:** each facade method now performs its own work. The generator path
+implements the dispatch boundary in full — writes `PENDING`, asks
+`this.dispatch.dispatch()`, and derives the terminal status from what the
+dispatch **reported**: `NO_TRANSPORT` → `FAILED` with the reason preserved,
+`TIMEOUT_AMBIGUOUS` → `TIMEOUT` with `UNCONFIRMED_DO_NOT_AUTO_RETRY`,
+`EXECUTED` → `EXECUTED` with `executedAt` from the acknowledgement.
+
+**Verified:** after the fix the same probe returns in 5,170 ms with
+`{"ok":false,"message":"Dispenser nonexistent-dispenser-id not found"}` — the
+latency is `ensureInit` loading tenant state from the database, not recursion.
+`bun test src/lib/fgmp/dispatch/apply-command-dispatch.test.ts` → **6 pass /
+0 fail**, including "EXECUTED is UNREACHABLE with the shipped implementation"
+and "the boundary actually decides".
+
+### 2. Dispenser CRUD was stubbed
+
+`createDispenser`, `updateDispenser` and `deleteDispenser` returned `null`,
+`null` and `false`. The routes at `/api/fgmp/dispensers` and
+`/api/fgmp/dispensers/[id]` call them, so create/update/delete answered success
+shapes while writing nothing.
+
+**Fixed:** each writes the database row inside `withTenant(site.tenantId, …)`
+and then updates engine state, so a subsequent `GET` (served from state)
+reflects the change immediately. Delete cascades `FuelTransaction` in the
+database and filters the in-memory list to match.
+
+### 3. The `any` backlog
+
+`engine.ts` reached every state field through `as any` — **46 lint errors**. The
+fields all exist on `EngineState`, so the casts were unnecessary.
+
+**Fixed:** added `EngineCore.setTickCount()` (the setter's legitimate need) and
+typed every accessor and helper against `EngineState`/`SiteState`/`GenState`/
+`BattState`/`DispenserState`. Also removed a `capacity: number` requirement that
+`AlarmService.evaluate` declared for `sites` but **never read** (line 102 reads
+`tk.capacity`, the tank's), and restored `deployment` creation to the real
+column `initiatedById` (the facade used `createdById`, which does not exist on
+`EspFirmwareDeployment`).
+
+Service-layer cleanups: `persistence.ts` now types `command`/`status`/`type`/
+`channel` as the real Prisma enums (`GenCommandType`, `ControlCommandStatus`,
+`AlarmType`, `AlarmStatus`, `NotificationChannel`, `NotificationStatus`) instead
+of `any`, drops unused imports, and replaces a `require()`-based metric lookup
+with a no-op sink (the module never exported those counters). `alarm.ts` does
+the same, and imports `isBatteryLowVoltage` statically instead of requiring it
+inside a loop. `core.ts` replaces `rows[0]!` with an explicit empty-result check.
+
+### 4. Evidence
+
+| Check | Result |
+|---|---|
+| `npx tsc --noEmit` | **0 errors** |
+| `npx eslint .` | **0 errors**, 22 warnings (was 59 errors) — exit 0 |
+| `bun test` | **1,141 passed / 0 failed** / 19,565 expectations, 76 files |
+| `bun test src/lib/fgmp/dispatch/apply-command-dispatch.test.ts` | 6 pass / 0 fail |
+| `npx next build` | **Exit 0**; all 171 handlers compiled, static generation complete |
+| Recursion probe (pre-fix) | `applyEspReboot` timed out at 5s |
+| Recursion probe (post-fix) | Returns `{ok:false}` in 5,170 ms |
+
+### 5. Not claimed
+
+- The 22 remaining warnings are unused declarations in the decomposed services.
+  They are not errors and the locked lint gate passes; removing them is
+  separate work, and deleting a constant that documents a domain rule is a
+  product decision, not a cleanup.
+- `ControlService.controlGenerator`'s widened `ensureInit()` behaviour (loading
+  every tenant on a no-argument call, as the dispatch test file documents) was
+  not changed here; the test suite still exercises it unmasked.
+- No production request was made. The verification above is against the
+  configured database and this checkout.

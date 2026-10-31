@@ -13,23 +13,22 @@
  * - Batch flushing for high-frequency telemetry (optional future optimization).
  */
 
-import { Prisma, type FuelType } from "@prisma/client";
-import { db } from "@/lib/db";
+import {
+  Prisma,
+  type AlarmStatus,
+  type AlarmType,
+  type ControlCommandStatus,
+  type GenCommandType,
+  type NotificationChannel,
+  type NotificationStatus,
+} from "@prisma/client";
 import { withTenant } from "../tenant-context";
-import type {
-  TankState, GenState, BattState, SiteState,
-  DispenserState, FuelTransactionState, GatewayState,
-  EventItem,
-} from "../types";
+import type { DispenserState, FuelTransactionState, GatewayState } from "../types";
 import { toJsonNumber } from "../decimal";
-// Metrics handled inline
-let eventPersistenceFailures: any = { inc: () => {} };
-let gatewayPersistenceFailures: any = { inc: () => {} };
-try {
-  const m = require('@/lib/observability/metrics');
-  eventPersistenceFailures = m.eventPersistenceFailures ?? eventPersistenceFailures;
-  gatewayPersistenceFailures = m.gatewayPersistenceFailures ?? gatewayPersistenceFailures;
-} catch {}
+// Metrics handled inline. The counters are not exported by the observability
+// module; these are deliberate no-op sinks so the call sites stay unchanged.
+const eventPersistenceFailures = { inc: (_args?: Record<string, unknown>) => {} };
+const gatewayPersistenceFailures = { inc: (_args?: Record<string, unknown>) => {} };
 
 export interface PersistableEvent {
   siteId: string;
@@ -92,8 +91,8 @@ export interface PersistableDispenserUpdate {
 export interface PersistableControlCommand {
   tenantId: string;
   generatorId: string;
-  command: any;
-  status: any;
+  command: GenCommandType;
+  status: ControlCommandStatus;
   reason: string | null;
   issuedById: string;
   executedAt: Date | null;
@@ -105,9 +104,9 @@ export interface PersistableControlCommand {
 export interface PersistableAlarm {
   tenantId: string;
   siteId: string;
-  type: any;
+  type: AlarmType;
   severity: string;
-  status: any;
+  status: AlarmStatus;
   escalationLevel: number;
   entityKind: string | null;
   entityId: string | null;
@@ -118,12 +117,12 @@ export interface PersistableAlarm {
 
 export interface PersistableNotification {
   tenantId: string;
-  channel: any;
+  channel: NotificationChannel;
   recipient: string;
   subject: string;
   body: string;
   alarmId: string | null;
-  status: any;
+  status: NotificationStatus;
   attempts: number;
 }
 
